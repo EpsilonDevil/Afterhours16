@@ -51,7 +51,7 @@
   - The 20 supplied tracks play shuffled with no immediate repeats. They're ducked to 65% under park games and fade out for Pro-Am, then resume with a "BACK ON" ticker.
   - An early-2000s style now-playing ticker sits in the bottom-left corner (it scrolls long titles and hides after 6.5 s).
   - The server streams the mp3s with byte ranges. Music on/off and volume are in Settings.
-- **Locker Codes tab:** HELP-I-NEED-VC pays 50,000 VC, 3 times per account. Codes are case and space insensitive, redemptions are idempotent per request key, and the account keeps a redemption ledger.
+- **Locker Codes tab:** HELP-I-NEED-VC pays 250,000 VC, 3 times per account. Codes are case and space insensitive, redemptions are idempotent per request key, and the account keeps a redemption ledger.
 - **Animation packages:** 16 new packages, 10 with no requirements and 6 locked behind overall, attribute or Rep requirements. Details are in the README. Each new base, release and celebration has its own pose and follow-through in the animator, and DUNK_TIER, BASE_FEEL and the size-up levels know the new ones.
 - **Verified:**
   - 18 Python tests and 14 Node tests pass. The new tests cover the rating curve and the 99 floor, AI-world determinism, tier separation, legal gear, the online-by-hour spread, the friend and squad rules, the auto-play profile, and locker codes plus AI-world validation on the server.

@@ -83,7 +83,7 @@ The **gold chain** and the **iced-out chain** now have real textured links and a
 
 With no games yet it plays like your build. After about 20 games it's mostly your numbers. The Stats screen shows this profile.
 
-**Locker Codes (v0.4.4).** A new menu tab. Enter **HELP-I-NEED-VC** for 50,000 VC. It works 3 times per account. Codes aren't case sensitive.
+**Locker Codes (v0.4.4).** A new menu tab. Enter **HELP-I-NEED-VC** for 250,000 VC. It works 3 times per account. Codes aren't case sensitive.
 
 **Soundtrack (v0.4.4).** The 20 tracks you supplied (in `client/audio/music`) play shuffled through the menus, the park, park games and practice. They sit a little lower under park games and fade out for Pro-Am, where the arena has its own sound, then pick up where they left off. A **Now Playing** ticker in the bottom-left corner shows the title for the first few seconds of each track. To fill in artist names, edit `client/audio/music/tracks.json`. Music on/off and volume are in Settings.
 

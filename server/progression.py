@@ -264,7 +264,7 @@ def proam_team(data):
 # ---------------- v0.4.4: locker codes ----------------
 # code -> reward. Codes are matched case-insensitively with spaces removed. Each has a per-account limit.
 LOCKER_CODES = {
-    "HELP-I-NEED-VC": {"vc": 50000, "max_per_account": 3, "label": "50,000 VC"},
+    "HELP-I-NEED-VC": {"vc": 250000, "max_per_account": 3, "label": "250,000 VC"},
 }
 
 
