@@ -1,0 +1,13 @@
+{
+  "name": "afterhours16",
+  "version": "0.4.4",
+  "private": true,
+  "type": "module",
+  "description": "Afterhours 16 — original street-and-arena basketball game: WebGL2 client, Python/SQLite service.",
+  "scripts": {
+    "start": "python3 -m server.app --open",
+    "test": "node --test tests/geometry.test.mjs tests/sim.test.mjs && python3 -m unittest discover -s tests",
+    "sim": "node tools/sim_batch.mjs park 6",
+    "sim:proam": "node tools/sim_batch.mjs proam 4"
+  }
+}

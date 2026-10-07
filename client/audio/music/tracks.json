@@ -1,0 +1,145 @@
+{
+ "note": "Soundtrack shown in the now-playing ticker. Fill in 'artist' (and change 'album') to have them displayed.",
+ "tracks": [
+  {
+   "file": "another-life.mp3",
+   "title": "Another Life",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 160
+  },
+  {
+   "file": "g-funkin-groove.mp3",
+   "title": "G-Funkin Groove",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 120
+  },
+  {
+   "file": "heart-of-silk.mp3",
+   "title": "Heart of Silk",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 128
+  },
+  {
+   "file": "heres-a-bell.mp3",
+   "title": "Heres A Bell",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 145
+  },
+  {
+   "file": "journey.mp3",
+   "title": "Journey",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 297
+  },
+  {
+   "file": "lightning-dog.mp3",
+   "title": "Lightning Dog",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 180
+  },
+  {
+   "file": "mac-cheese.mp3",
+   "title": "Mac Cheese",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 209
+  },
+  {
+   "file": "moonlight.mp3",
+   "title": "Moonlight",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 200
+  },
+  {
+   "file": "on-my-own.mp3",
+   "title": "On My Own",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 128
+  },
+  {
+   "file": "on-the-mountain.mp3",
+   "title": "On The Mountain",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 185
+  },
+  {
+   "file": "somewhere-high.mp3",
+   "title": "Somewhere High",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 100
+  },
+  {
+   "file": "swimming-beef-angel-epsilon-remix.mp3",
+   "title": "Swimming Beef Angel Epsilon Remix",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 283
+  },
+  {
+   "file": "tidal.mp3",
+   "title": "Tidal",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 156
+  },
+  {
+   "file": "alt-rock-will-take-you-to-the-hilltop.mp3",
+   "title": "Alt Rock Will Take You To The Hilltop",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 180
+  },
+  {
+   "file": "buffering.mp3",
+   "title": "Buffering",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 174
+  },
+  {
+   "file": "consumation.mp3",
+   "title": "Consumation",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 266
+  },
+  {
+   "file": "final-flash.mp3",
+   "title": "Final Flash",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 154
+  },
+  {
+   "file": "lie.mp3",
+   "title": "Lie",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 142
+  },
+  {
+   "file": "moving-on.mp3",
+   "title": "Moving On",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 164
+  },
+  {
+   "file": "cloud-9.mp3",
+   "title": "Cloud 9",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 192
+  }
+ ]
+}

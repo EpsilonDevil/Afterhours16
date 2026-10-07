@@ -1,0 +1,245 @@
+# Status — v0.4.4
+
+## v0.4.4
+
+- **Brick Wall:** bump contact only triggers it for the defender. Screen contact triggers it on either end, for the screener or the defender fighting through. Screen contact is skipped while a shot is up, for the shooter, and during shoot, layup, dunk, landing and celebration actions, and it needs a moving defender. An open three can no longer set it off.
+- **Speed and contests:**
+  - Game speed is ×1.0375 on top of v0.4.2's ×1.15 (×1.193 overall). Clocks still count real seconds.
+  - Every contested state shrinks the green window 3.75% more. Open looks are unchanged.
+- **Archetypes:** strengths and weaknesses are trimmed about 20% (×1.4 → ×1.12, the same on client and server).
+- **Rating curve (`ratings.rk`):** used for every attribute effect in shots, game and AI.
+  - **Under 70:** falls off steeply. The green window is about 22 ms at 50, 32 at 60 and 42 at 70.
+  - **Over 95:** extra weight.
+  - **99:** a big step (rk 1.32 vs 0.95 at 95). The green window is about 104 ms vs 62.5 at 95. Open 99 shots that aren't badly mistimed have a floor of 90–96%, which only the defense's contest (scaled by its own ratings) and fatigue reduce.
+  - **AI green odds** follow the same curve: capped at 0.65 normally, 0.72 above 95 and 0.88 at 99.
+- **Lifetime stats:**
+  - The server now keeps per-mode splits (`career_modes`: park and Pro-Am, with games, seconds, wins and every box-score stat).
+  - The new **Stats** tab and the pause-menu modal show averages, shooting splits (FG, 3P, FT, eFG, TS), totals and highlights, and compare every build.
+- **Auto-play profile (`sim/profile.js`):**
+  - With auto-play on, the AI's tendencies for your player blend from your archetype to your stat-derived numbers as games pile up (weight gp / (gp + 4)): shot volume, three share, drives, passing, dribbling, steals, boards, blocks, ball security.
+  - His green odds are scaled so his twos, threes and free throws land near your career percentages (shrunk toward the mode average for small samples).
+- **Defensive hands (right stick on defense):**
+  - **Reaches:** flick left or right for that hand, and a ball-side reach has much better odds. Flick down for a low swipe.
+  - **Holds:** hold up for hands up. Hold to a side to keep a hand in that passing lane, which adds deflection odds on passes that way.
+  - **Keyboard:** the arrow keys do the same.
+  - **Animation:** the animator mirrors the reach per hand and extends the held-out hand.
+- **Chains:** the gold and iced-out chains are real meshes:
+  - a tube of links that rests on the traps and dips to the chest over whatever top is worn;
+  - a textured link pattern (gold, or pavé stones with glints);
+  - a pendant: an original "16" medallion, or iced rings.
+- **Clothing clearance:**
+  - **Tops:** garments now drape over every body bulge but skip the grooves. Untucked tops always clear the shorts by 7 mm or more (measured over builds from 6'0" 170 to 7'0" 280). Tucked Pro-Am jerseys sit inside the waistband. Hoodie and compression sleeves overlap through the elbow.
+  - **Shorts and joggers:** never tighter than the thigh.
+  - **Headbands:** sit on the hairstyle's real outer surface.
+  - **Gear:** offsets are larger. Arm sleeves go over compression and are hidden under hoodies. Leg sleeves are hidden under joggers and socks tuck under them. Knee pads go over joggers. Wristbands go over hoodie cuffs.
+  - **Depth bias:** a small polygon offset per material layer settles near-ties (shorts 2, top 3, worn-over gear 4, shoes and chain 5).
+  - The showroom now rebuilds when only an animation package changes. Store previews of jumpshots and releases were showing the old package.
+- **Persistent AI world (`sim/world.js`):**
+  - **The pool:** 900 accounts per player account, seeded from a value saved on the server (`ai_world` table). Each account has a skill tier (Casual 20%, Regular 33%, Hooper 26%, Elite 16%, Park Legend 5%) with a level, IQ and Rep range, a position, a home park (14% drift between parks), and a habit with daily sessions in local time plus random extra sessions.
+  - **Builds:** each account's build, gear and look are generated deterministically. Gear respects the same overall, attribute and Rep requirements as a player's, and flashier, pricier items show up more on better and higher-Rep players. Badge count and tiers scale with level (Casuals 0–2 low-tier, Legends a full set with Hall of Fame signatures). Attributes spread wider, and each archetype's two signature attributes stand out.
+  - **Skill separation:** overall medians run about 56 / 66 / 74 / 80 / 84 by tier. In simulated park games, Hooper vs Regular was 6-0 (avg +8.3), Park Legend vs Regular 6-0 (+10.8), Elite vs Hooper 4-2 and Regular vs Casual 4-2.
+  - **IQ in the AI:** reaction time (about 0.39 s at IQ 0.1 down to 0.14 s at 1), option-value noise, how heavily pass risk counts, contested-shot discipline, green odds, closeout reads, pump-fake bites, steal timing and correct-hand reaches. The difficulty setting nudges everyone.
+  - **Park population:** courts and park-goers come from accounts online at this park now. Empty courts are possible at quiet hours. A population tick every 20 s sends logged-off people walking out and brings arrivals in from the plaza. Kings who log off leave their court. When a game needs bodies, a regular who was about to come on "hops on early".
+  - **What's saved:** friends, squad and met (games with and against, wins together, last played; the most recent 400), saved to the server with a short debounce.
+- **Social phone** (LB+RB / L1+R1, O on the keyboard, a top-bar button, and in the pause menus):
+  - **Tabs:** Park (everyone online at your park, with an OVR + position circle ringed in their tier colour, and what they're doing), Friends (online status, or when they're usually on), Squad (up to 4 online friends) and Recent.
+  - **Player cards:** build, tier, Rep, habit, home park, badges and your record together.
+  - **Squad:** squad mates follow you around the park, fill your Got Next line first, and play with you in Pro-Am. Pro-Am fill-ins are regulars matched by position and level.
+  - **In games:** intro cards tag SQUAD and FRIEND and show Rep. The results screen lists everyone from the game with an Add button.
+  - **Menus:** bumpers switch tabs on release, so LB+RB can open the phone.
+- **Soundtrack:**
+  - The 20 supplied tracks play shuffled with no immediate repeats. They're ducked to 65% under park games and fade out for Pro-Am, then resume with a "BACK ON" ticker.
+  - An early-2000s style now-playing ticker sits in the bottom-left corner (it scrolls long titles and hides after 6.5 s).
+  - The server streams the mp3s with byte ranges. Music on/off and volume are in Settings.
+- **Locker Codes tab:** HELP-I-NEED-VC pays 50,000 VC, 3 times per account. Codes are case and space insensitive, redemptions are idempotent per request key, and the account keeps a redemption ledger.
+- **Animation packages:** 16 new packages, 10 with no requirements and 6 locked behind overall, attribute or Rep requirements. Details are in the README. Each new base, release and celebration has its own pose and follow-through in the animator, and DUNK_TIER, BASE_FEEL and the size-up levels know the new ones.
+- **Verified:**
+  - 18 Python tests and 14 Node tests pass. The new tests cover the rating curve and the 99 floor, AI-world determinism, tier separation, legal gear, the online-by-hour spread, the friend and squad rules, the auto-play profile, and locker codes plus AI-world validation on the server.
+  - Headless runs:
+    - the Stats tab;
+    - Locker Codes: 3 redemptions then refused, bad code refused;
+    - the soundtrack: ticker, next track, a byte-range request, Pro-Am suppress and resume;
+    - the park: a squad mate followed into Got Next, pause → Lifetime stats keeps the game paused and resumes on close, auto-play profile present, results Add friend, Recent tab, back to roam with the follower;
+    - the Pro-Am roster with the squad mate;
+    - the gamepad suite;
+    - frame-by-frame shots of the new jumpshots, releases and celebrations, and clothing views (jersey, tee, hoodie with joggers, compression, high-top and curls hair) from the front, side and back and through a jumpshot.
+  - Balance (small, noisy batches):
+    - `tools/sim_batch.mjs park 16` (fixed-level bots): FG 41%, 3P 34%, about 3 blocks and 3 steals a game. v0.4.4's first curve pass had FG 34% and 3P 27%.
+    - `tools/sim_world.mjs mix 12` (mixed-tier world accounts): FG 41% and 3P 41%. The higher three-point rate comes from Elite and Legend shooters.
+    - `sim_batch proam 6`: FG 39% and 3P about 42%.
+
+## v0.4.3
+
+- **Defense:**
+  - **Contests:** in the paint, a contest is weighted mostly by Interior D and Block (plus Rim Protector), and height and length count for more. Rim protectors also cover a little more ground in the lane. On the perimeter, Perimeter D carries the contest. Defenders in the air at the release add more with a higher Block rating.
+  - **Blocks:**
+    - Shot blockers travel toward the ball when they jump. How far depends on Block, and in the paint on Interior D and height too.
+    - Rim protectors challenge drives from further out and time their jumps better.
+    - Block odds at the rim use Block, Interior D and the height difference. On jumpers they use Block and Perimeter D.
+    - Only the best-placed defender gets a block attempt (three bigs in the lane no longer stack rolls).
+    - Jump-shot closeouts go straight up, so they don't lunge into the shooter.
+  - **Box-outs:** a sealing player is heavier to push the higher his Interior D and rebounding, plus his Interior D edge over the opponent. The rebound winner depends more on the rebound rating, size and that seal. Defenders anchored in the paint are harder to move.
+  - **Perimeter D** sets the defensive slide speed and adds to steals. Interior D also stops more dunks through contact.
+- **Build disparity:** archetype attribute bonuses and penalties are ×1.4, the same on client and server. AI tendencies per archetype (shoot, drive, pass, dribble, cut, spot-up, pop, post, crash, help, press, safe):
+  - **Slashers** drive and cut.
+  - **Sharpshooters** relocate to the most open arc spot.
+  - **Playmakers** dribble, pass first and call for the ball back.
+  - **Stretch bigs** pick-and-pop and fill gaps as help defenders.
+  - **Glass cleaners** anchor the paint, help first, crash the boards and make safe plays.
+  - **Post scorers** back their man down to the block, and kick it out when doubled.
+  - **Lockdowns** press the ball.
+  - AI hoopers carry archetype badges (2–5, mostly Bronze/Silver). The AI's contest estimate now counts a close defender's jump, which cut down forced, smothered jumpers.
+- **Shooting settings:** Shot meter and Shot feedback toggles (on by default). With the meter off, your green window is 10% wider. A new Node test checks that, for every jumpshot base × release, the ball reaches its release point exactly at the centre of the green window.
+- **Controller / camera fix:** the cause of running off the court was the stick mapping, not the camera. The 2K cam swings round on a change of possession, but the stick stayed on the old direction while held and flipped to the new one 2.5 s later or on release, so "up" stopped meaning up the screen. The 2K cam is unchanged in every mode. The stick now follows the camera's current framing, damped exactly like the camera, so a held stick stays up-screen and the player turns with the play through the swing, as in NBA 2K. A Node test drives a full-court possession swing and checks that the stick follows the view to within a few degrees, that it turns smoothly, and that "up" points at the new basket afterwards.
+- **Presentation:**
+  - Team intros (park: OVR, build and top 3 badges; Pro-Am: five per team with the most-used badge).
+  - A post-game box score for every player with a live Rep bar that handles rank-ups. Results are saved while it plays.
+- **Sneakers:** shoes were vertex-coloured with sRGB values treated as linear (washed out, nearly white) and details too fine for the mesh. They now use a UV-mapped shoe shell with closed heel and toe, painted textures, and nine distinct original models. All gear colours are linearised.
+- **Animation packages:**
+  - **Jumpshot bases** have their own speed, window, set point, release height, leg action and lean.
+  - **Releases** have their own follow-through.
+  - **Dunk packages** have tiers 0–3: longer takeoffs, more lift and hang, style weighting toward flashier finishes, and new 360, cradle and double-clutch paths. Higher tiers make contact finishes and posterizers hit harder (shove, knockdown odds and duration). Flashy dunks get extra rim shake, slow-motion and named callouts.
+  - **Size-up packages** give faster moves and chains and more ankles, plus in-place crossover and between-the-legs rhythm with shoulder jabs.
+- **Audio bug:** the "air / rummaging" sound was the crowd bed, a 2-second loop of white noise that played from the first click at a constant level in every menu and mode. It is now off in menus and the gym, built from 9 s of pink-noise murmur bands, and its sources stop when the crowd is off.
+- **Park life:** people walking and jogging on the sidewalks (some with dogs, some stopping to watch), plus a scheduler that fires a random event every 15–35 s:
+  - **Downtown:** taxis and cars, an elevated train line with passing trains, and a helicopter with a real sweeping searchlight.
+  - **Seaside:** sailboats, speedboats with a wake, and gulls.
+  - **Industrial:** a forklift, a container crane at work, freight trains, welding sparks and steam.
+  - **Everywhere:** birds and planes.
+- **Pro-Am arena:**
+  - Announcers follow the ball, nod, and react to threes and dunks.
+  - Photographers' flashes fire on shots, dunks and blocks, and a camera operator pans with the play.
+  - Subs sit on the benches and there's a courtside VIP row.
+  - Crowd shader: excitable fans stand and raise their arms on big plays, clap on dead balls and free throws, start an occasional stadium wave, and give an ovation at the end.
+- **Verified:**
+  - 17 Python tests and 11 Node tests pass. New tests cover release timing, defense weighting and box-outs, archetype tendencies, package differences, and the stick following the 2K cam.
+  - Headless runs: the Pro-Am and park intros and outros through results, the gamepad suite, remapping, Daily Spin and boosts. The crowd bed is off in menus.
+  - Balance (`tools/sim_batch.mjs`, park 16 games and Pro-Am 6 games, noisy): park FG about 36–39% and 3P about 31–33%, with about 4 blocks a game, mostly by bigs (guards' block share fell). Pro-Am FG about 38–39% and 3P about 35–45%. Steals rose in park games (Lockdowns press). Archetypes now differ clearly in shot mix: sharpshooters take most threes, glass cleaners and post scorers rebound and score inside.
+
+## v0.4.2
+
+- **Shooting and controls:**
+  - **Bailout:** pass out of a jumper any time before the release, on the floor or in the air. Bailouts are a bit less accurate, especially from the air. AI shooters smothered at the top of a jumper kick it out to an open teammate.
+  - **No greens when smothered:** at a contest of 0.75 or more (the HUD's "Smothered"), the green window is zero and the meter outline turns red. This applies to the AI too.
+  - **The right stick is only for dribble moves and attack-the-rim** (down while sprinting). Pro Stick shooting is removed.
+  - **15% faster game:** the simulation runs at 1.15× real time. Clocks and the reported game duration stay in real seconds, and timing windows are scaled so the green feels the same.
+  - **Turn and fade:** shooters square up to the rim on the gather, turning in the air if needed. Moving away from the hoop gives a fade. This also fixes an angle-averaging bug that could leave a shooter facing away.
+- **Dunks:**
+  - You have to reach the rim with your hands, otherwise the dunk becomes a flip at the rim.
+  - Contact on the way up resolves from dunk rating plus Close Shot against the defender's size, strength and Interior D. The outcome is to finish through it, posterize, or get stopped.
+  - **Posterizer** shoves the defender back or knocks him down for 2.4–3.2 s with a shove/fall animation. Collisions with the posterized defender are skipped, so no one passes through anyone.
+  - Traffic finishing, block odds and the dunk-or-layup choice all scale with Driving or Standing Dunk plus Close Shot.
+- **Ball dynamics:**
+  - Rim contacts get a small deterministic deflection and variable bounce, so made/missed pre-simulation stays exact.
+  - **Poke-outs** send the ball sideways or behind the dribbler, low and skipping. The dribbler can't recover it for 0.55 s.
+- **AI passing:** a teammate calling for the ball gets it in about 0.06–0.14 s when he's open and the lane is clean. The handler holds it only while the lane is clogged. Base AI reaction time is faster too.
+- **Parks:**
+  - Every park has **six courts:** three full courts (3v3 played full court with tip-off, inbounds and a shot clock), two 2v2 half courts and a 1v1 half court.
+  - The practice hoop moved beside the 1v1 court.
+  - Roaming park-goers are kept off any court with a game on.
+- **Shootaround gym:** both sideline bleachers now sit against the walls with the seats facing the court.
+- **Daily Spin:**
+  - A wheel next to the VC Store, one spin per account every 24 hours, rolled on the server.
+  - Five VC tiers: 500 (34%), 2,500 (26%), 10,000 (14%), 50,000 (4%) and 250,000 (0.2%).
+  - Exclusive gear (12%) and animations (9.8%): 10 new wheel-only items. If you already own every exclusive of a kind, that roll pays VC instead.
+- **Boosts:**
+  - A kiosk on the other side of the store sells six categories, each +5 to every attribute in the category (capped at 99).
+  - Packs are 1, 3 or 5 games (600, 1,500 or 2,250 VC), up to 10 games stocked per category.
+  - A boost game is used when a park or Pro-Am game tips off.
+- **Streak multipliers:** park wins pay VC and Rep ×(1 + 0.15 per straight win after the first), up to ×2.5. The results card shows it.
+- **Badge banner:** your badges show at the top of the screen when they change a play, queued in activation order.
+- **Animation and models:**
+  - The jump-shot follow-through brings the arms down by the sides without elbows flipping out.
+  - Relaxed hands follow the crouch, and the dribbler's off hand sits in a guard position.
+  - A body-clearance pass keeps hands out of the torso and hips in idles, size-ups and dribble moves.
+  - Character meshes are about 25% denser, and their seam normals are welded, so the hard "blocky" seam lines are gone.
+- **Server:** migration `004` (daily spins), `/api/daily-spin`, `/api/boosts/purchase`, wheel and boost config in `/api/config`. Park formats are now 1, 2 or 3.
+- **Verified:**
+  - 17 Python tests and 7 Node tests pass.
+  - Headless flows: a full-court 3v3 park game through results with server rewards, 2v2, practice, Pro-Am, the gamepad suite, remapping, the Daily Spin spin and boost purchase.
+  - Simulated balance: park FG about 39% and 3P about 33%; Pro-Am FG about 37%. Pro-Am pass completion is about 98%.
+
+## v0.4.1 (quick patch)
+
+- **Button remapping:** every keyboard/mouse and controller action can be rebound in **Settings → Remap buttons…**. It flags conflicts, resets to defaults, and the controls lists follow your bindings.
+- **Dunks:**
+  - a dedicated attack-the-rim bind (Z, or right stick down while sprinting) dunks whenever the player physically can, otherwise it takes the best finish
+  - driving with the shoot button now prefers a dunk, unless layup or pull-up ratings are clearly higher; then the highest rating wins, adjusted for the defense (a rim protector favors a layup, a defender walling off the lane favors a pull-up)
+- **Passing:**
+  - release speed and ball speed scale with Pass Accuracy, with a tighter error spread
+  - passes lead the receiver, with a limited in-flight correction (turn-rate and total-angle budget), so they aren't heat-seeking
+  - a bigger catch radius for the intended receiver
+  - teammates no longer intercept each other's passes
+  - in simulated Pro-Am games, pass completion went from about 89% to 98%, and interceptions held at 1–2%
+- **Rebounding:**
+  - AI predicts the landing spot with the real ball physics (rim and glass bounces)
+  - rebound jumps are timed to meet the ball
+  - defenders hold box-outs until the ball comes off the iron and get inside position
+  - only bigs (and anyone already close) crash the offensive glass
+  - who wins a rebound now depends more on position and the rebound rating than on luck
+  - OREB% fell from about 50% to about 33%
+- **Locked-In grade:** a teammate grade from F to A+ in the top-right of every mode (park, Pro-Am, practice), with live +/− callouts and a final grade on the results card. You can hide it in Settings.
+- **Fix:** Xbox controllers were being shown PlayStation button prompts ("Xbox Wireless Controller" matched the PlayStation pattern).
+- **Verified:**
+  - 14 Python tests and 7 Node tests pass (new: finish selection, pass completion, grade)
+  - headless remap test: keyboard key, mouse button and controller button, plus reset
+  - the dunk gesture in practice, the gamepad suite, and the park and Pro-Am flows
+  - balance: park FG about 40%, Pro-Am about 38%
+- `Afterhours16.exe` rebuilt as version 0.4.1.
+
+## v0.4.0
+
+## New in v0.4
+
+- **Afterhours16.exe:** a small Windows launcher (Go, standard library only, about 6 MB). It finds Python (or offers to install it), starts the service hidden, opens the game fullscreen in its own Edge/Chrome window and profile, and stops everything when you quit. A **Quit to desktop** button appears in launcher mode. The service also stops by itself if the window is closed, and it tolerates the PC sleeping.
+- **Lock-in:** fullscreen plus the Keyboard Lock API (F11 or a setting), so the browser can't steal keys. The right-click menu and Ctrl shortcuts are blocked in game, and the game auto-pauses when it loses focus.
+- **Controls and responsiveness:**
+  - every press is buffered until the 60 Hz simulation consumes it, so nothing is dropped on high-refresh monitors or during animations
+  - stick input stays relative to the camera's rest direction and is latched while the camera swings
+  - analog walk-to-jog speed
+  - retuned acceleration, braking and turning
+  - shorter lockouts after passes, catches and steals
+- **Native controller support:**
+  - Xbox, PlayStation and Switch Pro controllers through the standard mapping, with auto-detected button glyphs
+  - full menu navigation (D-pad or stick, A/B, LB/RB tabs)
+  - radial deadzones, analog triggers, Pro Stick shooting (hold RS; removed in v0.4.2), flick and rotate moves
+  - rumble on green releases, makes, dunks and posters, blocks, steals, ankle-breakers and bumps
+  - settings for vibration, deadzone, prompt style and inverted camera
+- **Greens always go in** unless blocked. Contest, movement, fades and range now shrink the green window instead of lowering the make chance, and the shot meter shows the live window. The AI can hit greens too, at rates tied to its ratings.
+- **Player models:**
+  - anthropometric proportions instead of cartoon proportions
+  - a sculpted torso (chest, shoulder blades, abdomen) and anatomical limb profiles
+  - five-finger hands
+  - real eyeballs set in carved lids, ears and a natural hairline
+  - alpha-strand hair
+  - detail normal maps for skin pores and jersey mesh or knit
+  - two-lobe skin specular
+  - full-resolution faces for your player, lighter ones for everyone else
+- **Animation and physics:** jump shots, running and landings are driven by published biomechanics:
+  - jump shots: dip depth, triple extension, jump height, release just before the apex, release height
+  - running: stride length, cadence, contact time, walk and run center-of-mass motion, pelvis and trunk motion
+  - landings: absorption scaled by the touchdown speed
+- **Showroom:** walk, jog and sprint treadmill previews.
+
+## Verified
+
+- `python -m unittest discover -s tests`: 14 tests, including the new launcher-only quit and ping checks.
+- `node --test tests/geometry.test.mjs tests/sim.test.mjs`: mesh winding, shot planning, and full park and Pro-Am games.
+- Headless Chromium run-throughs:
+  - home, Park hub → Got Next → game → results, Pro-Am → results, practice
+  - a scripted gamepad test: menu navigation, LS/RT movement, RS flick moves, X shot timing
+- Launcher, tested on Linux with a stand-in browser:
+  - start, health check, window heartbeat
+  - idle shutdown
+  - **Quit to desktop** stopping the service (exit code 3) and closing the window
+- The Windows .exe was cross-compiled and checked as a valid PE32+ GUI binary with icon and version resources. **It hasn't been run on a real Windows PC yet.**
+- Animation checked frame by frame from the side: knee angle at the bottom of the jump-shot dip about 115°, about 155° in flight and about 128° at landing.
+- Balance (`tools/sim_batch.mjs`): park AI FG is about 41–46% and 3P about 37–40%. Pro-Am FG is about 38% and 3P about 36%. Batches are small and noisy.
+
+## Known limits and next steps
+
+- Animation is still procedural (pose targets plus IK), not motion-captured. v0.5 plans to bring in real capture data; see `docs/V0.5-PLAN.md`.
+- Faces are better but still read as sculpted masks up close. v0.5 plans to replace the procedural mesh with a CC0 base mesh and blendshapes.
+- Single player only: teammates and opponents are AI. Since v0.4.4 they're persistent AI accounts with schedules, so the park is quiet in the early morning.
+- AI accounts' builds and gear are fixed per world; only their Rep creeps up over time (up to +4 levels). Friends' online times follow your computer's clock.
+- On integrated GPUs, use Medium or Low if the Park drops frames.
