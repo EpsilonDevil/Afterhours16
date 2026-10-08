@@ -42,6 +42,8 @@ export function rk(v) {
   if (v < 70) x -= Math.pow((70 - v) / 30, 1.4) * 0.2;
   if (v > 95) x += Math.min(4, v - 95) * 0.03;
   if (v >= 99) x += 0.2;
+  // v0.4.5: Icon badges and takeovers can push a rating past 99 in the sim; it keeps paying off
+  if (v > 99) x += (v - 99) * 0.025;
   return Math.max(0, x);
 }
 // physical attributes (speed, bounce, strength, stamina) get a gentler top end so movement stays sane
@@ -61,14 +63,16 @@ export function physical(build) {
     jog: sprint * 0.62,
     walk: 1.6,
     ballSpeedK: 0.84 + n(a.speed_with_ball) * 0.14,
-    accel: (11 + n(a.acceleration) * 6) * massK,
-    brake: (17 + n(a.acceleration) * 6) * massK,
-    turn: 13 * massK,
+    // v0.4.5: a touch less snap in starts and turns (fluid over twitchy)
+    accel: (11 + n(a.acceleration) * 6) * massK * 0.96,
+    brake: (17 + n(a.acceleration) * 6) * massK * 0.97,
+    turn: 13 * massK * 0.93,
     vertical: 0.42 + n(a.vertical) * 0.4,
     reach: H * 1.315 * (WS / H / 1.04), // standing reach
     strength: n(a.strength) * 0.7 + Math.min(1, (W - 75) / 50) * 0.3,
-    staminaRate: 0.055 - n(a.stamina) * 0.03, // drain per second when sprinting
-    recover: 0.05 + n(a.stamina) * 0.05,
+    // v0.4.5 stamina overhaul: sprinting drains faster and recovery is slower, so stamina actually matters
+    staminaRate: (0.055 - n(a.stamina) * 0.03) * 1.35, // drain per second when sprinting
+    recover: 0.022 + n(a.stamina) * 0.032,
   };
 }
 

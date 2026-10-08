@@ -112,7 +112,7 @@ export function makeBot(rng, opts = {}) {
   const eq = {
     top: pick('top', 'yard_teal'), bottom: pick('bottom', 'yard_shorts'), shoes: pick('shoes', 'yard_shoes'),
     release: pick('release', 'release_classic'), jumpshot: pick('jumpshot', 'js_base_standard'), dunk: pick('dunk', 'dunk_basic'),
-    sizeup: pick('sizeup', 'sizeup_basic'),
+    sizeup: pick('sizeup', 'sizeup_basic'), layup: pick('layup', 'layup_basic'),
   };
   // wheel exclusives: a few of the regulars have hit on the wheel
   const wheel = items.filter(i => i.exclusive === 'wheel' && ['jumpshot', 'release', 'dunk'].includes(i.slot));
@@ -171,7 +171,7 @@ export function resolveLook(build, catalog, override = {}) {
   const shoes = item(eq.shoes) || { color: '#f2f2f2', accent: '#3fb6a8', sole: '#f5f5f0', cut: 'mid' };
   const g = { shoes: { color: shoes.color, accent: shoes.accent, sole: shoes.sole, cut: shoes.cut || 'mid', lace: shoes.lace, trim: shoes.trim, model: shoeModel(shoes.id || eq.shoes) } };
   if (item(eq.socks)) g.socks = { color: item(eq.socks).color, style: item(eq.socks).style };
-  if (item(eq.headband)) g.headband = { color: item(eq.headband).color };
+  if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null };
   if (item(eq.sleeve)) g.sleeve = { color: item(eq.sleeve).color, side: build.hand === 'L' ? 'L' : 'R' };
   if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color };
   if (item(eq.leg_sleeve)) g.legSleeve = { color: item(eq.leg_sleeve).color, side: 'L' };

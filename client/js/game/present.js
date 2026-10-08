@@ -15,7 +15,8 @@ export function rankedBadges(entry) {
   const tiers = entry.badges || {};
   const keys = new Set([...Object.keys(tiers), ...(charB ? Object.keys(charB) : [])]);
   for (const k of keys) {
-    const tier = tiers[k] || (charB && charB[k]?.tier) || 0;
+    // (your own badges: the character's record is the truth, so a fresh upgrade always shows its new tier)
+    const tier = charB && charB[k] ? (charB[k].tier || 0) : (tiers[k] || 0);
     const use = (charB && charB[k]?.progress) || (entry.badgeUse && entry.badgeUse[k]) || 0;
     if (tier > 0 || use > 0) out.push({ key: k, tier, use });
   }

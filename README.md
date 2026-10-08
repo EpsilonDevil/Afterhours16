@@ -1,4 +1,4 @@
-# Afterhours 16 — v0.4.4
+# Afterhours 16 — v0.4.5
 
 An original street-and-arena basketball game inspired by the feel of the 2015-era sim-arcade basketball games: weighty movement, timed jumpers, size-ups, posters, and a social hub where you walk up to a court and call next. You get a 3D WebGL2 client built from scratch for this version and a small Python/SQLite service that saves your players, VC wallet, Rep, badges and Pro-Am team.
 
@@ -21,15 +21,15 @@ You need **Python 3.10 or newer** and Microsoft Edge or Google Chrome (Firefox w
 
 **Manual:** `python -m server.app --open`, or run `python -m server.app` and open http://127.0.0.1:8765/. Opening `client/index.html` directly from disk won't work.
 
-**Lock-in.** Press **F11** (or turn on **Settings → Fullscreen lock-in**) and the game takes the whole screen *and* the keyboard: the right-click menu, Ctrl shortcuts and browser keys can't pull you out mid-game. If you do Alt+Tab away, the game pauses itself (**Pause on focus loss**, on by default).
+**Lock-in.** Press **F11** (or turn on **Settings → Fullscreen lock-in**) and the game takes the whole screen *and* the keyboard: the right-click menu, Ctrl shortcuts and browser keys can't pull you out mid-game. Since v0.4.5 the game keeps running when you click out of the window; turn **Pause on focus loss** on in Settings if you want it to pause.
 
 Graphics quality is picked automatically from your GPU. To change it, open **⚙ Settings** and choose Low, Medium, High or Ultra. You can also turn on the FPS counter there.
 
 ## Modes
 
-**MyPLAYER.** You create a player by picking a position, one of 8 archetypes (Sharpshooter, Slasher, Playmaker, Lockdown, Two-Way, Glass Cleaner, Stretch Big, Post Scorer), height, weight, wingspan, shooting hand and looks. Your build sets a cap for each of the 22 attributes, and you spend VC to raise attributes up to those caps. Badges (18 of them, Bronze → Hall of Fame) level up from what you do in games, for example contested makes, dunks, assists, ankle-breakers and blocks. You can save up to four players per account.
+**MyPLAYER.** You create a player by picking a position, one of 8 archetypes (Sharpshooter, Slasher, Playmaker, Lockdown, Two-Way, Glass Cleaner, Stretch Big, Post Scorer), height, weight, wingspan, shooting hand and looks. Your build sets a cap for each of the 22 attributes, and you spend VC to raise attributes up to those caps. Badges (18 of them, Bronze → Hall of Fame) level up from what you do in games, for example contested makes, dunks, assists, ankle-breakers and blocks. You can save up to four players per account. Since v0.4.5 every build tops out at **90 OVR**; each of your first 5 Hall of Fame badges brings **5 cap breakers** (+1 each to a maxed-out attribute, past the cap), a build holds up to **7** Hall of Fame badges, and the 7th unlocks your archetype's **Icon badge**. Each badge tier is a big step up from the last, and a stat with none of its badges plays 10% weaker.
 
-**The Park.** Pick your affiliation once: Harbor Kings, Old Brick Society or Foundry Rivets. Each one has its own park (seaside, downtown night, industrial), with its own background life: people walking and jogging past, traffic or sailboats, and random events every half minute or so. Depending on the park those are an elevated train, a helicopter with a searchlight, flocks of birds, a speedboat, a freight train, a container crane at work, welding sparks or steam. You walk around in third person while AI regulars play live games on **six courts**: three full courts for 3v3, two 2v2 half courts on the west side and a 1v1 court on the east side. Stand in a **Got Next** circle to claim the next game. Park-goers join your squad, and when the current game ends you play the winners. Park-goers never wander onto a court while a game is on.
+**The Park.** Pick your affiliation once: Harbor Kings, Old Brick Society or Foundry Rivets. Each one has its own park (seaside, downtown night, industrial), with its own background life: people walking and jogging past, traffic or sailboats, and random events every half minute or so. Depending on the park those are an elevated train, a helicopter with a searchlight, flocks of birds, a speedboat, a freight train, a container crane at work, welding sparks or steam. You walk around in third person while AI regulars play live games on **six courts**: three full courts for 3v3, two 2v2 half courts on the west side and a 1v1 court on the east side. Every court has three rows of squad spots (**GOT NEXT**, **2ND**, **3RD**): stand in the first open row with your squad to get in line, and everyone moves up a row when the Got Next group goes on. Losers are put off the court and have to walk back around to the end of the line. Park-goers join your squad, and people sit on the benches and stand on the sidelines to watch, reacting to the big plays. AI-only games fast-forward through dead balls (and run faster when you can't see them). Park-goers never wander onto a court while a game is on.
 
 - **A persistent AI world (v0.4.4):** every account has its own population of 900 AI hoopers. Each one keeps the same name, build, height, badges, Rep, animations and fit, plus a home park and playing habits: morning runs, lunch breaks, after school, evenings, night owls, weekend warriors and grinders. Who is at the park depends on who is online right now on your computer's clock. Evenings are packed. At 5 a.m. a court or two may sit empty. People log on and walk in from the plaza, and people who log off walk out. When the park is too quiet to fill your game, a regular who was about to come on hops on early.
 - **Skill you can see:** AI hoopers come in five tiers: Casual, Regular, Hooper, Elite and Park Legend. The tier drives attributes (about 55 OVR for a typical casual, mid-80s for a legend), how many badges they carry and at what tier, their Rep, how flashy their gear and animations are, and their **basketball IQ**. IQ sets how fast they read the floor, how good their shots and passes are, when they reach for steals, and how often they hit green. In simulated games a Hooper team beat a Regular team 6 of 6 by about 8, and a Park Legend team beat Regulars by about 11.
@@ -39,7 +39,7 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
   - **Squad:** up to four friends.
   - **Recent:** everyone you've played with or against, with your record together.
 
-  Tap anyone to see their card: build, tier, Rep, badges, habits, home park and your history together. **Add** players you enjoyed playing with, then **Invite** them to your squad whenever they're online. Squad mates follow you around the park, step into your Got Next line first, and suit up with you in Pro-Am. After every game the results screen lists everyone from that game so you can add them right there.
+  Tap anyone to see their card: build, tier, Rep, badges, habits, home park and your history together. **Add** players you enjoyed playing with, then **Invite** them to your squad whenever they're online and not in a game. Squad mates follow you around the park, step into your Got Next line first, and suit up with you in Pro-Am. After every game the results screen lists everyone from that game so you can add them right there.
 
 - **Rules:**
   - **3v3 is full court:** a jump ball, inbounds after scores, a 24-second shot clock.
@@ -53,9 +53,15 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
   - **Boosts:** 2K17-style boosts by category (Shooting, Finishing, Playmaking, Defense, Rebounding, Athleticism). Each adds +5 to every attribute in its category, up to 99, for 1, 3 or 5 games. A boost game is used when a park or Pro-Am game tips off.
 - **Shootaround:** hit the practice hoop by the 1v1 court.
 
+**The King Tut Cup (v0.4.5 park event).** A glow-in-the-dark park among the pyramids — neon court lines, sphinxes, obelisks, a mini-golf strip and laser-tag barriers — where every game is an ante-up. Pick a stake (500 to 10,000 VC) when you claim a spot: win and you take the other side's stake too, boosted by your Cup win streak, on top of the normal game VC; lose and the stake is gone. Each Cup runs for 48 hours and ranks the most VC won against the AI hoopers who entered it. The winner gets the glow-in-the-dark mo-cap suit, and the top finishers get exclusive shoes, a celebration, a headband and VC. In every park, a 3-game win streak lights a wall of fire around the court (it grows at 6, 9 and 12 wins); in the Cup it's green lasers instead.
+
+**Crews and the Crew HQ (v0.4.5).** Start a crew with up to 39 of your friends (name, tag and color), from the Crew HQ building on any park's plaza or the social phone's Crew tab. Crews level from 1 to 40 (level rewards are coming soon). Every game you play earns crew XP — about 30% of the Rep it pays, ×1.1 in the park, ×1.3 in Pro-Am, ×1.5 in park events, and doubled when a crew member runs with you — and your members earn it too whenever they play, even while you're away. Inside the HQ: a full court and a shootaround court in your crew's colors, your online members hanging out and getting shots up, the members and level boards, and practice 5-on-5 runs once four members are on. Interior customization is coming soon.
+
+**The Pro Run (v0.4.5).** A career in the Afterhours Pro League. Pick a college and play three games — how you play sets your draft slot (two rounds of 32), and the team holding it takes you. Then an 82-game season against 31 other teams with full rosters, a play-in, four playoff rounds and the Finals, with awards at the end. Play your games in the arena or sim them, and set the sim your way: quarter length, difficulty, your minutes, playoff series length, play-in on/off, upsets and home court. Games you play pay VC and badge progress at 1.5x the park rate. No music, like Pro-Am.
+
 **Pro-Am.** The arena has announcers at the scorer's table who follow the ball and react to big plays, baseline photographers with flashes, a camera operator, subs on both benches and a courtside row. The crowd stands and throws its arms up on big plays, claps through dead balls and free throws, starts a wave now and then, and gives a standing ovation at the final buzzer. Your squad suits up with you, and open spots go to regulars from your AI world who fit the position. You build a team identity: name, abbreviation, colors, logo shape and floor wood. That branding is painted on the arena court, the LED boards, the jumbotron and your uniforms. You then play organized 5v5 with a tip-off, quarters of 2, 3 or 5 minutes, a shot clock, inbounds, fouls and free throws, and overtime if it's tied. Your team's record is saved.
 
-**VC Store.** The store has 123 original items (plus 10 Daily Spin exclusives): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, release timings, dunk packages, size-up packages and celebrations. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
+**VC Store.** The store has 156 original items (plus 10 Daily Spin exclusives and 5 King Tut Cup prizes): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, release timings, dunk packages, layup packages, size-up packages and celebrations. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
 
 v0.4.4 adds 16 animation packages.
 - **No requirements:** Kick Out and Wide Stance jumpshot bases, Feather, Dart and Rainbow releases, the Rim Rocker dunk package, the Rhythm size-up package, and Too Easy, Salute and Hand on Heart celebrations.
@@ -67,6 +73,18 @@ v0.4.4 adds 16 animation packages.
   - Ankle Taker size-up: 80 overall, 90 ball handle.
   - Crown celebration: 80 overall.
 
+**v0.4.5 adds 32 more animation packages** and a new **layup** slot, so every drive finishes the way you picked.
+- **Jumpshot bases:** Fadeaway, Hitch, Slingshot, Scissor Kick, Knee Tuck, Sway.
+- **Releases:** Wave, Statue, Snatch Back, Old School, Point, Cobra.
+- **Dunk packages:** Hammer, Liberty, Scoop, Hand Switch, Half Spin (a full 180° turn in the air) and **Eastbay** (between the legs), which needs 87 overall, 92 driving dunk, 90 vertical and Superstar Rep.
+- **Size-ups:** Pound, Snake, Crab, Stutter, Showtime.
+- **Celebrations:** Goggles, Dust Off, Airplane, Mic Drop, Take a Bow, Roar.
+- **Layups:** Basic (free), Euro Step, Finger Roll, Scoop.
+- **Every package is its own** (the v0.4.5 final pass). Each jump-shot base carries the ball on its own path (Silk, the Daily Spin base, no longer shares Skyline's). Each release has its own follow-through, release time and launch angle, held for its full time even after you land. Each dunk package has a signature finish no other package has: the store shows it first and it's about half of the package's dunks in games. Rim Rocker, Contact Dunks, Showtime and High Flyer got new signature finishes. Each size-up has its own dribble height, width, rhythm and in-place combos.
+- **Icon badge animations** can't be bought at all: your archetype's Icon badge brings its own. Sharp Eye's jumper and fanned follow-through, Hash-Slinging's wind-up dunk, Oprah's one-handed whip pass, The Clamp's two-hand clamp, The General's salute, Big Brother's cocked-arm swat, Open Arms' two-hand rebound rip and Sexy Red's post back-down.
+
+**v0.4.5 look.** Jerseys are cut on curves — a U-shaped scoop in front, a shallower one in back, wide straps and deep armholes — with a rolled binding around the neck and armholes, so they no longer look strapless. Shorts have a rolled hem that folds back to the leg, so a driven knee can't show the inside of them. Players are a touch slimmer through the chest and waist. In the parks the shops are real buildings with a counter, stocked shelves, an awning and a worker inside; the trees, palms, benches, bins and street lamps were all rebuilt; and the sea at Harbor Point has moving swells, a surf line and sailboats with real hulls and sails.
+
 The **gold chain** and the **iced-out chain** now have real textured links and a pendant (a "16" medallion, or rings of stones that catch the light).
 
 **Stats (v0.4.4).** A new menu tab, also in every pause menu, shows **lifetime stats** for each player you've built:
@@ -76,7 +94,7 @@ The **gold chain** and the **iced-out chain** now have real textured links and a
 - totals and highlights (greens, dunks, posters, ankle breakers…);
 - a split for All games, Park and Pro-Am, and a table comparing all your builds.
 
-**Auto-play** (H) now plays your player **the way your numbers say you play him**:
+**Auto-play** (H) now plays your player **the way your numbers say you play him** (since v0.4.5 it also stays on from one game to the next until you press H again):
 - shot volume and how many of those shots are threes;
 - passing, steals, boards and blocks per game;
 - how often his twos, threes and free throws go in.
@@ -85,7 +103,7 @@ With no games yet it plays like your build. After about 20 games it's mostly you
 
 **Locker Codes (v0.4.4).** A new menu tab. Enter **HELP-I-NEED-VC** for 250,000 VC. It works 3 times per account. Codes aren't case sensitive.
 
-**Soundtrack (v0.4.4).** The 20 tracks you supplied (in `client/audio/music`) play shuffled through the menus, the park, park games and practice. They sit a little lower under park games and fade out for Pro-Am, where the arena has its own sound, then pick up where they left off. A **Now Playing** ticker in the bottom-left corner shows the title for the first few seconds of each track. To fill in artist names, edit `client/audio/music/tracks.json`. Music on/off and volume are in Settings.
+**Soundtrack (v0.4.4, 25 tracks since v0.4.5).** The tracks you supplied (in `client/audio/music`) play shuffled through the menus, the park, park games and practice. They sit a little lower under park games and fade out for Pro-Am, where the arena has its own sound, then pick up where they left off. A **Now Playing** ticker in the bottom-left corner shows the title for the first few seconds of each track. To fill in artist names, edit `client/audio/music/tracks.json`. Music on/off and volume are in Settings.
 
 **Practice.** Shoot around in an indoor gym with a rebounder feeding you so you can learn your green window. Or play 1-on-1 against an AI defender to practice size-ups and step-backs. Practice pays no VC or Rep.
 
@@ -132,6 +150,23 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 - **Movement has weight.** Speed, acceleration, braking and turn rate come from height, weight and attributes. Hard cuts plant the foot, and bigger players move slower but bump harder.
 - **Responsive by design.** Every button press is buffered until the simulation can use it, so nothing gets dropped on 120/144 Hz monitors or while an animation finishes. The stick is always relative to the camera as you see it: when the 2K cam swings round on a change of possession, a held stick swings with it, so up is always up the screen. Passes, catches and steals lock you out for less time than in v0.3.
 - **Faster.** Movement, animation and the ball run 15% faster than v0.3, and v0.4.4 adds another 3.75% on top (×1.193 overall). Game and shot clocks still count real seconds, and timing windows are scaled so the green feels the same.
+- **v0.4.5 game feel:** game speed is 1.85% lower than v0.4.4 (×1.171 overall) and passes travel about 1% slower, with softer starts and turns. Stamina now matters: sprinting drains the most, every action costs a little, and standing, walking or posting up recovers. Repeating the same dribble move or the same mistake drains you faster; good plays and a high Lock-In grade give it back. Go **on fire** (3 straight greens or finishes at the rim: a flame under your feet) or **cold** (4 missed open shots: an ice crystal), and earn a position **takeover** (PG/SG shooting, SF/PF finishing, C boards and blocks) with 6 clean plays in a row. Traveling is called in every mode, the defense contests and blocks from 3.75% further, and only the Posterizer badge knocks defenders down.
+- **v0.4.5 final touches:**
+  - **Out of bounds is called on the painted lines,** like a regulation game, on every court. A ball touching the floor on or past a line is out, and so is a player with a foot on or over one. The half-court line is the back line in half-court games, and over the top of a backboard is out.
+  - **Green windows are 10% smaller** everywhere: jumpers, free throws and layups.
+  - **Every layup is timed.** Hold the shot button through the gather and let go at the top; the meter shows the window. Each layup package has its own timing (Scoop early, Basic, Euro Step after its long second step, Finger Roll late), and your Layup rating sets the window. A green layup is a big boost, not a sure thing.
+  - **Layups react to the defense:** a reverse around a shot blocker at the rim, carried and finished away from a defender on your side, a hang and double-clutch into a defender in your path, and quick and high ahead of a chaser. Each has its own timing.
+  - **Jumpers have different timings:** running jumpers come out quicker, step-backs and fadeaways a little slower, and threes a touch slower than mid-range jumpers.
+  - **Better collision:** the ball can't be dribbled through anybody any more, and bodies don't overlap in a crowd.
+  - **Tuning:**
+    - AI players are 10% smarter in every tier.
+    - The game runs 0.75% slower.
+    - Everything that drains stamina costs twice as much: sprinting, jumpers, layups, dunks, passes, dribble moves, reaching and jumping. Screens now cost some too.
+    - The rebound and block assist is 3.75% stronger.
+  - **The King Tut Cup courts** have a sphinx at center court.
+  - **Alley-oops only go to teammates who can get there.** Anyone further out gets a regular lob.
+  - **AI that attacks after an ankle-breaker:** slashers, playmakers and bigs go to the rim; shooters rise up. Fewer pointless kick-outs.
+  - **No more hitching in the parks.** People arriving and courts rotating used to build new players mid-frame, worst at the King Tut Cup; they're now reused or built a slice at a time.
 - **Ratings matter more at the ends (v0.4.4):**
   - **Under 70:** effectiveness drops off steeply. A 55 shooter's green window is about two thirds of a 70's (27 ms vs 42 ms), and it shrinks further below that.
   - **Over 95:** extra weight on top.

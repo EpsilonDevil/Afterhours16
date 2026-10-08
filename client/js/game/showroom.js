@@ -3,13 +3,10 @@ import { Scene, Material, Mesh } from '../gfx/renderer.js';
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
 import * as M from '../core/math.js';
-import { Player } from '../sim/player.js';
-import { Game } from '../sim/game.js';
-import { GRAVITY, BALL_R } from '../sim/constants.js';
+import { BALL_R } from '../sim/constants.js';
 import { PlayerVisual } from './session.js';
 import { cachedTexture } from '../world/court.js';
-
-const holdPoint = Game.prototype.holdPoint;
+import { PreviewSim } from './preview.js';
 
 export class Showroom {
   constructor(app) {
@@ -66,8 +63,8 @@ export class Showroom {
     this.yaw = 0.35; this.yawVel = 0;
     this.focus = 'full';
     this.camPos = [0, 1.4, 5]; this.camTgt = [0, 1, 0];
-    this.preview = 'idle'; this.pt = 0;
-    this.ballFree = null;
+    // v0.4.5 stage 7: the preview itself (what the player and ball do) lives in preview.js, graphics-free
+    this.sim = new PreviewSim();
     this.dragging = false;
     this.spin = d => { this.yaw += d; this.yawVel = d * 0.3; };
     this.zoom = 0;
@@ -99,118 +96,34 @@ export class Showroom {
     if (this.visual) this.visual.dispose();
     this.visual = new PlayerVisual(this.r, this.scene, build, look, { detail: 1 });
     this.scene.remove(this.visual.blob);
-    this.player = new Player(0, 0, { build: { ...build, attributes: build.attributes || {} }, name: build.name || 'Player' }, this.app.catalog);
-    this.fake = { ball: { mode: 'dribble', holder: 0 }, phase: 'live', players: [this.player] };
+    this.sim.setPlayer(build, this.app.catalog);
     this.H = this.player.phys.H;
-    this.pt = 0;
   }
 
   setFocus(f) { this.focus = f; }
-  setPreview(kind, opts = {}) { this.preview = kind; this.previewOpts = opts; this.pt = 0; this.ballFree = null; if (this.player) { this.player.action = null; this.player.y = 0; this.player.airborne = false; } }
+  setPreview(kind, opts = {}) { this.sim.setPreview(kind, opts); }
+  get preview() { return this.sim.preview; }
+  get player() { return this.sim.player; }
 
   frame(dt) {
     this.active = true;
     if (!this.visual) return;
-    const p = this.player;
-    this.pt += dt;
     if (!this.dragging) { this.yawVel *= Math.exp(-dt * 4); this.yaw += this.yawVel; }
-    p.facing = this.yaw;
-    p.vx = 0; p.vz = 0;
-    this.runPreview(dt);
-    // vertical motion
-    if (p.airborne) { p.vy -= GRAVITY * dt; p.y += p.vy * dt; if (p.y <= 0) { p.y = 0; p.vy = 0; p.airborne = false; } }
-    if (p.action) { p.action.t += dt; }
-    // ball
-    let bp;
-    if (this.ballFree) {
-      const b = this.ballFree;
-      b.vy -= GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-      if (b.y < BALL_R + 0.12 && Math.hypot(b.x, b.z) < 1.3) { b.y = BALL_R + 0.12; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
-      else if (b.y < BALL_R) { b.y = BALL_R; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
-      bp = b;
-    } else if (this.fake.ball.holder === 0) {
-      bp = holdPoint.call(this.fake, p, {});
-    }
+    const p = this.player, out = this.sim.step(dt, this.yaw);
+    const bp = out.ball;
     if (bp) {
-      M.m4compose(this.ball.matrix, [bp.x, bp.y + (this.ballFree ? 0 : 0.12), bp.z], this.ballQ);
+      M.m4compose(this.ball.matrix, [bp.x, bp.y, bp.z], this.ballQ);
       this.ball.visible = true;
     } else this.ball.visible = false;
-    const hasBall = this.fake.ball.holder === 0 && !this.ballFree;
-    const ballR = bp ? { x: bp.x, y: bp.y + (this.ballFree ? 0 : 0.12), z: bp.z } : null;
-    this.visual.anim.update(dt, { x: 0, y: p.y + 0.12, z: 0, facing: p.facing }, p, null, ballR, { hasBall, ballMode: this.fake.ball.mode, look: this.lookAt(), floorY: 0.12 });
+    this.visual.anim.update(dt, { x: 0, y: p.y + 0.12, z: 0, facing: p.facing }, p, null, bp, { hasBall: out.hasBall, ballMode: out.ballMode, look: this.lookAt(), floorY: 0.12 });
     this.updateCamera(dt);
   }
 
   lookAt() {
-    if (this.preview === 'jumpshot' || this.preview === 'dunk') return null;
+    if (this.preview === 'jumpshot' || this.preview === 'dunk' || this.preview === 'layup') return null;
     if (this.preview === 'walk' || this.preview === 'jog' || this.preview === 'sprint') { const f = this.player.facing; return [Math.sin(f) * 12, 0.12 + this.visual.view.H * 0.9, Math.cos(f) * 12]; }
     const cam = this.app.camera;
     return [cam.pos[0], cam.pos[1] - 0.1, cam.pos[2]];
-  }
-
-  runPreview(dt) {
-    const p = this.player, fb = this.fake.ball;
-    const kind = this.preview;
-    if (kind === 'idle' || kind === 'dribble' || kind === 'moves') {
-      fb.holder = 0; this.ballFree = null;
-      const cycle = 7;
-      const t = this.pt % cycle;
-      const dribbling = kind !== 'idle' || t > 3.2;
-      fb.mode = dribbling ? 'dribble' : 'held';
-      if (dribbling) p.dribble.phase = (p.dribble.phase + (kind === 'moves' ? 2.4 : 1.6) * dt) % 1;
-      if (kind === 'moves' && !p.action && this.pt > 0.6) {
-        const mv = ['cross', 'btl', 'btb', 'hesi', 'cross', 'spin'][Math.floor(this.pt / 1.1) % 6];
-        const durs = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5 };
-        p.startAction('move', durs[mv], { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
-      }
-      if (p.action && p.action.type === 'move' && p.action.t >= p.action.dur) {
-        if (['cross', 'btl', 'btb'].includes(p.action.move)) p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R';
-        p.action = null;
-      }
-      p.stance = 'normal';
-      return;
-    }
-    if (kind === 'walk' || kind === 'jog' || kind === 'sprint') {
-      // treadmill locomotion preview (the gait is velocity-driven, so the athlete runs in place)
-      const v = { walk: 1.4, jog: 3.8, sprint: 6.8 }[kind];
-      p.vx = Math.sin(p.facing) * v; p.vz = Math.cos(p.facing) * v;
-      fb.holder = -1; fb.mode = 'dead'; this.ballFree = null; p.action = null;
-      return;
-    }
-    if (kind === 'jumpshot') {
-      const pkg = p.shotPkg;
-      const tRel = pkg.tRel, jumpH = p.phys.vertical * pkg.jumpK * 0.52, tk = Math.max(0.2, tRel - Math.sqrt(2 * jumpH / 9.81) * 0.9), total = tRel + 1.9;
-      const t = this.pt % total;
-      if (t < 0.02 || !p.action || p.action.type !== 'shoot') {
-        if (t < 0.05) { fb.holder = 0; fb.mode = 'held'; this.ballFree = null; p.action = null; p.startAction('shoot', tRel + 0.6, { tRel, takeoff: tk, releaseAt: tRel, jumpH, dRim: 5, kind: 'jumper' }); p.action.t = t; }
-      }
-      const a = p.action;
-      if (a && !a.jumped && a.t >= tk) { a.jumped = true; p.jump(a.jumpH); }
-      if (a && !a.released && a.t >= tRel) {
-        a.released = true;
-        const bp = holdPoint.call(this.fake, p, {});
-        const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
-        this.ballFree = { x: bp.x, y: bp.y, z: bp.z, vx: fx * 2.6, vy: 6.2, vz: fz * 2.6 };
-        fb.holder = -1;
-      }
-      if (a && a.t > a.dur + 0.8) { p.action = null; }
-      return;
-    }
-    if (kind === 'dunk') {
-      const total = 2.6, t = this.pt % total;
-      const style = this.previewOpts?.style || 'power';
-      if (t < 0.05 && (!p.action || p.action.type !== 'dunk')) { fb.holder = 0; fb.mode = 'held'; this.ballFree = null; p.action = null; p.startAction('dunk', 1.6, { takeoff: 0.35, slam: 0.85, style, tUp: 0.5, jumpH: p.phys.vertical }); }
-      const a = p.action;
-      if (a && !a.jumped && a.t >= a.takeoff) { a.jumped = true; p.jump(a.jumpH); }
-      if (a && !a.slammed && a.t >= a.slam) { a.slammed = true; const bp = holdPoint.call(this.fake, p, {}); this.ballFree = { x: bp.x, y: bp.y, z: bp.z, vx: 0, vy: -5, vz: 0 }; fb.holder = -1; }
-      if (a && a.t > a.dur) p.action = null;
-      return;
-    }
-    if (kind === 'celebrate') {
-      fb.holder = -1; this.ballFree = null;
-      if (!p.action) p.startAction('celebrate', 2.4, { kind: this.previewOpts?.kind || 'flex' });
-      if (p.action && p.action.t > p.action.dur) p.action = null;
-    }
   }
 
   updateCamera(dt) {

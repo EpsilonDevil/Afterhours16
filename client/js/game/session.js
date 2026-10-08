@@ -10,21 +10,48 @@ import * as T from '../gfx/textures.js';
 import * as M from '../core/math.js';
 import { cachedTexture } from '../world/court.js';
 import { CameraRig, CAM_LABEL } from './camera.js';
-import { GRADE, greenWindowMs, contestFor, SMOTHER } from '../sim/shots.js';
+import { GRADE, greenWindowMs, layupWindowMs, contestFor, SMOTHER } from '../sim/shots.js';
 import { promptGlyph } from '../core/input.js';
 import { isThree } from '../sim/constants.js';
 import { audio } from '../core/audio.js';
 import { B } from '../char/skeleton.js';
 import { LockedInGrade } from './grade.js';
-import { settings } from '../core/settings.js';
+import { TAKEOVERS, TAKEOVER_NEED } from '../sim/badges.js';
+import { settings, saveSettings } from '../core/settings.js';
 import { GameIntro } from './present.js';
+import { visualKey } from './vispool.js';
 
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
 
+// v0.4.5: auto-play (H) carries over from one game to the next (park, Pro-Am, the Pro Run, crew runs) until you
+// turn it off yourself; the shootaround always starts with you in control, and AI-only games use their own flag
+export function startsOnAutoPlay(opts) { return opts.background ? !!opts.assist : (opts.assist ?? (opts.mode !== 'practice' && !!settings.autoPlay)); }
+export function toggleAutoPlay(g) { g.assist = !g.assist; if (g.mode !== 'practice') { settings.autoPlay = g.assist; saveSettings(); } return g.assist; }
+
+// stand-in while a pooled athlete is still being built (see vispool.js): animates nothing, draws nothing
+const placeholderView = () => ({ H: 1.95, visible: true, model: null, pending: true, update() {}, setVisible(v) { this.visible = v; }, setShadow() {}, addTo() { return this; }, removeFrom() {}, dispose() {} });
+
 export class PlayerVisual {
+  // opts.pool (v0.4.5 stage 7): take the athlete from a VisualPool, reusing one that's free or building a new
+  // one over the next frames; the player is invisible until it's ready (this.pending)
   constructor(r, scene, build, look, opts = {}) {
-    this.view = new AthleteView(r, build, look, { detail: opts.detail ?? 1, faceRes: opts.faceRes }).addTo(scene);
-    this.anim = new Animator(this.view);
+    this.scene = scene;
+    this.ring = null;
+    this.pending = false;
+    const vopts = { detail: opts.detail ?? 1, faceRes: opts.faceRes };
+    this.pool = opts.pool || null;
+    if (this.pool) {
+      this.key = visualKey(build, look, vopts);
+      const v = this.pool.take(this.key);
+      if (v) this.attach(v);
+      else if (opts.now) this.attach(new AthleteView(r, build, look, vopts)); // needed right now: build it here
+      else {
+        this.pending = true;
+        this.view = placeholderView();
+        this.anim = new Animator(this.view);
+        this.job = this.pool.request(this.key, build, look, vopts, view => { this.job = null; this.attach(view); });
+      }
+    } else this.attach(new AthleteView(r, build, look, vopts));
     const ctx = r.ctx;
     const blobTex = cachedTexture(ctx, 'blob', () => T.radialBlob(128), { wrap: 'clamp' });
     if (!PlayerVisual.blobMat) PlayerVisual.blobMat = new Material({ map: blobTex, shading: 'unlit', blend: 'multiply', depthWrite: false, fog: false });
@@ -32,22 +59,52 @@ export class PlayerVisual {
     this.blob = new Mesh(PlayerVisual.blobGeo, PlayerVisual.blobMat, { castShadow: false, reflect: false });
     this.blob.order = 3;
     scene.add(this.blob);
-    this.scene = scene;
-    this.ring = null;
+  }
+  attach(view) {
+    const visible = this.view ? this.view.visible !== false : true;
+    this.pending = false;
+    this.view = view.addTo(this.scene);
+    view.setVisible(visible);
+    this.anim = new Animator(view);
   }
   addRing(r, color) {
     const ctx = r.ctx;
     const tex = cachedTexture(ctx, 'ring', () => T.ringTexture(256), { wrap: 'clamp' });
-    this.ring = new Mesh(ctx.geometry(G.plane(1, 1)), new Material({ map: tex, color: M.hexLinear(color), shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false });
+    // (the shared unit plane: these used to make, and leak, a new plane every game)
+    this.ring = new Mesh(PlayerVisual.blobGeo, new Material({ map: tex, color: M.hexLinear(color), shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false });
     this.ring.order = 4;
     this.scene.add(this.ring);
   }
+  // v0.4.5 Hot / Cold: a flame or ice icon on the floor under the player (replaces the user's ring)
+  addStatus(r) {
+    const ctx = r.ctx;
+    const mk = (key, fn) => { const m = new Mesh(PlayerVisual.blobGeo, new Material({ map: cachedTexture(ctx, key, () => fn(256), { wrap: 'clamp' }), color: [1, 1, 1], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false }); m.order = 5; m.visible = false; this.scene.add(m); return m; };
+    this.fire = mk('hotFlame', T.flameTexture);
+    this.ice = mk('coldIce', T.iceTexture);
+    this.statusT = 0;
+  }
+  setStatus(hot, cold, dt) {
+    if (!this.fire) return;
+    this.fire.visible = !!hot; this.ice.visible = !hot && !!cold;
+    if (this.ring) this.ring.visible = !hot && !cold;
+    this.statusT += dt;
+  }
   place(x, y, z) {
-    const s = 0.95 - Math.min(0.5, y * 0.4);
+    const s = this.pending ? 0 : 0.95 - Math.min(0.5, y * 0.4); // no floor shadow under somebody not there yet
     M.m4fromYaw(this.blob.matrix, x, 0.012, z, 0, s);
     if (this.ring) M.m4fromYaw(this.ring.matrix, x, 0.016, z, 0, 1.25);
+    if (this.fire && this.fire.visible) M.m4fromYaw(this.fire.matrix, x, 0.018, z, this.statusT * 0.6, 1.45 + 0.08 * Math.sin(this.statusT * 9));
+    if (this.ice && this.ice.visible) M.m4fromYaw(this.ice.matrix, x, 0.018, z, this.statusT * 0.15, 1.35 + 0.03 * Math.sin(this.statusT * 2));
   }
-  dispose() { this.view.dispose(); this.scene.remove(this.blob); if (this.ring) this.scene.remove(this.ring); }
+  // pooled: the athlete goes back to the pool for the next person who looks like this (or a build in progress is
+  // cancelled); otherwise its meshes and textures are freed. Safe to call twice.
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.pool) { if (this.pending) this.pool.cancel(this.job); else this.pool.release(this.key, this.view); }
+    else this.view.dispose();
+    this.scene.remove(this.blob); if (this.ring) this.scene.remove(this.ring); if (this.fire) { this.scene.remove(this.fire); this.scene.remove(this.ice); }
+  }
 }
 
 export class MatchSession {
@@ -64,7 +121,8 @@ export class MatchSession {
     this.game = new Game({
       mode: opts.mode, full: !!opts.full, seed: opts.seed, rosters: opts.rosters, catalog: this.catalog, target: opts.target, winBy2: opts.winBy2,
       quarterLen: opts.quarterLen, quarters: opts.quarters, surface: this.venue.theme.court.surface === 'wood' ? 'wood' : 'asphalt',
-      difficulty: opts.difficulty ?? 0.6, assist: !!opts.assist,
+      // v0.4.5: your auto-play choice carries over to every game you play (not the shootaround)
+      difficulty: opts.difficulty ?? 0.6, assist: startsOnAutoPlay(opts),
       greenBonus: !opts.background && settings.shotMeter === false ? 1.1 : 1,
     });
     this.game.teamsMeta = this.teams;
@@ -73,9 +131,13 @@ export class MatchSession {
     this.visuals = this.game.players.map((p, i) => {
       const e = opts.rosters[p.team][this.game.teams[p.team].indexOf(p)];
       // full-res face for the user's player; background hub games use the lighter LOD
-      const lod = opts.background ? { detail: 0.75 } : p.human ? { detail: 1 } : { detail: 1, faceRes: 512 };
+      // v0.4.5 stage 7: background games share the park's pool with the walkers (same detail), so the people
+      // who step onto a court keep the athlete they walked over in, and new faces are built across frames
+      // (your own games use the pool too, with athletes built ahead of time; see ParkHub.prebuild)
+      const lod = opts.background ? { detail: 0.75, pool: opts.pool } : p.human ? { detail: 1, pool: opts.pool, now: true } : { detail: 1, faceRes: 512, pool: opts.pool, now: true };
       const pv = new PlayerVisual(this.r, this.scene, e.build, e.look || resolveLook(e.build, this.catalog), lod);
       if (p.human) pv.addRing(this.r, '#ffd84a');
+      if (!opts.background) pv.addStatus(this.r);
       return pv;
     });
     // ball
@@ -110,6 +172,7 @@ export class MatchSession {
     this.grade = !this.background && this.game.human ? new LockedInGrade(this.game, this.game.human.id) : null;
     // v0.4.3: team intros before park and Pro-Am games
     this.intro = !this.background && opts.intro !== false && (opts.mode === 'park' || opts.mode === 'proam') ? new GameIntro(this) : null;
+    if (!this.background && this.game.assist && this.game.human) this.hud.pushFeed('Auto-play is ON (H to take over)');
   }
   get inIntro() { return !!(this.intro && !this.intro.done); }
 
@@ -235,6 +298,8 @@ export class MatchSession {
   }
 
   celebrationKind(p) {
+    // v0.4.5: The General (Icon badge) unlocks its own salute, which beats whatever is equipped
+    if (p.icon === 'the_general') return 'general';
     const id = p.entry.build.equipment?.celebration;
     const item = id && this.catalog[id];
     return item?.anim || ['flex', 'chest', 'point'][p.id % 3];
@@ -250,10 +315,14 @@ export class MatchSession {
     const g = this.game, inp = this.input;
     if (!this.background) {
       if (inp.wasPressed('camera')) this.hud.showCam(CAM_LABEL[this.rig.cycle()]);
-      if (inp.wasPressed('assist')) { g.assist = !g.assist; this.hud.pushFeed(g.assist ? 'Auto-play ON (H)' : 'Auto-play OFF (H)'); }
+      if (inp.wasPressed('assist')) {
+        toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)');
+      }
       if (inp.wasPressed('help')) this.toggleHelp();
     }
     if (this.paused) { this.render(0); return; }
+    // a background game whose players are still being built waits at the check (nobody plays invisible)
+    if (this.background && this.visuals.some(v => v.pending)) { this.render(0); return; }
     if (this.inIntro && g.over) this.intro.finish();
     if (this.inIntro) {
       if (!this.background && (inp.wasPressed('shoot') || inp.wasPressed('pass'))) this.intro.skip();
@@ -263,23 +332,28 @@ export class MatchSession {
     }
     // slow motion for highlights
     if (this.slowT > 0) { this.slowT -= dt; this.timeScale = M.damp(this.timeScale, 0.35, 10, dt); } else this.timeScale = M.damp(this.timeScale, 1, 6, dt);
-    const sdt = Math.min(0.1, dt) * this.timeScale * (g.speed || 1);
+    // v0.4.5: background (AI-only) park games can run faster than real time; the park sets this.rate per court
+    const rate = this.background ? (this.rate || 1) : 1;
+    const sdt = Math.min(0.1, dt) * this.timeScale * (g.speed || 1) * rate;
     this.acc += sdt;
     let steps = 0;
     if (!this.background) this.captureInput();
     const evs = this.frameEvents = [];
-    while (this.acc >= DT && steps < 6) {
+    while (this.acc >= DT && steps < (this.background ? 18 : 6)) {
       const intent = this.background ? null : this.stepIntent();
       if (intent) g.setInput(intent);
       g.step(DT);
       if (!this.background) this.ageInput(DT);
-      if (this.background) this.backgroundEvents(g.events); else { this.handleEvents(g.events); for (const e of g.events) evs.push(e); }
-      if (this.grade) { for (const e of g.events) this.grade.onEvent(e); this.grade.tick(DT); }
+      if (this.background) this.backgroundEvents(g.events); else this.handleEvents(g.events);
+      for (const e of g.events) evs.push(e);
+      if (this.grade) { for (const e of g.events) this.grade.onEvent(e); this.grade.tick(DT); g.lockIn = { id: this.grade.me, idx: this.grade.index }; }
       this.acc -= DT; steps++;
     }
     if (g.over && !this.ended) { this.ended = true; this.endT = 0; if (this.grade) this.app.lastGrade = this.grade.result(); }
-    if (this.ended) { this.endT += dt; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }
-    this.render(dt);
+    if (this.background && this.acc > DT * 2) this.acc = DT * 2;
+    this.lastEvents = evs; // v0.4.5: park spectators read these after the frame
+    if (this.ended) { this.endT += dt * rate; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }
+    this.render(dt * rate); // a sped-up background game animates at its own pace (no foot sliding)
   }
 
   render(dt) {
@@ -300,6 +374,7 @@ export class MatchSession {
       const x = M.lerp(p.prevX, p.x, alpha) + ox, z = M.lerp(p.prevZ, p.z, alpha) + oz, y = M.lerp(p.prevY, p.y, alpha);
       const f = M.angleLerp(p.prevFacing, p.facing, alpha);
       v.anim.update(dt * this.timeScale, { x, y, z, facing: f }, p, this.gameProxy(), ballW);
+      v.setStatus(p.hot, p.cold, dt);
       v.place(x, y, z);
       // squeaks on hard plants
       if (p.plantT > 0 && !this.lastPlant.get(p.id)) audio.squeak(this.pan(x));
@@ -373,6 +448,10 @@ export class MatchSession {
       const myTeam = g.human ? g.human.team : 0;
       this.rumbleFor(e);
       if (e.type === 'badge' && mine) { const bd = this.app.config.badges?.[e.badge]; hud.badge({ key: e.badge, tier: e.tier, name: bd?.name || e.badge, group: bd?.group }); continue; }
+      // v0.4.5 hot / cold / takeovers
+      if (e.type === 'hot' && e.on && P) { if (mine) { hud.callout('ON FIRE', 'hot'); audio.cheer(0.9); } else hud.pushFeed(`${P.name} is on fire`); continue; }
+      if (e.type === 'cold' && e.on && P) { if (mine) hud.callout('GOING COLD', 'cold'); else hud.pushFeed(`${P.name} went cold`); continue; }
+      if (e.type === 'takeover' && P) { if (e.on) { if (mine) { hud.callout(e.label.toUpperCase(), 'hot'); audio.cheer(1.1); this.rig.shake(0.12, 0.3); } else hud.pushFeed(`${P.name}: ${e.label}`); } continue; }
       switch (e.type) {
         case 'dribble': audio.bounce(0.55 * this.vol(e.x + ox, e.z + oz), this.pan(e.x + ox)); break;
         case 'bounce': audio.bounce(Math.min(1, e.v / 5), this.pan(e.x + ox)); break;
@@ -380,12 +459,13 @@ export class MatchSession {
         case 'board': audio.board(e.v); break;
         case 'through': audio.swish(e.clean); { const h = this.hoopFor(e.side); if (h) h.net.energy = 1; } break;
         case 'release': {
-          if (mine && e.kind !== 'layup') {
+          // (v0.4.5: timed layups get the same feedback; an untimed tap doesn't)
+          if (mine && (e.kind !== 'layup' || e.grade !== 'none')) {
             const gr = GRADE[e.grade] || GRADE.none;
             this.meterGrade = e.grade; this.meterHold = 0.7;
             const pos = this.screenOf(P, 2.4);
             const pct = Math.round(e.chance * 100);
-            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot'), gr.color, `${pct}% · ${e.contest > 0.75 ? 'Smothered' : e.contest > 0.45 ? 'Contested' : e.contest > 0.2 ? 'Light contest' : 'Wide open'}`);
+            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, `${pct}% · ${e.contest > 0.75 ? 'Smothered' : e.contest > 0.45 ? 'Contested' : e.contest > 0.2 ? 'Light contest' : 'Wide open'}`);
             if (e.grade === 'excellent') { audio.ui('green'); this.r.particles.burst(P.x + ox, 2.6 + P.y, P.z + oz, 26, { color: [0.3, 2.2, 0.8], speed: 2.4, life: 0.7, size: 0.035, gravity: -2 }); }
           }
           break;
@@ -442,14 +522,16 @@ export class MatchSession {
         }
         case 'pumpfake': break;
         case 'bump': audio.board(0.4); break;
-        case 'turnover': case 'violation': audio.whistle(); hud.pushFeed(e.why || e.what || 'Turnover', 'neutral'); break;
+        case 'turnover': case 'violation':
+          if (e.type === 'violation' && e.what === 'Traveling') { if (P && P.team === myTeam) hud.callout('TRAVELING', 'bad'); break; } // the turnover event that follows whistles and posts it
+          audio.whistle(); hud.pushFeed(e.why || e.what || 'Turnover', 'neutral'); break;
         case 'oob': audio.whistle(); break;
         case 'foul': audio.whistle(); break;
         case 'feed': hud.pushFeed(e.text, 'neutral'); break;
         case 'check': hud.pushFeed(e.team === myTeam ? 'Your ball — check it up' : 'Defense — check ball', 'neutral'); this.rig.snap(); this.checkCelebrations(); break;
         case 'inbound': this.rig.snap(); this.checkCelebrations(); break;
         case 'cleared': if (e.team === myTeam) hud.pushFeed('Ball cleared', 'neutral'); break;
-        case 'possession': if (g.mode === 'park' && e.team === myTeam && e.reason !== 'check') hud.pushFeed('Take it back past the arc!', 'neutral'); break;
+        case 'possession': if (g.mode === 'park' && g.half && e.team === myTeam && e.reason !== 'check') hud.pushFeed('Take it back past the arc!', 'neutral'); break;
         case 'noCount': audio.whistle(); break;
         case 'buzzer': audio.buzzer(); break;
         case 'period': hud.callout(g.quarter > g.quarters ? 'OVERTIME' : ['', '1ST', '2ND', '3RD', '4TH'][g.quarter] + ' QUARTER', ''); break;
@@ -507,7 +589,7 @@ export class MatchSession {
 
   jumboInfo() {
     const g = this.game, t = this.teams;
-    return { title: t[0].name ? 'PRO-AM' : 'AFTERHOURS', home: g.score[0], away: g.score[1], homeName: t[0].abbr, awayName: t[1].abbr, homeColor: t[0].color, awayColor: t[1].color, clock: fmtClock(g.gameClock), period: g.quarter > g.quarters ? 'OT' : `Q${g.quarter}` };
+    return { title: this.opts.jumboTitle || (t[0].name ? 'PRO-AM' : 'AFTERHOURS'), home: g.score[0], away: g.score[1], homeName: t[0].abbr, awayName: t[1].abbr, homeColor: t[0].color, awayColor: t[1].color, clock: fmtClock(g.gameClock), period: g.quarter > g.quarters ? 'OT' : `Q${g.quarter}` };
   }
 
   updateHUD(dt) {
@@ -541,15 +623,25 @@ export class MatchSession {
         const attr = ft ? me.ratings.free_throw : (three ? me.ratings.three_point : me.ratings.mid_range);
         const d = Math.hypot(rim.x - me.x, rim.z - me.z);
         const contest = ft ? 0 : contestFor(me, g.opponents(me), rim, me.phys.reach * (me.shotPkg?.relK ?? 0.93) + (a.jumpH ?? 0) * 0.95);
-        const winMs = greenWindowMs(attr, me.badges, { ft, contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner: three && Math.abs(a.startX ?? 0) > 6.2, pkg: ft || a.kind === 'close' ? null : me.shotPkg });
+        const winMs = greenWindowMs(attr, me.badges, { ft, contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner: three && Math.abs(a.startX ?? 0) > 6.2, pkg: ft || a.kind === 'close' ? null : me.shotPkg, greenK: g.greenK(me) });
         const win = winMs * g.speed / 1000 / a.tRel;
         if (settings.shotMeter === false) hud.setMeter(null);
         else hud.setMeter({ x: pos.x, y: pos.y, fill: a.t / a.tRel, greenAt: 1, greenW: win * 2, grade: '', contest, smothered: !ft && contest >= SMOTHER });
+      } else if (a && a.type === 'layup' && !a.released && !g.assist && !a.untimed && a.releaseAt == null && a.t > 0.04) {
+        // v0.4.5 timed layup: the same meter, filling to the top of the layup (its own window and timing)
+        const rim = g.rimFor(me.team);
+        const contest = contestFor(me, g.opponents(me), rim, me.phys.reach + (a.jumpH ?? 0) * 0.9);
+        const winMs = layupWindowMs(me.ratings.layup, me.badges, { contest, lstyle: a.lstyle, greenK: g.greenK(me) });
+        const win = winMs * g.speed / 1000 / a.tRel;
+        if (settings.shotMeter === false) hud.setMeter(null);
+        else hud.setMeter({ x: pos.x, y: pos.y, fill: a.t / a.tRel, greenAt: 1, greenW: win * 2, grade: '', contest, smothered: false });
       } else if (this.meterHold > 0 && settings.shotMeter !== false) {
         this.meterHold -= dt;
         hud.setMeter({ x: pos.x, y: pos.y, fill: 1, greenAt: 1, greenW: 0.06, grade: this.meterGrade });
       } else hud.setMeter(null);
       hud.setStamina(pos.x, pos.y + 70, me.stamina, me.sprinting || me.stamina < 0.5);
+      const to = me.takeover, TO = TAKEOVERS[to.kind];
+      hud.setStatus(this.inIntro ? null : { hot: !!me.hot, cold: !!me.cold, takeover: TO && (to.active || to.prog > 0) ? { label: TO.label, active: to.active, left: Math.ceil(to.left), prog: to.prog, need: TAKEOVER_NEED } : null });
     }
     // tags: names + icon numbers for passing
     if (this.inIntro) hud.setTags([]);
@@ -569,6 +661,8 @@ export class MatchSession {
   }
 
   dispose() {
+    if (this.disposed) return; // the park can finish a court's game from two places in one frame
+    this.disposed = true;
     for (const v of this.visuals) v.dispose();
     this.scene.remove(this.ballMesh);
     this.scene.remove(this.ballBlob);

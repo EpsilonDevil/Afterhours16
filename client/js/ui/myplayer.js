@@ -34,8 +34,8 @@ function attributes(app, root, c) {
     const projected = { ...c.attributes, ...pending };
     const ovr = overall(projected, c.position);
     root.innerHTML = `
-      <div class="row between"><div class="muted">Upgrade with VC up to each cap. Caps come from position, archetype and body.</div>
-        <div class="row gap"><button class="btn ghost" data-max>Max all · ${money(c.max_upgrade_cost)} VC</button></div></div>
+      <div class="row between"><div class="muted">Upgrade with VC up to each cap. Every build tops out at ${app.config.badge_rules?.ovr_cap ?? 90} OVR; Hall of Fame badges bring cap breakers that push maxed attributes past it.</div>
+        <div class="row gap">${c.cap_breakers_available ? `<button class="btn" data-cb>Cap breakers · ${c.cap_breakers_available}</button>` : ''}<button class="btn ghost" data-max>Max all · ${money(c.max_upgrade_cost)} VC</button></div></div>
       <div class="attr-cols">${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => {
         const cur = c.attributes[k], nv = pending[k] ?? cur, cap = c.caps[k];
         return `<div class="attr-row up"><span>${ATTR_LABEL[k]}</span>${bar(nv, 99, cap, nv > cur ? 'pending' : '')}<b style="color:${ratingColor(nv)}">${nv}</b>
@@ -47,6 +47,7 @@ function attributes(app, root, c) {
     $$('[data-inc5]', root).forEach(b => b.onclick = () => { const k = b.dataset.inc5; pending[k] = Math.min(c.caps[k], (pending[k] ?? c.attributes[k]) + 5); draw(); });
     $$('[data-dec]', root).forEach(b => b.onclick = () => { const k = b.dataset.dec; pending[k] = Math.max(c.attributes[k], (pending[k] ?? c.attributes[k]) - 1); if (pending[k] === c.attributes[k]) delete pending[k]; draw(); });
     $('[data-reset]', root).onclick = () => { for (const k in pending) delete pending[k]; draw(); };
+    const cbb = $('[data-cb]', root); if (cbb) cbb.onclick = () => openCapBreakers(app, () => Screens.go(app, 'myplayer', { tab: 'attributes' }));
     $('[data-apply]', root).onclick = async ev => {
       ev.currentTarget.disabled = true;
       try { const res = await app.api.mutate(`/api/characters/${c.id}/upgrade`, { targets: pending }); app.replaceChar(res.character); app.setBalance(res.balance); app.audio.ui('buy'); toast(`Upgraded for ${money(res.cost)} VC.`); Screens.go(app, 'myplayer', { tab: 'attributes' }); }
@@ -62,11 +63,55 @@ function attributes(app, root, c) {
   draw();
 }
 
+// v0.4.5 cap breakers: +1 per breaker to an attribute that's at its cap and below 99. Opens after a game in
+// which a Hall of Fame badge brought new ones, and from the Attributes tab.
+export function openCapBreakers(app, done = () => {}) {
+  const c = app.char();
+  if (!c) return done();
+  const avail = c.cap_breakers_available || 0;
+  const plan = {};
+  const left = () => avail - Object.values(plan).reduce((a, b) => a + b, 0);
+  const card = modal(`<h2>Cap breakers</h2><div id="cb-body"></div>`, { wide: true, close: false });
+  const body = card.querySelector('#cb-body');
+  const draw = () => {
+    const ovr = overall(Object.fromEntries(ATTRS.map(k => [k, c.attributes[k] + (plan[k] || 0)])), c.position);
+    body.innerHTML = `<p class="muted">Each cap breaker adds +1 to an attribute that's maxed out on your build (at its cap, below 99), past the ${app.config.badge_rules?.ovr_cap ?? 90} OVR cap. Upgrade an attribute to its cap with VC first to make it eligible.</p>
+      <div class="row between"><div>Left to place <b class="big">${left()}</b> of ${avail}</div><div>OVR <b class="big">${ovr}</b></div></div>
+      <div class="attr-cols">${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => {
+        const cur = c.attributes[k], cap = c.caps[k], n = plan[k] || 0, ok = cur >= cap && cap < 99;
+        return `<div class="attr-row up ${ok ? '' : 'muted'}"><span>${ATTR_LABEL[k]}</span>${bar(cur + n, 99, cap + n, n ? 'pending' : '')}<b style="color:${ratingColor(cur + n)}">${cur + n}</b>
+          <span class="steppers"><button data-cbd="${k}" ${n ? '' : 'disabled'}>−</button><button data-cbi="${k}" ${ok && left() > 0 && cur + n < 99 ? '' : 'disabled'}>+</button></span></div>`;
+      }).join('')}</div>`).join('')}</div>
+      <div class="row gap end"><button class="btn ghost" data-later>${left() === avail ? 'Save for later' : 'Cancel'}</button><button class="btn primary" data-ok ${left() === avail ? 'disabled' : ''}>Use cap breakers</button></div>`;
+    body.querySelectorAll('[data-cbi]').forEach(b => b.onclick = () => { const k = b.dataset.cbi; plan[k] = (plan[k] || 0) + 1; draw(); });
+    body.querySelectorAll('[data-cbd]').forEach(b => b.onclick = () => { const k = b.dataset.cbd; plan[k] = Math.max(0, (plan[k] || 0) - 1); if (!plan[k]) delete plan[k]; draw(); });
+    body.querySelector('[data-later]').onclick = () => { closeModal(); done(); };
+    body.querySelector('[data-ok]').onclick = async ev => {
+      ev.currentTarget.disabled = true;
+      try {
+        let res = null;
+        for (const [k, n] of Object.entries(plan)) res = await app.api.mutate(`/api/characters/${c.id}/capbreakers`, { attribute: k, count: n });
+        if (res) app.replaceChar(res.character);
+        app.audio.ui('buy'); toast('Cap breakers applied.');
+        closeModal(); done();
+      } catch (e) { toast(e.message, 'error'); ev.currentTarget.disabled = false; }
+    };
+  };
+  draw();
+}
+
 function badges(app, root, c) {
   const defs = app.config.badges;
   const groups = {};
+  for (const g of ['Shooting', 'Finishing', 'Playmaking', 'Defense', 'Rebounding']) groups[g] = [];
   for (const [id, b] of Object.entries(defs)) (groups[b.group] = groups[b.group] || []).push([id, b]);
-  root.innerHTML = `<div class="muted">Badges level up from what you do in games: Bronze → Silver → Gold → Hall of Fame. Every earned badge is active.</div>
+  for (const g in groups) if (!groups[g].length) delete groups[g];
+  const rules = app.config.badge_rules || { hof_limit: 7 };
+  const icon = c.icon_badge && app.config.icon_badges?.[c.icon_badge];
+  const mineIcon = Object.entries(app.config.icon_badges || {}).find(([, v]) => v.archetype === c.archetype);
+  root.innerHTML = `<div class="muted">Badges level up from what you do in games: Bronze → Silver → Gold → Hall of Fame. Every earned badge is active, and each tier is a big step up from the last. A stat with none of its badges plays 10% weaker. A build holds up to ${rules.hof_limit} Hall of Fame badges: the first 5 bring 5 cap breakers each, and the ${rules.hof_limit}th unlocks your archetype's Icon badge.</div>
+    <div class="icon-badge ${icon ? 'on' : ''}"><div class="badge-icon">★</div><div><b>${esc(icon ? icon.name : mineIcon ? mineIcon[1].name : 'Icon badge')}</b>
+      <small>${icon ? 'UNLOCKED · ' : `Locked · ${c.hof_count || 0}/${rules.hof_limit} Hall of Fame · `}${esc((icon || mineIcon?.[1])?.desc || '')}</small></div></div>
     ${Object.entries(groups).map(([g, list]) => `<h5 class="group-h">${g}</h5><div class="badge-grid">${list.map(([id, b]) => {
       const st = c.badges?.[id] || { progress: 0, tier: 0 };
       const next = b.tiers[st.tier] ?? null, prev = st.tier ? b.tiers[st.tier - 1] : 0;
@@ -77,7 +122,7 @@ function badges(app, root, c) {
     }).join('')}</div>`).join('')}`;
 }
 
-const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['sizeup', 'Size-up package', 'moves'], ['celebration', 'Celebration', 'celebrate']];
+const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['celebration', 'Celebration', 'celebrate']];
 function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
@@ -97,7 +142,10 @@ function animations(app, root, c) {
     const kind = b.dataset.preview;
     const dk = app.catalog[ch.equipment.dunk];
     const cel = app.catalog[ch.equipment.celebration];
-    app.showroom.setPreview(kind, { style: dk?.styles?.[0], kind: cel?.anim || 'flex' });
+    // v0.4.5: preview the equipped layup and size-up packages with their own style too
+    const lay = app.catalog[ch.equipment.layup], su = app.catalog[ch.equipment.sizeup];
+    const style = kind === 'layup' ? (lay?.style || 'basic') : kind === 'moves' ? (su?.style || 'basic') : dk?.styles?.[0];
+    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex' });
     app.showroom.setFocus(kind === 'celebrate' ? 'upper' : 'wide');
   });
 }

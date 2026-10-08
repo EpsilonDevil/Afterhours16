@@ -5,7 +5,7 @@ import { enterPark } from './modes.js';
 
 const CATS = [
   ['top', 'Tops', 'upper'], ['bottom', 'Bottoms', 'full'], ['shoes', 'Shoes', 'shoes'],
-  ['accessory', 'Accessories', 'full'], ['jumpshot', 'Jumpshots', 'wide'], ['dunk', 'Dunks', 'wide'], ['sizeup', 'Size-Ups', 'wide'], ['celebration', 'Celebrations', 'upper'],
+  ['accessory', 'Accessories', 'full'], ['jumpshot', 'Jumpshots', 'wide'], ['dunk', 'Dunks', 'wide'], ['layup', 'Layups', 'wide'], ['sizeup', 'Size-Ups', 'wide'], ['celebration', 'Celebrations', 'upper'],
 ];
 const ACC_SLOTS = new Set(['socks', 'headband', 'sleeve', 'leg_sleeve', 'wristband', 'knee_pad', 'chain']);
 const inCat = (i, cat) => cat === 'accessory' ? ACC_SLOTS.has(i.slot) : cat === 'jumpshot' ? (i.slot === 'jumpshot' || i.slot === 'release') : i.slot === cat;
@@ -39,7 +39,7 @@ export function render(app, root, params = {}) {
 }
 
 function swatch(i) {
-  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : 'JS'}</div>`;
+  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : 'JS'}</div>`;
   const a = i.color || '#888', b = i.trim || i.accent || i.secondary || '#fff';
   return `<div class="sw-item" style="--a:${a};--b:${b}"><i></i></div>`;
 }
@@ -59,14 +59,14 @@ function card(app, c, i, inv, sel) {
 
 function detail(app, c, i, inv) {
   const owned = inv.has(i.id), equipped = c.equipment[i.slot] === i.id, lock = lockReason(app, c, i);
-  const optional = !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup'].includes(i.slot);
+  const optional = !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup'].includes(i.slot);
   const extra = i.release_seconds ? `Release speed ${i.release_seconds < 0.66 ? 'Quick' : i.release_seconds > 0.8 ? 'Slow' : 'Normal'} · arc ${i.arc}°` : i.set_height ? `Set point ${i.set_height > 1.08 ? 'High' : i.set_height < 1 ? 'Low' : 'Medium'}` : i.styles ? `Styles: ${i.styles.map(title).join(', ')}` : i.move_speed ? `Move speed ×${i.move_speed}` : i.cut ? `${title(i.cut)}-top` : '';
   return `<aside class="panel store-detail">
     <div class="eyebrow">${esc(title(i.slot))}</div><h2>${esc(i.name)}</h2>
     <p class="muted">${esc(i.description || '')}</p>${extra ? `<p class="small">${esc(extra)}</p>` : ''}
     ${lock && !owned ? `<p class="lock">🔒 Requires ${esc(lock)}</p>` : ''}
-    <div class="price">${i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
-    <div class="row gap">${owned ? (equipped ? (optional ? '<button class="btn ghost" data-unequip>Unequip</button>' : '<button class="btn ghost" disabled>Equipped</button>') : '<button class="btn primary" data-equip>Equip</button>') : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy</button>`}</div>
+    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
+    <div class="row gap">${owned ? (equipped ? (optional ? '<button class="btn ghost" data-unequip>Unequip</button>' : '<button class="btn ghost" disabled>Equipped</button>') : '<button class="btn primary" data-equip>Equip</button>') : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy</button>`}</div>
   </aside>`;
 }
 
@@ -79,8 +79,9 @@ function tryOn(app, c, item, cat) {
   app.showroom.setCharacter(b, app.look(b));
   app.showroom.setFocus(focus);
   if (item.slot === 'jumpshot' || item.slot === 'release') { b.equipment[item.slot] = item.id; app.showroom.setCharacter(b, app.look(b)); app.showroom.setPreview('jumpshot'); }
-  else if (item.slot === 'dunk') app.showroom.setPreview('dunk', { style: item.styles?.[0] || 'power' });
-  else if (item.slot === 'sizeup') app.showroom.setPreview('moves');
+  else if (item.slot === 'dunk') app.showroom.setPreview('dunk', { style: item.signature || item.styles?.[0] || 'power', styles: item.styles });
+  else if (item.slot === 'layup') app.showroom.setPreview('layup', { style: item.style || 'basic' });
+  else if (item.slot === 'sizeup') app.showroom.setPreview('moves', { style: item.style || 'basic', lvl: item.lvl ?? 0, speed: item.move_speed });
   else if (item.slot === 'celebration') app.showroom.setPreview('celebrate', { kind: item.anim });
   else app.showroom.setPreview('idle');
 }

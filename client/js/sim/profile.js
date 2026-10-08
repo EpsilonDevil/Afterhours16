@@ -21,7 +21,7 @@ export function careerSplit(char, mode = 'all') {
   }
   const c = { ...(prog.career || {}) };
   c.gp = prog.games || 0; c.wins = prog.wins || 0;
-  c.secs = ['park', 'proam'].reduce((a, m) => a + (prog.career_modes?.[m]?.secs || 0), 0);
+  c.secs = ['park', 'proam', 'prorun'].reduce((a, m) => a + (prog.career_modes?.[m]?.secs || 0), 0);
   return c;
 }
 

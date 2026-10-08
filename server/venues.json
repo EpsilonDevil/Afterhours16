@@ -2,6 +2,7 @@
   {"id":"harbor","kind":"park","name":"Harbor Point","affiliation":"Harbor Kings"},
   {"id":"brick","kind":"park","name":"Old Brick Yard","affiliation":"Old Brick Society"},
   {"id":"foundry","kind":"park","name":"Foundry Works","affiliation":"Foundry Rivets"},
+  {"id":"kingtut","kind":"park","name":"The King Tut Cup","affiliation":null,"event":true},
   {"id":"arena","kind":"arena","name":"Afterhours Arena","affiliation":null},
   {"id":"gym","kind":"gym","name":"Union Fieldhouse","affiliation":null}
 ]

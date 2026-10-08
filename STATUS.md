@@ -1,4 +1,238 @@
-# Status — v0.4.4
+# Status — v0.4.5 (complete: seven stages plus the final touches, shipping)
+
+## v0.4.5 final touches
+
+The player-facing patch notes for all of v0.4.5 are in `PATCH_NOTES_v0.4.5.docx` (a Word document) in the project folder.
+
+- **Timed layups.**
+  - **Every layup is timed.** Hold the shot button (or the attack button) through the gather and let go at the top of the layup. Let go during the gather and it's flipped up right after takeoff, graded by when you let go (very early).
+  - The shot meter shows the layup's window and fills to its top. The release feedback reads "Layup: Excellent Release" and so on.
+  - The **Layup** rating sets the window the same way the shooting ratings do for jumpers. The window is 20% more forgiving than a jumper's at the same rating. The contest shrinks it, to about half against a wall of defenders (less with Contact Finisher), but never takes it away.
+  - **Each layup package has its own timing** (`LAYUP_FEEL` in `shots.js`):
+    - Scoop comes out early (40% of the way through the air).
+    - Basic comes out at 48%.
+    - Euro Step comes out at 56%, after a longer gather for the second step.
+    - Finger Roll comes out late (60%) with a slightly tighter window.
+  - The release point moves with every gather and jump, so you read the layup rather than count frames.
+  - A green layup is a big boost (it takes 45–65% of the remaining miss chance away), not a guaranteed make, since contact can still beat it. Early or late is a touch worse than untimed (×0.92), and way off is much worse (×0.62).
+  - The AI and auto-play time their layups the same way. AI layup FG% is unchanged overall (about 55%).
+  - **Coverage-aware finishes** (`layupCoverage` / `LAYUP_COVER` in `shots.js`). How the defense covers the layup at the gather changes the animation, the ball's path, the finishing hand and the ideal release:
+    - A shot blocker at the rim → a **reverse**: shoulders turn away, the ball is carried under to the far side and flipped up with the far hand (+7% of the air time later).
+    - A defender on one side → the ball is **carried and finished away** from him with the far hand, shoulder and near arm into the contact (+3%). A Euro Step steps away from him.
+    - A defender squarely in the path → the **hang and double-clutch**: knees tucked, ball pulled down to the chest and back up (+10%).
+    - A chaser coming from behind → **up high and quick** off the glass (−6%).
+    - Otherwise → the package's own finish.
+  - In AI park games about 85% of layups get a coverage variant (mostly reverses around the rim protector).
+  - The store preview of a layup package plays its own finish, then each variant in turn.
+- **Jumper timings:**
+  - Running jumpers come out 5% quicker.
+  - Step-backs come out 6% slower and fadeaways 4% slower.
+  - Threes come out 3% slower than mid-range jumpers.
+  - These stack on the base's speed and the release's own time, and the ratings still set every green window (`jumperTimingK` in `shots.js`).
+- **Green windows −10%, confirmed across the board:** jumpers, free throws and the new layup windows, with every badge and package bonus. The AI's green rate follows the same windows. A test checks all three.
+- **Badge tiers:** confirmed and fixed (not an anomaly).
+  - **Run it back** reused the badge tiers from when you arrived at the park, so a badge upgraded in the previous game still played, and showed in the team intro, at its old tier until you left the court.
+  - Your badges are now read fresh for every park game and shootaround, and in the Crew HQ.
+  - The team intro reads tiers from your character's record.
+- **Collision:** a dribble, or a ball held out in front, could go straight through a defender's legs or chest. That happened in about 12% of live frames in AI games.
+  - The ball now has a body: the handler and the player he's leaning on are moved apart, weighted by size and strength.
+  - Two extra settling passes keep crowds from overlapping.
+  - Measured in AI games: the ball inside a body went from 116 to 1 per 1,000 live frames, and bodies overlapping by more than 3 cm went to zero.
+- **Tuning:**
+  - **AI skill +10% in every tier** (IQ ×1.1, capped at 1, for AI players only): reads, reaction time, defense, shot selection and green rate.
+  - **Game speed −0.75%** (×1.162 of real time overall).
+  - **Stamina drain ×2 from every source:** sprinting, jumpers, layups, dunks, passes, dribble moves, reaching (steals) and jumping (`STAMINA_K` / `SPRINT_DRAIN_K`). **Screens now cost stamina** too, for the screener and for the defender fighting through.
+    - The rule was: if doubling didn't bring at least a slight drop in shooting, go to ×3. It did, so it stays at ×2.
+    - Shooting figures, 60 paired-seed AI park games each, same build otherwise:
+
+      | Stamina drain | FG% | Expected make at release | Shooter stamina | 3P% |
+      |---|---|---|---|---|
+      | ×1 (before any doubling) | 40.2 ±1.0 | 40.9% | 0.95 | 33.0 |
+      | ×2, the listed sources only | 38.4 | 39.4% | 0.87 | 32.5 |
+      | ×2, every source (shipped) | 38.2 | 37.9% | 0.79 | 32.8 |
+      | ×3, every source (not used) | 38.5 | 38.4% | 0.59 | 35.3 |
+
+    - Players under half stamina go from 0.8% of the time at ×1 to 12% at ×2 and 33% at ×3.
+  - **Rebound/block assist +3.75%** (the user's reach toward the ball and the mid-air steer).
+- **The King Tut Cup courts** have a sphinx medallion at center court instead of the KTC placeholder: a recumbent sphinx with a striped headdress, beard and forepaws, on a plinth, in gold. On the 2v2 and 1v1 courts it sits inside the half, facing the hoop end. The neon copy of the lines glows its outline and stays off the medallion.
+- **Balance (AI world, final build, 60 park games):** FG 38.2%, 3P 32.8%, shooter stamina 0.79. With the stamina doubling switched off, the same build shoots 40.2% (see the table above). These count every field goal in the box score, putbacks and tips included, so they read a little lower than the release-event counts in the stage 7 notes.
+- **Verified:**
+  - 56 Node tests. New `tests/final.test.mjs`: layup timing per package, green at the top and untimed taps, jumper timings in a game, the 10% windows, fresh badge tiers, the ball and bodies staying apart, AI/speed/stamina/assist values, and the sphinx.
+  - 32 Python tests.
+  - Headless browser: the sphinx on full and half Cup courts, and a timed layup in the shootaround with the meter and "Layup: Excellent Release".
+
+## v0.4.5 stage 7: performance and the final touches
+
+- **Hitching and freezes in the parks, fixed.** The cause was building people in the middle of a frame. When a background game ended, the losers walked off and the next group stepped on; a group of park-goers arrived; you started or left a game. Each time, every athlete involved had its meshes and its painted face, jersey and shorts made at once. In the headless benchmark (software rendering) at the King Tut Cup, a full-court rotation stalled the frame for about a second and a population update for about two. A gaming PC is several times faster, but those were still visible freezes, and the Cup's three full courts rotate all night.
+  - **New athlete pool** (`client/js/game/vispool.js`):
+    - People who step onto a court keep the athlete they walked over in, and the ones walking off keep theirs.
+    - Anyone new is built a few milliseconds per frame and appears when ready. A background game waits at the check until all its players are there, and new arrivals walk in once they're built.
+    - Your own game's players are built over the frames before it starts, while the park keeps running. You play in the athlete you walked over in, and the shootaround uses it too, so no second copy of you is built.
+  - **Lighter far-away people:** walkers and background players get smaller textures (384 face, 256 jersey and shorts), and jersey trim paints about 6× faster.
+  - **Shaders:**
+    - They compile in the background where the browser supports it.
+    - Each venue's shaders are compiled when it loads.
+    - The set your PC has used is remembered and compiled up front next time.
+  - **Less mid-game work:** the renderer reuses its per-frame lists, so there's less garbage collection. Every court's streak effect (flames, or the Cup's lasers) is built when the park loads.
+  - **Result, same benchmark:**
+
+    | | Before | After |
+    |---|---|---|
+    | Full-court rotation | 1,020 ms | 2 ms |
+    | Population update | 2,120 ms | 6 ms |
+    | Starting your game | 900 ms | spread over about 30 frames |
+    | Leaving the court | 1,040 ms | 3 ms |
+
+    No frame went over 6 ms of game work while new people were being built.
+- **Out of bounds on the painted lines,** like a regulation game, on every court: full, half, 2v2, 1v1, the arena and the HQ.
+  - The court's measurements run to the inside edge of the 2-inch lines, and the lines themselves are out.
+  - The ball is out when it touches the floor on or past a line (a dribble included). A player is out with a foot on or over one.
+  - In half-court games the half-court line is the back line.
+  - A ball that goes over the top of a backboard is out.
+  - The boundary lines are now painted just outside the playing area, so what you see is the rule.
+  - AI ball handlers never step out on their own.
+- **Auto-play (H) stays on** from one game to the next until you turn it off: park, Pro-Am, the Pro Run and crew runs. A game that starts with it on says so. The shootaround always starts with you in control.
+- **Alley-oops:** an AI teammate only goes up for one if he can run to a takeoff spot short of the rim in time and get up to the ball. Anyone further out gets a regular lob instead (yours too, with a message), so nobody flies in from half court any more. Alley-oop dunks now count in the stats.
+- **Smarter AI:**
+  - After breaking a defender's ankles, slashers, playmakers and bigs take it straight to the rim for a dunk or layup. Sharpshooters, stretch bigs and lockdowns rise up right there, or take a dribble or two in first if they're too deep.
+  - Fewer pointless kick-outs. A driver who's cut off takes the floater or pull-up when it's there, and only passes to a teammate who's open and has a better look.
+  - A handler doesn't give up a better shot just because someone is calling for the ball.
+  - Fewer head-scratchers: decisions have less random noise.
+- **Every animation package is its own,** checked one by one in the store preview and in games. A new test traces each package with the real animator and rig (hands, forearms, feet, head, hips and the ball). It requires at least 17 cm between any two packages in the same category during the move, in the store and in games.
+  - **Jump-shot bases:**
+    - Each carries the ball on its own path: pocket, set point and timing. The Hitch pauses at the top, the Slingshot and Silk go up in one motion, and the Sway drifts out.
+    - Silk (Daily Spin) has its own base; it used to share Skyline's.
+    - Wide Stance, Lean Back, Fadeaway and Scissor Kick were exaggerated so they read clearly.
+  - **Releases:**
+    - Every one has its own follow-through, held for its full time even after he lands, so the Statue really holds. Some examples: Quick finishes at the forehead and drops while still in the air, Dart throws the arm out flat, Float drifts down, Butter rolls the wrist, Feather keeps the guide hand up wide, Rainbow keeps tracing the arc, Laser brings the guide hand up like a visor, Snap recoils, and High keeps both hands up.
+    - Each release also has its own release time and launch angle.
+    - The store preview now launches the ball at the release's angle.
+  - **Dunk packages:**
+    - Each has a signature finish that no other package has. The store shows it first (then on every other loop), and it's about half of the package's dunks in games.
+    - New signatures:
+      - Rim Rocker: a two-hand hammer from behind the head, heels kicked up.
+      - Contact Dunks: shoulder into the defender, ball high and away.
+      - Showtime: wraps the ball around his back in mid-air.
+      - High Flyer: the Superman, stretched out with the ball held out front.
+    - The Hammer now cocks the ball over his shoulder (the tomahawk goes straight back).
+    - One-hand finishes really are one-handed. The hand switch, the Eastbay and Showtime finish in the other hand.
+  - **Size-ups change the ball too:**
+    - Each has its own dribble height, width, rhythm and in-place combos. The Snake slides it across and back, Stutter hesitates, Showtime goes behind the back and through the legs, and Pound has no combos at all.
+    - Rhythm finally has its own body language.
+    - The store preview shows a real size-up at the package's speed.
+  - **Celebrations:** Shimmy (fists low, knees dipped), Shrug and Crown (opens up to present it) were made more distinct.
+- **Green windows are 10% smaller everywhere:** jumpers and free throws, with every badge and package bonus. The AI's green rate follows the same windows.
+- **Also fixed:** the Ante-up message at the start of a Cup game was wiped as the game started; it now shows.
+- **Verified:**
+  - 48 Node tests. New `tests/stage7.test.mjs`: the line rules, a foot on the sideline, alley-oop reach, auto-play carrying over, the AI after an ankle-breaker, the 10% windows, distinct packages in the store and in games, dunk signatures, and the athlete pool.
+  - 32 Python tests.
+  - Headless browser:
+    - the King Tut Cup hitch benchmark (rotations, arrivals, starting and leaving your own game);
+    - store preview screenshots of the new animations;
+    - Pro-Am with auto-play carried over;
+    - the Crew HQ shootaround;
+    - the park shootaround handing your athlete over and back.
+  - AI balance with the final build, 60 park games: FG 42.7% and 3P 34.7%. Stage 6 ran about 41–44% FG in the same batches, so the change is within the noise even with the smaller greens and fewer bogus alley-oop dunks.
+
+## v0.4.5 stage 6: The Pro Run
+
+- **The mode:** a career in the **Afterhours Pro League** (APL), from the new **The Pro Run** tile on the main menu (and the top bar). One career per player; it's saved on the local server after every step.
+- **College:** pick one of 12 original colleges and play **3 games** (5-on-5, four quarters, in the arena dressed in the home school's colors). Scouts rate each game from your line (Hollinger game score, scaled to a full 48 minutes), the win and your Locked-In grade; the college screen shows your projected draft range after each game.
+- **The draft:** two rounds of 32. Draft stock 32 or better goes first overall and every point below that is about two picks later, down to #64. The order runs weakest team first (a lottery shuffles the top four). Draft Night lists all 64 picks — the other 63 are generated prospects — and the team holding your slot takes you.
+- **The league:** 32 original teams in two conferences of 16, each with a full 15-man roster (13 veterans from about 67 to 90 OVR plus two rookies from the draft). An **82-game season**: 2 games against every team in the other conference, 4 against five conference rivals and 3 against the other ten — 41 at home, nobody plays twice in a day or three days running.
+- **Your games:** **Play** them in the arena (you and the best player at each other position on your team against their best five; home team in white, visitors in color; the jumbotron and LED boards say APL) or **Sim** them. Every other game is simulated from the teams' rotations, with full box scores. Sim a week or to the end of the regular season at any time.
+- **Standings, stats and awards:** conference standings (W-L, PCT, GB, conference record, last 10, streak), your schedule and game log, your team's roster and rotation, league leaders, then MVP, Finals MVP, Rookie of the Year, Defensive Player of the Year and the scoring title.
+- **Playoffs:** seeds 1–6 in, 7–10 in the **play-in** (7v8 for the 7 seed; the loser hosts the 9v10 winner for the 8 seed), then four rounds — first round, conference semifinals, conference finals and **the Finals** (2-2-1-1-1 home court). Play or sim your games; sim day by day or to the end once you're out. After the Finals, start the next season (same teams, a new schedule).
+- **Sim settings** (any time): quarter length for games you play (3, 5, 8 or 12 minutes), difficulty, your minutes in simmed games (auto, starter, sixth man, bench), playoff series (best of 7, 5-7-7-7, 3-5-7-7 or single games), play-in on/off, upsets (fewer, normal, more) and home-court advantage.
+- **Rewards:** games you play pay **VC and badge progress at 1.5x the park rate** (the park formula without a streak). There's no Rep or crew XP in the Pro Run, and simmed games pay nothing. **No music** in Pro Run games, like Pro-Am. Pro Run games get their own split on the Stats screen.
+- **Server:** mode `prorun` for `/api/matches` (arena only, quarters 2–12 minutes), migration `008_v045_prorun.sql` (`prorun_careers`), `GET /api/prorun?character_id=…` and `POST /api/prorun` (save, or reset with `career: null`; saves up to 2 MB).
+- **Verified:** 32 Python tests (new: the 1.5x VC and badge rule, no Rep, a clock game needs a winner, a big career save round-trip, Pro Run tickets) and 37 Node tests (new `tests/prorun.test.mjs`: original names, the 82-game schedule rules, box scores add up to the final, a full season through the play-in and Finals and the same seed giving the same league, sim settings, the draft slot from college games, and a played game counting). Headless browser: the new career screen, three college games, Draft Night, the season hub and its tabs, a simmed and a played pro game, the playoffs and the offseason.
+
+## v0.4.5 stage 5: Crews and the Crew HQ
+
+- **Crews:** start one from the Crew HQ door in any park, the social phone's new **Crew** tab, or the park pause menu (**Crew**). Pick a name (3–24 characters), a 2–4 letter tag and one of 12 colors; you can change them later. Up to **39 members** (40 with you), added only from your friends and removable any time. Anyone you unfriend leaves the crew; what he earned stays with it.
+- **40 crew levels.** Level *n* needs 2,500 × (*n* − 1)^1.75 crew XP in total (level 2 at 2,500, level 10 at about 117k, level 40 at about 1.5M). Each level's reward shows **Coming soon**.
+- **Crew XP from your games:** about 30% of the Rep a game pays, weighted by mode (park ×1.1, Pro-Am ×1.3, park events such as the King Tut Cup ×1.5), and **doubled** when a crew member ran on your team (park squads and Pro-Am rosters both count). The results screen shows the crew XP, the ×2 when it applied, and crew level-ups.
+- **Crew XP from your members, even while you're away:** each AI member earns crew XP for every hour he's online on his normal schedule (the same schedules that decide who is at the parks), at the rate of the park games he'd play in it, so better players and higher Rep earn more. The server settles it whenever the crew is read, so the totals only grow and can't be edited from the game. A full crew of 39 regulars earns roughly 25–30k crew XP a day.
+- **The Crew HQ:** the clubhouse building on every park's plaza (west of the Daily Spin wheel, door facing the courts). Inside: a full 5-on-5 court and a shootaround half court in your crew's colors (paint, center logo with your tag, wordmarks), crew banners, a bleacher, a lounge with couches facing the **members board** (who's on, overall, position and crew XP), the **crew level board**, and a taped-off corner for **interior customization — coming soon**. Crew members who are online hang out there: on the couches and the bleacher, around the lounge, or getting shots up on a free hoop. Walk to the members board for the crew menu, the ball rack for a shootaround, the scorer's table for 5-on-5, and the door to go back to the park.
+- **5-on-5 crew runs** need at least **4 crew members online** (you make five): you and your four best members on, against the next crew members on, topped up with regulars. Crew jerseys in your color against a contrasting side, full court, first to 21. Runs are practice — no VC, Rep or crew XP — and you can run it back from the results.
+- **Server:** `server/crew.py` (levels, XP rules, a port of the client's AI schedules, settling), migration `007_v045_crews.sql` (`crews`), `GET /api/crew`, `POST /api/crew` (create / update / add / remove), and crew XP in `/api/matches/{id}/complete` (which now also takes the AI teammates who ran with you).
+- **Verified:** 30 Python tests (new: the schedule port matches the client exactly, the level curve and XP weights, and an API run — create, add friends only, the 39 cap, remove keeps the XP, AI members earn over time, ×2 with a crew mate, idempotent completes) and 30 Node tests (new: the HQ building is clear of courts, shops, lamps and sidewalks in every park, the HQ floor plan, crew colors, who shows up at the HQ, and a full 5-on-5 to 21). Headless browser: crew creation, the phone tab, the crew menu, the HQ door, the HQ interior and boards, a 5-on-5 run with its results, the shootaround, walking back out, and the crew XP line on the results screen.
+- **Also fixed (stage 4 hotfix):** Pro-Am and Practice crashed while building the arena and the gym (a stray line from the Cup's neon pass). Fixed in commit `2ce5cd0`; every venue now gets a build check.
+
+## v0.4.5 stage 4: The King Tut Cup
+
+- **The event:** a fourth park with the same layout as the others, under a black-light night: neon court lines, purple keys, pyramids with glowing edges and gold capstones on the skyline, two sphinxes guarding the plaza, obelisks with glowing bands, green-fire braziers, a glow-in-the-dark mini-golf strip along the north edge and laser-tag barriers (with dark gaps between them) around the outside. Lanterns drift overhead, and the random events are laser shows from the pyramid tops and green and purple fireworks. Enter it from the event card on the Park screen. The music ducks during games there exactly as in the parks.
+- **Ante-ups:** every game in the Cup is played for VC. When you claim a spot you pick a stake (500, 1,000, 2,500, 5,000 or 10,000 VC); it comes out of your wallet when the game starts. A win pays it back plus the other side's stake, boosted by your Cup win streak with the park's multiplier (+0.30 per straight win up to 4x), on top of the normal game VC and Rep (also streak-boosted). A loss — or leaving the game — keeps nothing of the stake. Run it back keeps the same ante. The Cup has its own streak and record; your park streak is untouched.
+- **48-hour leaderboard:** the Cup runs in back-to-back 48-hour windows. The board ranks net VC won in the Cup (everything the games paid, minus every stake) against the AI hoopers from your AI world who entered that window (about 200 of them; they play during their own online hours and their totals grow through the 48 hours). The board is computed on the server from the AI world's seed, using the same RNG and tier rules as the client, so it can't be edited from the game. A neon billboard on the plaza shows the top five and you.
+- **Prizes** (claimed once from the Park screen or the leaderboard when the window closes): 1st — the glow-in-the-dark **mo-cap suit** (top and tights, with glowing seams and tracking markers), Pharaoh shoes, the Pharaoh celebration, the Scarab glow headband and 150,000 VC; top 3 — shoes, celebration, headband, 60,000 VC; top 10 — celebration, headband, 25,000 VC; top 25 — headband, 10,000 VC; top half — 3,000 VC; anyone who played — 1,000 VC. Cup gear can't be bought.
+- **Streak visuals (every park):** after 3 straight wins a wall of fire rises around the court of whoever holds it — you or an AI team — and grows at 6, 9 and 12 wins (it stops growing at 12; the streak doesn't). In the Cup the same steps bring green lasers that slide up and down the court sides and phase in and out, more of them and brighter every 3 wins.
+- **Server:** `server/cup.py` (windows, AI field, standings, prizes), migration `006_v045_cup.sql` (`cup_entries`), `GET /api/cup`, `POST /api/cup/claim`, ante handling in `/api/matches` (start, complete, cancel).
+- **Verified:** 27 Python tests (new: the RNG port matches the client, the board is deterministic and fills in over the window, the prize table, and an API run: ante taken at start, pot and streak multiplier on a win, nothing back on a loss or a quit, Cup streak separate from the park streak, the running Cup can't be claimed, prizes pay out exactly once, the ledger reconciles) and 25 Node tests (streak levels, Cup entrants and who shows up at the Cup). Headless browser: the event card, leaderboard, ante picker, the Cup park, lasers and the flame wall.
+
+
+## v0.4.5 stage 3: visuals and animations
+
+- **32 new animation packages** (on top of v0.4.4's 16), each with its own body language, ball path and sound of its own kind:
+  - **Jumpshot bases (6):** Fadeaway, Hitch, Slingshot, Scissor Kick, Knee Tuck, Sway.
+  - **Releases (6):** Wave, Statue, Snatch Back, Old School, Point, Cobra.
+  - **Dunk packages (6):** Hammer, Liberty, Scoop, Hand Switch, Half Spin (the body turns 180° in the air) and **Eastbay** (between the legs), which needs 87 overall, 92 driving dunk, 90 vertical and Superstar rep.
+  - **Size-ups (5):** Pound, Snake, Crab, Stutter, Showtime. Every older size-up package got its own stance too.
+  - **Celebrations (6):** Goggles, Dust Off, Airplane, Mic Drop, Take a Bow, Roar.
+  - **Layup packages (4, a new slot):** Basic (free), Euro Step, Finger Roll, Scoop. Your package decides how every drive finishes.
+  - The packages with the most requirements (High Flyer, Eastbay, Showtime, Cobra) are the flashiest and are gated by overall, attributes and Rep.
+- **Icon badge animations** (unlocked with the archetype's Icon badge, and nobody else can get them): Sharp Eye's exaggerated high-set jumper and fanned follow-through; Hash-Slinging's full wind-up dunk; Oprah's one-handed whip pass; The Clamp's two-hand clamp steal; The General's stand-to-attention salute; Big Brother's cocked-arm swat; Open Arms' two-hand rebound rip; Sexy Red's low, wide post back-down (and backing anyone down now has a pose of its own).
+- **Clothing:** jerseys are cut on curves now — a U-shaped scoop in front, a shallower one in back, wide straps and deep armholes — with a rolled binding around the neck and armholes, so they no longer look strapless or sit inside the chest. Shorts got a rolled hem that folds back to the leg, so a driven knee can't show the inside of the shorts. The body is slightly slimmer through the chest and waist and the tops hang closer to it.
+- **World:** shops are real buildings now (walls, a serving window and counter on each side, striped awning, stocked shelves and a worker inside) instead of boxes with a sign. New trees (tapered leaning trunk, branches, layered canopy), palms (ringed trunk, arching fronds with midribs, coconuts), park benches (slatted, with armrests), bins and lantern street lamps. Harbor Point has real water: two scrolling swell layers over a deep base with a surf line at the beach, and proper sailboats with hulls, keels, cabins and bellied sails.
+- **Verified:** 26 Node and 23 Python tests (new: every package's style has a pose, a ball path, a tier and a flair value; the 180 and 360 dunk turns). Headless browser: every new package previewed in the showroom, and the park shops, trees and water.
+
+
+## v0.4.5 stage 2: park life and UI fixes
+
+- **Squad spots and the line (`world/themes.js` `squadSpots`, `game/park.js`):** every court has three rows of squad spots by its east sideline, with GOT NEXT, 2ND and 3RD painted on the ground. Row 0 has next. When a game ends the losers are forced off the court and have to walk back around to the back of the line themselves (about half of losing AI groups do), the Got Next group plays the winners, and every row behind moves up one. You claim the first open row with your squad; the row you're in and your place in line show in the prompt and on the phone.
+- **AI-only games run faster:** a background game you can see plays at normal speed while the ball is live and fast-forwards checks, inbounds and dead balls (2–3x). Games you can't see run 2.6x. Over a whole game that comes to about twice as fast. Players and the ball animate at the game's own pace, so nothing slides. (The spec asked for "normal speed on screen, but delayed behind real time"; a game can't be both behind real time and finished sooner, so this is how we read it: normal speed where it counts, fast everywhere else.)
+- **Squad joining:** you can only invite friends who are online and not in a game. At your park that means not on a court or in your game; at other parks, a player is in a game about 45% of the time (in ~6-minute blocks). The phone shows "In a game" instead of the Invite button.
+- **Spectators:** 4 people sit on the benches and 2 stand on the sidelines of every full court; half courts get 2 sitters and 1 stander. They follow the ball, clap ordinary buckets and steals, get up (or throw their arms up on the bench) for dunks, posters, alley-oops, deep threes and clutch shots, and grab their heads for blocks and ankle-breakers. They react to your games too, and only animate when you're within 45 m.
+- **Walking fixes:** park-goers never aim for a spot inside a shop or the Daily Spin wheel, route around them with corner waypoints, and give up and repick a spot after 2.5 s of no progress.
+- **Bleachers:** the two small bleachers between the main court and the stores are gone.
+- **Main menu:** a tile hub (The Park, 5v5 Arena, MyPLAYER, Store, The Gym, Lifetime stats, Codes, Social) that fits the screen at 720p and up with no scrolling.
+- **Phone:** the close X no longer moves when it gets controller focus.
+- **Music:** park games already duck the music. The King Tut Cup event courts (stage 4) will use the same ducking; The Pro Run (stage 6) will have no music, like Pro-Am.
+- **Verified:** 23 Python and 22 Node tests (new `tests/park.test.mjs`: squad spot rows, routing around shops, line shifting, the AI-game speed rule; squad invites reject players in a game). Headless browser: park hub with spectators, rows and labels.
+
+## v0.4.5 stage 1: gameplay core
+
+v0.4.5 ships in six stages. This first one is the gameplay and progression core. Still to come: visuals and 32 animation packages, The King Tut Cup, Crews and the Crew HQ, and The Pro Run.
+
+- **Badges (`sim/badges.js`):**
+  - Each tier step is 10% bigger than the one before (Bronze 1.00, Silver 2.10, Gold 3.31, Hall of Fame 4.64 in effect units, instead of 1-2-3-4). Every badge effect in shots, game and AI goes through `bk()` or a rescaled tier table.
+  - **No-badge penalty:** a stat that one or more badges work through plays 10% weaker (rk ≈ 0.9×) when the player has none of those badges. Menus still show the real rating; gating checks (can he dunk at all) use the real rating.
+- **Stamina overhaul:**
+  - Sprinting drains the most (35% faster than v0.4.4). Jogging, defensive slides and hands-up defense drain a little. Standing, walking and posting up recover (more slowly than before). Every action has a small cost (shot, layup, dunk, pass, reach, jump, dribble move).
+  - The same dribble move more than 3 times in a row doubles drain, then +0.1x per extra repeat. A different move, a pass, a shot or a catch resets it.
+  - Every second positive play (score, assist, board, steal, block, good contest, ankle-breaker, screen) gives back 5% stamina and turns on 2x recovery (never more than 2x) until a negative play.
+  - The same negative play twice in a row with no positive play between (turnover, forced or badly timed shot, foul, got blocked, posterized, gave up an open shot, got crossed) doubles drain, then +0.1x per repeat, until the next positive play.
+  - Lock-In grade (user): A+ 1.5x / A 1.25x / A- 1.1x recovery; D+ 1.1x / D 1.25x / D- and F 1.5x drain.
+  - Going cold puts 1.5x on drain until it ends; going hot gives 1.5x recovery. Every multiplier stacks.
+- **Hot and cold:** 3 straight Excellent-release makes or finishes at the rim puts a player on fire (+6% make chance, 1.5x stamina recovery, ends on a miss). More than 3 missed wide-open shots (contest under 0.3) makes him cold (ends on a make). A flame or an ice crystal shows on the floor under the player, replacing the user's ring, and the HUD shows ON FIRE / COLD.
+- **Takeovers:** PG/SG shooting (6 Excellent-release jumpers with no miss, block or off-green release in between), SF/PF finishing (6 made layups or dunks with no miss or block), C glass and rim (6 blocks or rebounds before the other team scores in the paint). They last 60 real seconds: +8 to the group's attributes, and the shooting one also widens the green window 12%. The HUD shows progress and time left.
+- **Defense:** contest range +3.75%; positioning +3.75% on blocks (reach envelope, lunge), contests and rebounds (grab radius, seals); block timing +3.75%; hands up on a shot, a hand in the passing lane and a defender set in the driving lane all add 3.75% pressure. The user gets a slight assist: block and rebound jumps curve toward the ball in the air, and guarding a post-up gently holds you between the post player and the rim.
+- **Posterizer:** the shove-and-knockdown happens only on dunks, and only for players with the badge. Without it, a dunker who wins the contact bumps the defender off his line (no knockdown). A strong finisher can push off a defender on a layup (a short stumble, never a knockdown). Shoves are velocity only (no position jumps), dunkers no longer pass through bodies, and the rim hang glides into place instead of snapping.
+- **Rules:** traveling is called in every mode (moving more than 0.9 m with a held, undribbled ball after a 0.45 s gather). Taking it back past the arc after a change of possession was already enforced in half-court park games; the full-court park no longer shows the take-it-back hint.
+- **Dribbling:** cadence, height and width vary by Ball Handle, speed and height (tight, low and quick for elite small guards; higher, wider and slower for bigs).
+- **Attack the rim:** with an open lane and full speed, the bind now takes off from up to 5.8 m (it was 4.2 m), with longer gather steps.
+- **Speed and feel:** game speed −1.85% (×1.171 of real time overall); pass speed −0.985%; starts, stops and turns slightly softer.
+- **90 OVR cap, cap breakers, Icon badges:**
+  - Caps are scaled so every legal build tops out at exactly 90 OVR (checked for all 61,440 position, archetype, height, weight and wingspan combinations). Existing players keep any attributes already above their new caps.
+  - Each of a build's first 5 Hall of Fame badges brings 5 cap breakers (25 max). A cap breaker adds +1 to a maxed-out attribute below 99, past the 90 cap. The menu opens after the game that earned them and from MyPLAYER → Attributes. Builds that already had HOF badges are credited once.
+  - A build holds at most 7 HOF badges (others stop at Gold). The 7th unlocks the archetype's Icon badge: Sharp Eye, Hash-Slinging, Oprah, The Clamp, The General, Big Brother, Open Arms or Sexy Red. Their stat boosts can pass 99 in the sim. Their exclusive animations come with the animation stage.
+- **Economy:** store prices, attribute upgrades and boost packs cost 35% less; every game pays 35% more VC; the park streak bonus is doubled (+0.30 per straight win, up to 4x VC and Rep).
+- **Results:** in the park, the results screen continues by itself after 10 seconds (run it back after a win, back to the park after a loss), unless you're placing new cap breakers.
+- **Focus:** the game no longer pauses when you click out of the window (Settings → Pause on focus loss turns it back on).
+- **Soundtrack:** 25 tracks (added RIP Aaliyah, Groove of the Streets (Instrumental), Root-Beer Float, Discord Notis and Gone).
+- **Balance (AI world, 80 park games / 16 Pro-Am):** park FG 37.1% and 3P 36.1% (v0.4.4: 39.8 / 35.9); Pro-Am FG 35.8% and 3P 31.0%. About half a takeover and half an on-fire run per park game; 0.1 travels per game.
+- **Verified:** 23 Python and 17 Node tests (new: 90 OVR for every build, costs and VC, HOF limit, cap breakers, the Icon badge, badge tiers and the no-badge penalty, stamina rules, hot/cold, takeovers, traveling, Posterizer-only knockdowns, long attack-the-rim takeoffs). Headless browser: cap breaker menu, badges tab with the Icon badge, results countdown, Pro-Am intro with flame and ice decals and the takeover HUD.
+
 
 ## v0.4.4
 

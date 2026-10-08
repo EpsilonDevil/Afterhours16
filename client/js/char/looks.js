@@ -289,29 +289,36 @@ export function paintHair(look) {
 }
 
 // Jersey / tee / hoodie texture. spec: {family,color,trim,secondary,pattern,lettering,number,name,keep(yf,phi),hem,neckTop}
+// v0.4.5 stage 7: `spec.res` paints at a lower resolution for far-away players (256 = a quarter of the
+// pixels), and the cut-edge trim reads a precomputed keep-mask instead of calling keep() six times a pixel
 export function paintTop(spec) {
-  const W = 512, c = canvas(W, W), g = c.getContext('2d');
+  const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#2a6fdb'), trim = hexToRgb(spec.trim || '#ffffff'), sec = hexToRgb(spec.secondary || spec.trim || '#ffffff');
   const fam = spec.family || 'jersey';
   const noise = makeNoise2D(5);
   const img = g.createImageData(W, W), d = img.data;
-  const TH = 384, hem = spec.hem, top = spec.neckTop;
+  const TH = Math.round(384 * S), hem = spec.hem, top = spec.neckTop;
   const keep = spec.keep || (() => true);
-  const mesh = fam === 'jersey';
+  const mesh = fam === 'jersey', E = Math.max(2, Math.round(7 * S)), hole = Math.max(2, Math.round(4 * S));
+  // keep-mask for rows -E .. TH-1 (the trim looks E pixels up and to either side)
+  const K = new Uint8Array((TH + E) * W);
+  for (let r = 0; r < TH + E; r++) {
+    const yf = top - ((r - E) / TH) * (top - hem);
+    for (let x = 0; x < W; x++) K[r * W + x] = keep(yf, (x / W) * Math.PI * 2 - Math.PI / 2) ? 1 : 0;
+  }
+  const kAt = (x, y) => K[(y + E) * W + ((x % W) + W) % W];
   for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
     const u = x / W;
     let col = base;
     if (y < TH) {
-      const yf = top - (y / TH) * (top - hem), phi = u * Math.PI * 2 - Math.PI / 2;
       // trims near cut edges
-      const dy = (top - hem) / TH * 7, dp = Math.PI * 2 / W * 7;
-      const edge = keep(yf, phi) && (!keep(yf + dy, phi) || !keep(yf, phi + dp) || !keep(yf, phi - dp) || !keep(yf + dy, phi + dp) || !keep(yf + dy, phi - dp));
+      const edge = kAt(x, y) && (!kAt(x, y - E) || !kAt(x + E, y) || !kAt(x - E, y) || !kAt(x + E, y - E) || !kAt(x - E, y - E));
       if (spec.pattern === 'panel' && (Math.abs(u - 0.5) < 0.055 || u < 0.055 || u > 0.945)) col = sec;
-      if (spec.pattern === 'stripes' && Math.floor(y / 22) % 2 === 0) col = mix(base, sec, 0.35);
+      if (spec.pattern === 'stripes' && Math.floor(y / (22 * S)) % 2 === 0) col = mix(base, sec, 0.35);
       if (spec.pattern === 'gradient') col = mix(base, sec, Math.pow(y / TH, 1.6) * 0.8);
       if (spec.pattern === 'sash') { const k = (u - 0.18) * 1.6 - (y / TH) * 0.9; if (Math.abs(k) < 0.06 && u < 0.4) col = sec; }
       if (edge) col = trim;
-      if (fam === 'jersey' && y > TH - 10) col = trim;
+      if (fam === 'jersey' && y > TH - 10 * S) col = trim;
       if (fam === 'hoodie') {
         // kangaroo pocket on the front
         const pu = Math.abs(u - 0.25), pv = y / TH;
@@ -326,8 +333,8 @@ export function paintTop(spec) {
       }
     }
     // fabric weave / mesh holes for jerseys
-    let k = 1 + noise(x * 0.8, y * 0.8) * 0.04;
-    if (mesh && ((x + y) % 4 === 0 && (x - y) % 4 === 0)) k *= 0.86;
+    let k = 1 + noise(x * 0.8 / S, y * 0.8 / S) * 0.04;
+    if (mesh && ((x + y) % hole === 0 && (x - y) % hole === 0)) k *= 0.86;
     const i = (y * W + x) * 4;
     d[i] = Math.min(255, col[0] * k * 255); d[i + 1] = Math.min(255, col[1] * k * 255); d[i + 2] = Math.min(255, col[2] * k * 255); d[i + 3] = 255;
   }
@@ -346,24 +353,72 @@ export function paintTop(spec) {
   const numStroke = fam === 'jersey' ? sec : null;
   if (fam === 'jersey') {
     const num = String(spec.number ?? 0);
-    if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(0.752), spec.lettering.length > 7 ? 30 : 38, numFill, numStroke);
-    outlineText(num, W * 0.25, yOf(0.69), 74, numFill, numStroke);
-    if (spec.name) outlineText(spec.name.toUpperCase().slice(0, 12), W * 0.75, yOf(0.775), 26, numFill, numStroke);
-    outlineText(num, W * 0.75, yOf(0.705), 96, numFill, numStroke);
+    if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(0.752), (spec.lettering.length > 7 ? 30 : 38) * S, numFill, numStroke);
+    outlineText(num, W * 0.25, yOf(0.69), 74 * S, numFill, numStroke);
+    if (spec.name) outlineText(spec.name.toUpperCase().slice(0, 12), W * 0.75, yOf(0.775), 26 * S, numFill, numStroke);
+    outlineText(num, W * 0.75, yOf(0.705), 96 * S, numFill, numStroke);
   } else if (fam === 'tee' || fam === 'hoodie') {
-    if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(fam === 'hoodie' ? 0.735 : 0.73), spec.lettering.length > 8 ? 26 : 34, numFill, null);
+    if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(fam === 'hoodie' ? 0.735 : 0.73), (spec.lettering.length > 8 ? 26 : 34) * S, numFill, null);
     if (spec.graphic) {
       g.save(); g.translate(W * 0.25, yOf(0.69)); g.scale(aspect, 1);
-      g.strokeStyle = rgbStr(numFill); g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 26, 0, Math.PI * 2); g.stroke();
-      g.beginPath(); g.moveTo(-26, 0); g.lineTo(26, 0); g.moveTo(0, -26); g.lineTo(0, 26); g.stroke();
+      g.strokeStyle = rgbStr(numFill); g.lineWidth = 5 * S; g.beginPath(); g.arc(0, 0, 26 * S, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(-26 * S, 0); g.lineTo(26 * S, 0); g.moveTo(0, -26 * S); g.lineTo(0, 26 * S); g.stroke();
       g.restore();
     }
   }
   return c;
 }
 
-export function paintShorts(spec) {
+// v0.4.5 King Tut Cup mo-cap suit: glowing seams and tracking markers drawn over a black suit. With
+// `mask` the same marks are drawn alone on black — that canvas is the suit's emissive (glow) map.
+function mocapMarks(g, W, spec, kind, mask) {
+  const glow = mask ? '#ffffff' : (spec.glow || spec.trim || '#39ff88');
+  g.save();
+  g.strokeStyle = glow; g.fillStyle = glow; g.lineCap = 'round';
+  const line = (x0, y0, x1, y1, w = 5) => { g.lineWidth = w; g.beginPath(); g.moveTo(x0 * W, y0 * W); g.lineTo(x1 * W, y1 * W); g.stroke(); };
+  const dot = (x, y, r = 9) => {
+    if (!mask) { g.fillStyle = '#d8dde4'; g.beginPath(); g.arc(x * W, y * W, r + 3, 0, Math.PI * 2); g.fill(); g.fillStyle = glow; }
+    g.beginPath(); g.arc(x * W, y * W, r, 0, Math.PI * 2); g.fill();
+  };
+  if (kind === 'top') {
+    // torso (v 0..0.75): front center u .25, back center u .75, sides u 0 / .5
+    for (const u of [0.19, 0.31]) line(u, 0.02, u, 0.74);              // front seams
+    line(0.75, 0.02, 0.75, 0.74, 6);                                   // spine
+    for (const u of [0.005, 0.5, 0.995]) line(u, 0.08, u, 0.74, 4);   // side seams
+    line(0, 0.2, 1, 0.2, 4); line(0, 0.5, 1, 0.5, 4);                   // chest and waist bands
+    for (const [u, v] of [[0.25, 0.12], [0.25, 0.36], [0.25, 0.6], [0.75, 0.1], [0.75, 0.32], [0.75, 0.58], [0.1, 0.05], [0.4, 0.05], [0.6, 0.05], [0.9, 0.05], [0.04, 0.66], [0.46, 0.66]]) dot(u, v);
+    // sleeves (v .78-1.0, left half then right half): a seam down each arm, markers at elbow and wrist
+    for (const h of [0, 0.5]) { line(h + 0.25, 0.78, h + 0.25, 0.995, 5); for (const v of [0.8, 0.87, 0.97]) dot(h + 0.25, v, 7); }
+  } else {
+    // waist (v 0..0.5) and legs (v .5-1, left half then right half)
+    line(0, 0.06, 1, 0.06, 5);
+    for (const [u, v] of [[0.25, 0.2], [0.75, 0.2], [0.02, 0.3], [0.48, 0.3]]) dot(u, v);
+    for (const h of [0, 0.5]) {
+      line(h + 0.25, 0.5, h + 0.25, 0.995, 5); line(h + 0.03, 0.5, h + 0.03, 0.995, 4);
+      for (const v of [0.56, 0.72, 0.84, 0.97]) dot(h + 0.25, v, 8);
+    }
+  }
+  g.restore();
+}
+export function paintMocap(spec, kind, mask = false) {
   const W = 512, c = canvas(W, W), g = c.getContext('2d');
+  if (mask) { g.fillStyle = '#000'; g.fillRect(0, 0, W, W); }
+  else {
+    // black technical fabric with a faint knit grain
+    const base = hexToRgb(spec.color || '#0c0e12'), noise = makeNoise2D(13);
+    const img = g.createImageData(W, W), d = img.data;
+    for (let i = 0, y = 0; y < W; y++) for (let x = 0; x < W; x++, i += 4) {
+      const k = 1 + noise(x * 0.9, y * 0.9) * 0.18;
+      d[i] = Math.min(255, base[0] * k * 255); d[i + 1] = Math.min(255, base[1] * k * 255); d[i + 2] = Math.min(255, base[2] * k * 255); d[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+  mocapMarks(g, W, spec, kind, mask);
+  return c;
+}
+
+export function paintShorts(spec) {
+  const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#202833'), trim = hexToRgb(spec.trim || '#ffffff'), stripe = hexToRgb(spec.stripe || spec.trim || '#ffffff');
   const noise = makeNoise2D(9);
   const img = g.createImageData(W, W), d = img.data;
@@ -382,13 +437,13 @@ export function paintShorts(spec) {
       if (!jog && v > 0.955) col = trim;
       if (jog && v > 0.97) col = shade(base, 0.8);
     }
-    const k = 1 + noise(x * 0.7, y * 0.7) * 0.05 + (jog ? noise(x * 0.05, y * 0.2) * 0.06 : 0);
+    const k = 1 + noise(x * 0.7 / S, y * 0.7 / S) * 0.05 + (jog ? noise(x * 0.05 / S, y * 0.2 / S) * 0.06 : 0);
     const i = (y * W + x) * 4;
     d[i] = Math.min(255, col[0] * k * 255); d[i + 1] = Math.min(255, col[1] * k * 255); d[i + 2] = Math.min(255, col[2] * k * 255); d[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);
   if (spec.logo) {
-    g.fillStyle = rgbStr(trim); g.font = '900 22px "Arial Black", sans-serif'; g.textAlign = 'center';
+    g.fillStyle = rgbStr(trim); g.font = `900 ${Math.round(22 * S)}px "Arial Black", sans-serif`; g.textAlign = 'center';
     g.fillText(spec.logo, W * 0.62, W * 0.62);
   }
   return c;

@@ -15,8 +15,9 @@ import * as Modes from './modes.js';
 import * as Phone from './phone.js';
 import * as Stats from './stats.js';
 import * as Codes from './codes.js';
+import * as ProRun from './prorun.js';
 
-const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['park', 'The Park'], ['proam', 'Pro-Am'], ['practice', 'Practice'], ['stats', 'Stats'], ['codes', 'Locker Codes']];
+const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['park', 'The Park'], ['prorun', 'The Pro Run'], ['proam', 'Pro-Am'], ['practice', 'Practice'], ['stats', 'Stats'], ['codes', 'Locker Codes']];
 
 export function go(app, name, params = {}) {
   app.screen = name;
@@ -43,6 +44,7 @@ export function go(app, name, params = {}) {
     case 'store': return Store.render(app, root, params);
     case 'park': return Modes.parkEntry(app, root, params);
     case 'proam': return Modes.proam(app, root, params);
+    case 'prorun': return ProRun.render(app, root, params);
     case 'practice': return Modes.practice(app, root, params);
     case 'stats': return Stats.render(app, root, params);
     case 'codes': return Codes.render(app, root, params);
@@ -127,9 +129,10 @@ function home(app, root) {
   const repPct = rep.next ? Math.round((rep.points - rep.floor) / (rep.next - rep.floor) * 100) : 100;
   const team = app.profile.proam_team;
   const career = pr.career || {};
+  const pro = pr.prorun?.games ? `${pr.prorun.wins}-${pr.prorun.games - pr.prorun.wins} in the Pro Run` : '';
   const games = pr.games || 0;
   root.innerHTML = `
-    <section class="panel home-left">
+    <section class="panel home-left home-hub">
       <div class="eyebrow">${esc(c.position)} · ${esc(ARCHETYPES[c.archetype]?.label || title(c.archetype))} · ${heightStr(c.height)} · ${c.weight} lb</div>
       <h1 class="player-name">${esc(c.name)}</h1>
       <div class="ovr-row"><div class="ovr"><b>${c.overall}</b><small>OVR</small></div>
@@ -143,16 +146,21 @@ function home(app, root) {
         <div><b>${games ? ((career.reb || 0) / games).toFixed(1) : '0.0'}</b><small>RPG</small></div>
         <div><b>${pr.park?.best_streak || 0}</b><small>BEST STREAK</small></div>
       </div>
-      <div class="tiles">
-        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ffd84a'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · 2v2 & 3v3 · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small></button>
-        <button class="tile proam" data-go="proam"><span class="tile-k">PRO-AM</span><b>${team ? esc(team.name) : 'Build your team'}</b><small>${team ? `${team.wins}-${team.losses} · 5v5 arena` : '5v5 · your court, your colors'}</small></button>
-        <button class="tile store" data-go="store"><span class="tile-k">VC STORE</span><b>Apparel · Shoes · Animations</b><small>${Object.keys(app.catalog).length} items</small></button>
-        <button class="tile practice" data-go="practice"><span class="tile-k">PRACTICE</span><b>Union Fieldhouse</b><small>Shootaround · 1-on-1</small></button>
-        <button class="tile mp" data-go="myplayer"><span class="tile-k">MYPLAYER</span><b>Attributes & Badges</b><small>Max cost ${money(c.max_upgrade_cost)} VC</small></button>
-      </div>
+      <nav class="hub" aria-label="Main menu">
+        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ffd84a'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small><span class="tile-event">KING TUT CUP · LIVE</span></button>
+        <button class="tile t-prorun" data-go="prorun"><span class="tile-k">THE PRO RUN</span><b>${pro ? esc(pro) : 'College → Draft → League'}</b><small>${pro ? 'Your career' : '82 games · playoffs · Finals'}</small></button>
+        <button class="tile t-proam" data-go="proam"><span class="tile-k">PRO-AM</span><b>${team ? esc(team.name) : '5v5 Arena'}</b><small>${team ? `${team.wins}-${team.losses} · 5v5` : 'Build your team'}</small></button>
+        <button class="tile t-mp" data-go="myplayer"><span class="tile-k">MYPLAYER</span><b>Upgrades</b><small>${c.cap_breakers_available ? `${c.cap_breakers_available} cap breakers to place` : `Max upgrade ${money(c.max_upgrade_cost)} VC`}</small></button>
+        <button class="tile t-store" data-go="store"><span class="tile-k">VC STORE</span><b>Gear</b><small>${Object.keys(app.catalog).length} items</small></button>
+        <button class="tile t-practice" data-go="practice"><span class="tile-k">PRACTICE</span><b>The Gym</b><small>Shootaround · 1-on-1</small></button>
+        <button class="tile t-stats" data-go="stats"><span class="tile-k">STATS</span><b>Lifetime</b><small>Every build</small></button>
+        <button class="tile t-codes" data-go="codes"><span class="tile-k">CODES</span><b>Redeem</b><small>Locker codes</small></button>
+        <button class="tile t-social" data-social><span class="tile-k">SOCIAL</span><b>Friends</b><small>${app.ai ? `Squad ${app.ai.squad.length}/4` : 'Your regulars'}</small></button>
+      </nav>
       <div class="controls-hint muted small">Tip: hold ${promptGlyph(app.input, 'Space', 'X')} to shoot and let go at the top of your jump — a green release always goes in unless it's blocked. ${app.input.usingPad ? `${padGlyph(app.input.gp.family, 'RS')} click` : '<kbd>Tab</kbd>'} in-game shows all controls.</div>
     </section>`;
   $$('[data-go]', root).forEach(b => b.onclick = () => go(app, b.dataset.go));
+  const soc = $('[data-social]', root); if (soc) soc.onclick = () => import('./phone.js').then(P => P.openPhone(app));
   app.showroom.setPreview('dribble');
 }
 

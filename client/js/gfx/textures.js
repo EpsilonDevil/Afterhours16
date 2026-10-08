@@ -65,6 +65,20 @@ export function hardwood(opts = {}) {
   return { color: c, normal: heightToNormal(H, S, S, 3) };
 }
 
+// v0.4.5: tiling water normal map (crossed swells + ripples) for the Harbor Point sea
+export function waterNormal(opts = {}) {
+  const S = opts.size || 512, noise = makeNoise2D(opts.seed || 41);
+  const H = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = x / S * Math.PI * 2, v = y / S * Math.PI * 2;
+    let h = Math.sin(u * 2 + Math.cos(v) * 0.6) * 0.6 + Math.sin(v * 3 - u * 0.5) * 0.35;
+    h += noise.tile(x * 0.03, y * 0.03, S * 0.03, 4) * 0.5;
+    h += noise.tile(x * 0.12, y * 0.12, S * 0.12, 2) * 0.18;
+    H[y * S + x] = h;
+  }
+  return heightToNormal(H, S, S, opts.strength ?? 2.2);
+}
+
 export function asphalt(opts = {}) {
   const S = opts.size || 1024, rng = new RNG(opts.seed || 5), noise = makeNoise2D(opts.seed || 5);
   const c = canvas(S, S), g = ctx2d(c);
@@ -162,16 +176,23 @@ export function courtOverlay(spec) {
     g.beginPath(); g.moveTo(-0.9, bz - s * 1.22); g.lineTo(0.9, bz - s * 1.22); g.globalAlpha = 0.12; g.stroke(); g.globalAlpha = 1;
   }
   g.strokeStyle = spec.lines; g.lineWidth = lineW;
-  // boundary
-  g.strokeRect(-COURT.width / 2, -COURT.length / 2, COURT.width, COURT.length);
+  // boundary: v0.4.5 the court measures to the inside edge of the lines (the lines are out of bounds), as in a
+  // regulation game, so the stroke sits just outside the playing area
+  g.strokeRect(-COURT.width / 2 - lineW / 2, -COURT.length / 2 - lineW / 2, COURT.width + lineW, COURT.length + lineW);
+  // half courts: the half-court line is the back boundary, painted just outside the half in play
+  if (spec.halfOnly) { g.beginPath(); g.moveTo(-COURT.width / 2 - lineW, -lineW / 2); g.lineTo(COURT.width / 2 + lineW, -lineW / 2); g.stroke(); }
   if (!spec.halfOnly) {
     g.beginPath(); g.moveTo(-COURT.width / 2, 0); g.lineTo(COURT.width / 2, 0); g.stroke();
     if (spec.centerFill) { g.fillStyle = spec.centerFill; g.beginPath(); g.arc(0, 0, COURT.centerRadius, 0, Math.PI * 2); g.fill(); }
     g.beginPath(); g.arc(0, 0, COURT.centerRadius, 0, Math.PI * 2); g.stroke();
     g.beginPath(); g.arc(0, 0, 0.61, 0, Math.PI * 2); g.stroke();
   }
-  // center logo
-  if (spec.logo) drawLogo(g, spec.logo, 0, 0, spec.logo.size || 1.6);
+  // center logo (v0.4.5: logos marked inHalf sit inside a half court's play area instead of on its back line,
+  // turned to face the hoop end)
+  if (spec.logo) {
+    const inHalf = spec.halfOnly && spec.logo.inHalf;
+    drawLogo(g, inHalf ? { ...spec.logo, rotate: Math.PI } : spec.logo, 0, inHalf ? 2.7 : 0, spec.logo.size || 1.6);
+  }
   if (spec.sideText) {
     g.save(); g.fillStyle = spec.sideTextColor || spec.lines; g.globalAlpha = 0.9;
     g.font = '900 0.7px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -226,9 +247,61 @@ function threePointPath(g, s) {
   g.lineTo(cx, bz);
 }
 
+// v0.4.5 King Tut Cup court logo: a recumbent sphinx in profile (lion body, paws out front, striped headdress,
+// beard) on a plinth, inside a medallion. Drawn in unit space (radius 1). neon: outlines only, for the glowing
+// overlay copy of the markings.
+function sphinxPath(g) {
+  g.beginPath();
+  g.moveTo(-0.66, 0.3);
+  g.bezierCurveTo(-0.7, 0.1, -0.62, -0.02, -0.48, -0.02); // haunch
+  g.lineTo(0.02, -0.02); // back
+  g.lineTo(0.1, -0.1); // shoulder into the headdress
+  g.lineTo(0.12, -0.5);
+  g.bezierCurveTo(0.14, -0.6, 0.22, -0.64, 0.3, -0.63); // top of the headdress
+  g.lineTo(0.39, -0.59);
+  g.lineTo(0.42, -0.65); g.lineTo(0.45, -0.58); // the cobra on the brow
+  g.lineTo(0.44, -0.46); // forehead
+  g.lineTo(0.48, -0.38); // nose
+  g.lineTo(0.44, -0.35); g.lineTo(0.45, -0.31); g.lineTo(0.43, -0.28); // lips and chin
+  g.lineTo(0.46, -0.18); g.lineTo(0.41, -0.16); g.lineTo(0.4, -0.25); // the beard
+  g.lineTo(0.41, -0.02); // headdress falling onto the chest
+  g.lineTo(0.43, 0.14); // chest
+  g.lineTo(0.74, 0.15); // forelegs out front
+  g.bezierCurveTo(0.8, 0.16, 0.81, 0.29, 0.75, 0.3); // paws
+  g.closePath();
+}
+function drawSphinx(g, logo, size) {
+  const neon = logo.color === '#000000', ink = logo.accent || '#e8c15a', dark = neon ? ink : logo.color;
+  g.save(); g.scale(size, size);
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  // medallion: filled disc, a ring and an inner ring
+  g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2);
+  // (the glowing copy blacks the disc out first, so the neon court lines don't run across the sphinx)
+  if (!neon) { g.fillStyle = logo.color; g.globalAlpha = logo.alpha ?? 0.92; g.fill(); g.globalAlpha = 1; } else { g.fillStyle = '#000000'; g.fill(); }
+  g.strokeStyle = ink; g.lineWidth = 0.06; g.stroke();
+  g.beginPath(); g.arc(0, 0, 0.88, 0, Math.PI * 2); g.lineWidth = 0.025; g.stroke();
+  // plinth
+  g.beginPath(); g.rect(-0.72, 0.3, 1.46, 0.11);
+  if (neon) { g.lineWidth = 0.03; g.stroke(); } else { g.fillStyle = ink; g.fill(); }
+  // the sphinx
+  g.save(); g.translate(-0.04, 0.0);
+  sphinxPath(g);
+  if (neon) { g.lineWidth = 0.035; g.stroke(); } else { g.fillStyle = ink; g.fill(); }
+  // details: headdress stripes, eye, the line of the forelegs, the haunch and the tail
+  g.strokeStyle = dark; g.lineWidth = neon ? 0.02 : 0.028;
+  for (let i = 0; i < 6; i++) { const y = -0.5 + i * 0.075; g.beginPath(); g.moveTo(0.13 + (i < 1 ? 0.03 : 0), y); g.lineTo(i < 3 ? 0.34 : 0.39, y + 0.01); g.stroke(); }
+  g.beginPath(); g.ellipse(0.4, -0.45, 0.03, 0.012, 0, 0, Math.PI * 2); if (neon) g.stroke(); else { g.fillStyle = dark; g.fill(); }
+  g.beginPath(); g.moveTo(0.44, 0.22); g.lineTo(0.74, 0.22); g.stroke();
+  g.beginPath(); g.moveTo(-0.44, 0.3); g.quadraticCurveTo(-0.46, 0.08, -0.3, 0.06); g.stroke();
+  g.beginPath(); g.moveTo(-0.62, 0.27); g.quadraticCurveTo(-0.5, 0.2, -0.44, 0.27); g.stroke();
+  g.restore();
+  g.restore();
+}
+
 export function drawLogo(g, logo, x, y, size) {
   g.save(); g.translate(x, y);
   const shape = logo.shape || 'circle';
+  if (shape === 'sphinx') { if (logo.rotate) g.rotate(logo.rotate); drawSphinx(g, logo, size); g.restore(); return; }
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);
@@ -330,6 +403,78 @@ export function ringTexture(size = 256) {
   return c;
 }
 
+// v0.4.5 Hot / Cold floor icons under a player (additive decals): a flame and an ice crystal
+export function flameTexture(size = 256) {
+  const c = canvas(size, size), g = ctx2d(c), r = size / 2;
+  g.clearRect(0, 0, size, size);
+  const glow = g.createRadialGradient(r, r, r * 0.2, r, r, r);
+  glow.addColorStop(0, 'rgba(255,150,40,0.55)'); glow.addColorStop(0.6, 'rgba(255,80,10,0.25)'); glow.addColorStop(1, 'rgba(255,40,0,0)');
+  g.fillStyle = glow; g.beginPath(); g.arc(r, r, r, 0, Math.PI * 2); g.fill();
+  // ring of flame tongues around the feet
+  for (let k = 0; k < 14; k++) {
+    const a = k / 14 * Math.PI * 2, len = r * (0.3 + 0.12 * Math.sin(k * 2.7));
+    g.save(); g.translate(r, r); g.rotate(a);
+    const fg = g.createLinearGradient(0, -r * 0.58, 0, -r * 0.58 - len);
+    fg.addColorStop(0, 'rgba(255,240,170,0.95)'); fg.addColorStop(0.45, 'rgba(255,140,30,0.85)'); fg.addColorStop(1, 'rgba(220,40,0,0)');
+    g.fillStyle = fg; g.beginPath();
+    g.moveTo(-r * 0.11, -r * 0.56);
+    g.bezierCurveTo(-r * 0.12, -r * 0.7, -r * 0.03, -r * 0.62 - len * 0.7, 0, -r * 0.6 - len);
+    g.bezierCurveTo(r * 0.03, -r * 0.62 - len * 0.7, r * 0.12, -r * 0.7, r * 0.11, -r * 0.56);
+    g.closePath(); g.fill(); g.restore();
+  }
+  // center flame emblem
+  g.save(); g.translate(r, r * 1.08);
+  const cg = g.createLinearGradient(0, r * 0.3, 0, -r * 0.42);
+  cg.addColorStop(0, 'rgba(255,90,10,0.95)'); cg.addColorStop(0.5, 'rgba(255,170,40,0.95)'); cg.addColorStop(1, 'rgba(255,250,200,0.95)');
+  g.fillStyle = cg; g.beginPath();
+  g.moveTo(0, r * 0.3); g.bezierCurveTo(-r * 0.32, r * 0.24, -r * 0.3, -r * 0.08, -r * 0.08, -r * 0.42);
+  g.bezierCurveTo(-r * 0.06, -r * 0.18, r * 0.05, -r * 0.2, r * 0.06, -r * 0.3);
+  g.bezierCurveTo(r * 0.34, -r * 0.02, r * 0.3, r * 0.24, 0, r * 0.3); g.fill(); g.restore();
+  return c;
+}
+// v0.4.5 flame wall strip (park win streaks): flame tongues on black, tiling left-right, for additive blending.
+// The wall scrolls this upward so the fire rolls.
+export function flameWallTexture(w = 256, h = 256, seed = 5) {
+  const c = canvas(w, h), g = ctx2d(c), rng = new RNG(seed);
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'lighter';
+  const base = g.createLinearGradient(0, h, 0, h * 0.55);
+  base.addColorStop(0, 'rgba(255,170,60,0.9)'); base.addColorStop(1, 'rgba(255,60,0,0)');
+  g.fillStyle = base; g.fillRect(0, h * 0.55, w, h * 0.45);
+  for (let k = 0; k < 26; k++) {
+    const x = rng.next() * w, len = h * (0.35 + rng.next() * 0.6), wd = w * (0.04 + rng.next() * 0.06);
+    for (const ox of [-w, 0, w]) {
+      const fg = g.createLinearGradient(0, h, 0, h - len);
+      fg.addColorStop(0, 'rgba(255,230,150,0.85)'); fg.addColorStop(0.35, 'rgba(255,130,25,0.75)'); fg.addColorStop(1, 'rgba(200,30,0,0)');
+      g.fillStyle = fg; g.beginPath();
+      g.moveTo(x + ox - wd, h);
+      g.bezierCurveTo(x + ox - wd * 1.1, h - len * 0.4, x + ox - wd * 0.2, h - len * 0.8, x + ox + (rng.next() - 0.5) * wd, h - len);
+      g.bezierCurveTo(x + ox + wd * 0.2, h - len * 0.8, x + ox + wd * 1.1, h - len * 0.4, x + ox + wd, h);
+      g.closePath(); g.fill();
+    }
+  }
+  g.globalCompositeOperation = 'source-over';
+  return c;
+}
+export function iceTexture(size = 256) {
+  const c = canvas(size, size), g = ctx2d(c), r = size / 2;
+  g.clearRect(0, 0, size, size);
+  const glow = g.createRadialGradient(r, r, r * 0.15, r, r, r);
+  glow.addColorStop(0, 'rgba(170,230,255,0.5)'); glow.addColorStop(0.65, 'rgba(90,170,255,0.2)'); glow.addColorStop(1, 'rgba(60,120,255,0)');
+  g.fillStyle = glow; g.beginPath(); g.arc(r, r, r, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(225,248,255,0.95)'; g.lineCap = 'round';
+  g.translate(r, r);
+  for (let k = 0; k < 6; k++) {
+    g.save(); g.rotate(k * Math.PI / 3);
+    g.lineWidth = size * 0.035; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -r * 0.72); g.stroke();
+    g.lineWidth = size * 0.022;
+    for (const t of [0.32, 0.52]) { g.beginPath(); g.moveTo(0, -r * t); g.lineTo(-r * 0.14, -r * (t + 0.13)); g.moveTo(0, -r * t); g.lineTo(r * 0.14, -r * (t + 0.13)); g.stroke(); }
+    g.restore();
+  }
+  g.fillStyle = 'rgba(240,252,255,0.95)'; g.beginPath(); g.arc(0, 0, r * 0.1, 0, Math.PI * 2); g.fill();
+  return c;
+}
+
 export function brick(opts = {}) {
   const S = 512, c = canvas(S, S), g = ctx2d(c), rng = new RNG(opts.seed || 21), noise = makeNoise2D(opts.seed || 21);
   const base = opts.color || [0.48, 0.2, 0.14];
@@ -419,6 +564,16 @@ export function banner(text, opts = {}) {
   g.font = `${opts.weight || 900} ${opts.size || h * 0.5}px ${opts.font || '"Arial Black", Impact, sans-serif'}`;
   g.fillText(text, w / 2, h * (opts.stripe ? 0.42 : 0.52));
   if (opts.sub) { g.font = `700 ${h * 0.14}px Arial, sans-serif`; g.globalAlpha = 0.8; g.fillText(opts.sub, w / 2, h * 0.9); }
+  return c;
+}
+
+// v0.4.5 floor stencil for the squad-spot rows (GOT NEXT / 2ND / 3RD): white paint with a transparent background
+export function floorLabel(text) {
+  const w = 512, h = 128, c = canvas(w, h), g = ctx2d(c);
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = 'rgba(255,255,255,0.92)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `900 ${h * 0.62}px "Arial Black", Impact, sans-serif`;
+  g.fillText(text, w / 2, h * 0.54);
   return c;
 }
 

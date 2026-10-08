@@ -9,7 +9,11 @@ import * as S from './shots.js';
 import { cloneBall } from './ball.js';
 
 import { rk as n } from './ratings.js';
+import { bk } from './badges.js';
 const hyp = Math.hypot;
+
+const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
+export const AI_SKILL_K = 1.1;
 
 export class AI {
   constructor(game) {
@@ -50,10 +54,13 @@ export class AI {
 
   // v0.4.4: basketball IQ. World AI hoopers carry their own (casuals ~0.1-0.4, park legends ~0.85-1); the
   // difficulty setting nudges everyone. Players without one (practice dummies, the user) use the difficulty.
+  // v0.4.5 final: every AI hooper, in every tier, plays 10% smarter (AI_SKILL_K; the user's own player isn't
+  // touched). IQ drives reads, reaction times, defense, shot selection and the AI's green rate.
   iq(p) {
     const g = this.g;
-    if (p.iq == null) return p.human ? 0.6 : g.difficulty;
-    return Math.max(0, Math.min(1, p.iq + (g.difficulty - 0.6) * 0.5));
+    if (p.iq == null) return p.human ? 0.6 : Math.min(1, g.difficulty * AI_SKILL_K);
+    const base = Math.max(0, Math.min(1, p.iq + (g.difficulty - 0.6) * 0.5));
+    return p.human ? base : Math.min(1, base * AI_SKILL_K);
   }
   skill(p) { return Math.min(1, this.iq(p) * 0.6 + 0.4 * (p.human ? 0.7 : n(p.ratings.perimeter_d) * 0.5 + 0.5)); }
 
@@ -166,7 +173,7 @@ export class AI {
       const qx = q.x - p.x, qz = q.z - p.z;
       const t = Math.max(0, Math.min(1, (qx * lx + qz * lz) / (L * L)));
       const dd = hyp(q.x - (p.x + lx * t), q.z - (p.z + lz * t));
-      if (dd < 1.4) risk += (1.4 - dd) * (0.3 + n(q.ratings.steal) * 0.5 + (q.badges?.interceptor || 0) * 0.06) * (t > 0.15 ? 1 : 0.3);
+      if (dd < 1.4) risk += (1.4 - dd) * (0.3 + n(q.ratings.steal) * 0.5 + bk(q.badges, 'interceptor') * 0.06) * (t > 0.15 ? 1 : 0.3);
     }
     return risk + Math.max(0, L - 9) * 0.05;
   }
@@ -203,6 +210,29 @@ export class AI {
       if (v > bv) { bv = v; best = r; }
     }
     return best;
+  }
+
+  // v0.4.5 timed layups for the AI (and auto-play): the same idea as jumpers. The chance of a green follows the
+  // Layup rating, IQ and how much the window shrinks under the contest; the release moves to match the grade.
+  layupTiming(p, a, rim) {
+    const g = this.g, attr = p.ratings.layup;
+    const contest = this.estimateContest(p, g.opponents(p), rim);
+    const win = S.layupWindowMs(attr, p.badges, { contest, lstyle: a.lstyle }), base = S.layupWindowMs(attr, p.badges, { lstyle: a.lstyle });
+    let pGreen = base > 0 ? Math.max(0.02, Math.min(0.6, 0.1 + 0.32 * n(attr) + (this.iq(p) - 0.6) * 0.2)) * Math.pow(win / base, 0.8) : 0;
+    let good = 0.86;
+    if (p.human && g.assist && p.profile) {
+      // auto-play: finish like your career twos say you do
+      const prior = 0.3 + 0.24 * n(attr), k = Math.max(0.35, Math.min(2.4, p.profile.fg2 / prior));
+      pGreen = Math.max(0.01, Math.min(0.9, pGreen * Math.pow(k, 1.4)));
+      good = Math.max(0.55, Math.min(0.97, 1 - 0.14 / k));
+    }
+    const r = g.rng.next();
+    const grade = r < pGreen ? 'excellent' : r < pGreen + (1 - pGreen) * good ? (g.rng.next() < 0.5 ? 'early' : 'late') : (g.rng.next() < 0.5 ? 'vearly' : 'vlate');
+    const w = Math.max(win, base * 0.4, 9) * g.speed / 1000;
+    const err = grade === 'excellent' ? g.rng.range(-w, w) * 0.8
+      : grade === 'early' ? -g.rng.range(w * 1.1, w * 2.2) : grade === 'late' ? g.rng.range(w * 1.1, w * 2.2)
+      : grade === 'vearly' ? -g.rng.range(w * 2.8, w * 3.4) : g.rng.range(w * 2.8, w * 3.4);
+    return { at: Math.max(a.takeoff + 0.02, a.release + err), grade };
   }
 
   // AI shooters don't press a button: pick the release quality from skill, difficulty and how tough the
@@ -261,12 +291,33 @@ export class AI {
     }
     if (p.action && p.action.type !== 'catch') return;
     const IQ = this.iq(p);
+    // v0.4.5: right after an ankle-breaker, make the defender pay. Slashers, playmakers and bigs take it to
+    // the rim for a dunk or layup; shooters (sharpshooters, stretch bigs, lockdowns) rise up right there.
+    if (p.ankleT != null && g.time - p.ankleT < 1.4 && o.ankleFor !== p.ankleT && !g.practice) {
+      o.ankleFor = p.ankleT;
+      const arch = p.entry?.build?.archetype || '', dR = hyp(rim.x - p.x, rim.z - p.z);
+      const shooter = arch === 'sharpshooter' || arch === 'stretch_big' || arch === 'lockdown' || (arch === 'two_way' && dR > 6 && n(p.ratings.three_point) > 0.6);
+      if (shooter && dR < 8.3) { it.shoot = 'press'; it.forceJumper = dR > 2.2; o.plan = null; this.stats.ankleShot = (this.stats.ankleShot || 0) + 1; return; }
+      o.plan = 'drive'; o.attack = true; o.cutT = 0; this.stats.ankleDrive = (this.stats.ankleDrive || 0) + 1;
+      if (shooter) { o.plan = 'pullup'; o.attack = false; } // too deep: a dribble or two in, then the pull-up
+      this.seek(p, rim.x, rim.z, { sprint: true });
+      return;
+    }
+    if (o.plan === 'pullup') {
+      this.seek(p, rim.x, rim.z, { sprint: true });
+      if (d0(p, rim) < 7.6 || g.time - p.ankleT > 1.6) { it.shoot = 'press'; it.forceJumper = true; o.plan = null; }
+      return;
+    }
     const reactBase = 0.42 - IQ * 0.28; // v0.4.4: sharp players read the floor about twice as fast as casuals
     // v0.4.2: a teammate calling for the ball gets it almost instantly when he's open and the lane is clean;
     // with a clogged lane the handler holds it (keeps probing) and throws as soon as it clears
     {
       const caller = g.mates(p).find(r => r.calling > 0 && r.action?.type !== 'stumble');
-      if (caller) {
+      // v0.4.5: ...unless I'm the one with the better look (an open shot in range, or the lane): a smart
+      // handler doesn't give that up just because somebody is calling
+      const myLook = caller && !p.human ? this.shotValue(p, p.x, p.z, defs).val * (1 - 0.5 * Math.min(1, this.estimateContest(p, defs, rim))) : 0;
+      const callerLook = caller ? this.shotValue(caller, caller.x, caller.z, g.opponents(caller)).val : 0;
+      if (caller && !(myLook > callerLook + 0.1 + (1 - IQ) * 0.3 && g.rng.next() < 0.4 + 0.5 * IQ)) {
         if (o.callFor !== caller.id || caller.calling > 1.12) { o.callFor = caller.id; o.callT0 = g.time; }
         const waited = g.time - o.callT0, risk = this.passRisk(p, caller), open = this.openness(caller);
         const react = 0.05 + (1 - IQ) * 0.14;
@@ -284,7 +335,7 @@ export class AI {
     // v0.4.3: post-up in progress: back the defender down toward the block, then a hook / close shot, or kick
     // it out if a second defender comes
     if (o.plan === 'post') {
-      o.postT -= dt;
+      o.postT -= dt; p.posting = 0.3;
       const bx = rim.x + o.postSide * 1.3, bz = rim.z - side * 1.05;
       this.seek(p, bx, bz, { sprint: false, arrive: 0.4 });
       it.mx *= 0.55; it.mz *= 0.55; // a slow, physical back-down
@@ -321,16 +372,24 @@ export class AI {
       }
       this.seek(p, tx, tz, { sprint: true, arrive: 0.5 });
       const toward = p.speed > 0.1 ? ((rim.x - p.x) * p.vx + (rim.z - p.z) * p.vz) / (d * p.speed) : 0;
-      if (d < 3.4 && p.speed > 2.3 && toward > 0.55) { it.shoot = 'press'; it.sprint = true; o.plan = null; this.stats.finish = (this.stats.finish || 0) + 1; return; }
+      if (d < 3.4 && p.speed > 2.3 && toward > 0.55) { it.shoot = 'press'; it.sprint = true; if (o.attack) it.attack = true; o.plan = null; o.attack = false; this.stats.finish = (this.stats.finish || 0) + 1; return; }
+      // an ankle-breaker drive finishes at the rim (dunk if he can get up, otherwise a layup)
+      if (o.attack && d < 3.6) { it.shoot = 'press'; it.sprint = true; it.attack = true; o.plan = null; o.attack = false; this.stats.finish = (this.stats.finish || 0) + 1; return; }
       // cut off only when a defender is squarely in the path just ahead
       const ahead = defs.find(q => { const qx = q.x - p.x, qz = q.z - p.z, al = (qx * (rim.x - p.x) + qz * (rim.z - p.z)) / d; const la = Math.abs(qx * (rim.z - p.z) - qz * (rim.x - p.x)) / d; return al > 0.2 && al < 0.9 && la < 0.35 && !q.airborne; });
       o.cutT = ahead ? (o.cutT || 0) + dt : 0;
       const cutOff = !!ahead && d > 2.6 && o.cutT > 0.45;
       if (cutOff || (d < 3.4 && p.speed <= 1.6)) {
         this.stats[cutOff ? 'cutoff' : 'slow'] = (this.stats[cutOff ? 'cutoff' : 'slow'] || 0) + 1;
+        o.attack = false;
         if (d < 1.9) { it.shoot = 'press'; o.plan = null; return; }
+        // v0.4.5: smarter than kicking it out every time: a short floater/pull-up when he has the space, and
+        // only a pass to a teammate who is actually open with a better look
+        const mine = this.shotValue(p, p.x, p.z, defs), myC = this.estimateContest(p, defs, rim);
+        if (d < 4.2 && myC < 0.3 + IQ * 0.1) { it.shoot = 'press'; o.plan = null; return; }
         const r = this.bestPassTarget(p);
-        if (r && this.openness(r) > 1.8 && this.passRisk(p, r) < 0.5) { it.pass = { target: r.id, type: this.passRisk(p, r) > 0.2 ? 'bounce' : 'chest' }; o.plan = null; return; }
+        if (r && this.openness(r) > 2.2 && this.passRisk(p, r) < 0.4 && this.shotValue(r, r.x, r.z, g.opponents(r)).val > mine.val * (1 - 0.5 * Math.min(1, myC)) + 0.05) { it.pass = { target: r.id, type: this.passRisk(p, r) > 0.2 ? 'bounce' : 'chest' }; o.plan = null; return; }
+        if (mine.val > 0.95 && myC < 0.35) { it.shoot = 'press'; it.forceJumper = true; o.plan = null; return; }
         o.plan = null; o.next = 0.25;
         const sp = spotsFor(1, side)[0]; o.target = { x: p.x * 0.7, z: sp.z + side * 1.5 };
         return;
@@ -358,6 +417,9 @@ export class AI {
       passVal = tsv.val + (this.openness(passTarget) > 3 ? 0.25 : 0) - this.passRisk(p, passTarget) * (1.8 + T.safe * 1.0) * (0.45 + 0.75 * IQ) + (passTarget.human ? 0.15 : 0) + (passTarget.calling > 0 ? 0.3 : 0) - 0.25 + (T.pass - 0.5) * 0.8;
       const lp = g.lastPass;
       if (lp && lp.from === passTarget.id && g.time - lp.time < 3) passVal -= 0.6;
+      // v0.4.5: don't pass a good look to get a worse one
+      const own = this.shotValue(p, p.x, p.z, defs).val * (1 - 0.5 * Math.min(1, this.estimateContest(p, defs, rim)));
+      passVal -= Math.max(0, own - tsv.val) * (0.4 + 0.5 * IQ);
     }
     // blow-by: my defender is not squarely between me and the rim, or is off balance
     let laneOpen = false;
@@ -382,7 +444,7 @@ export class AI {
     // post scorers back down toward the block from the mid-post
     const postVal = T.post > 0.4 && myDef && d < 6.8 && d > 2.6 && !sv.three ? 0.25 + T.post * 0.9 + n(p.ratings.post_control) * 0.45 + (p.phys.strength - myDef.phys.strength) * 0.6 - n(myDef.ratings.interior_d) * 0.3 : -9;
     // v0.4.4: low-IQ players misjudge their options (bad shots, forced passes); high-IQ ones rarely do
-    const noise = 0.1 + (1 - IQ) * 0.42;
+    const noise = 0.06 + (1 - IQ) * 0.3; // v0.4.5: fewer head-scratchers
     const rnd = () => g.rng.range(-noise, noise);
     const choices = [
       ['shoot', shootVal + rnd()],
@@ -394,12 +456,12 @@ export class AI {
     if (d > 8.4) choices[0][1] -= 2;
     choices.sort((a, b) => b[1] - a[1]);
     const pick = choices[0][0];
-    if (pick === 'shoot' && ((sv.val > 0.9 - (1 - IQ) * 0.25 && estC < (sv.three ? 0.45 : 0.55) + (T.shoot - 0.5) * 0.08 + (p.badges.deadeye || 0) * 0.03 + (1 - IQ) * 0.2) || g.shotClock < 5)) { it.shoot = 'press'; const k = g.shotClock < 5 ? 'lateClock' : 'chosen'; this.stats[k] = (this.stats[k] || 0) + 1; return; }
+    if (pick === 'shoot' && ((sv.val > 0.9 - (1 - IQ) * 0.25 && estC < (sv.three ? 0.45 : 0.55) + (T.shoot - 0.5) * 0.08 + bk(p.badges, 'deadeye') * 0.03 + (1 - IQ) * 0.2) || g.shotClock < 5)) { it.shoot = 'press'; const k = g.shotClock < 5 ? 'lateClock' : 'chosen'; this.stats[k] = (this.stats[k] || 0) + 1; return; }
     if (pick === 'drive') { o.plan = 'drive'; this.stats.drives = (this.stats.drives || 0) + 1; this.seek(p, rim.x, rim.z, { sprint: true }); return; }
     if (pick === 'post') { o.plan = 'post'; o.postT = 2.6; o.postSide = p.x >= 0 ? 1 : -1; this.stats.posts = (this.stats.posts || 0) + 1; return; }
     if (pick === 'pass' && passTarget) {
       const lob = passTarget.position === 'C' || passTarget.position === 'PF';
-      const oop = hyp(passTarget.x - rim.x, passTarget.z - rim.z) < 5.5 && this.openness(passTarget) > 1.6 && (passTarget.ratings.driving_dunk ?? 0) > 70 && passTarget.phys.reach + passTarget.phys.vertical > 3.3 && g.rng.next() < 0.25 && !passTarget.human;
+      const oop = hyp(passTarget.x - rim.x, passTarget.z - rim.z) < 5.5 && g.oopReachable(p, passTarget) && this.openness(passTarget) > 1.6 && (passTarget.ratings.driving_dunk ?? 0) > 70 && passTarget.phys.reach + passTarget.phys.vertical > 3.3 && g.rng.next() < 0.25 && !passTarget.human;
       const bounce = !oop && this.passRisk(p, passTarget) > 0.25 && hyp(passTarget.x - p.x, passTarget.z - p.z) < 7;
       it.pass = { target: passTarget.id, type: oop ? 'alley' : bounce ? 'bounce' : 'chest' };
       return;
@@ -536,7 +598,8 @@ export class AI {
     const tUp = Math.sqrt(2 * h / GRAVITY);
     const jumpAt = Math.max(0.05, flight - tUp);
     r.action = null;
-    r.startAction('oop', jumpAt + tUp * 2 + 0.2, { jumpAt, jumpH: h, tUp, T });
+    // v0.4.5: he runs to a takeoff spot short of the rim first (game.drive), then rises for it
+    r.startAction('oop', jumpAt + tUp * 2 + 0.2, { jumpAt, jumpH: h, tUp, T, spot: g.oopPoints(r).spot });
   }
   estimateArrival(ball, T) {
     // time when the lob is closest to T (simple ballistic)

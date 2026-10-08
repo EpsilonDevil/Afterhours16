@@ -13,34 +13,61 @@ export class GLContext {
     this.maxAniso = this.aniso ? gl.getParameter(this.aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) : 1;
     this.maxSamples = gl.getParameter(gl.MAX_SAMPLES) || 0;
     this.programs = new Map();
+    // v0.4.5 stage 7: shader programs compile on the driver's threads when the browser supports it, so a new
+    // material variant showing up mid-game (a streak effect, a firework, a new player's gear) no longer stalls
+    // the frame while it compiles; the mesh simply waits a frame or two to appear
+    this.parallel = gl.getExtension('KHR_parallel_shader_compile');
+    this.onNewProgram = null;
     this.stats = { draws: 0, tris: 0 };
     this.lost = false;
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.lost = true; });
   }
 
+  // starts the compile; the status is only read when the program is finished (reading it right away would
+  // block until the driver is done)
   compile(type, src) {
     const gl = this.gl, s = gl.createShader(type);
     gl.shaderSource(s, src);
     gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      const log = gl.getShaderInfoLog(s);
-      const lines = src.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n');
-      console.error(log + '\n' + lines);
-      throw new Error('Shader compile failed: ' + log);
-    }
     return s;
   }
+  static key(name, defines) { return name + '|' + Object.entries(defines).filter(([, v]) => v !== false && v != null).map(([k, v]) => k + '=' + v).sort().join(','); }
 
-  program(name, vs, fs, defines = {}) {
-    const key = name + '|' + Object.entries(defines).filter(([, v]) => v !== false && v != null).map(([k, v]) => k + '=' + v).sort().join(',');
+  // Returns the program, or null while an async compile (opts.async) is still running.
+  program(name, vs, fs, defines = {}, opts = {}) {
+    const key = GLContext.key(name, defines);
     let p = this.programs.get(key);
-    if (p) return p;
+    if (p) {
+      if (p.ready) return p;
+      return this.finish(p, !(opts.async && this.parallel)) ? p : null;
+    }
     const head = '#version 300 es\n' + Object.entries(defines).filter(([, v]) => v !== false && v != null).map(([k, v]) => `#define ${k} ${v === true ? 1 : v}`).join('\n') + '\n';
     const gl = this.gl, prog = gl.createProgram();
-    gl.attachShader(prog, this.compile(gl.VERTEX_SHADER, head + vs));
-    gl.attachShader(prog, this.compile(gl.FRAGMENT_SHADER, head + fs));
+    const vso = this.compile(gl.VERTEX_SHADER, head + vs), fso = this.compile(gl.FRAGMENT_SHADER, head + fs);
+    gl.attachShader(prog, vso);
+    gl.attachShader(prog, fso);
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('Program link failed: ' + gl.getProgramInfoLog(prog));
+    p = { key, prog, vso, fso, srcs: [head + vs, head + fs], ready: false, frame: -1, id: this.programs.size, uniforms: {} };
+    this.programs.set(key, p);
+    if (this.onNewProgram) this.onNewProgram(name, defines, key);
+    return this.finish(p, !(opts.async && this.parallel)) ? p : null;
+  }
+
+  // is an async compile done? (non-blocking unless `block`)
+  finish(p, block) {
+    const gl = this.gl;
+    if (!block && this.parallel && !gl.getProgramParameter(p.prog, this.parallel.COMPLETION_STATUS_KHR)) return false;
+    const prog = p.prog;
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      for (const [sh, src] of [[p.vso, p.srcs[0]], [p.fso, p.srcs[1]]]) {
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          const log = gl.getShaderInfoLog(sh);
+          console.error(log + '\n' + src.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n'));
+          throw new Error('Shader compile failed: ' + log);
+        }
+      }
+      throw new Error('Program link failed: ' + gl.getProgramInfoLog(prog));
+    }
     const uniforms = {};
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
     let unit = 0;
@@ -54,9 +81,9 @@ export class GLContext {
     gl.useProgram(prog);
     for (const u of Object.values(uniforms)) if (u.unit >= 0) gl.uniform1i(u.loc, u.unit);
     this.current = null;
-    p = { key, prog, uniforms, frame: -1, id: this.programs.size };
-    this.programs.set(key, p);
-    return p;
+    p.uniforms = uniforms; p.ready = true; p.srcs = null;
+    gl.deleteShader(p.vso); gl.deleteShader(p.fso); p.vso = p.fso = null;
+    return true;
   }
 
   use(p) { if (this.current !== p) { this.gl.useProgram(p.prog); this.current = p; } return p; }

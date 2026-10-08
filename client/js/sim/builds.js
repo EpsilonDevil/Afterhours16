@@ -25,7 +25,11 @@ export const ARCH_BONUS = {
 export const ARCH_SCALE = 1.12; // v0.4.3 1.4, v0.4.4 strengths/weaknesses 20% smaller
 export const STYLE_TO_ARCH = { outside: 'sharpshooter', balanced: 'two_way', inside: 'slasher' };
 
-export function caps(b) {
+// v0.4.5: every build maxes out at exactly 90 OVR before cap breakers (mirrors server/builds.py)
+export const OVR_CAP = 90;
+export const COST_K = 0.65; // v0.4.5: everything costs 35% less
+export const HOF_LIMIT = 7;
+function baseCaps(b) {
   const big = (b.height - 67) / 20, heavy = (b.weight - 200) / 100, wing = Math.max(-0.8, Math.min(1, (b.wingspan - b.height - 3) / 5));
   const c = {
     close_shot: 80 + big * 8, mid_range: 84 - big * 8, three_point: 84 - big * 14 - wing * 3, free_throw: 84 - big * 6,
@@ -38,8 +42,20 @@ export function caps(b) {
   const arch = b.archetype || STYLE_TO_ARCH[b.style] || 'two_way';
   const bonus = ARCH_BONUS[arch] || {};
   const out = {};
-  // v0.4.3: archetype strengths and weaknesses are 40% more pronounced
-  for (const k of ATTRS) out[k] = Math.max(40, Math.min(99, Math.round(c[k] + (bonus[k] || 0) * ARCH_SCALE)));
+  for (const k of ATTRS) out[k] = c[k] + (bonus[k] || 0) * ARCH_SCALE;
+  return out;
+}
+export function caps(b) {
+  const base = baseCaps(b), pos = b.position || 'SF';
+  let out = null;
+  for (let i = 0; i < 1200; i++) {
+    const k = 0.5 + i * 0.0025;
+    out = {};
+    for (const a of ATTRS) out[a] = Math.max(40, Math.min(99, Math.round(40 + (base[a] - 40) * k)));
+    if (overall(out, pos) >= OVR_CAP) break;
+  }
+  const applied = b.cap_breakers?.applied || {};
+  for (const [a, n] of Object.entries(applied)) if (out[a] != null && n > 0) out[a] = Math.min(99, out[a] + n);
   return out;
 }
 export function startingAttributes(b) {
@@ -47,5 +63,5 @@ export function startingAttributes(b) {
   for (const k of ATTRS) out[k] = Math.max(35, Math.round(c[k] * 0.72));
   return out;
 }
-export function upgradeCost(cur, target) { let s = 0; for (let l = cur; l < target; l++) s += 150 + (l - 40) * 16; return s; }
+export function upgradeCost(cur, target) { let s = 0; for (let l = cur; l < target; l++) s += 150 + (l - 40) * 16; return Math.round(s * COST_K); }
 export { overall };

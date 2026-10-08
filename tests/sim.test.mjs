@@ -286,7 +286,9 @@ test('v0.4.4 AI world: persistent accounts, clear skill tiers, schedules through
   assert.equal(a.invite(on, t).ok, false, 'must be a friend first');
   a.addFriend(on); a.addFriend(off);
   assert.equal(a.invite(off, t).ok, false, 'offline friends cannot join');
-  assert.equal(a.invite(on, t).ok, true);
+  // v0.4.5: nobody can be pulled out of a game
+  assert.equal(a.invite(on, t, true).ok, false, 'players in a game cannot join');
+  assert.equal(a.invite(on, t, false).ok, true);
   assert.deepEqual(a.toJSON().squad, [on]);
   a.recordGame([on], [off], true, t);
   assert.deepEqual([a.met[on].with, a.met[on].wins, a.met[off].vs], [1, 1, 1]);
@@ -301,4 +303,118 @@ test('v0.4.4 auto-play follows your career numbers', async () => {
   assert.ok(vol.tend.spot > 0.6, 'a three-heavy diet shows up');
   assert.ok(vol.tend.press > none.tend.press && vol.tend.pass < none.tend.pass, 'steals up, assists down');
   assert.ok(Math.abs(vol.tp - 0.42) < 0.03 && vol.ft > 0.8, 'shooting targets come from your percentages');
+});
+
+// ---------------- v0.4.5 ----------------
+test('v0.4.5 badges: tier steps grow 10% each, a stat with none of its badges plays 10% weaker, Icon badges pass 99', async () => {
+  const B = await import('../client/js/sim/badges.js');
+  const { rk } = await import('../client/js/sim/ratings.js');
+  assert.deepEqual(B.BADGE_K.map(x => +x.toFixed(3)), [0, 1, 2.1, 3.31, 4.641]);
+  const t = B.tierTable([0, 0.15, 0.25, 0.35, 0.45]);
+  assert.ok(Math.abs(t[4] - (0.15 + 0.1 * 1.1 + 0.1 * 1.21 + 0.1 * 1.331)) < 1e-9);
+  const raw = { three_point: 85, layup: 85, speed: 85 };
+  const none = B.effectiveRatings(raw, {});
+  const shooter = B.effectiveRatings(raw, { catch_shoot: 1 });
+  assert.equal(shooter.three_point, 85);
+  assert.ok(Math.abs(rk(none.three_point) / rk(85) - 0.9) < 0.03, 'about 10% less effective without a badge');
+  assert.equal(none.speed, 85, 'stats no badge works through are untouched');
+  const icon = B.effectiveRatings({ ...raw, driving_dunk: 99 }, { posterizer: 4 }, 'hash_slinging');
+  assert.ok(icon.driving_dunk > 99 && rk(icon.driving_dunk) > rk(99), 'Icon badge scales past 99');
+  // the AI world gives every archetype its Icon badge only through the 7th HOF badge (server side), so here
+  // just check every archetype has one
+  for (const a of ['sharpshooter', 'slasher', 'playmaker', 'lockdown', 'two_way', 'glass_cleaner', 'stretch_big', 'post_scorer']) assert.ok(B.ICON_FOR_ARCH[a]);
+});
+
+function testGame(mode = 'park', seed = 5) {
+  const rng = new RNG(seed);
+  const rosters = [makeTeam(rng, 3, { catalog, level: 0.6 }), makeTeam(rng, 3, { catalog, level: 0.6 })];
+  return new Game({ mode, seed, rosters, catalog, target: 21, quarterLen: 120, quarters: 4, difficulty: 0.6 });
+}
+
+test('v0.4.5 stamina: repeated moves and repeated mistakes drain faster, good plays and grades give it back', () => {
+  const g = testGame();
+  const p = g.players[0];
+  // same move 4+ times in a row: 2x drain, then +0.1x per repeat; a different move resets it
+  for (let i = 0; i < 6; i++) { p.cool.move = 0; p.stamina = 1; g.startMove(p, 'cross'); }
+  assert.equal(p.stam.moveK, 2.2);
+  p.cool.move = 0; g.startMove(p, 'spin');
+  assert.equal(p.stam.moveK, 1);
+  // the same negative play twice in a row: 2x, then +0.1x; a positive play resets it
+  g.bad(p, 'turnover'); assert.equal(p.stam.negK, 1);
+  g.bad(p, 'turnover'); assert.equal(p.stam.negK, 2);
+  g.bad(p, 'turnover'); assert.equal(p.stam.negK, 2.1);
+  g.good(p, 'assist'); assert.equal(p.stam.negK, 1);
+  // every second positive play: stamina back and 2x recovery (never more), until a negative play
+  assert.equal(p.stam.recBoost, false);
+  p.stamina = 0.5; g.good(p, 'rebound');
+  assert.ok(p.stamina > 0.5 && p.stam.recBoost);
+  g.good(p, 'steal'); g.good(p, 'block');
+  assert.equal(p.recK, 2);
+  g.bad(p, 'foul'); assert.equal(p.stam.recBoost, false);
+  // Lock-In grade and going hot / cold stack on top
+  p.stam.grade = 12; assert.equal(p.recK, 1.5);
+  p.hot = 1; assert.equal(p.recK, 2.25);
+  p.hot = 0; p.stam.grade = 2; p.cold = true;
+  assert.equal(+p.drainK.toFixed(4), 1.875);
+  // jogging now costs a little; standing still recovers
+  const q = g.players[1]; q.stamina = 0.8; q.stam.grade = null;
+  q.intent = { ...q.intent, mx: 1, mz: 0, sprint: false }; for (let i = 0; i < 120; i++) q.move(1 / 60, false, 0);
+  assert.ok(q.stamina < 0.8, 'jogging drains');
+  const s1 = q.stamina; q.intent = { ...q.intent, mx: 0, mz: 0 }; for (let i = 0; i < 240; i++) q.move(1 / 60, false, 0);
+  assert.ok(q.stamina > s1, 'standing recovers');
+});
+
+test('v0.4.5 hot and cold, and position takeovers', () => {
+  const g = testGame();
+  const p = g.players.find(q => q.takeover.kind === 'shooting') || g.players[0];
+  p.takeover.kind = 'shooting';
+  const fire = (grade, made) => { g.emit({ type: 'release', player: p.id, grade, kind: 'jumper', contest: 0.1, closest: -1 }); if (made) g.emit({ type: 'score', player: p.id, team: p.team, kind: 'jumper', pts: 2 }); else g.emit({ type: 'miss', player: p.id, team: p.team }); };
+  fire('excellent', true); fire('excellent', true); assert.equal(p.hot, 0);
+  fire('excellent', true); assert.equal(p.hot, 1, '3 straight greens: on fire');
+  fire('late', false); assert.equal(p.hot, 0, 'a miss puts the fire out');
+  for (let i = 0; i < 4; i++) fire('early', false);
+  assert.equal(p.cold, true, 'more than 3 open misses: cold');
+  fire('excellent', true); assert.equal(p.cold, false);
+  // shooting takeover: 6 Excellent releases without a miss, block or off-green release
+  p.takeover.prog = 0;
+  for (let i = 0; i < 5; i++) fire('excellent', true);
+  fire('early', true); assert.equal(p.takeover.prog, 0, 'an off-green release resets it');
+  const before = p.ratings.three_point;
+  for (let i = 0; i < 6; i++) fire('excellent', true);
+  assert.equal(p.takeover.active, true);
+  assert.ok(p.ratings.three_point > before);
+  assert.ok(g.greenK(p) > 1);
+  for (let i = 0; i < 60 * 70 * g.speed && p.takeover.active; i++) g.step(1 / 60);
+  assert.equal(p.takeover.active, false, 'takeovers wear off');
+  assert.equal(p.ratings.three_point, before);
+});
+
+test('v0.4.5 rules: traveling, knockdowns only with Posterizer, long attack-the-rim takeoffs', async () => {
+  const S = await import('../client/js/sim/shots.js');
+  // traveling: moving with a held ball after the gather
+  const g = testGame('park', 9);
+  while (g.phase !== 'live') g.step(1 / 60);
+  const h = g.holder();
+  g.ball.mode = 'held'; h.dribble.used = true; h.action = null;
+  let travel = false;
+  for (let i = 0; i < 240 && !travel; i++) {
+    h.x += 0.012; g.rules(1 / 60); h.prevX = h.x;
+    travel = g.events.some(e => e.type === 'violation' && e.what === 'Traveling');
+  }
+  assert.ok(travel, 'walking with a picked-up dribble is a travel');
+  // knockdowns: only players with the Posterizer badge ever knock a defender down
+  for (const seed of [3, 4, 5, 6]) {
+    const gg = testGame('park', seed);
+    for (let i = 0; i < 60 * 60 * 8 && !gg.over; i++) {
+      gg.step(1 / 60);
+      for (const e of gg.events) if (e.type === 'posterContact') assert.ok(gg.players[e.player].badges.posterizer, 'posterize needs the badge');
+    }
+  }
+  // attack the rim from further out with an open lane
+  const p = testGame().players[0];
+  p.raw.driving_dunk = 85; p.ratings.driving_dunk = 85; p.stamina = 1; p.phys.vertical = Math.max(p.phys.vertical, 3.4 - p.phys.reach);
+  const rim = { x: 0, y: 3.05, z: 12.725 };
+  p.x = 0; p.z = rim.z - 5.3; p.vx = 0; p.vz = 6;
+  const st = S.shotTypeFor(p, rim, { attack: true, defs: [] });
+  assert.equal(st.type, 'dunk'); assert.ok(st.long);
 });

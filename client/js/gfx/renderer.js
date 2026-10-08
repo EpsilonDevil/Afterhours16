@@ -23,6 +23,7 @@ export class Material {
     this.detailMap = o.detailMap || null;      // tiling micro normal map
     this.detail = o.detail || [16, 16, 0.6];   // [u scale, v scale, strength]
     this.uvScale = o.uvScale || [1, 1];
+    this.uvOffset = o.uvOffset || [0, 0]; // v0.4.5: scrolling UVs (water, conveyors, banners)
     this.alphaTest = o.alphaTest ?? 0;
     this.blend = o.blend || null; // 'alpha' | 'add' | 'multiply'
     this.doubleSided = !!o.doubleSided;
@@ -117,6 +118,11 @@ export const QUALITY = {
   ultra: { scale: 1, dpr: 2, msaa: 4, shadow: 4096, bloom: true, reflections: true, fxaa: false, label: 'Ultra' },
 };
 
+const PROGRAM_LOG = 'afterhours16.programs.v1';
+const OPAQUE_ORDER = (a, b) => (a.order - b.order) || (a.material.alphaTest - b.material.alphaTest) || (a.material.id - b.material.id);
+const CASTS_SHADOW = m => m.castShadow;
+const REFLECTS = m => m.reflect && !m.material.floor;
+
 export class Renderer {
   constructor(canvas, quality = 'high') {
     this.ctx = new GLContext(canvas);
@@ -136,6 +142,29 @@ export class Renderer {
     this.defaultEnv = this.ctx.texture({ width: 1, height: 1, data: new Uint8Array([90, 100, 120, 255]) }, { mipmaps: false });
     this.blackTex = this.ctx.texture({ width: 1, height: 1, data: new Uint8Array([0, 0, 0, 255]) }, { mipmaps: false });
     this.setQuality(quality);
+    // v0.4.5 stage 7: remember every shader variant the game has needed, and start compiling them all in the
+    // background at the next launch, so they're ready long before they first show up on screen
+    this.known = new Map();
+    try { for (const e of JSON.parse(localStorage.getItem(PROGRAM_LOG) || '[]')) this.known.set(GLContext.key(e.n, e.d), e); } catch { /* private mode */ }
+    this.ctx.onNewProgram = (name, defines, key) => {
+      if ((name !== 'std' && name !== 'shadow') || this.known.has(key)) return;
+      this.known.set(key, { n: name, d: defines });
+      clearTimeout(this.knownSave);
+      this.knownSave = setTimeout(() => { try { localStorage.setItem(PROGRAM_LOG, JSON.stringify([...this.known.values()].slice(-400))); } catch { /* ignore */ } }, 2000);
+    };
+    if (this.ctx.parallel) for (const e of this.known.values()) { try { this.ctx.program(e.n, e.n === 'std' ? STD_VS : SHADOW_VS, e.n === 'std' ? STD_FS : SHADOW_FS, e.d, { async: true }); } catch { /* stale entry */ } }
+  }
+
+  // v0.4.5 stage 7: start compiling every shader a scene will need (while its loading message is up), instead
+  // of on the frame each mesh first comes into view
+  prewarm(scene) {
+    for (const mesh of scene.meshes) {
+      try {
+        this.programFor(mesh, 'main');
+        if (mesh.castShadow) this.programFor(mesh, 'shadow');
+        if (mesh.reflect && !mesh.material.floor) this.programFor(mesh, 'reflect');
+      } catch (e) { console.warn('prewarm', e.message); }
+    }
   }
 
   setQuality(name) {
@@ -189,16 +218,31 @@ export class Renderer {
     }
   }
 
+  // v0.4.5 stage 7: the program for each pass is cached on the mesh (building the define set and the program
+  // key for every mesh, every pass, every frame made a lot of garbage, and the collector pauses showed up as
+  // hitches). Programs compile asynchronously where the browser allows it: null means "not ready, skip it".
   programFor(mesh, pass) {
+    const m = mesh.material;
+    let pc = mesh._pc;
+    if (!pc || pc.mat !== m || pc.ldr !== this.ldr || m._defsDirty || pc.geo !== mesh.geo || pc.skinned !== !!mesh.bones) {
+      pc = mesh._pc = { mat: m, ldr: this.ldr, geo: mesh.geo, skinned: !!mesh.bones, main: null, reflect: null, shadow: null };
+    }
+    const hit = pc[pass];
+    if (hit) return hit;
+    const p = this.buildProgram(mesh, pass);
+    if (p) pc[pass] = p;
+    return p;
+  }
+  buildProgram(mesh, pass) {
     const m = mesh.material;
     const skinned = !!mesh.bones, inst = mesh.geo.instanceCount > 0;
     if (pass === 'shadow') {
-      return this.ctx.program('shadow', SHADOW_VS, SHADOW_FS, { SKINNED: skinned, MAX_BONES: skinned ? 24 : false, INSTANCED: inst, ALPHA_MASK: m.alphaTest > 0 && !!m.map });
+      return this.ctx.program('shadow', SHADOW_VS, SHADOW_FS, { SKINNED: skinned, MAX_BONES: skinned ? 24 : false, INSTANCED: inst, ALPHA_MASK: m.alphaTest > 0 && !!m.map }, { async: true });
     }
     if (!m._defs || m._defsDirty) { m._defs = m.defines(this.ldr); m._defsDirty = false; }
     const defs = Object.assign({}, m._defs, { SKINNED: skinned, MAX_BONES: skinned ? 24 : false, INSTANCED: inst });
     if (pass === 'reflect') defs.REFLECTIVE = false;
-    return this.ctx.program('std', STD_VS, STD_FS, defs);
+    return this.ctx.program('std', STD_VS, STD_FS, defs, { async: true });
   }
 
   // Texture units are shared between programs, so frame textures are re-bound on every program switch.
@@ -243,7 +287,7 @@ export class Renderer {
   materialUniforms(p, m, pass) {
     const c = this.ctx;
     if (pass === 'shadow') {
-      if (m.alphaTest > 0 && m.map) { c.set(p, 'uMap', m.map); c.set(p, 'uAlphaTest', m.alphaTest); c.set(p, 'uUVScale', m.uvScale); }
+      if (m.alphaTest > 0 && m.map) { c.set(p, 'uMap', m.map); c.set(p, 'uAlphaTest', m.alphaTest); c.set(p, 'uUVScale', m.uvScale); c.set(p, 'uUVOffset', m.uvOffset); }
       return;
     }
     c.set(p, 'uBaseColor', m.color);
@@ -254,6 +298,7 @@ export class Renderer {
     c.set(p, 'uEmissive', m.emissive);
     c.set(p, 'uSheen', m.sheen);
     c.set(p, 'uUVScale', m.uvScale);
+    c.set(p, 'uUVOffset', m.uvOffset);
     c.set(p, 'uAlphaTest', m.alphaTest);
     if (m.map) c.set(p, 'uMap', m.map);
     if (m.normalMap) { c.set(p, 'uNormalMap', m.normalMap); c.set(p, 'uNormalScale', m.normalScale); }
@@ -271,6 +316,7 @@ export class Renderer {
     for (const mesh of list) {
       const m = mesh.material;
       const p = this.programFor(mesh, pass);
+      if (!p) continue; // still compiling: it shows up in a frame or two instead of stalling this one
       c.use(p);
       if (p !== lastProg) { this.frameUniforms(p, scene, cam, pass); lastProg = p; lastMat = null; }
       if (m !== lastMat) {
@@ -301,17 +347,20 @@ export class Renderer {
     if (layerState && pass !== 'shadow') gl.disable(gl.POLYGON_OFFSET_FILL);
   }
 
-  collect(scene, viewProj, filter) {
+  // v0.4.5 stage 7: one reusable pair of lists per pass (no fresh arrays every pass, every frame)
+  collect(scene, viewProj, filter, slot = 'main') {
     M.frustumPlanes(this.planes, viewProj);
-    const opaque = [], blend = [];
+    const lists = (this._lists || (this._lists = {}))[slot] || (this._lists[slot] = { opaque: [], blend: [] });
+    const opaque = lists.opaque, blend = lists.blend;
+    opaque.length = 0; blend.length = 0;
     const s = this.tmpSphere;
     for (const mesh of scene.meshes) {
       if (!mesh.visible || (filter && !filter(mesh))) continue;
       if (mesh.cull) { mesh.worldSphere(s); if (!M.sphereInFrustum(this.planes, s[0], s[1], s[2], s[3])) continue; mesh._depth = s; }
       (mesh.material.blend ? blend : opaque).push(mesh);
     }
-    opaque.sort((a, b) => (a.order - b.order) || (a.material.alphaTest - b.material.alphaTest) || (a.material.id - b.material.id));
-    return { opaque, blend };
+    opaque.sort(OPAQUE_ORDER);
+    return lists;
   }
 
   sortBlend(list, cam) {
@@ -340,7 +389,7 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.POLYGON_OFFSET_FILL);
     gl.polygonOffset(1.5, 2.0);
-    const { opaque } = this.collect(scene, this.lightViewProj, m => m.castShadow);
+    const { opaque } = this.collect(scene, this.lightViewProj, CASTS_SHADOW, 'shadow');
     this.passStamp = ++this.frame * 4 + 1;
     this.drawList(opaque, scene, null, 'shadow');
     gl.disable(gl.POLYGON_OFFSET_FILL);
@@ -358,7 +407,7 @@ export class Renderer {
     gl.clearColor(scene.fog.color[0] * 0.5, scene.fog.color[1] * 0.5, scene.fog.color[2] * 0.5, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.frontFace(gl.CW);
-    const { opaque, blend } = this.collect(scene, this.reflViewProj, m => m.reflect && !m.material.floor);
+    const { opaque, blend } = this.collect(scene, this.reflViewProj, REFLECTS, 'reflect');
     this.passStamp = this.frame * 4 + 2;
     this.drawList(opaque, scene, cam, 'reflect');
     this.sortBlend(blend, cam);

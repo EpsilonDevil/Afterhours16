@@ -1,11 +1,12 @@
 // v0.4.4 social phone (LB + RB / L1 + R1 on a controller, O on the keyboard). Everyone at your park with
 // their overall and position, your friends and when they're on, your squad, and the people you've run with
 // lately. Add the ones you liked playing with and invite them to your squad whenever they're online.
-import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS } from './common.js';
+import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS, money } from './common.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import { PARK_NAMES } from '../sim/world.js';
+import * as Crew from './crew.js';
 
-const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['recent', 'Recent']];
+const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['crew', 'Crew'], ['recent', 'Recent']];
 const ago = t => { const m = (Date.now() - t) / 60000; return m < 2 ? 'just now' : m < 60 ? `${Math.round(m)} min ago` : m < 1440 ? `${Math.round(m / 60)} hr ago` : `${Math.round(m / 1440)} d ago`; };
 const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -30,13 +31,17 @@ export function openPhone(app, opts = {}) {
   let where = new Map();
   const statusOf = id => {
     if (where.has(id)) return { online: true, park: hub.themeId, text: where.get(id) === 'On the sidelines' ? 'Online at this park' : where.get(id) };
-    return w.statusText(id, Date.now(), hub?.themeId);
+    const s = w.statusText(id, Date.now(), hub?.themeId);
+    // v0.4.5: say when he's busy in a game at another park (he can't join your squad until it's over)
+    if (s.online && s.park !== hub?.themeId && w.playingElsewhere(id)) return { ...s, playing: true, text: s.text.replace(/^Online /, 'In a game ') };
+    return s;
   };
+  const busy = id => { const s = statusOf(id); return s.playing || (hub && where.has(id) && hub.isPlaying(id)); };
   const circle = (e, big = false) => `<span class="ph-ovr ${big ? 'big' : ''} t-${e.tier || 'regular'}" title="${esc(e.tierLabel || '')}"><b>${e.build.overall}</b><small>${esc(e.build.position)}</small></span>`;
   const sub = e => `${esc(ARCHETYPES[e.build.archetype]?.label || title(e.build.archetype))} · ${heightStr(e.build.height)} · ${esc(e.rep?.label || '')}`;
   const action = id => {
     if (w.inSquad(id)) return `<button class="ph-act sq" data-kick="${id}" title="Remove from squad">In squad</button>`;
-    if (w.isFriend(id)) return statusOf(id).online && w.squad.length < 4 ? `<button class="ph-act inv" data-invite="${id}">Invite</button>` : `<button class="ph-act fr" data-who="${id}">Friend</button>`;
+    if (w.isFriend(id)) return statusOf(id).online && w.squad.length < 4 && !busy(id) ? `<button class="ph-act inv" data-invite="${id}">Invite</button>` : `<button class="ph-act fr" data-who="${id}">${busy(id) ? 'In a game' : 'Friend'}</button>`;
     return `<button class="ph-act add" data-add="${id}">+ Add</button>`;
   };
   const row = (id, line, dot = null) => {
@@ -80,6 +85,24 @@ export function openPhone(app, opts = {}) {
     if (!rec.length) return '<p class="ph-empty">Play a park or Pro-Am game and everyone you ran with or against shows up here.</p>';
     return `<div class="ph-sec">Played with lately</div>${rec.map(m => row(m.id, `${m.games} game${m.games > 1 ? 's' : ''} · ${m.with ? `${m.with} with (${m.wins}-${m.with - m.wins})` : ''}${m.with && m.vs ? ', ' : ''}${m.vs ? `${m.vs} against` : ''} · ${ago(m.last)}`)).join('')}`;
   }
+  // v0.4.5 Crews: your crew at a glance (level, who's on), and the way into the crew menu
+  function listCrew() {
+    const cr = app.crew;
+    if (cr === undefined) {
+      if (!st.crewLoading) { st.crewLoading = true; Crew.fetchCrew(app).catch(() => { app.crew = app.crew ?? null; }).finally(() => { st.crewLoading = false; if (phoneOpen() && st.tab === 'crew') draw(); }); }
+      return '<p class="ph-empty">Loading your crew…</p>';
+    }
+    if (!cr) return `<p class="ph-note">Start a crew with up to 39 of your friends. Every game you play earns crew XP, your members earn it whenever they play (even while you're away), and the crew levels from 1 to 40. Walk into the Crew HQ from any park to shoot around or run 5-on-5 with whoever's on.</p>
+      <div class="ph-acts"><button class="btn primary" data-crewmenu>Start a crew</button></div>`;
+    const lv = cr.level, pct = lv.next ? Math.round((lv.xp - lv.floor) / (lv.next - lv.floor) * 100) : 100;
+    const xp = Object.fromEntries(cr.members.map(m => [m.id, m.xp]));
+    const rows = cr.members.map(m => [m.id, statusOf(m.id)]).sort((a, b) => (b[1].online - a[1].online) || xp[b[0]] - xp[a[0]]);
+    const on = rows.filter(r => r[1].online).length;
+    return `<div class="ph-crew" style="${Crew.crewVars(cr)}"><span class="crew-tag">${esc(cr.tag)}</span><span class="ph-crew-main"><b>${esc(cr.name)}</b><small>Level ${lv.level} of 40 · ${money(lv.xp)} XP${lv.next ? ` · ${money(lv.next - lv.xp)} to go` : ''}</small><span class="bar"><i style="width:${pct}%"></i></span></span></div>
+      <div class="ph-acts"><button class="btn small" data-crewmenu>Manage crew</button></div>
+      <div class="ph-sec">Members · ${on} of ${rows.length} online${on >= 4 ? ' · enough for 5-on-5 at the HQ' : ''}</div>
+      ${rows.length ? rows.map(([id, s]) => row(id, `${s.text} · ${money(xp[id])} crew XP`, s.online)).join('') : '<p class="ph-empty">No members yet. Add your friends from Manage crew.</p>'}`;
+  }
   function profile(id) {
     const e = w.entry(id), a = w.account(id), s = statusOf(id), m = w.met[id];
     const badges = Object.entries(e.badges || {}).sort((x, y) => y[1] - x[1]);
@@ -97,14 +120,14 @@ export function openPhone(app, opts = {}) {
         <div class="ph-badges">${badges.length ? badges.map(([k, t]) => `<span class="ib ${TIER_CLS[t]}">${esc(cfg[k]?.name || title(k))}</span>`).join('') : '<span class="ib none">No badges</span>'}</div>
         <div class="ph-acts">
           ${w.isFriend(id) ? `<button class="btn ghost" data-unfriend="${id}">Remove friend</button>` : `<button class="btn primary" data-add="${id}">Add friend</button>`}
-          ${w.inSquad(id) ? `<button class="btn" data-kick="${id}">Remove from squad</button>` : w.isFriend(id) ? `<button class="btn ${s.online ? 'primary' : ''}" data-invite="${id}" ${s.online && w.squad.length < 4 ? '' : 'disabled'}>Invite to squad</button>` : ''}
+          ${w.inSquad(id) ? `<button class="btn" data-kick="${id}">Remove from squad</button>` : w.isFriend(id) ? `<button class="btn ${s.online ? 'primary' : ''}" data-invite="${id}" ${s.online && w.squad.length < 4 && !busy(id) ? '' : 'disabled'}>${busy(id) ? 'In a game' : 'Invite to squad'}</button>` : ''}
         </div></div>`;
   }
 
   function draw() {
     where = hub ? new Map(hub.parkList().map(x => [x.id, x.where])) : new Map();
     const online = w.onlineCount();
-    const body = st.who ? profile(st.who) : st.tab === 'park' ? listPark() : st.tab === 'friends' ? listFriends() : st.tab === 'squad' ? listSquad() : listRecent();
+    const body = st.who ? profile(st.who) : st.tab === 'park' ? listPark() : st.tab === 'friends' ? listFriends() : st.tab === 'squad' ? listSquad() : st.tab === 'crew' ? listCrew() : listRecent();
     const scroll = host.querySelector('.ph-body')?.scrollTop || 0;
     host.innerHTML = `<div class="ph-status"><span>${clock()}</span><b>AH16</b><span><i class="ph-dot on"></i> ${online} online</span></div>
       <div class="ph-head"><b>Social</b><small>${hub ? esc(PARK_NAMES[hub.themeId] || '') : 'Not at a park'} · ${w.friends.length} friends · squad ${w.squad.length}/4</small></div>
@@ -120,11 +143,12 @@ export function openPhone(app, opts = {}) {
     $$('[data-invite]', host).forEach(x => x.onclick = ev => {
       ev.stopPropagation();
       const id = x.dataset.invite;
-      const r = w.invite(id);
+      const r = w.invite(id, Date.now(), hub ? hub.isPlaying(id) : null);
       toast(r.msg, r.ok ? '' : 'error');
       if (r.ok) { app.audio?.ui?.('buy'); hub?.syncSquad(); }
     });
     $$('[data-kick]', host).forEach(x => x.onclick = ev => { ev.stopPropagation(); w.kick(x.dataset.kick); hub?.syncSquad(); });
+    $$('[data-crewmenu]', host).forEach(x => x.onclick = () => { closeModal(); Crew.openCrew(app, { onChange: c => { if (app.world?.crew && c) { app.world.crew = c; app.world.refreshBoards?.(); } } }); });
   }
   draw();
   // keep statuses and the clock fresh while it's open

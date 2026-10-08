@@ -52,7 +52,7 @@ input, select { font: inherit; }
 .feed-item.fade { opacity: 0; transform: translateX(-12px); }
 .hud-center { position: absolute; left: 0; right: 0; top: 26%; text-align: center; pointer-events: none; }
 .hud-center span { display: inline-block; font-family: var(--display); font-size: 64px; letter-spacing: .04em; font-style: italic; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.6); opacity: 0; transform: scale(.6); }
-.hud-center span.hot { color: var(--accent); } .hud-center span.good { color: var(--good); } .hud-center span.bad { color: var(--bad); }
+.hud-center span.hot { color: var(--accent); } .hud-center span.cold { color: #a9e4ff; } .hud-center span.good { color: var(--good); } .hud-center span.bad { color: var(--bad); }
 .hud-center.pop span { animation: pop 1.8s cubic-bezier(.2,1.4,.4,1) forwards; }
 @keyframes pop { 0% { opacity: 0; transform: scale(.5) skewX(-6deg); } 12% { opacity: 1; transform: scale(1.08) skewX(-6deg); } 22% { transform: scale(1) skewX(-6deg); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(1.05) skewX(-6deg); } }
 .hud-stamina { position: absolute; left: 0; top: 0; width: 52px; height: 5px; background: rgba(0,0,0,.6); border-radius: 3px; overflow: hidden; }
@@ -133,3 +133,12 @@ input, select { font: inherit; }
 @keyframes npNote { 50% { transform: skewX(12deg) translateY(-2px) rotate(-8deg); } }
 #hud:not([hidden]) ~ .np-ticker { bottom: 96px; }
 .intro-who > b em.sq { background: #36e07a; } .intro-who > b em.fr { background: rgba(255,216,74,.25); color: var(--accent); }
+/* v0.4.5 takeover / hot / cold status */
+.hud-status { position: absolute; left: 18px; bottom: 132px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; pointer-events: none; font-family: var(--display); letter-spacing: .06em; }
+.hud-status > span { background: rgba(10,12,18,.72); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: #fff; display: inline-flex; align-items: center; gap: 8px; }
+.hud-status .st-hot { color: #ffb347; border-color: rgba(255,140,40,.6); box-shadow: 0 0 14px rgba(255,110,20,.35); }
+.hud-status .st-cold { color: #a9e4ff; border-color: rgba(120,200,255,.6); box-shadow: 0 0 14px rgba(90,170,255,.3); }
+.hud-status .st-to small { font-size: 11px; opacity: .8; }
+.hud-status .st-to i { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #f2c14e var(--p), rgba(255,255,255,.15) var(--p)); }
+.hud-status .st-to.on { color: #111; background: linear-gradient(90deg, #f2c14e, #ff8a3d); border-color: transparent; box-shadow: 0 0 18px rgba(255,170,60,.55); }
+

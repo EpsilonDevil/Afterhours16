@@ -86,14 +86,39 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     via.push({ geo: G.box(260, 0.9, 4.2), matrix: T(0, 8.85, 37), color: col('#34373c') });
     add(geoOf(via), vmat, { castShadow: true });
   } else if (theme.style === 'coast') {
+    // v0.4.5: proper sailboats — a tapered hull with a keel line and a cabin, a boom, and two curved sails
+    // (main and jib) built from lofted rings rather than flat boxes.
     for (let i = 0; i < 4; i++) {
-      const hull = col(rng.pick(['#f4f2ec', '#1d3b5a', '#b8322f'])), sail = col('#f8f4ea');
+      const hull = col(rng.pick(['#f4f2ec', '#1d3b5a', '#b8322f'])), sail = col('#f8f4ea'), sail2 = col('#efe7d6');
+      // a sail: vertical panels of falling height, bellied out to one side, so it reads as cloth under wind
+      const sailParts = (h, foot, bow, lean, c) => {
+        const out = [], n = 7;
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n;                      // 0 at the mast, 1 at the leech
+          const belly = Math.sin(Math.PI * t) * foot * 0.26;
+          const ph = h * (1 - t * 0.92), zc = bow - foot * t * 0.5 - lean * 0.5;
+          out.push({ geo: G.box(0.05, ph, foot / n * 1.06), matrix: T(belly, 0.62 + ph / 2, zc - foot * t * 0.5), color: c });
+        }
+        return out;
+      };
       const parts = [
-        { geo: G.box(1.6, 0.7, 6), matrix: T(0, 0.35, 0), color: hull },
-        { geo: G.cylinder(0.06, 0.06, 7, 6, { y0: true }), matrix: T(0, 0.7, 0.4), color: col('#d0ccc4') },
-        { geo: G.box(0.04, 5.4, 2.8), matrix: T(0, 3.6, -0.9), color: sail },
+        { geo: G.box(1.5, 0.52, 5.6), matrix: T(0, 0.3, 0), color: hull },
+        { geo: G.box(1.15, 0.3, 4.6), matrix: T(0, 0.62, -0.1), color: col('#e8e2d2') },     // deck
+        { geo: G.box(1.0, 0.42, 1.5), matrix: T(0, 0.86, -1.1), color: col('#d8d2c4') },     // cabin
+        { geo: G.box(0.2, 0.9, 2.6), matrix: T(0, -0.3, 0.2), color: col('#20242a') },        // keel
+        { geo: G.cylinder(0.055, 0.075, 7.2, 7, { y0: true }), matrix: T(0, 0.7, 0.4), color: col('#d0ccc4') },
+        { geo: G.cylinder(0.04, 0.04, 2.6, 6, { y0: true }), matrix: M.m4mul(M.m4(), T(0, 1.15, 0.4), M.m4fromYaw(M.m4(), 0, 0, 0, 0)), color: col('#c6c2ba') },
       ];
+      parts.push(...sailParts(5.2, 2.4, 0.2, 0.3, sail), ...sailParts(3.0, 1.4, 1.4, -0.4, sail2));
       movers.push({ meshes: [add(geoOf(parts, 'boat' + i), vmat)], x: rng.range(-150, 150), z: rng.range(70, 140), y: -0.55, dir: rng.next() < 0.5 ? 1 : -1, v: rng.range(1.2, 2.4), boat: true, ph: rng.range(0, 6) });
+    }
+  } else if (theme.style === 'tut') {
+    // v0.4.5 King Tut Cup: glowing lanterns drifting high over the dunes
+    const lantern = new Material({ color: [1, 1, 1], shading: 'unlit', emissive: [0, 0, 0], fog: false });
+    for (let i = 0; i < 9; i++) {
+      const hue = rng.pick(['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff']);
+      const m = add(geoOf([{ geo: G.cylinder(0.35, 0.5, 0.9, 8, { y0: true }), matrix: T(0, 0, 0), color: [...lin(hue).map(v => v * 2.4), 1] }], 'lantern' + hue), lantern);
+      movers.push({ meshes: [m], x: rng.range(-110, 110), z: rng.range(-70, 80), y: rng.range(14, 30), dir: rng.next() < 0.5 ? 1 : -1, v: rng.range(0.6, 1.4), boat: true, ph: rng.range(0, 6) });
     }
   } else {
     // industrial: a forklift shuttling along the container yard, and the crane trolley working
@@ -238,6 +263,31 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       return t < 8;
     };
   };
+  // v0.4.5 King Tut Cup events: laser beams sweeping the sky from the pyramid tops, and green/purple fireworks
+  const laserShow = () => {
+    const beamMat = new Material({ color: [1, 1, 1], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] });
+    const tops = [[-48, 36, 82], [8, 50, 104], [62, 28, 78]];
+    const beams = tops.map(([x, y, z], i) => ({ x, y, z, m: add(geoOf(() => [{ geo: G.box(0.35, 0.35, 120), matrix: T(0, 0, 60), color: [...lin(i % 2 ? '#b14dff' : '#39ff88').map(v => v * 1.6), 1] }], 'beam' + (i % 2)), beamMat), ph: rng.range(0, 6) }));
+    let t = 0;
+    return dt => {
+      t += dt;
+      for (const b of beams) {
+        const yaw = Math.PI + Math.sin(t * 0.7 + b.ph) * 0.9, pitch = 0.35 + 0.25 * Math.sin(t * 0.5 + b.ph * 2);
+        const q = M.q4(); M.qaxis(q, 0, 1, 0, yaw); const q2 = M.qaxis(M.q4(), 1, 0, 0, -pitch);
+        M.m4compose(b.m.matrix, [b.x, b.y, b.z], M.qmul(M.q4(), q, q2));
+        b.m.visible = t < 13.5 || Math.sin(t * 20) > 0;
+      }
+      return t < 14;
+    };
+  };
+  const glowFireworks = () => {
+    let t = 0;
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 2.2) r.particles.burst(rng.range(-70, 70), rng.range(26, 42), rng.range(40, 90), 26, { color: rng.next() < 0.5 ? [0.6, 4, 1.6] : [2.6, 0.9, 4], speed: 7, life: 1.4, size: 0.45, gravity: 2.2, drag: 0.6 });
+      return t < 9;
+    };
+  };
   const plane = () => {
     const body = add(geoOf(() => [{ geo: G.box(1, 1, 7), matrix: T(0, 0, 0), color: col('#c9ced6') }, { geo: G.box(9, 0.15, 1.4), matrix: T(0, 0, 0.3), color: col('#c9ced6') }], 'plane'), vmat);
     const blink = add(geoOf(() => [{ geo: G.box(0.3, 0.3, 0.3), matrix: T(4.4, 0, 0.3), color: [1, 1, 1, 1] }, { geo: G.box(0.3, 0.3, 0.3), matrix: T(-4.4, 0, 0.3), color: [1, 1, 1, 1] }], 'blink'), red);
@@ -254,6 +304,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     coast: [() => birds('gull'), () => birds('gull'), speedboat, speedboat, plane],
     city: [() => train('el'), heli, () => birds('pigeon'), fireworksOrLights, plane],
     industrial: [() => train('freight'), () => train('freight'), sparks, steam, () => birds('crow')],
+    tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
   }[theme.style] || [() => birds('pigeon')];
   let nextEvt = rng.range(6, 14);
   const start = make => {

@@ -4,6 +4,13 @@ import { DT, GRAVITY, COURT } from './constants.js';
 import { jumpshotPackage } from './shots.js';
 
 import { rk as pd } from './ratings.js';
+import { effectiveRatings, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
+// v0.4.5 final: sprinting drains stamina twice as fast
+export const SPRINT_DRAIN_K = 2;
+
+// v0.4.5 Lock-In grade -> stamina: A- 1.1x / A 1.25x / A+ 1.5x recovery, D+ 1.1x / D 1.25x / D- and F 1.5x drain
+const GRADE_REC = { 10: 1.1, 11: 1.25, 12: 1.5 };
+const GRADE_DRAIN = { 3: 1.1, 2: 1.25, 1: 1.5, 0: 1.5 };
 
 export class Player {
   constructor(id, team, entry, catalog) {
@@ -14,15 +21,30 @@ export class Player {
     this.number = entry.number ?? 0;
     this.position = entry.build.position || 'SF';
     this.human = !!entry.human;
-    this.ratings = { ...entry.build.attributes };
+    // v0.4.5: `raw` is the build as shown in menus; `ratings` is what the sim plays with (the no-badge
+    // penalty, Icon badge and takeover boosts applied). Gating checks (can he dunk at all) use raw.
+    this.raw = { ...entry.build.attributes };
     this.badges = { ...(entry.badges || {}) };
+    this.icon = entry.icon || entry.build.icon_badge || null;
+    this.ratings = effectiveRatings(this.raw, this.badges, this.icon);
+    // takeover: which kind this position can earn, progress toward it, seconds left while active
+    this.takeover = { kind: TAKEOVER_FOR_POS[entry.build.position || 'SF'] || null, prog: 0, left: 0, active: false };
+    // stamina modifiers (see staminaMods): repeated dribble moves, repeated negative plays, positive-play bonus,
+    // going hot / cold, and the Lock-In grade
+    this.stam = { lastMove: null, moveRun: 0, moveK: 1, lastNeg: null, negK: 1, goodRun: 0, recBoost: false, grade: null };
+    this.hotStreak = 0; this.coldMisses = 0; this.cold = false;
     this.phys = physical(entry.build);
     this.shotPkg = jumpshotPackage(entry.build, catalog);
     this.dunkPkg = entry.build.equipment?.dunk || 'dunk_basic';
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves
     const su = entry.build.equipment?.sizeup || 'sizeup_basic';
-    this.sizeupLvl = { sizeup_rhythm: 0, sizeup_quick: 1, sizeup_elite: 2, sizeup_ankle_taker: 2 }[su] ?? 0;
+    // v0.4.5: a package's own lvl (from the catalog) decides how hard it sells the handle; `style` is its look
+    this.sizeupLvl = catalog?.[su]?.lvl ?? ({ sizeup_rhythm: 0, sizeup_quick: 1, sizeup_elite: 2, sizeup_ankle_taker: 2 }[su] ?? 0);
+    this.sizeupStyle = catalog?.[su]?.style || ({ sizeup_quick: 'quick', sizeup_elite: 'elite', sizeup_ankle_taker: 'ankle', sizeup_rhythm: 'rhythm' }[su] || 'basic');
     this.moveSpeed = catalog?.[su]?.move_speed ?? [1, 1.12, 1.22][this.sizeupLvl];
+    // v0.4.5 layup packages: the finish style used on drives
+    this.layupPkg = entry.build.equipment?.layup || 'layup_basic';
+    this.layupStyle = catalog?.[this.layupPkg]?.style || 'basic';
     this.hand = entry.build.hand || 'R';
     this.iq = entry.iq ?? null; // v0.4.4 basketball IQ (world AI hoopers)
     this.x = 0; this.z = 0; this.y = 0;
@@ -39,12 +61,23 @@ export class Player {
     this.stats = { pts: 0, reb: 0, oreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, pf: 0, dunks: 0, greens: 0, ankles: 0, contested_makes: 0, posters: 0, putbacks: 0, chasedowns: 0, alleyoops: 0 };
     this.plantT = 0;
     this.airborne = false;
-    this.hot = 0;
+    this.hot = 0; // v0.4.5: 0 or 1 (on fire)
     this.lastShotEnd = 0;
     this.ai = null;
     this.prevX = 0; this.prevZ = 0; this.prevY = 0; this.prevFacing = 0;
     this.bumpT = 0;
     this.calling = 0;
+    // v0.4.5 dribble style by build: tight, low and quick for elite handles and small guards; higher, wider and
+    // slower for bigs and weak handles; quicker legs dribble a touch faster
+    {
+      const h = pd(this.raw.ball_handle ?? 60), sp = pd(this.raw.speed ?? 60), H = this.phys.H;
+      const seed = ((entry.build.height || 78) * 31 + (entry.build.weight || 200) * 7 + (this.name.length * 13)) % 17 / 17 - 0.5;
+      this.dribbleStyle = {
+        freqK: Math.max(0.8, Math.min(1.3, 1 + 0.2 * (h - 0.6) + 0.08 * (sp - 0.6) - 0.35 * (H - 1.96) + seed * 0.06)),
+        hgtK: Math.max(0.8, Math.min(1.2, 1 - 0.14 * (h - 0.6) + 0.25 * (H - 1.96) + seed * 0.04)),
+        sideK: Math.max(0.85, Math.min(1.25, 1 - 0.18 * (h - 0.6) + 0.3 * (H - 1.96))),
+      };
+    }
   }
   get speed() { return Math.hypot(this.vx, this.vz); }
   dist(o) { return Math.hypot(this.x - o.x, this.z - o.z); }
@@ -52,6 +85,12 @@ export class Player {
   setPos(x, z, facing) { this.x = this.prevX = x; this.z = this.prevZ = z; this.vx = this.vz = 0; if (facing != null) this.facing = this.prevFacing = facing; this.y = this.prevY = 0; this.vy = 0; this.airborne = false; }
   startAction(type, dur, data = {}) { this.action = { type, t: 0, dur, ...data, id: (this.actionSeq = (this.actionSeq || 0) + 1) }; return this.action; }
   jump(h) { this.vy = Math.sqrt(2 * GRAVITY * Math.max(0.05, h)); this.airborne = true; }
+  refreshRatings() { this.ratings = effectiveRatings(this.raw, this.badges, this.icon, this.takeover.active ? this.takeover.kind : null); }
+  // v0.4.5 stamina multipliers. Drain: repeated moves × repeated negative plays × cold (1.5) × low grade.
+  // Recovery: positive-play bonus (2x, doesn't stack) × hot (1.5) × high grade. All of them stack.
+  get drainK() { const s = this.stam; return s.moveK * s.negK * (this.cold ? 1.5 : 1) * (GRADE_DRAIN[s.grade] || 1); }
+  get recK() { const s = this.stam; return (s.recBoost ? 2 : 1) * (this.hot ? 1.5 : 1) * (GRADE_REC[s.grade] || 1); }
+  spend(amount) { this.stamina = Math.max(0, this.stamina - amount * this.drainK); }
 
   // Movement integration. lock: 0 free .. 1 fully locked (momentum decays)
   move(dt, hasBall, lock = 0) {
@@ -107,9 +146,13 @@ export class Player {
       this.vy -= GRAVITY * dt; this.y += this.vy * dt;
       if (this.y <= 0) { this.y = 0; this.vy = 0; this.airborne = false; this.landed = true; }
     }
-    // stamina
-    if (this.sprinting && spd > 3) this.stamina -= ph.staminaRate * dt;
-    else this.stamina += ph.recover * dt * (spd < 1 ? 1.4 : 0.6);
+    // stamina (v0.4.5): sprinting drains the most; jogging, sliding on defense and hands-up defense drain a
+    // little; standing, walking and posting up recover
+    const posting = this.posting > 0;
+    if (this.sprinting && spd > 3) this.stamina -= ph.staminaRate * SPRINT_DRAIN_K * dt * this.drainK; // v0.4.5 final: ×2
+    else if (!posting && !this.airborne && (spd > 2.1 || (defense && spd > 0.8) || this.handsUp)) this.stamina -= ph.staminaRate * 0.2 * dt * this.drainK;
+    else this.stamina += ph.recover * dt * (spd < 1 ? 1.4 : 0.6) * this.recK;
+    if (this.posting > 0) this.posting -= dt;
     this.stamina = Math.max(0, Math.min(1, this.stamina));
     if (this.bumpT > 0) this.bumpT -= dt;
     for (const k in this.cool) if (this.cool[k] > 0) this.cool[k] -= dt;

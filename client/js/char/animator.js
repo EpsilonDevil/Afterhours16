@@ -9,6 +9,36 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const D = Math.PI / 180;
 const TAU = Math.PI * 2;
 
+// v0.4.5 stage 7: dunks finished with one hand, and which hand has it at a given moment
+const ONE_HAND_DUNK = new Set(['onehand', 'tomahawk', 'windmill', 'cradle', 'reverse', 'hammer', 'liberty', 'scoop', 'switch', 'eastbay', 'hashsling', 'bully', 'aroundback', 'superman']);
+// the hand a layup is finished with: the far hand when he takes it away from a defender (side) or around a shot
+// blocker (rim); otherwise the right
+export function layupHand(a) { return (a.cov === 'side' || a.cov === 'rim') && (a.covSide || 1) > 0 ? 'L' : 'R'; }
+export function dunkHand(a) {
+  const q = a.t / Math.max(0.1, a.slam || 1);
+  return (a.style === 'switch' && q > 0.57) || (a.style === 'eastbay' && q > 0.6) || (a.style === 'aroundback' && q > 0.5) ? 'L' : 'R';
+}
+
+// v0.4.5 stage 7: jump-shot follow-throughs, one per release (see actionPose)
+const FOLLOW = {
+  classic: { k: 0.12, y: 0.04, z: 0.46, f: -0.8, hold: 0.5 },
+  quick: { k: 0.08, y: -0.2, z: 0.4, f: -0.75, hold: 0.2, air: true },
+  high: { k: 0.12, y: 0.15, z: 0.22, f: -0.62, hold: 0.75 },
+  snap: { k: 0.05, y: 0.03, z: 0.46, f: -1.25, hold: 0.35, gx: 0.42 },
+  float: { k: 0.16, y: 0.08, z: 0.48, f: -0.6, hold: 0.95 },
+  butter: { k: 0.2, y: 0.05, z: 0.42, f: -0.62, hold: 0.75 },
+  feather: { k: 0.17, y: 0.05, z: 0.44, f: -0.45, hold: 0.85 },
+  dart: { k: 0.06, y: -0.13, z: 0.64, f: -0.42, hold: 0.3, air: true },
+  rainbow: { k: 0.15, y: 0.14, z: 0.28, f: -0.66, hold: 1.0 },
+  laser: { k: 0.05, y: 0.0, z: 0.48, f: -1.0, hold: 0.5 },
+  wave: { k: 0.14, y: 0.06, z: 0.42, f: -0.75, hold: 1.1 },
+  hold: { k: 0.13, y: 0.12, z: 0.34, f: -0.72, hold: 1.6 },
+  snatch: { k: 0.07, y: 0.02, z: 0.44, f: -0.95, hold: 0.24, gx: 0.34, air: true },
+  twohand: { k: 0.15, y: 0.03, z: 0.4, f: -0.7, hold: 0.6 },
+  point: { k: 0.1, y: 0.05, z: 0.46, f: -0.8, hold: 0.9 },
+  cobra: { k: 0.05, y: 0.19, z: 0.3, f: -1.32, hold: 0.55 },
+};
+
 function set3(p, g, x, y, z) { const o = P[g]; p[o] = x; p[o + 1] = y; p[o + 2] = z; }
 function add3(p, g, x, y, z) { const o = P[g]; p[o] += x; p[o + 1] += y; p[o + 2] += z; }
 function mix3(p, g, x, y, z, w) { const o = P[g]; p[o] += (x - p[o]) * w; p[o + 1] += (y - p[o + 1]) * w; p[o + 2] += (z - p[o + 2]) * w; }
@@ -214,12 +244,34 @@ export class Animator {
     }
     // v0.4.3 size-up packages: holding the dribble in front of a defender, better packages sit lower and work
     // him with shoulder and head jabs
-    if (has && bmode === 'dribble' && speed < 1.2 && !a && (p.sizeupLvl || 0) > 0) {
-      const lvl = p.sizeupLvl, w = this.time * (5 + lvl * 1.8) + p.id;
+    // v0.4.5 stage 7: every package but Basic has its body language (Rhythm used to have none at all)
+    if (has && bmode === 'dribble' && speed < 1.2 && !a && ((p.sizeupLvl || 0) > 0 || (p.sizeupStyle && p.sizeupStyle !== 'basic'))) {
+      const lvl = p.sizeupLvl || 0, w = this.time * (5 + lvl * 1.8) + p.id;
       T[P.root + 1] -= 0.035 * lvl;
       T[P.chest + 1] += Math.sin(w) * 0.08 * lvl;
       T[P.spine + 2] += Math.sin(w * 0.5) * 0.05 * lvl;
       T[P.head] += Math.sin(w + 1.3) * 0.035 * lvl;
+      // v0.4.5: each size-up package has its own body language on top of that
+      const su = p.sizeupStyle;
+      if (su === 'pound') { T[P.root + 1] -= 0.05; T[P.spine] += 0.12; T[P.head] += Math.sin(w * 0.9) * 0.08; set3(T, 'footL', 0.2, 0.08, 0.04); set3(T, 'footR', -0.2, 0.08, -0.02); }
+      else if (su === 'crab') { T[P.root + 1] -= 0.07; set3(T, 'footL', 0.32, 0.08, 0.02); set3(T, 'footR', -0.32, 0.08, 0.02); set3(T, 'kneeL', 0.42, 0, 1); set3(T, 'kneeR', -0.42, 0, 1); T[P.root] += Math.sin(w * 0.45) * 0.05; }
+      else if (su === 'snake') { const sn = Math.sin(w * 0.7); T[P.pelvis + 2] = sn * 0.14; T[P.spine + 2] += -sn * 0.1; T[P.root] += sn * 0.06; T[P.root + 1] -= 0.04; }
+      else if (su === 'stutter') { const ch = Math.sin(w * 2.1); T[P.root + 1] += Math.abs(ch) * 0.025 - 0.03; set3(T, 'footL', 0.17, 0.08 + Math.max(0, ch) * 0.07, 0.06); set3(T, 'footR', -0.17, 0.08 + Math.max(0, -ch) * 0.07, 0.0); }
+      else if (su === 'rhythm') { T[P.root + 1] -= 0.02 - 0.03 * Math.abs(Math.sin(Math.PI * (p.dribble?.phase || 0))); T[P.chest + 1] += Math.sin(w * 0.55) * 0.1; T[P.head + 2] = Math.sin(w * 0.55) * 0.08; }
+      else if (su === 'quick') { T[P.root + 1] -= 0.045; set3(T, 'footL', 0.19, 0.08, 0.06); set3(T, 'footR', -0.19, 0.08, -0.02); T[P.head] += Math.sin(w * 1.3) * 0.05; }
+      else if (su === 'elite') { const e2 = Math.sin(w * 0.9); T[P.root + 1] -= 0.06; T[P.spine + 2] += e2 * 0.1; T[P.chest + 1] += e2 * 0.18; T[P.root] += e2 * 0.04; }
+      else if (su === 'ankle') { const an = Math.sin(w * 1.1); T[P.root + 1] -= 0.085; T[P.chest + 1] += an * 0.22; T[P.head + 1] = -an * 0.26; set3(T, 'footL', 0.26, 0.08 + Math.max(0, an) * 0.05, 0.08); set3(T, 'footR', -0.26, 0.08, -0.04); }
+      else if (su === 'showtime') { const sh2 = Math.sin(w * 0.8); T[P.chest + 1] += sh2 * 0.16; T[P.head] += Math.sin(w * 0.8 + 1.9) * 0.1; T[P.head + 1] = -sh2 * 0.3; T[P.root + 1] -= 0.05; T[P.spine + 2] += sh2 * 0.08; }
+    }
+    // v0.4.5: backing a defender down. Sexy Red (Icon badge) has its own low, wide back-down with shoulder bumps.
+    if (p.posting > 0 && has && !a) {
+      const sexy = p.icon === 'sexy_red', w2 = this.time * (sexy ? 4.2 : 3) + p.id;
+      T[P.root + 1] -= sexy ? 0.11 : 0.07;
+      T[P.spine] = (sexy ? -0.2 : -0.12) - 0.05 * Math.sin(w2);
+      T[P.chest] = sexy ? -0.1 : -0.05;
+      set3(T, 'footL', sexy ? 0.3 : 0.24, 0.08, -0.08); set3(T, 'footR', sexy ? -0.3 : -0.24, 0.08, -0.14);
+      set3(T, 'kneeL', 0.4, 0, 1); set3(T, 'kneeR', -0.4, 0, 1);
+      if (sexy) { T[P.chest + 1] = Math.sin(w2) * 0.26; T[P.pelvis + 2] = Math.sin(w2 * 0.5) * 0.1; T[P.head + 1] = -Math.sin(w2) * 0.3; }
     }
     // ---- actions ----
     const palm = this.palm; palm.L = null; palm.R = null;
@@ -230,6 +282,15 @@ export class Animator {
     if (ball) look = [lb[0], lb[1], lb[2]];
     const rim = g ? g.rimFor(p.team) : null;
     if (a) this.actionPose(T, a, p, g, lbs, lb, rim);
+    // v0.4.5 stage 7: a released jumper's follow-through is held for the release's own time, even after the shot
+    // action is over (until he does something else or gets the ball back)
+    if (a && a.type === 'shoot' && a.released) { this.lastShot = a; this.lastShotT = a.t; }
+    else if (a || has) this.lastShot = null;
+    else if (this.lastShot) {
+      this.lastShotT += dt;
+      const ls = this.lastShot, st2 = ls.kind === 'close' ? 'standard' : (p.shotPkg?.style || 'standard');
+      if (this.followThrough(T, ls, p, this.lastShotT, st2, false)) this.lastShot = null;
+    }
     // ---- ball hands ----
     if (has && ball && !(a && (a.type === 'hang'))) this.ballHands(T, p, g, a, lbs, bmode);
     else if (ball && !has && g && g.ball.mode === 'flight') {
@@ -316,14 +377,16 @@ export class Animator {
       return;
     }
     if (a && (a.type === 'layup' || a.type === 'dunk')) {
-      const one = a.type === 'layup' || a.style === 'onehand' || a.style === 'tomahawk' || a.style === 'windmill' || a.style === 'cradle' || a.style === 'reverse';
-      const sh = 'R';
-      set3(T, 'handR', b[0] - 0.02, b[1] - r - 0.06, b[2] - 0.05);
-      palm.R = { normal: [0, 0.8, 0.55], fingers: [0, 0.8, -0.5], w: 0.85 };
-      set3(T, 'elbowR', -0.4, -1, 0.3);
+      // v0.4.5 stage 7: the one-handed finishes really are one-handed (the free arm does its own thing), and the
+      // hand switch, the eastbay and the around-the-back finish in the other hand
+      const one = a.type === 'layup' || ONE_HAND_DUNK.has(a.style);
+      const sh = a.type === 'dunk' ? dunkHand(a) : layupHand(a), oh = sh === 'L' ? 'R' : 'L', sg = sh === 'L' ? 1 : -1;
+      set3(T, 'hand' + sh, b[0] + sg * 0.02, b[1] - r - 0.06, b[2] - 0.05);
+      palm[sh] = { normal: [0, 0.8, 0.55], fingers: [0, 0.8, -0.5], w: 0.85 };
+      set3(T, 'elbow' + sh, sg * 0.4, -1, 0.3);
       if (!one || (a.type === 'dunk' && a.t < a.takeoff * 0.8) || (a.type === 'layup' && a.t < a.takeoff)) {
-        set3(T, 'handL', b[0] + r + 0.075, b[1] - 0.03, b[2] - 0.05);
-        palm.L = { normal: [-1, 0.1, 0.1], fingers: [0, 0.9, 0.3], w: 0.85 };
+        set3(T, 'hand' + oh, b[0] - sg * (r + 0.075), b[1] - 0.03, b[2] - 0.05);
+        palm[oh] = { normal: [sg, 0.1, 0.1], fingers: [0, 0.9, 0.3], w: 0.85 };
       }
       return;
     }
@@ -356,7 +419,7 @@ export class Animator {
           const k = Math.sin(Math.min(1, p.action.t / p.action.dur) * Math.PI);
           mix3(T, 'hand' + other, b[0] + sgn(other) * 0.06, Math.max(top, 0.7), b[2] - 0.05, k * (b[0] * sgn(other) > -0.05 ? 1 : 0.5));
         }
-      } else if (p.dribble.xover) {
+      } else if (p.dribble.xover && p.dribble.xover !== 'half' && p.dribble.xover !== 'hesi') {
         // size-up crossover: the dribble hand lets go, the other hand meets the ball on its side
         const ph = p.dribble.phase;
         mix3(T, 'hand' + hand, sgn(hand) * 0.3, 0.98, 0.2, sm(0.3, 0.55, ph));
@@ -370,6 +433,99 @@ export class Animator {
     set3(T, 'elbowL', 0.9, -0.7, -0.4); set3(T, 'elbowR', -0.9, -0.7, -0.4);
     palm.L = { normal: [-1, 0.05, 0.2], fingers: [0, 0.75, 0.65], w: 0.85 };
     palm.R = { normal: [1, 0.05, 0.2], fingers: [0, 0.75, 0.65], w: 0.85 };
+  }
+
+  // v0.4.5 stage 7: the jump-shot follow-through on its own, so it can outlast the shot action itself (a Statue
+  // or a Wave is held well after he lands; the shot action ends ~0.55 s after the release). inAction: false when
+  // it's being held after the action ended; returns true once the hold is over.
+  followThrough(T, a, p, t, style, inAction) {
+    const s = this.s, tR = a.tRel || 0.6;
+    const relS = p.shotPkg?.release || 'classic';
+    const sh = (p.shotPkg?.hand || 'R') === 'L' ? 'L' : 'R', sg = sh === 'L' ? 1 : -1;
+    // follow-through: elbow locked above the eyes, wrist flexed, guide hand peels off and drops
+    const gh = sh === 'L' ? 'R' : 'L';
+    // v0.4.5 stage 7: every release has a follow-through of its own (shape, motion and how long it's held),
+    // not just a different hold time. k: blend in (s), y: height over the release point, z: reach out in
+    // front, f: wrist (finger pitch; more negative = more curled), hold: s after the release, air: the arm
+    // comes down even while he's still in the air, gx: how wide the guide hand peels off
+    const F = FOLLOW[relS] || FOLLOW.classic;
+    const since = t - (a.releaseAt ?? tR);
+    const k = Math.min(1, since / F.k);
+    const relY = (p.phys.reach * (p.shotPkg?.relK ?? 0.93)) / s;
+    set3(T, 'hand' + sh, sg * 0.05, relY + F.y - (1 - k) * 0.03, 0.36 + k * (F.z - 0.36));
+    set3(T, 'elbow' + sh, sg * (style === 'push' ? 0.45 : 0.1), -0.6, 0.6);
+    this.palm[sh] = { normal: [0, -0.45, 0.9], fingers: [0, F.f, 0.6], w: 0.9 };
+    set3(T, 'hand' + gh, -sg * (F.gx || 0.26), relY - 0.14 - k * 0.12, 0.28);
+    set3(T, 'elbow' + gh, -sg * 0.6, -0.6, 0.45);
+    const H2 = 'hand' + sh, G2 = 'hand' + gh;
+    if (relS === 'quick') {
+      // compact: elbow stays bent, hand at the forehead, guide hand already on its way down
+      set3(T, 'elbow' + sh, sg * 0.55, -0.9, 0.3);
+      set3(T, G2, -sg * 0.3, relY - 0.14 - k * 0.6, 0.22);
+    } else if (relS === 'high') {
+      // straight up, the guide hand up beside the shooting arm
+      set3(T, G2, -sg * 0.17, relY - 0.05, 0.24); this.palm[gh] = { normal: [sg, 0, 0.2], fingers: [0, 1, 0], w: 0.8 };
+    } else if (relS === 'snap') {
+      // the wrist snaps all the way down and the hand recoils back toward the head
+      const q = Math.min(1, Math.max(0, since - F.k) / 0.12);
+      T[P[H2] + 1] += 0.03 * q; T[P[H2] + 2] -= 0.17 * q; T[P.head] += -0.06 * q;
+    } else if (relS === 'float') {
+      // held up, then it floats slowly down out in front
+      const d = Math.min(1, since / F.hold);
+      T[P[H2] + 1] -= 0.46 * d * d; T[P[H2] + 2] += 0.16 * d;
+      set3(T, G2, -sg * 0.26, relY - 0.17, 0.28);
+    } else if (relS === 'butter') {
+      // smooth: the wrist rolls through a slow circle while the guide hand eases down
+      const ph = since * 5.5;
+      T[P[H2]] += sg * 0.07 * (Math.cos(ph) - 1); T[P[H2] + 1] += 0.06 * Math.sin(ph);
+      this.palm[sh] = { normal: [0, -0.45, 0.9], fingers: [sg * 0.3 * Math.sin(ph), F.f, 0.6], w: 0.9 };
+      set3(T, G2, -sg * 0.26, relY - 0.14 - 0.34 * Math.min(1, since / F.hold), 0.28);
+    } else if (relS === 'feather') {
+      // soft wrist; the guide hand stays up, open, out to the side
+      set3(T, G2, -sg * 0.44, relY - 0.05, 0.2); set3(T, 'elbow' + gh, -sg * 1, -0.2, 0.1);
+      this.palm[gh] = { normal: [0, 0, 1], fingers: [-sg * 0.3, 1, 0], w: 0.8 };
+    } else if (relS === 'dart') {
+      // flat and straight at the rim: the arm thrown out in front at eye level, guide hand tucked
+      set3(T, 'elbow' + sh, sg * 0.05, -0.25, 1);
+      set3(T, G2, -sg * 0.16, 1.42, 0.3); set3(T, 'elbow' + gh, -sg * 0.7, -1, 0);
+    } else if (relS === 'rainbow') {
+      // the hand keeps tracing the arc up and over after the ball is gone
+      const d = Math.min(1, since / 0.6);
+      set3(T, H2, sg * 0.05, relY + F.y + 0.1 * Math.sin(Math.PI * d) - 0.12 * d, F.z + 0.36 * d);
+    } else if (relS === 'laser') {
+      // the guide hand comes up to the brow like a visor, eyes on the rim
+      const q = Math.min(1, Math.max(0, since - 0.06) / 0.14);
+      set3(T, G2, -sg * (0.26 - 0.22 * q), relY - 0.14 - 0.12 * k + q * (1.92 - (relY - 0.26)), 0.28 - 0.1 * q);
+      set3(T, 'elbow' + gh, -sg * 1, 0.1, 0.1); this.palm[gh] = { normal: [0, -1, 0.1], fingers: [sg * 1, 0, 0.25], w: 0.85 * q };
+    } else if (relS === 'wave') {
+      const w = Math.sin(since * 9); T[P[H2]] += sg * 0.04 * w; this.palm[sh] = { normal: [0, -0.45, 0.9], fingers: [0.25 * w, F.f, 0.6], w: 0.9 };
+    } else if (relS === 'hold') {
+      // a statue: the arm frozen high, the guide hand dropped straight to his side
+      set3(T, G2, -sg * 0.27, 1.04, 0.12); set3(T, 'elbow' + gh, -sg * 0.35, -1, -0.25); this.palm[gh] = null;
+    } else if (relS === 'snatch' && since > F.k) {
+      const q = Math.min(1, (since - F.k) / 0.14); set3(T, H2, sg * (0.05 + 0.2 * q), relY - q * 0.72, 0.36 - q * 0.1); set3(T, 'elbow' + sh, sg * 0.6, -1, -0.2);
+    } else if (relS === 'twohand') {
+      set3(T, G2, -sg * 0.12, relY + F.y - 0.02, 0.34 + k * 0.08); set3(T, 'elbow' + gh, -sg * 0.2, -0.6, 0.6); this.palm[gh] = { normal: [0, -0.4, 0.9], fingers: [0, -0.7, 0.6], w: 0.85 };
+    } else if (relS === 'point' && since > 0.26) {
+      const q = Math.min(1, (since - 0.26) / 0.16); set3(T, H2, sg * (0.05 - 0.05 * q), relY + F.y - q * 0.22, 0.36 + q * 0.3); this.palm[sh] = { normal: [0, -0.2, 1], fingers: [0, -0.3, 1], w: 0.9 };
+    } else if (relS === 'cobra') { set3(T, 'elbow' + sh, sg * 0.02, -0.2, 0.8); T[P.head] = -0.22; }
+    if (a.icon === 'sharpeye') {
+      // hold the gooseneck high and fan the fingers out, off hand pointing at the rim
+      set3(T, 'hand' + sh, sg * 0.03, relY + 0.12, 0.42);
+      set3(T, 'elbow' + sh, sg * 0.02, -0.25, 0.85);
+      this.palm[sh] = { normal: [0, -0.5, 0.86], fingers: [sg * 0.2, -1.05, 0.5], w: 0.95 };
+      set3(T, 'hand' + gh, -sg * 0.34, relY - 0.08, 0.42); set3(T, 'elbow' + gh, -sg * 0.8, -0.3, 0.5);
+      this.palm[gh] = { normal: [0, -0.2, 1], fingers: [0, -0.4, 1], w: 0.8 };
+    }
+    const hold = (a.releaseAt ?? tR) + (p.airborne && !F.air ? 9 : F.hold);
+    if (t > hold) {
+      if (!inAction) return true;
+      // arms come down by the sides; elbow poles point down/back the whole way so they can't flip out
+      set3(T, 'hand' + sh, sg * 0.27, 1.02, 0.12); set3(T, 'hand' + gh, -sg * 0.27, 1.02, 0.12);
+      set3(T, 'elbow' + sh, sg * 0.35, -1, -0.25); set3(T, 'elbow' + gh, -sg * 0.35, -1, -0.25);
+      this.palm[sh] = null; this.palm[gh] = null;
+    }
+    return t > hold;
   }
 
   actionPose(T, a, p, g, b, bm, rim) {
@@ -388,7 +544,9 @@ export class Animator {
         // v0.4.3: each jump-shot base has its own body language (dip, legs in the air, lean) and each release
         // its own follow-through
         const style = ft || a.kind === 'close' ? 'standard' : (p.shotPkg?.style || 'standard'), relS = p.shotPkg?.release || 'classic';
-        const dip = ft ? 0.1 : a.kind === 'close' ? 0.11 : 0.15 + 0.04 * deep + (style === 'push' ? 0.035 : style === 'flick' ? -0.025 : style === 'high' ? 0.01 : style === 'wide' ? 0.045 : style === 'sniper' ? -0.02 : 0);
+        // v0.4.5 bases dip differently too: the slingshot loads deep, the hitch is tall, the fade barely dips
+        const DIP = { push: 0.035, flick: -0.025, high: 0.01, wide: 0.045, sniper: -0.02, fade: -0.015, hitch: 0.02, sling: 0.06, scissor: 0.005, tuck: 0.015, sway: 0, silk: 0.03 };
+        const dip = ft ? 0.1 : a.kind === 'close' ? 0.11 : 0.15 + 0.04 * deep + (DIP[style] || 0);
         const sh = (p.shotPkg?.hand || 'R') === 'L' ? 'L' : 'R', sg = sh === 'L' ? 1 : -1;
         if (t < 0) { T[P.root + 1] = -0.05; T[P.spine] = 0.14; } // free-throw routine dribbles
         else if (!p.airborne && !(a.released && t > tk + 0.1)) {
@@ -402,7 +560,7 @@ export class Animator {
           T[P.pitchL] = heel * 0.42; T[P.pitchR] = heel * 0.42; T[P.toeL] = -heel * 0.38; T[P.toeR] = -heel * 0.38;
           set3(T, 'kneeL', 0.12, 0, 1); set3(T, 'kneeR', -0.12, 0, 1);
           // v0.4.4 bases: wide stance sets with the feet well outside the hips; sniper squares up, feet under him
-          if (style === 'wide') { set3(T, 'footL', 0.22, 0.08, 0.02); set3(T, 'footR', -0.22, 0.08, 0.0); set3(T, 'kneeL', 0.3, 0, 1); set3(T, 'kneeR', -0.3, 0, 1); }
+          if (style === 'wide') { set3(T, 'footL', 0.27, 0.08, 0.02); set3(T, 'footR', -0.27, 0.08, 0.0); set3(T, 'kneeL', 0.4, 0, 1); set3(T, 'kneeR', -0.4, 0, 1); }
           else if (style === 'sniper') { set3(T, 'footL', 0.11, 0.08, 0.02); set3(T, 'footR', -0.11, 0.08, 0.02); }
           const inc = -y / dip; // trunk follows the dip
           T[P.spine] = 0.04 + inc * 0.12; T[P.chest] = 0.02 + inc * 0.05;
@@ -417,38 +575,33 @@ export class Animator {
           if (style === 'high') { set3(T, 'footL', 0.08, 0.08, 0.0); set3(T, 'footR', -0.08, 0.08, -0.01); T[P.pitchL] = 0.72; T[P.pitchR] = 0.72; T[P.spine] = -0.05; T[P.head] = -0.16; }
           else if (style === 'flick') { set3(T, 'footL', 0.13, 0.13, -0.09); set3(T, 'footR', -0.13, 0.14, -0.11); T[P.spine] = 0.04; }
           else if (style === 'push') { set3(T, 'foot' + sh, sg * 0.13, 0.1, 0.13); set3(T, 'foot' + (sh === 'L' ? 'R' : 'L'), -sg * 0.13, 0.12, -0.12); T[P.spine] = 0.03; }
-          else if (style === 'lean') { set3(T, 'footL', 0.13, 0.12, 0.13); set3(T, 'footR', -0.13, 0.11, 0.11); T[P.spine] = -0.13; T[P.chest] = -0.07; }
+          // (stage 7: both legs kick well out in front, so it reads differently from the Fadeaway's split)
+          else if (style === 'lean') { const ko = sm(0, 0.2, t - tk); set3(T, 'footL', 0.13, 0.12 + ko * 0.12, 0.13 + ko * 0.16); set3(T, 'footR', -0.13, 0.11 + ko * 0.1, 0.11 + ko * 0.15); set3(T, 'kneeL', 0.12, 0.2, 1); set3(T, 'kneeR', -0.12, 0.2, 1); T[P.spine] = -0.17; T[P.chest] = -0.08; }
           // v0.4.4: kick out = the off-side leg swings forward with a bent knee at the top of the jump
           else if (style === 'kick') { const off = sh === 'L' ? 'R' : 'L', k2 = sm(0, 0.18, t - tk); set3(T, 'foot' + off, -sg * 0.15, 0.1 + 0.2 * k2, 0.02 + 0.3 * k2); set3(T, 'knee' + off, -sg * 0.15, 0.3 * k2, 1); T[off === 'L' ? P.pitchL : P.pitchR] = 0.45; T[P.spine] = -0.04; }
-          else if (style === 'wide') { set3(T, 'footL', 0.2, 0.09, 0.02); set3(T, 'footR', -0.2, 0.09, 0.0); T[P.spine] = 0.0; }
+          else if (style === 'wide') { set3(T, 'footL', 0.27, 0.09, 0.02); set3(T, 'footR', -0.27, 0.09, 0.0); set3(T, 'kneeL', 0.4, 0, 1); set3(T, 'kneeR', -0.4, 0, 1); T[P.spine] = 0.0; }
           else if (style === 'sniper') { set3(T, 'footL', 0.1, 0.08, 0.02); set3(T, 'footR', -0.1, 0.08, 0.02); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7; T[P.spine] = -0.02; T[P.head] = -0.1; }
+          // v0.4.5 bases
+          // (stage 7: the legs really split, front and back, with the shoulders opened up)
+          else if (style === 'fade') { set3(T, 'foot' + sh, sg * 0.17, 0.14, 0.24); set3(T, 'foot' + (sh === 'L' ? 'R' : 'L'), -sg * 0.17, 0.12, -0.16); T[P.spine] = -0.24; T[P.chest] = -0.12; T[P.chest + 1] = sg * 0.16; T[P.head] = 0.06; T[P.pitchL] = 0.5; T[P.pitchR] = 0.5; }
+          else if (style === 'hitch') { const h = sm(0, 0.16, t - tk) * (1 - sm(0.3, 0.52, t - tk)); set3(T, 'footL', 0.11, 0.09 + h * 0.3, 0.04 + h * 0.22); set3(T, 'footR', -0.11, 0.09 + h * 0.3, 0.02 + h * 0.2); set3(T, 'kneeL', 0.2, h * 0.5, 1); set3(T, 'kneeR', -0.2, h * 0.5, 1); T[P.spine] = -0.03; }
+          else if (style === 'sling') { set3(T, 'footL', 0.14, 0.1, -0.2); set3(T, 'footR', -0.14, 0.11, -0.24); set3(T, 'kneeL', 0.2, -0.3, 1); set3(T, 'kneeR', -0.2, -0.3, 1); T[P.pitchL] = 0.85; T[P.pitchR] = 0.85; T[P.spine] = 0.06; T[P.head] = -0.18; }
+          else if (style === 'scissor') { const sc = Math.sin(Math.min(1, (t - tk) / 0.3) * Math.PI); set3(T, 'footL', 0.12, 0.1 + sc * 0.2, 0.05 + sc * 0.42); set3(T, 'footR', -0.12, 0.1 + sc * 0.16, -0.03 - sc * 0.4); set3(T, 'kneeL', 0.15, sc * 0.4, 1); set3(T, 'kneeR', -0.15, -sc * 0.3, 1); T[P.pitchL] = 0.5; T[P.pitchR] = 0.8; }
+          else if (style === 'tuck') { const tu = sm(0, 0.2, t - tk); set3(T, 'footL', 0.13, 0.09 + tu * 0.4, 0.04 + tu * 0.3); set3(T, 'footR', -0.13, 0.09 + tu * 0.42, 0.02 + tu * 0.3); set3(T, 'kneeL', 0.26, tu * 0.5, 1); set3(T, 'kneeR', -0.26, tu * 0.5, 1); T[P.pitchL] = 0.55; T[P.pitchR] = 0.55; T[P.spine] = -0.02 - tu * 0.04; }
+          // Silk: feet together, drifting forward under him through the whole jump, shoulders level
+          else if (style === 'silk') { const dr = sm(0, 0.32, t - tk); set3(T, 'footL', 0.075, 0.1 + dr * 0.05, 0.05 + dr * 0.16); set3(T, 'footR', -0.075, 0.1 + dr * 0.08, 0.03 + dr * 0.15); set3(T, 'kneeL', 0.1, 0.15, 1); set3(T, 'kneeR', -0.1, 0.15, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; T[P.spine] = 0.02; T[P.chest] = -0.02; T[P.head] = -0.13; }
+          else if (style === 'sway') { const off = sh === 'L' ? 'R' : 'L', sy = sm(0, 0.2, t - tk); set3(T, 'foot' + off, -sg * (0.14 + sy * 0.3), 0.1 + sy * 0.12, 0.02); set3(T, 'knee' + off, -sg * (0.3 + sy * 0.5), 0.1, 1); set3(T, 'foot' + sh, sg * 0.1, 0.09, 0.03); T[P.spine + 2] = sg * 0.12 * sy; T[P.chest + 2] = sg * 0.08 * sy; T[P.spine] = -0.06; }
           if (a.fade) { T[P.spine] = -0.16; T[P.chest] = -0.08; set3(T, 'footL', 0.12, 0.11, 0.12); set3(T, 'footR', -0.12, 0.12, 0.1); }
         } else { T[P.spine] = 0.08; T[P.chest] = 0.02; }
         T[P.head] = -0.12;
-        if (a.released) {
-          // follow-through: elbow locked above the eyes, wrist flexed, guide hand peels off and drops
-          const gh = sh === 'L' ? 'R' : 'L';
-          // release styles: Snap = fast hard wrist flick, Float/High = arm stays up long, Quick = compact and
-          // gone early, Butter = smooth and slow; Classic in between
-          // v0.4.4: Feather = soft wrist, guide hand stays up; Dart = flat and fast; Rainbow = tall, long hold;
-          // Laser = the quickest snap with the hand finishing straight at the rim
-          const RS = { snap: [0.06, 0.02, 0.44, -0.95, 0.35], quick: [0.08, -0.03, 0.45, -0.8, 0.3], high: [0.12, 0.1, 0.32, -0.7, 0.75], float: [0.16, 0.07, 0.48, -0.6, 0.85], butter: [0.18, 0.05, 0.42, -0.7, 0.7],
-            feather: [0.17, 0.06, 0.44, -0.58, 0.8], dart: [0.06, -0.03, 0.52, -0.9, 0.3], rainbow: [0.15, 0.14, 0.28, -0.66, 0.95], laser: [0.05, 0.0, 0.48, -1.0, 0.3] }[relS] || [0.12, 0.04, 0.46, -0.8, 0.5];
-          const k = Math.min(1, (t - (a.releaseAt ?? tR)) / RS[0]);
-          const relY = (p.phys.reach * (p.shotPkg?.relK ?? 0.93)) / s;
-          set3(T, 'hand' + sh, sg * 0.05, relY + RS[1] - (1 - k) * 0.03, 0.36 + k * (RS[2] - 0.36));
-          set3(T, 'elbow' + sh, sg * (style === 'push' ? 0.45 : 0.1), -0.6, 0.6);
-          this.palm[sh] = { normal: [0, -0.45, 0.9], fingers: [0, RS[3], 0.6], w: 0.9 };
-          set3(T, 'hand' + gh, -sg * (relS === 'snap' || relS === 'laser' ? 0.34 : 0.26), relY - 0.14 - k * (relS === 'float' || relS === 'feather' ? 0.03 : 0.12), 0.28);
-          set3(T, 'elbow' + gh, -sg * 0.6, -0.6, 0.45);
-          const hold = (a.releaseAt ?? tR) + (p.airborne ? 9 : RS[4]);
-          if (t > hold) {
-            // arms come down by the sides; elbow poles point down/back the whole way so they can't flip out
-            set3(T, 'hand' + sh, sg * 0.27, 1.02, 0.12); set3(T, 'hand' + gh, -sg * 0.27, 1.02, 0.12);
-            set3(T, 'elbow' + sh, sg * 0.35, -1, -0.25); set3(T, 'elbow' + gh, -sg * 0.35, -1, -0.25);
-            this.palm[sh] = null; this.palm[gh] = null;
-          }
+        // v0.4.5 Sharp Eye (Icon badge): an exaggerated high set with the off hand flared, and the legs
+        // kicked together under him — the flashiest jumper in the game
+        if (a.icon === 'sharpeye' && p.airborne) {
+          set3(T, 'footL', 0.07, 0.11, 0.06); set3(T, 'footR', -0.07, 0.12, 0.04);
+          T[P.pitchL] = 0.85; T[P.pitchR] = 0.85; T[P.spine] = -0.1; T[P.chest] = -0.05; T[P.head] = -0.22;
+          T[P.chest + 1] = sg * 0.12;
         }
+        if (a.released) this.followThrough(T, a, p, t, style, true);
         break;
       }
       case 'pumpfake': {
@@ -468,8 +621,52 @@ export class Animator {
           set3(T, 'footR', -0.1, 0.55, 0.32); set3(T, 'kneeR', -0.1, 0.3, 1); T[P.pitchR] = 0.5;
           set3(T, 'footL', 0.1, 0.18, -0.22); set3(T, 'kneeL', 0.1, 0, 1); T[P.pitchL] = 0.8;
           T[P.spine] = -0.05; T[P.chest] = -0.05; T[P.head] = -0.2;
-          if (a.released) { set3(T, 'handR', -0.06, 2.45, 0.32); this.palm.R = { normal: [0, 0.3, 0.95], fingers: [0, 0.95, -0.2], w: 0.8 }; }
-          set3(T, 'handL', 0.35, 1.7, 0.2); set3(T, 'elbowL', 1, -0.3, 0);
+          // v0.4.5 layup packages
+          const ls = a.lstyle || 'basic', sw = a.lsDir || 1;
+          if (ls === 'euro') {
+            // long step across, body leaning away from the contact
+            const q = Math.min(1, (t - tk) / 0.3);
+            set3(T, 'footR', -0.1 + sw * 0.3 * q, 0.42, 0.42); set3(T, 'footL', 0.1 + sw * 0.1, 0.2, -0.3);
+            T[P.spine + 2] = -sw * 0.22; T[P.chest + 2] = -sw * 0.12; T[P.root] = sw * 0.08 * q;
+          } else if (ls === 'finger') {
+            // stretched out tall, the off hand tucked in
+            set3(T, 'footR', -0.1, 0.42, 0.42); T[P.spine] = -0.12; T[P.head] = -0.3;
+            set3(T, 'handL', 0.28, 1.4, 0.1); set3(T, 'elbowL', 0.9, -0.6, -0.2);
+          } else if (ls === 'scoop') {
+            // low and underneath: shoulders dip, the ball comes up from the hip
+            set3(T, 'footR', -0.1, 0.5, 0.42); set3(T, 'kneeR', -0.1, 0.45, 1);
+            T[P.spine] = 0.16; T[P.chest] = 0.1; T[P.head] = -0.34;
+            set3(T, 'elbowR', -1, -0.9, -0.1);
+          }
+          // v0.4.5 coverage: how the defense is playing it changes the finish (see shots.js LAYUP_COVER)
+          const cv = a.cov || 'open', cs = a.covSide || 1, fh = layupHand(a), fs = fh === 'L' ? 1 : -1, oh = fh === 'L' ? 'R' : 'L';
+          const up = Math.min(1, Math.max(0, (t - tk) / Math.max(0.1, a.release - tk)));
+          if (cv === 'side') {
+            // lean away, shoulder into the contact, the near arm up as a shield
+            T[P.spine + 2] = -cs * 0.2; T[P.chest + 1] = cs * 0.24; T[P.head + 1] = -cs * 0.12;
+            set3(T, 'hand' + oh, -fs * 0.34, 1.52, 0.32); set3(T, 'elbow' + oh, -fs * 1, -0.2, 0.3);
+          } else if (cv === 'front') {
+            // the hang: knees tucked up together, body curled around the ball, then it goes back up
+            const tuck = Math.sin(Math.min(1, up) * Math.PI);
+            set3(T, 'footL', 0.11, 0.3 + 0.24 * tuck, 0.1 + 0.18 * tuck); set3(T, 'footR', -0.11, 0.34 + 0.24 * tuck, 0.12 + 0.18 * tuck);
+            set3(T, 'kneeL', 0.2, 0.4, 1); set3(T, 'kneeR', -0.2, 0.4, 1); T[P.spine] = 0.04 + 0.16 * tuck; T[P.chest] = 0.08 * tuck; T[P.head] = -0.1;
+          } else if (cv === 'rim') {
+            // the reverse: shoulders turn away from the shot blocker, head back over the shoulder at the rim
+            T[P.chest + 1] = cs * 0.5 * up; T[P.spine + 1] = cs * 0.2 * up; T[P.head + 1] = cs * 0.55 * up; T[P.spine] = -0.12; T[P.head] = -0.28;
+            set3(T, 'hand' + oh, -fs * 0.4, 1.35, 0.05); set3(T, 'elbow' + oh, -fs * 1, -0.4, -0.3);
+          } else if (cv === 'trail') {
+            // up high and away from the chaser: stretched tall, legs long under him
+            set3(T, 'footR', -0.1, 0.36, 0.24); set3(T, 'footL', 0.1, 0.12, -0.08); T[P.pitchL] = 0.9; T[P.pitchR] = 0.8;
+            T[P.spine] = -0.16; T[P.head] = -0.36;
+          }
+          if (a.released) {
+            const P2 = 'hand' + fh;
+            if (cv === 'rim') { set3(T, P2, fs * 0.12, 2.36, 0.02); this.palm[fh] = { normal: [-fs * 0.3, 0.6, -0.7], fingers: [0, 0.9, 0.2], w: 0.85 }; }
+            else if (ls === 'scoop') { set3(T, P2, fs * 0.08, 2.2, 0.5); this.palm[fh] = { normal: [0, 0.95, 0.2], fingers: [0, 0.4, 0.9], w: 0.85 }; }
+            else if (ls === 'finger') { set3(T, P2, fs * 0.05, 2.58, 0.36); this.palm[fh] = { normal: [0, 0.1, 1], fingers: [0, 0.85, -0.5], w: 0.9 }; }
+            else { set3(T, P2, fs * 0.06, 2.45, 0.32); this.palm[fh] = { normal: [0, 0.3, 0.95], fingers: [0, 0.95, -0.2], w: 0.8 }; }
+          }
+          if (ls !== 'finger' && ls !== 'scoop' && cv !== 'side' && cv !== 'rim') { set3(T, 'hand' + oh, -fs * 0.35, 1.7, 0.2); set3(T, 'elbow' + oh, -fs * 1, -0.3, 0); }
         } else { T[P.root + 1] = -0.12; T[P.spine] = 0.2; }
         break;
       }
@@ -495,12 +692,67 @@ export class Animator {
             // legs kick back as the ball comes down, then snap forward for the slam
             const back = Math.sin(Math.min(1, up / 0.75) * Math.PI);
             set3(T, 'footL', 0.14, 0.3 + back * 0.15, 0.05 - back * 0.3); set3(T, 'footR', -0.14, 0.3 + back * 0.12, 0.05 - back * 0.28); T[P.pitchL] = 0.75; T[P.pitchR] = 0.75; set3(T, 'kneeL', 0.3, 0, 1); set3(T, 'kneeR', -0.3, 0, 1);
+          } else if (st === 'hammer') {
+            // trail leg kicked back hard, chest open, and the shoulders twisted toward the ball cocked over his shoulder
+            set3(T, 'footR', -0.12, 0.3, -0.5); set3(T, 'kneeR', -0.12, -0.3, 1); set3(T, 'footL', 0.12, 0.5, 0.22); set3(T, 'kneeL', 0.14, 0.3, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.9;
+            T[P.chest + 1] = -0.38 * Math.sin(Math.min(1, (a.t / Math.max(0.1, a.slam)) / 0.72) * Math.PI);
+          } else if (st === 'rimrock') {
+            // both heels kicked up behind him, back arched while the ball is behind the head
+            const bk2 = Math.sin(Math.min(1, (a.t / Math.max(0.1, a.slam)) / 0.76) * Math.PI);
+            set3(T, 'footL', 0.13, 0.42 + 0.12 * bk2, -0.3 - 0.12 * bk2); set3(T, 'footR', -0.13, 0.44 + 0.12 * bk2, -0.32 - 0.12 * bk2);
+            set3(T, 'kneeL', 0.2, -0.3, 1); set3(T, 'kneeR', -0.2, -0.3, 1); T[P.pitchL] = 0.95; T[P.pitchR] = 0.95;
+          } else if (st === 'bully') {
+            // lead shoulder turned into the defender, lead knee up, legs braced for the contact
+            set3(T, 'footL', 0.18, 0.56, 0.24); set3(T, 'kneeL', 0.3, 0.35, 1); set3(T, 'footR', -0.2, 0.26, -0.12); set3(T, 'kneeR', -0.28, 0, 1);
+            T[P.pitchL] = 0.55; T[P.pitchR] = 0.75; T[P.chest + 1] = 0.36 * (1 - up * 0.6); T[P.spine + 2] = -0.14;
+          } else if (st === 'aroundback') {
+            // knees up together while the ball wraps around his back, the shoulders turning with it
+            const k = Math.min(1, (a.t / Math.max(0.1, a.slam)) / 0.72);
+            set3(T, 'footL', 0.11, 0.46, 0.12); set3(T, 'footR', -0.11, 0.48, 0.12); set3(T, 'kneeL', 0.2, 0.35, 1); set3(T, 'kneeR', -0.2, 0.35, 1);
+            T[P.pitchL] = 0.7; T[P.pitchR] = 0.7; T[P.chest + 1] = -0.32 * Math.sin(Math.PI * k);
+          } else if (st === 'superman') {
+            // laid out flat toward the rim: legs straight back, toes pointed, the free arm stretched back
+            set3(T, 'footL', 0.12, 0.42, -0.58); set3(T, 'footR', -0.12, 0.44, -0.56); set3(T, 'kneeL', 0.1, -0.4, 1); set3(T, 'kneeR', -0.1, -0.4, 1);
+            T[P.pitchL] = 1.0; T[P.pitchR] = 1.0;
+          } else if (st === 'liberty') {
+            // a long still stretch: legs split front and back, body arched
+            set3(T, 'footR', -0.11, 0.46, 0.4); set3(T, 'kneeR', -0.11, 0.25, 1); set3(T, 'footL', 0.12, 0.26, -0.4); set3(T, 'kneeL', 0.1, -0.15, 1); T[P.pitchL] = 0.9; T[P.pitchR] = 0.45;
+          } else if (st === 'scoop') {
+            // knees driven up and together while the ball swings under
+            const sc = Math.sin(Math.min(1, up / 0.7) * Math.PI);
+            set3(T, 'footL', 0.1, 0.4 + sc * 0.2, 0.22 + sc * 0.2); set3(T, 'footR', -0.1, 0.42 + sc * 0.2, 0.24 + sc * 0.2);
+            set3(T, 'kneeL', 0.18, 0.4, 1); set3(T, 'kneeR', -0.18, 0.4, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6;
+          } else if (st === 'switch') {
+            set3(T, 'footL', 0.16, 0.34, -0.1); set3(T, 'footR', -0.16, 0.44, 0.2); set3(T, 'kneeL', 0.3, -0.1, 1); set3(T, 'kneeR', -0.3, 0.25, 1); T[P.pitchL] = 0.8; T[P.pitchR] = 0.55;
+            T[P.chest + 1] = (a.spinDir || 1) * 0.3 * Math.sin(Math.min(1, up / 0.75) * Math.PI);
+          } else if (st === '180') {
+            // half turn: legs together and tucked, shoulders counter-rotating into the turn
+            set3(T, 'footL', 0.11, 0.4, 0.02); set3(T, 'footR', -0.11, 0.38, 0.0); set3(T, 'kneeL', 0.22, 0.1, 1); set3(T, 'kneeR', -0.22, 0.1, 1); T[P.pitchL] = 0.8; T[P.pitchR] = 0.8;
+            T[P.chest + 1] = -(a.spinDir || 1) * 0.25 * (1 - up);
+          } else if (st === 'eastbay') {
+            // between the legs: the legs split wide open while the ball goes through, then snap closed
+            const thr = Math.sin(Math.min(1, up / 0.66) * Math.PI);
+            set3(T, 'footR', -0.12 - thr * 0.14, 0.52 + thr * 0.22, 0.34 + thr * 0.24); set3(T, 'kneeR', -0.2 - thr * 0.5, 0.35, 1);
+            set3(T, 'footL', 0.12 + thr * 0.1, 0.26 - thr * 0.04, -0.4 - thr * 0.2); set3(T, 'kneeL', 0.14 + thr * 0.3, -0.2, 1);
+            T[P.pitchL] = 0.9; T[P.pitchR] = 0.5; T[P.pelvis] = -0.1 * thr;
+          } else if (st === 'hashsling') {
+            // Hash-Slinging (Icon badge only): legs scissor wide open while the arm whips all the way around
+            const wh = Math.sin(Math.min(1, up / 0.8) * Math.PI);
+            set3(T, 'footR', -0.1 - wh * 0.16, 0.58 + wh * 0.2, 0.36 + wh * 0.3); set3(T, 'kneeR', -0.2 - wh * 0.4, 0.3, 1);
+            set3(T, 'footL', 0.14 + wh * 0.14, 0.3, -0.46 - wh * 0.22); set3(T, 'kneeL', 0.12, -0.25, 1);
+            T[P.pitchL] = 0.95; T[P.pitchR] = 0.45; T[P.chest + 1] = (a.spinDir || 1) * 0.35 * wh; T[P.pelvis] = -0.08 * wh;
           } else if (two || a.type === 'oop') { set3(T, 'footL', 0.14, 0.32, 0.05); set3(T, 'footR', -0.14, 0.3, 0.05); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7; set3(T, 'kneeL', 0.3, 0, 1); set3(T, 'kneeR', -0.3, 0, 1); }
           else { set3(T, 'footR', -0.1, 0.6, 0.3); set3(T, 'kneeR', -0.1, 0.3, 1); set3(T, 'footL', 0.1, 0.2, -0.2); T[P.pitchL] = 0.8; T[P.pitchR] = 0.5; }
-          T[P.spine] = st === 'tomahawk' ? -0.2 : st === 'windmill' || st === 'cradle' ? -0.12 * Math.sin(up * Math.PI) - 0.04 : st === '360' ? 0.08 : -0.05;
-          T[P.chest] = st === 'tomahawk' ? -0.15 : st === 'windmill' ? -0.08 : 0; T[P.head] = -0.15;
-          // the free arm balances flashy dunks out wide
-          if (!a.slammed && (st === 'windmill' || st === 'cradle' || st === 'tomahawk')) { set3(T, 'handL', 0.55, 1.75, 0.05); set3(T, 'elbowL', 1, -0.2, -0.3); }
+          T[P.spine] = st === 'tomahawk' || st === 'hammer' ? -0.2 : st === 'rimrock' ? -0.3 : st === 'liberty' ? -0.26 : st === 'windmill' || st === 'cradle' ? -0.12 * Math.sin(up * Math.PI) - 0.04 : st === '360' ? 0.08 : st === 'eastbay' ? 0.1 : st === 'scoop' ? 0.06 : st === 'superman' ? 0.34 : st === 'bully' ? 0.1 : st === 'aroundback' ? 0.12 : -0.05;
+          T[P.chest] = st === 'tomahawk' || st === 'hammer' ? -0.15 : st === 'rimrock' ? -0.16 : st === 'liberty' ? -0.12 : st === 'windmill' ? -0.08 : st === 'superman' ? 0.1 : 0;
+          T[P.head] = st === 'superman' ? -0.42 : -0.15;
+          // the free arm balances flashy dunks out wide (on the other side once the ball has changed hands)
+          const fh = dunkHand(a) === 'L' ? 'R' : 'L', fs = fh === 'L' ? 1 : -1;
+          if (!a.slammed && (st === 'windmill' || st === 'cradle' || st === 'tomahawk' || st === 'hammer' || st === 'liberty' || st === '180' || st === 'eastbay' || st === 'hashsling' || st === 'switch' || st === 'aroundback')) { set3(T, 'hand' + fh, fs * 0.55, 1.75, 0.05); set3(T, 'elbow' + fh, fs * 1, -0.2, -0.3); }
+          if (!a.slammed && st === 'scoop') { set3(T, 'handL', 0.5, 1.3, -0.1); set3(T, 'elbowL', 1, -0.5, -0.4); }
+          // contact: the forearm comes up as a shield; superman: the free arm stretched back like a flyer
+          if (!a.slammed && st === 'bully') { set3(T, 'handL', 0.2, 1.62, 0.38); set3(T, 'elbowL', 1, -0.5, 0.2); }
+          if (!a.slammed && st === 'superman') { set3(T, 'handL', 0.34, 1.25, -0.5); set3(T, 'elbowL', 1, -0.3, -0.6); }
           if (a.type === 'oop') { set3(T, 'handL', 0.15, 2.5, 0.35); set3(T, 'handR', -0.15, 2.5, 0.35); }
           if (a.slammed) { set3(T, 'handR', -0.08, 2.3, 0.45); set3(T, 'handL', 0.25, 2.1, 0.3); }
           if (!a.slammed && a.style === 'reverse') { T[P.chest + 1] = 0.3; }
@@ -537,6 +789,13 @@ export class Animator {
           const y = a.ptype === 'bounce' ? 0.9 : a.ptype === 'lob' || a.ptype === 'alley' ? 1.9 : 1.32;
           set3(T, 'handL', 0.14 + dx * 0.55, y, 0.2 + dz * 0.5); set3(T, 'handR', -0.14 + dx * 0.55, y, 0.2 + dz * 0.5);
           this.palm.L = { normal: [0, -0.3, 1], fingers: [0.2, 0.3, 0.9], w: 0.7 }; this.palm.R = { normal: [0, -0.3, 1], fingers: [-0.2, 0.3, 0.9], w: 0.7 };
+          // v0.4.5 Oprah (Icon badge): a one-handed flick with the whole body behind it and the off arm swept wide
+          if (a.icon === 'oprah') {
+            set3(T, 'handR', -0.1 + dx * 0.95, y + 0.14, 0.2 + dz * 0.85); set3(T, 'elbowR', -0.3, -0.5, 0.6);
+            set3(T, 'handL', 0.8 - dx * 0.2, y - 0.2, -0.1); set3(T, 'elbowL', 1, -0.2, -0.5);
+            this.palm.R = { normal: [0, -0.2, 1], fingers: [-0.5, 0.2, 0.85], w: 0.9 }; this.palm.L = null;
+            T[P.chest + 1] = -0.34; T[P.spine] += 0.1; T[P.head + 1] = 0.18;
+          }
         }
         break;
       }
@@ -551,6 +810,15 @@ export class Animator {
         set3(T, 'hand' + hd, lerp(sg * 0.25, reach[0], k), lerp(1.0, reach[1], k), lerp(0.2, reach[2], k));
         set3(T, 'elbow' + hd, sg * 0.5, -1, 0);
         this.palm[hd] = { normal: [-sg * 0.3, -0.6, 0.6], fingers: [0, -0.2, 1], w: 0.6 * k };
+        // v0.4.5 The Clamp (Icon badge): a two-hand clamp on the ball, body low and square
+        if (a.icon === 'clamp') {
+          const off = hd === 'L' ? 'R' : 'L';
+          T[P.root + 1] = -0.2 - k * 0.14; T[P.spine] = 0.34 + k * 0.3; T[P.chest + 1] = 0;
+          set3(T, 'hand' + off, lerp(-sg * 0.25, reach[0] - sg * 0.2, k), lerp(1.0, reach[1] + 0.06, k), lerp(0.2, reach[2] - 0.04, k));
+          set3(T, 'elbow' + off, -sg * 0.5, -1, 0);
+          this.palm[off] = { normal: [sg * 0.6, -0.4, 0.6], fingers: [0, -0.2, 1], w: 0.7 * k };
+          set3(T, 'footL', 0.3, 0.08, 0.06); set3(T, 'footR', -0.3, 0.08, 0.02);
+        }
         break;
       }
       case 'block': case 'rebound': case 'tipjump': {
@@ -561,6 +829,25 @@ export class Animator {
           else { set3(T, 'handL', 0.13, 2.55, 0.2); set3(T, 'handR', -0.13, 2.55, 0.2); }
           set3(T, 'elbowL', 0.6, 0, -0.5); set3(T, 'elbowR', -0.6, 0, -0.5);
           T[P.spine] = -0.06; T[P.head] = -0.25;
+          // v0.4.5 Icon badges: Big Brother swats with one arm cocked all the way back; Open Arms snatches the
+          // board in with both arms and rips it down to the chest
+          if (a.icon === 'bigbro') {
+            const sw = sm(0, 0.18, t - (a.jumpAt || 0));
+            set3(T, 'handR', -0.1 - sw * 0.3, 2.74, 0.26 + sw * 0.2); set3(T, 'elbowR', -1, 0.4, -0.2);
+            set3(T, 'handL', 0.5, 1.9, -0.05); set3(T, 'elbowL', 1, -0.1, -0.4);
+            this.palm.R = { normal: [0, 0.2, 1], fingers: [0, 1, -0.2], w: 0.9 };
+            T[P.chest + 1] = -0.3 * sw; T[P.spine] = -0.14; T[P.pitchL] = 0.75; T[P.pitchR] = 0.75;
+            set3(T, 'footL', 0.1, 0.3, -0.12); set3(T, 'footR', -0.1, 0.3, -0.12);
+          } else if (a.icon === 'openarms') {
+            const rip = sm(0.1, 0.42, t - (a.jumpAt || 0));
+            set3(T, 'handL', 0.28 - rip * 0.1, 2.62 - rip * 1.1, 0.24 - rip * 0.02);
+            set3(T, 'handR', -0.28 + rip * 0.1, 2.62 - rip * 1.1, 0.24 - rip * 0.02);
+            set3(T, 'elbowL', 1, 0.2 - rip, -0.3); set3(T, 'elbowR', -1, 0.2 - rip, -0.3);
+            this.palm.L = { normal: [-1, 0, 0.2], fingers: [0, 0.9, 0.2], w: 0.85 };
+            this.palm.R = { normal: [1, 0, 0.2], fingers: [0, 0.9, 0.2], w: 0.85 };
+            T[P.spine] = -0.1 + rip * 0.28; T[P.head] = -0.2 + rip * 0.2;
+            set3(T, 'kneeL', 0.34, 0, 1); set3(T, 'kneeR', -0.34, 0, 1);
+          }
         } else { T[P.root + 1] = -0.16; T[P.spine] = 0.25; set3(T, 'handL', 0.3, 1.5, 0.25); set3(T, 'handR', -0.3, 1.5, 0.25); }
         break;
       }
@@ -622,8 +909,11 @@ export class Animator {
       set3(T, 'elbowL', 1, -0.3, 0); set3(T, 'elbowR', -1, -0.3, 0); T[P.spine] = -0.12 * k; T[P.head] = -0.2 * k;
       T[P.chest + 2] = Math.sin(t * 10) * 0.05 * k;
     } else if (kind === 'shimmy') {
-      T[P.chest + 1] = Math.sin(t * 22) * 0.25 * k; T[P.clavL + 2] = Math.sin(t * 22) * 0.15 * k; T[P.clavR + 2] = Math.sin(t * 22) * 0.15 * k;
-      mix3(T, 'handL', 0.3, 1.3, 0.2, k); mix3(T, 'handR', -0.3, 1.3, 0.2, k);
+      // (stage 7: fists low by the hips, knees dipped, the shoulders doing all the work)
+      const sw = Math.sin(t * 22);
+      T[P.chest + 1] = sw * 0.32 * k; T[P.clavL + 2] = sw * 0.2 * k; T[P.clavR + 2] = sw * 0.2 * k;
+      T[P.root + 1] = -0.07 * k; T[P.spine] = 0.08 * k;
+      mix3(T, 'handL', 0.24 + 0.05 * sw, 1.04, 0.16, k); mix3(T, 'handR', -0.24 + 0.05 * sw, 1.04, 0.16, k);
     } else if (kind === 'point') {
       mix3(T, 'handR', -0.12, 2.55, 0.3, k); T[P.head] = -0.4 * k;
     } else if (kind === 'chest') {
@@ -635,19 +925,97 @@ export class Animator {
       mix3(T, 'handR', -0.3, 0.75, 0.35, k); T[P.spine] = 0.2 * k; this.palm.R = { normal: [0, -1, 0], fingers: [0, 0, 1], w: k };
     } else if (kind === 'shrug') { // v0.4.4: palms up, shoulders up, head tilted
       const up = 0.04 * Math.min(1, t / 0.3);
-      mix3(T, 'handL', 0.46, 1.22 + up, 0.3, k); mix3(T, 'handR', -0.46, 1.22 + up, 0.3, k);
+      mix3(T, 'handL', 0.58, 1.3 + up, 0.24, k); mix3(T, 'handR', -0.58, 1.3 + up, 0.24, k);
       set3(T, 'elbowL', 1, -0.6, 0.2); set3(T, 'elbowR', -1, -0.6, 0.2);
       this.palm.L = { normal: [0, 1, 0], fingers: [0.3, 0, 1], w: k }; this.palm.R = { normal: [0, 1, 0], fingers: [-0.3, 0, 1], w: k };
       T[P.head + 2] = 0.18 * k; T[P.spine] = -0.04 * k;
+    } else if (kind === 'pharaoh') { // King Tut Cup exclusive: arms crossed over the chest like a pharaoh in his tomb,
+      // head lifted, then he opens up into the crook-and-flail pose
+      if (t < 1.0) {
+        mix3(T, 'handL', -0.14, 1.66, 0.2, k); mix3(T, 'handR', 0.14, 1.66, 0.2, k);
+        set3(T, 'elbowL', 0.9, -0.6, 0.5); set3(T, 'elbowR', -0.9, -0.6, 0.5);
+        this.palm.L = { normal: [0, 0, -1], fingers: [-0.4, 0.9, 0], w: k }; this.palm.R = { normal: [0, 0, -1], fingers: [0.4, 0.9, 0], w: k };
+        T[P.spine] = -0.12 * k; T[P.head] = -0.18 * k;
+        set3(T, 'footL', 0.07, 0.08, 0.0); set3(T, 'footR', -0.07, 0.08, 0.0);
+      } else {
+        const q = Math.min(1, (t - 1.0) / 0.35);
+        mix3(T, 'handL', 0.5 + 0.1 * q, 1.5 + 0.35 * q, 0.22, k); mix3(T, 'handR', -0.5 - 0.1 * q, 1.5 + 0.35 * q, 0.22, k);
+        set3(T, 'elbowL', 1, -0.5, -0.2); set3(T, 'elbowR', -1, -0.5, -0.2);
+        T[P.spine] = -0.15 * k; T[P.head] = -0.12 * k; T[P.chest] = -0.06 * k;
+      }
+    } else if (kind === 'general') { // The General (Icon badge): a full stand-to-attention salute with a stomp
+      const st2 = Math.sin(Math.min(1, t / 0.3) * Math.PI);
+      mix3(T, 'handR', -0.04, 1.86, 0.16, k); set3(T, 'elbowR', -1.1, 0.3, 0.3);
+      this.palm.R = { normal: [0, -0.3, -1], fingers: [0.75, 0.5, 0], w: k };
+      mix3(T, 'handL', 0.3, 0.92, -0.06, k); set3(T, 'elbowL', 0.4, -1, -0.6);
+      set3(T, 'footL', 0.1, 0.08 + st2 * 0.16, 0.0); set3(T, 'footR', -0.1, 0.08, 0.0);
+      T[P.spine] = -0.1 * k; T[P.chest] = -0.05 * k; T[P.head] = -0.06 * k;
     } else if (kind === 'salute') {
       mix3(T, 'handR', -0.06, 1.8, 0.2, k); set3(T, 'elbowR', -1, 0.15, 0.2);
       this.palm.R = { normal: [0, -0.4, -1], fingers: [0.6, 0.6, 0], w: k }; T[P.spine] = -0.06 * k; T[P.head] = -0.06 * k;
     } else if (kind === 'heart') {
       if (t < 0.85) { const tap = Math.abs(Math.sin(t * 11)); mix3(T, 'handR', 0.05, 1.5, 0.12 + tap * 0.07, k); this.palm.R = { normal: [0, 0, -1], fingers: [1, 0.3, 0], w: k }; }
       else { const q = Math.min(1, (t - 0.85) / 0.3); mix3(T, 'handR', -0.12, 1.5 + 1.05 * q, 0.14 + 0.16 * q, k); T[P.head] = -0.42 * q * k; }
+    } else if (kind === 'sit' || kind === 'sitcheer' || kind === 'sitclap') { // v0.4.5 park spectators on a bench
+      T[P.root + 1] = -0.47 * k; T[P.root + 2] = -0.04 * k; T[P.spine] = 0.1 * k; T[P.pelvis] = 0.5 * k;
+      set3(T, 'footL', 0.17, 0.08, 0.42 * k); set3(T, 'footR', -0.17, 0.08, 0.44 * k);
+      if (kind === 'sitcheer') {
+        const pump = Math.abs(Math.sin(t * 7));
+        mix3(T, 'handL', 0.3, 1.85 + 0.2 * pump, 0.12, k); mix3(T, 'handR', -0.3, 1.85 + 0.2 * (1 - pump), 0.12, k);
+        T[P.spine] = -0.05 * k; T[P.head] = -0.2 * k;
+      } else if (kind === 'sitclap') {
+        const g = Math.abs(Math.sin(t * 11));
+        mix3(T, 'handL', 0.03 + 0.1 * g, 1.08, 0.36, k); mix3(T, 'handR', -0.03 - 0.1 * g, 1.08, 0.36, k);
+        this.palm.L = { normal: [-1, 0, 0], fingers: [0, 0.6, 0.8], w: k }; this.palm.R = { normal: [1, 0, 0], fingers: [0, 0.6, 0.8], w: k };
+      } else { mix3(T, 'handL', 0.2, 0.6, 0.3, k); mix3(T, 'handR', -0.2, 0.6, 0.3, k); }
+    } else if (kind === 'cheer') { // standing: both arms up, pumping, a little bounce
+      const pump = Math.abs(Math.sin(t * 7));
+      mix3(T, 'handL', 0.32, 2.05 + 0.15 * pump, 0.1, k); mix3(T, 'handR', -0.32, 2.05 + 0.15 * (1 - pump), 0.1, k);
+      T[P.root + 1] += 0.03 * Math.abs(Math.sin(t * 7)) * k; T[P.head] = -0.25 * k;
+    } else if (kind === 'clap') {
+      const g = Math.abs(Math.sin(t * 11));
+      mix3(T, 'handL', 0.03 + 0.1 * g, 1.3, 0.3, k); mix3(T, 'handR', -0.03 - 0.1 * g, 1.3, 0.3, k);
+      this.palm.L = { normal: [-1, 0, 0], fingers: [0, 0.6, 0.8], w: k }; this.palm.R = { normal: [1, 0, 0], fingers: [0, 0.6, 0.8], w: k };
+    } else if (kind === 'ooh') { // hands on head: "did you see that?"
+      mix3(T, 'handL', 0.12, 1.98, 0.02, k); mix3(T, 'handR', -0.12, 1.98, 0.02, k);
+      set3(T, 'elbowL', 1, 0.2, 0); set3(T, 'elbowR', -1, 0.2, 0); T[P.spine] = -0.12 * k; T[P.head] = -0.1 * k;
+    } else if (kind === 'goggles') { // three-point goggles over the eyes, head rocking
+      const w = Math.sin(t * 6);
+      mix3(T, 'handL', 0.15, 1.95, 0.22, k); mix3(T, 'handR', -0.15, 1.95, 0.22, k);
+      set3(T, 'elbowL', 1, -0.1, 0.1); set3(T, 'elbowR', -1, -0.1, 0.1);
+      this.palm.L = { normal: [0, 0, -1], fingers: [-0.6, 0.6, 0], w: k }; this.palm.R = { normal: [0, 0, -1], fingers: [0.6, 0.6, 0], w: k };
+      T[P.head + 1] = w * 0.22 * k; T[P.spine] = -0.04 * k;
+    } else if (kind === 'dust') { // brushes the dirt off both shoulders
+      const q = (t * 1.6) % 2, side = q < 1 ? 'R' : 'L', sg = side === 'L' ? 1 : -1, ph = q % 1;
+      const sweep = Math.sin(ph * Math.PI);
+      mix3(T, 'hand' + side, -sg * (0.34 - sweep * 0.5), 1.62 + sweep * 0.1, 0.16, k);
+      set3(T, 'elbow' + side, -sg * 0.9, -0.3, -0.1);
+      this.palm[side] = { normal: [0, -0.3, -0.9], fingers: [-sg, 0.2, 0], w: k };
+      T[P.chest + 1] = sg * 0.18 * k; T[P.head] = -0.1 * k;
+    } else if (kind === 'airplane') { // arms out, banking side to side
+      const b = Math.sin(t * 2.4);
+      mix3(T, 'handL', 0.95, 1.3 + b * 0.35, 0.0, k); mix3(T, 'handR', -0.95, 1.3 - b * 0.35, 0.0, k);
+      set3(T, 'elbowL', 1, 0.1, -0.1); set3(T, 'elbowR', -1, 0.1, -0.1);
+      T[P.spine + 2] = -b * 0.22 * k; T[P.chest + 2] = -b * 0.1 * k; T[P.head] = -0.12 * k;
+    } else if (kind === 'mic') { // holds the mic up, then drops it and walks it off
+      if (t < 1.0) { mix3(T, 'handR', -0.1, 2.0, 0.34, k); this.palm.R = { normal: [0, 0, -1], fingers: [0, 1, 0], w: k }; set3(T, 'elbowR', -0.9, 0.1, 0.2); T[P.head] = -0.18 * k; }
+      else { const q = Math.min(1, (t - 1.0) / 0.5); mix3(T, 'handR', -0.42 * q - 0.1, 2.0 - q * 0.95, 0.34 - q * 0.22, k); this.palm.R = { normal: [0, -1, 0], fingers: [0, 0, 1], w: k * (1 - q) }; T[P.chest + 1] = -0.2 * q * k; T[P.head + 1] = -0.25 * q * k; }
+    } else if (kind === 'bow') { // one arm across the waist, a deep bow
+      const q = Math.min(1, t / 0.6) * (1 - Math.max(0, (t - 1.5) / 0.5));
+      T[P.spine] = 0.5 * q * k; T[P.chest] = 0.25 * q * k; T[P.head] = 0.1 * q * k; T[P.root + 1] = -0.05 * q * k;
+      mix3(T, 'handL', 0.08, 1.12, 0.3, k); set3(T, 'elbowL', 0.9, -0.5, -0.1);
+      mix3(T, 'handR', -0.62, 1.1, -0.12, k); set3(T, 'elbowR', -1, -0.3, -0.4);
+      this.palm.L = { normal: [0, -0.2, -1], fingers: [-1, 0, 0], w: k };
+    } else if (kind === 'roar') { // arms flexed down at the sides, chest out
+      const sh = Math.sin(t * 16) * 0.03;
+      mix3(T, 'handL', 0.46, 0.92 + sh, -0.1, k); mix3(T, 'handR', -0.46, 0.92 - sh, -0.1, k);
+      set3(T, 'elbowL', 1, -0.7, -0.5); set3(T, 'elbowR', -1, -0.7, -0.5);
+      T[P.spine] = -0.2 * k; T[P.chest] = -0.1 * k; T[P.head] = -0.3 * k; T[P.root + 1] = -0.03 * k;
     } else if (kind === 'crown') { // both hands set a crown on the head, then frame it
-      const down = 0.14 * Math.min(1, t / 0.7);
-      mix3(T, 'handL', 0.14, 2.22 - down, 0.04, k); mix3(T, 'handR', -0.14, 2.22 - down, 0.04, k);
+      // (stage 7: once it's on, the hands open out wide above the head to present it, chest up)
+      const down = 0.14 * Math.min(1, t / 0.7), open = Math.min(1, Math.max(0, t - 0.8) / 0.3);
+      mix3(T, 'handL', 0.14 + 0.32 * open, 2.22 - down + 0.06 * open, 0.04, k); mix3(T, 'handR', -0.14 - 0.32 * open, 2.22 - down + 0.06 * open, 0.04, k);
+      T[P.chest] = -0.1 * open * k;
       set3(T, 'elbowL', 1, 0.3, 0); set3(T, 'elbowR', -1, 0.3, 0);
       this.palm.L = { normal: [0, -1, 0], fingers: [-0.4, 0, 1], w: k }; this.palm.R = { normal: [0, -1, 0], fingers: [0.4, 0, 1], w: k };
       T[P.spine] = -0.08 * k; T[P.head] = 0.05 * k;

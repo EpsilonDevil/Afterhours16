@@ -5,7 +5,7 @@ import { $$, esc, modal } from './common.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import { careerSplit, careerLine, fmtPct, statProfile, STAT_LABELS } from '../sim/profile.js';
 
-const MODES = [['all', 'All games'], ['park', 'Park'], ['proam', 'Pro-Am']];
+const MODES = [['all', 'All games'], ['park', 'Park'], ['proam', 'Pro-Am'], ['prorun', 'The Pro Run']];
 const f1 = v => (v == null ? '—' : v.toFixed(1));
 const tendLabel = v => (v >= 0.8 ? 'Very high' : v >= 0.62 ? 'High' : v >= 0.4 ? 'Average' : v >= 0.22 ? 'Low' : 'Very low');
 

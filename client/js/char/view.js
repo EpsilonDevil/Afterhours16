@@ -1,7 +1,7 @@
 // Runtime athlete: GPU meshes + materials + rig. Placed in world by (x, y, z, yaw).
 import { AthleteModel } from './athlete.js';
 import { Rig } from './rig.js';
-import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal } from './looks.js';
+import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap } from './looks.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
 
@@ -14,8 +14,21 @@ function sharedTex(ctx, key, make, opts) {
   return m.get(key);
 }
 
+// v0.4.5 stage 7: an athlete can be built in steps (a few milliseconds each) spread over several frames, so a
+// park full of people arriving and games rotating never freezes the frame. new AthleteView(...) still builds
+// everything at once; AthleteView.staged(...) returns the view and a generator that builds it step by step.
+export const STAGED = Symbol('staged');
 export class AthleteView {
   constructor(renderer, build, look, opts = {}) {
+    if (renderer === STAGED) return;
+    for (const _ of this.init(renderer, build, look, opts)) { /* build it all now */ }
+  }
+  static staged(renderer, build, look, opts = {}) {
+    const v = new AthleteView(STAGED);
+    return { view: v, steps: v.init(renderer, build, look, opts) };
+  }
+
+  *init(renderer, build, look, opts = {}) {
     this.r = renderer;
     const ctx = renderer.ctx;
     this.ctx = ctx;
@@ -26,7 +39,8 @@ export class AthleteView {
     this.rig = new Rig(this.model);
     this.H = this.model.d.H;
     this.world = M.m4();
-    const geo = this.model.buildAll();
+    const geo = {};
+    yield* this.model.buildSteps(geo);
     const textures = this.textures = [];
     const own = (src, o) => { const t = ctx.texture(src, o); textures.push(t); return t; };
     const skinDetail = sharedTex(ctx, 'detail:skin', () => detailNormal('skin'), { srgb: false, aniso: 4 });
@@ -36,20 +50,31 @@ export class AthleteView {
     const bodyTex = sharedTex(ctx, 'bodyskin:' + skinHex, () => paintBodySkin(skinHex), { aniso: 4 });
     // skin: slightly rougher/drier on the body, a touch of sheen on the face
     const bodyMat = new Material({ map: bodyTex, detailMap: skinDetail, detail: [9, 9, 0.55], color: [1, 1, 1], roughness: 0.64, specular: 0.36, shading: 'skin', character: true });
-    const faceTex = own(paintFace(this.model, opts.faceRes || (detail >= 1 ? 1024 : 512)), { aniso: 8 });
+    // far-away people (walkers, background games) get a 256 face: it's 6x cheaper to paint and looks the same at
+    // park distances
+    const faceTex = own(paintFace(this.model, opts.faceRes || (detail >= 1 ? 1024 : detail >= 0.75 ? 384 : 256)), { aniso: 8 });
+    yield;
     const headMat = new Material({ map: faceTex, detailMap: skinDetail, detail: [44, 22, 0.45], color: [1, 1, 1], roughness: 0.64, specular: 0.36, shading: 'skin', character: true });
     const eyeMat = new Material({ color: [1, 1, 1], roughness: 0.07, specular: 1.2, character: true });
     const top = look.top || { family: 'jersey' };
     const cut = this.model.topCut(top);
-    const topTex = own(paintTop({ ...top, number: look.number, name: look.name, keep: cut.keep, hem: cut.hem, neckTop: cut.neckTop }), { aniso: 8 });
+    // v0.4.5: the King Tut Cup mo-cap suit paints its own texture and glows (emissive map)
+    const mocapTop = top.pattern === 'mocap';
+    const topTex = own(mocapTop ? paintMocap(top, 'top') : paintTop({ ...top, number: look.number, name: look.name, keep: cut.keep, hem: cut.hem, neckTop: cut.neckTop, res: detail < 1 ? 256 : undefined }), { aniso: 8 });
+    yield;
+    const glowOf = (spec, k = 2.4) => (spec.glow ? M.hexLinear(spec.glow).map(v => v * k) : [0, 0, 0]);
     const jersey = top.family === 'jersey';
     const topMat = new Material({
       map: topTex, color: [0.86, 0.86, 0.86], roughness: jersey ? 0.6 : 0.86, shading: 'cloth', sheen: jersey ? [0.22, 0.22, 0.22] : [0.16, 0.16, 0.16],
       detailMap: jersey ? meshDetail : knitDetail, detail: jersey ? [34, 26, 0.45] : [60, 46, 0.35], character: true, doubleSided: true, layer: 3,
+      emissiveMap: mocapTop ? own(paintMocap(top, 'top', true), {}) : null, emissive: mocapTop ? glowOf(top) : [0, 0, 0],
     });
     const bot = look.bottom || { family: 'shorts' };
-    const botTex = own(paintShorts(bot), { aniso: 8 });
-    const botMat = new Material({ map: botTex, color: [0.86, 0.86, 0.86], roughness: 0.62, shading: 'cloth', sheen: [0.22, 0.22, 0.22], detailMap: bot.family === 'joggers' ? knitDetail : meshDetail, detail: [30, 30, 0.35], character: true, doubleSided: true, layer: 2 });
+    const mocapBot = bot.pattern === 'mocap';
+    const botTex = own(mocapBot ? paintMocap(bot, 'bottom') : paintShorts(detail < 1 ? { ...bot, res: 256 } : bot), { aniso: 8 });
+    yield;
+    const botMat = new Material({ map: botTex, color: [0.86, 0.86, 0.86], roughness: 0.62, shading: 'cloth', sheen: [0.22, 0.22, 0.22], detailMap: bot.family === 'joggers' ? knitDetail : meshDetail, detail: [30, 30, 0.35], character: true, doubleSided: true, layer: 2,
+      emissiveMap: mocapBot ? own(paintMocap(bot, 'bottom', true), {}) : null, emissive: mocapBot ? glowOf(bot) : [0, 0, 0] });
     const gearMat = new Material({ color: [0.84, 0.84, 0.84], roughness: 0.5, specular: 0.7, character: true, layer: 4 });
     this.meshes = [];
     const add = (g, mat, name) => {
@@ -64,6 +89,7 @@ export class AthleteView {
     add(geo.eyes, eyeMat, 'eyes');
     if (geo.hair) {
       const hairTex = own(paintHair(look), { aniso: 4 });
+      yield;
       const hairMat = new Material({ map: hairTex, color: [1, 1, 1], roughness: 0.62, specular: 0.7, shading: 'cloth', sheen: [0.1, 0.09, 0.08], alphaTest: 0.32, character: true });
       add(geo.hair, hairMat, 'hair');
     }
@@ -111,8 +137,9 @@ export class AthleteView {
 
   dispose() {
     this.removeFrom();
-    for (const m of this.meshes) this.ctx.disposeGeometry(m.geo);
-    for (const t of this.textures) this.ctx.disposeTexture(t);
-    this.meshes = [];
+    // (a staged build can be thrown away half done: only what it made so far is freed)
+    for (const m of this.meshes || []) this.ctx.disposeGeometry(m.geo);
+    for (const t of this.textures || []) this.ctx.disposeTexture(t);
+    this.meshes = []; this.textures = [];
   }
 }

@@ -21,6 +21,7 @@ uniform mat4 uModel;
 uniform mat4 uViewProj;
 uniform mat4 uShadowMat;
 uniform vec2 uUVScale;
+uniform vec2 uUVOffset;
 uniform float uTime;
 uniform float uHype;
 uniform vec4 uCrowd; // v0.4.3 crowd: x = wave strength, y = clap, z = wave speed, w = standing ovation
@@ -73,7 +74,7 @@ void main() {
   vec4 world = model * pos;
   vWorld = world.xyz;
   vNormal = normalize(mat3(model) * nrm);
-  vUV = aUV * uUVScale;
+  vUV = aUV * uUVScale + uUVOffset;
   vShadow = uShadowMat * world;
   gl_Position = uViewProj * world;
 }`;
@@ -361,6 +362,7 @@ layout(location=9) in vec4 aI3;
 uniform mat4 uModel;
 uniform mat4 uViewProj;
 uniform vec2 uUVScale;
+uniform vec2 uUVOffset;
 out vec2 vUV;
 void main() {
   vec4 pos = vec4(aPos, 1.0);
@@ -372,7 +374,7 @@ void main() {
 #ifdef INSTANCED
   model = model * mat4(aI0, aI1, aI2, aI3);
 #endif
-  vUV = aUV * uUVScale;
+  vUV = aUV * uUVScale + uUVOffset;
   gl_Position = uViewProj * model * pos;
 }`;
 export const SHADOW_FS = /* glsl */`

@@ -136,7 +136,11 @@ export class AIWorld {
     const x = this.extra.get(id);
     if (x && x.until > t) return x;
     const d = dayIndex(t);
-    for (const day of [d, d - 1]) for (const s of this.sessions(id, day)) if (t >= s.start && t < s.end) return { park: s.park, until: s.end };
+    for (const day of [d, d - 1]) for (const s of this.sessions(id, day)) if (t >= s.start && t < s.end) {
+      // v0.4.5: entrants of the running King Tut Cup spend about half their online hours at the Cup
+      if (cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: 'kingtut', until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000) };
+      return { park: s.park, until: s.end };
+    }
     return null;
   }
   online(id, t = Date.now()) { return !!this.status(id, t); }
@@ -180,7 +184,8 @@ export class AIWorld {
       const id = 'ai-' + i;
       if (exclude.has(id) || this.status(id, t)) continue;
       const a = this.account(id);
-      if (a.home && a.home !== park) continue;
+      // the Cup is topped up from its own entrants; a park from its regulars (and people with no home park)
+      if (park === 'kingtut' ? !cupEntrant(id, cupWindow(t)) : (a.home && a.home !== park)) continue;
       const nx = this.nextOnline(id, t);
       cands.push([id, nx ? nx.start - t : 1e12]);
     }
@@ -208,11 +213,20 @@ export class AIWorld {
   inSquad(id) { return this.squad.includes(id); }
   addFriend(id) { if (!this.isFriend(id) && this.friends.length < 200) { this.friends.push(id); this.changed(); return true; } return false; }
   removeFriend(id) { this.friends = this.friends.filter(x => x !== id); this.squad = this.squad.filter(x => x !== id); this.changed(); }
-  invite(id, t = Date.now()) {
+  // v0.4.5: someone online at a park you're not at is in the middle of a game about 45% of the time (games come
+  // in ~6-minute blocks, the same answer for everyone asking during that block)
+  playingElsewhere(id, t = Date.now()) {
+    if (!this.online(id, t)) return false;
+    return (hashString(id + '@' + Math.floor(t / 360000) + '|' + this.seed) % 100) < 45;
+  }
+  // v0.4.5: you can only pull someone into your squad when he's online and not in a game. `playing` comes from
+  // the park you're at (courts and your own game); everyone else uses playingElsewhere.
+  invite(id, t = Date.now(), playing = null) {
     if (this.inSquad(id)) return { ok: false, msg: 'Already in your squad.' };
     if (!this.isFriend(id)) return { ok: false, msg: 'Add him as a friend first.' };
     if (this.squad.length >= 4) return { ok: false, msg: 'Your squad is full (4 + you).' };
     if (!this.online(id, t)) return { ok: false, msg: `${this.entry(id).name} is offline.` };
+    if (playing ?? this.playingElsewhere(id, t)) return { ok: false, msg: `${this.entry(id).name} is in a game right now. Try again when it's over.` };
     this.squad.push(id); this.changed();
     return { ok: true, msg: `${this.entry(id).name} joined your squad.` };
   }
@@ -235,7 +249,13 @@ export class AIWorld {
   recent(n = 40) { return Object.entries(this.met).sort((a, b) => b[1].last - a[1].last).slice(0, n).map(([id, m]) => ({ id, ...m })); }
 }
 
-export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works' };
+export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup' };
+
+// v0.4.5 King Tut Cup windows and entrants — the same rules as server/cup.py (48-hour windows from
+// 2026-01-01 00:00 UTC; an AI hooper entered window w when FNV("ai-N|cup|w") % 100 < 22)
+export const CUP_EPOCH = 1767225600000, CUP_WINDOW = 48 * 3600000;
+export const cupWindow = (t = Date.now()) => Math.floor((t - CUP_EPOCH) / CUP_WINDOW);
+export const cupEntrant = (id, w) => hashString(`${id}|cup|${w}`) % 100 < 22;
 
 // app-level helpers: one world per account, saved to the server (debounced) whenever it changes
 export function initWorld(app) {

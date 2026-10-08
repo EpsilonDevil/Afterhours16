@@ -12,6 +12,7 @@ export class HUD {
       <div class="hud-feed" id="hud-feed"></div>
       <div class="hud-center" id="hud-center"></div>
       <div class="hud-stamina" id="hud-stamina"><i></i></div>
+      <div class="hud-status" id="hud-status" hidden></div>
       <div class="hud-cam" id="hud-cam"></div>
       <div class="hud-hint" id="hud-hint"></div>
       <div class="hud-badges" id="hud-badges"></div>
@@ -27,6 +28,7 @@ export class HUD {
     this.feed = this.el('hud-feed');
     this.center = this.el('hud-center');
     this.stamina = this.el('hud-stamina');
+    this.statusBox = this.el('hud-status'); this.statusKey = '';
     this.camLabel = this.el('hud-cam');
     this.hint = this.el('hud-hint');
     this.grade = this.el('hud-grade');
@@ -148,6 +150,23 @@ export class HUD {
     for (const [id, el] of this.tagPool) if (!seen.has(id)) { el.remove(); this.tagPool.delete(id); }
   }
 
+  // v0.4.5: the user's takeover meter (progress or time left) and Hot / Cold state, bottom-left above the feed
+  setStatus(st) {
+    const key = st ? JSON.stringify(st) : '';
+    if (key === this.statusKey) return;
+    this.statusKey = key;
+    if (!st || (!st.takeover && !st.hot && !st.cold)) { this.statusBox.hidden = true; return; }
+    const parts = [];
+    if (st.hot) parts.push('<span class="st-hot">🔥 ON FIRE</span>');
+    if (st.cold) parts.push('<span class="st-cold">❄ COLD</span>');
+    if (st.takeover) {
+      const t = st.takeover;
+      parts.push(t.active ? `<span class="st-to on">${esc(t.label)} · ${t.left}s</span>` : `<span class="st-to"><small>${esc(t.label)}</small><i style="--p:${Math.round(t.prog / t.need * 100)}%"></i>${t.prog}/${t.need}</span>`);
+    }
+    this.statusBox.innerHTML = parts.join('');
+    this.statusBox.hidden = false;
+  }
+
   setStamina(x, y, v, show) {
     this.stamina.hidden = !show;
     if (!show) return;
@@ -163,5 +182,5 @@ export class HUD {
     if (this.badgeT > 0) this.badgeT -= dt;
     if (this.badgeT <= 0 && this.badgeQ.length) this.showNextBadge();
   }
-  clear() { this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
+  clear() { this.setStatus(null); this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
 }

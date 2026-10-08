@@ -25,9 +25,9 @@ FACES = ("oval", "square", "angular", "round")
 BEARDS = ("none", "stubble", "goatee", "full")
 EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
-                     "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic"}
+                     "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic"}
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller
@@ -105,7 +105,16 @@ def spec(data):
             "weight": weight, "wingspan": wingspan, "hand": hand, "appearance": appearance(data.get("appearance", {}))}
 
 
-def caps(b):
+OVR_CAP = 90  # v0.4.5: every build tops out at exactly 90 OVR before cap breakers
+CAP_BREAKERS_PER_HOF = 5
+CAP_BREAKER_HOF_LIMIT = 5  # cap breakers come with the first 5 Hall of Fame badges (25 max per build)
+HOF_LIMIT = 7  # Hall of Fame badges per build; the 7th unlocks the archetype's Icon badge
+ICON_FOR_ARCH = {"sharpshooter": "sharp_eye", "slasher": "hash_slinging", "playmaker": "oprah", "lockdown": "the_clamp",
+                 "two_way": "the_general", "glass_cleaner": "big_brother", "stretch_big": "open_arms", "post_scorer": "sexy_red"}
+COST_K = 0.65  # v0.4.5: everything costs 35% less
+
+
+def base_caps(b):
     big = (b["height"] - 67) / 20
     heavy = (b["weight"] - 200) / 100
     wing = max(-0.8, min(1, (b["wingspan"] - b["height"] - 3) / 5))
@@ -120,7 +129,29 @@ def caps(b):
     arch = b.get("archetype") or STYLE_TO_ARCH.get(b.get("style"), "two_way")
     bonus = ARCH_BONUS.get(arch, {})
     # archetype strengths and weaknesses are scaled by ARCH_SCALE (same on the client)
-    return {k: max(40, min(99, jround(c[k] + bonus.get(k, 0) * ARCH_SCALE))) for k in ATTRIBUTES}
+    return {k: c[k] + bonus.get(k, 0) * ARCH_SCALE for k in ATTRIBUTES}
+
+
+def _scaled(base, k):
+    return {a: max(40, min(99, jround(40 + (v - 40) * k))) for a, v in base.items()}
+
+
+def caps(b):
+    """v0.4.5: the build's shape (height, weight, wingspan, archetype) sets the relative caps, then they are
+    scaled around 40 so every build maxes out at exactly 90 OVR. Cap breakers add +1 per breaker on top."""
+    base = base_caps(b)
+    pos = b.get("position", "SF")
+    out = None
+    for i in range(1200):
+        k = 0.5 + i * 0.0025
+        out = _scaled(base, k)
+        if overall(out, pos) >= OVR_CAP:
+            break
+    applied = (b.get("cap_breakers") or {}).get("applied") or {}
+    for a, n in applied.items():
+        if a in out and isinstance(n, int) and n > 0:
+            out[a] = min(99, out[a] + n)
+    return out
 
 
 def starting_attributes(b):
@@ -139,7 +170,7 @@ def overall(attributes, position="SF"):
 
 
 def upgrade_cost(current, target):
-    return sum(150 + (level - 40) * 16 for level in range(current, target))
+    return jround(sum(150 + (level - 40) * 16 for level in range(current, target)) * COST_K)
 
 
 def quote(character, targets):
@@ -165,7 +196,7 @@ def normalize(char):
     if char.get("schema") == 3:
         char.setdefault("badges", {})
         char.setdefault("affiliation", None)
-        return char
+        return hof_init(char)
     old = char.get("attributes", {})
     if "archetype" not in char:
         char["archetype"] = STYLE_TO_ARCH.get(char.get("style", "balanced"), "two_way")
@@ -197,17 +228,56 @@ def normalize(char):
     prog.setdefault("games", 0); prog.setdefault("wins", 0); prog.setdefault("xp", 0); prog.setdefault("rep", 0)
     prog.setdefault("park", {"games": 0, "wins": 0, "streak": 0, "best_streak": 0})
     prog.setdefault("proam", {"games": 0, "wins": 0})
+    prog.setdefault("cup", {"games": 0, "wins": 0, "streak": 0, "best_streak": 0})  # v0.4.5 King Tut Cup
     prog.setdefault("career", {})
     prog.setdefault("career_modes", {})
     char.setdefault("badges", {})
     char.setdefault("affiliation", None)
     char["schema"] = 3
+    hof_init(char)
+    return char
+
+
+def hof_count(char):
+    return sum(1 for b in (char.get("badges") or {}).values() if b.get("tier", 0) >= 4)
+
+
+def hof_init(char):
+    """v0.4.5: cap breakers and the Icon badge. Builds that already had Hall of Fame badges before v0.4.5 get
+    what those badges would have earned. Idempotent."""
+    if "cap_breakers" not in char:
+        n = min(CAP_BREAKER_HOF_LIMIT, hof_count(char))
+        char["cap_breakers"] = {"earned": n * CAP_BREAKERS_PER_HOF, "available": n * CAP_BREAKERS_PER_HOF, "applied": {}}
+    if hof_count(char) >= HOF_LIMIT and not char.get("icon_badge"):
+        char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
+    return char
+
+
+def apply_cap_breakers(char, attribute, count):
+    """Spend cap breakers: +1 to a maxed-out attribute (at its cap, below 99) per breaker."""
+    if attribute not in ATTRIBUTES:
+        raise Invalid("Choose an attribute.")
+    count = integer(count, 1, 25, "Cap breakers")
+    cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
+    if cb.get("available", 0) < count:
+        raise Invalid("You don't have that many cap breakers.")
+    cap = caps(char)[attribute]
+    cur = char["attributes"].get(attribute, 0)
+    if cur < cap:
+        raise Invalid("Cap breakers only work on an attribute that's maxed out. Upgrade it to its cap first.")
+    if cur + count > 99:
+        raise Invalid("That would take it past 99.")
+    cb["applied"][attribute] = cb["applied"].get(attribute, 0) + count
+    cb["available"] -= count
+    char["attributes"][attribute] = cur + count
     return char
 
 
 def describe(char):
     """Derived (non-persisted) fields for clients."""
     cap = caps(char)
+    cb = char.get("cap_breakers") or {}
     return {"caps": cap, "overall": overall(char["attributes"], char["position"]),
+            "hof_count": hof_count(char), "hof_limit": HOF_LIMIT, "cap_breakers_available": cb.get("available", 0),
             "max_overall": overall(cap, char["position"]),
             "max_upgrade_cost": quote(char, max_targets(char))[0]}

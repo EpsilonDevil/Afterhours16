@@ -17,7 +17,7 @@ export function repAt(points, cfg) {
   return { level: lvl, label, floor, next, frac: next ? (points - floor) / (next - floor) : 1 };
 }
 
-export function playOutro(app, { summary, session, result, auto = 4.5 }) {
+export function playOutro(app, { summary, session, result, auto = 4.5, practice = false }) {
   return new Promise(resolve => {
     const g = session?.game;
     const teams = session?.teams || [{ name: 'Home' }, { name: 'Away' }];
@@ -25,6 +25,7 @@ export function playOutro(app, { summary, session, result, auto = 4.5 }) {
     const mvp = players.reduce((a, p) => (!a || gameScore(p.stats) > gameScore(a.stats) ? p : a), null);
     const myTeam = summary.me ? summary.me.team : 0;
     const won = summary.winner === myTeam;
+    const pro = summary.mode === 'prorun';
     const table = t => `
       <div class="ob-team ${summary.winner === t ? 'won' : ''}" style="--tc:${esc(teams[t]?.color || '#ffd84a')}">
         <div class="ob-head"><b>${esc(teams[t]?.name || (t ? 'Away' : 'Home'))}</b><span>${summary.score[t]}</span>${summary.winner === t ? '<em>WIN</em>' : ''}</div>
@@ -35,10 +36,12 @@ export function playOutro(app, { summary, session, result, auto = 4.5 }) {
     const start = app.char()?.rep || { points: 0 };
     const card = modal(`
       <div class="outro ${won ? 'win' : 'loss'}">
-        <div class="eyebrow">${summary.mode === 'proam' ? 'PRO-AM' : 'PARK'} · FINAL · BOX SCORE</div>
+        <div class="eyebrow">${practice ? 'CREW HQ · 5-ON-5' : summary.mode === 'proam' ? 'PRO-AM' : summary.mode === 'prorun' ? 'THE PRO RUN' : 'PARK'} · FINAL · BOX SCORE</div>
         <h1>${won ? 'Victory' : 'Defeat'} <span class="score">${summary.score[myTeam]}–${summary.score[1 - myTeam]}</span></h1>
         <div class="ob-grid">${table(myTeam)}${table(1 - myTeam)}</div>
-        <div class="ob-rep">
+        ${practice ? '<p class="muted small">Crew run (practice): no VC, Rep or crew XP.</p>' : ''}
+        ${pro ? '<p class="ob-pro" data-pro>The Pro Run · VC and badge progress at 1.5x the park rate · saving result…</p>' : ''}
+        <div class="ob-rep" ${practice || pro ? 'hidden' : ''}>
           <div class="ob-rep-top"><span class="ob-rep-k">REP</span><b data-rl>${esc(repAt(start.points, app.config).label)}</b><span class="ob-rankup" data-ru hidden>RANK UP!</span><span class="ob-gain" data-rg>Saving result…</span></div>
           <div class="ob-xp"><i data-rb style="width:${(repAt(start.points, app.config).frac * 100).toFixed(1)}%"></i><i class="gain" data-rgain></i></div>
           <div class="ob-rep-bot"><span data-rn>${money(start.points)} REP</span><span data-rnext></span><span class="ob-vc" data-vc></span></div>
@@ -72,6 +75,11 @@ export function playOutro(app, { summary, session, result, auto = 4.5 }) {
       $('[data-auto]').textContent = `Continuing in ${Math.ceil(left)}…`;
       timer = setInterval(() => { left -= 0.25; if (left <= 0) go(); else if (card.isConnected) $('[data-auto]').textContent = `Continuing in ${Math.ceil(left)}…`; }, 250);
     };
+    if (practice) { countdown(); return; }
+    if (pro) {
+      Promise.resolve(result).then(res => { if (finished || !card.isConnected) return; $('[data-pro]').textContent = res ? `The Pro Run · +${money(res.vc)} VC · badge progress at 1.5x the park rate` : 'Result not recorded'; countdown(); });
+      return;
+    }
     Promise.resolve(result).then(res => {
       if (finished || !card.isConnected) return;
       if (!res || !res.rep_after) { $('[data-rg]').textContent = 'Result not recorded'; countdown(); return; }

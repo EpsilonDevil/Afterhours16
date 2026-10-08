@@ -2,7 +2,7 @@
 // Park: halfcourt 21 by 2s/3s with check-ball and take-it-back. Pro-Am: full court 5v5 with quarters,
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
 import { RNG } from '../core/rng.js';
-import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
+import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
 import * as S from './shots.js';
@@ -11,9 +11,46 @@ import { AI } from './ai.js';
 import { statProfile } from './profile.js';
 
 import { rk as n } from './ratings.js';
+import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES } from './badges.js';
+// v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
+import { DEF_K } from './shots.js';
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 const MOVE_DUR = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5, stepback: 0.56, inout: 0.4 };
-const PASS = { chest: { dur: 0.3, rel: 0.13, speed: 12.5 }, bounce: { dur: 0.34, rel: 0.15, speed: 10 }, lob: { dur: 0.44, rel: 0.22 }, alley: { dur: 0.44, rel: 0.22 }, flick: { dur: 0.22, rel: 0.08, speed: 12 }, inbound: { dur: 0.4, rel: 0.2, speed: 11 } };
+// v0.4.5: the ball travels 0.985% slower on passes
+const PASS_K = 1 - 0.00985;
+// v0.4.5 alley-oops: takeoff spot distance from the lob's aim point, and the most a receiver can drift in the air
+const OOP_TAKEOFF = 1.25, OOP_DRIFT = 1.8;
+const PASS = { chest: { dur: 0.3, rel: 0.13, speed: 12.5 * PASS_K }, bounce: { dur: 0.34, rel: 0.15, speed: 10 * PASS_K }, lob: { dur: 0.44, rel: 0.22 }, alley: { dur: 0.44, rel: 0.22 }, flick: { dur: 0.22, rel: 0.08, speed: 12 * PASS_K }, inbound: { dur: 0.4, rel: 0.2, speed: 11 * PASS_K } };
+// v0.4.5 small stamina costs per action (sprinting still costs the most)
+// v0.4.5 final: every stamina-draining action costs STAMINA_K times what it did: jumpers, layups, dunks, passes,
+// reaching (steals), jumping, dribble moves and screens (sprinting follows it in player.js)
+export const STAMINA_K = 2;
+export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
+export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075);
+// v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
+export const DEF_ASSIST_K = 1.0375;
+
+// v0.4.5 stage 7: the ball's path into each jump-shot base. py: pocket height (×H); sx/sz: set point out to the
+// shooting side / in front (m); ks: share of the shot spent getting to the set point; pause: a beat at the set
+// point (Hitch); rz: release in front (+) or behind (−) the usual spot; drift: swings out toward the shooting
+// side and back (Sway); line: no set point at all, one curving motion (Slingshot, Silk)
+const SHOT_PATH = {
+  standard: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.62 },
+  high: { py: 0.62, sx: 0.035, sz: 0.15, ks: 0.6 },
+  flick: { py: 0.56, sx: 0.09, sz: 0.25, ks: 0.52 },
+  push: { py: 0.57, sx: 0.11, sz: 0.31, ks: 0.6 },
+  lean: { py: 0.62, sx: 0.05, sz: 0.1, ks: 0.66, rz: -0.07 },
+  kick: { py: 0.6, sx: 0.14, sz: 0.2, ks: 0.62 },
+  wide: { py: 0.52, sx: 0.0, sz: 0.25, ks: 0.67 },
+  sniper: { py: 0.63, sx: 0.015, sz: 0.22, ks: 0.48 },
+  fade: { py: 0.6, sx: 0.06, sz: 0.09, ks: 0.6, rz: -0.13 },
+  hitch: { py: 0.6, sx: 0.07, sz: 0.18, ks: 0.42, pause: 0.26 },
+  sling: { py: 0.54, sx: 0.04, sz: 0.32, line: true },
+  scissor: { py: 0.6, sx: 0.22, sz: 0.19, ks: 0.62 },
+  tuck: { py: 0.49, sx: 0.07, sz: 0.24, ks: 0.68 },
+  sway: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.6, drift: 0.14 },
+  silk: { py: 0.47, sx: -0.02, sz: 0.24, line: true },
+};
 
 export class Game {
   constructor(cfg) {
@@ -25,7 +62,7 @@ export class Game {
     this.rng = new RNG(cfg.seed || 1);
     // v0.4.2: the whole game runs 15% faster than real time (movement, animation, ball). Clocks still count
     // real seconds and the timing windows are widened in sim time so they feel the same in real time.
-    this.speed = cfg.speed ?? 1.15 * 1.0375; // v0.4.2 +15%, v0.4.4 another +3.75%
+    this.speed = cfg.speed ?? GAME_SPEED; // v0.4.2 +15%, v0.4.4 +3.75%, v0.4.5 -1.85% and then -0.75%
     // v0.4.3: the user's green window is 10% wider with the shot meter turned off
     this.greenBonus = cfg.greenBonus || 1;
     this.catalog = cfg.catalog || {};
@@ -66,11 +103,106 @@ export class Game {
     this.shotLog = [];
     this.lastShot = null;
     this.buzzer = false;
+    this.lockIn = null; // v0.4.5: {id, idx} the user's Lock-In grade (set by the session), drives his stamina
     this.setup();
   }
 
   // ---------- helpers ----------
-  emit(e) { e.t = this.time; this.events.push(e); this.badgeTriggers(e); return e; }
+  emit(e) { e.t = this.time; this.events.push(e); this.badgeTriggers(e); this.playTrack(e); return e; }
+
+  // ---------- v0.4.5: plays, streaks and takeovers ----------
+  // Every event is read once for: positive / negative plays (stamina), going hot / cold, and takeover progress.
+  playTrack(e) {
+    const P = e.player != null ? this.players[e.player] : null;
+    switch (e.type) {
+      case 'release': if (P) { P.lastRel = { grade: e.grade, kind: e.kind, contest: e.contest || 0, closest: e.closest ?? -1 }; this.takeoverRelease(P, e); } break;
+      case 'score': {
+        if (!P || e.ft || P.team !== e.team) break;
+        const r = P.lastRel || {};
+        this.good(P, 'score');
+        const inside = e.kind === 'layup' || e.kind === 'dunk';
+        if (inside || ((e.kind === 'jumper' || e.kind === 'close') && r.grade === 'excellent')) this.hotStep(P); else P.hotStreak = 0;
+        if (P.cold) { P.cold = false; this.emit({ type: 'cold', player: P.id, on: false }); }
+        P.coldMisses = 0;
+        if (inside && P.takeover.kind === 'finishing') this.takeoverStep(P);
+        // a basket in the paint ends the other team's glass-and-rim takeover runs
+        if (inside || e.kind === 'close' || (e.d || 9) < 2.5) for (const q of this.teams[1 - e.team]) if (q.takeover.kind === 'glass') q.takeover.prog = 0;
+        // the closest defender gave up an open look
+        if (r.closest >= 0 && r.contest < 0.3 && (e.kind === 'jumper' || e.kind === 'close')) { const d = this.players[r.closest]; if (d && d.team !== P.team) this.bad(d, 'openShot'); }
+        break;
+      }
+      case 'miss': {
+        if (!P) break;
+        const r = P.lastRel || {};
+        if (r.grade === 'vearly' || r.grade === 'vlate') this.bad(P, 'badShot');
+        else if ((r.contest || 0) > 0.8) this.bad(P, 'forced');
+        this.coldStep(P, (r.contest || 0) < 0.3 && r.kind !== 'ft');
+        if (P.takeover.kind === 'finishing' && (r.kind === 'layup' || r.kind === 'dunk' || r.kind === 'close')) P.takeover.prog = 0;
+        if (P.takeover.kind === 'shooting' && (r.kind === 'jumper')) P.takeover.prog = 0;
+        if (r.closest >= 0 && (r.contest || 0) > 0.55) { const d = this.players[r.closest]; if (d && d.team !== P.team) this.good(d, 'contest'); }
+        break;
+      }
+      case 'block': {
+        if (P) { this.good(P, 'block'); if (P.takeover.kind === 'glass') this.takeoverStep(P); }
+        const S0 = this.players[e.shooter];
+        if (S0) { this.bad(S0, 'blocked'); this.coldStep(S0, false); if (S0.takeover.kind !== 'glass') S0.takeover.prog = 0; }
+        break;
+      }
+      case 'rebound': if (P) { this.good(P, 'rebound'); if (P.takeover.kind === 'glass') this.takeoverStep(P); } break;
+      case 'assist': if (P) this.good(P, 'assist'); break;
+      case 'steal': if (P) this.good(P, 'steal'); if (e.victim != null) this.bad(this.players[e.victim], 'turnover'); break;
+      case 'turnover': if (P) this.bad(P, 'turnover'); break;
+      case 'foul': if (P) this.bad(P, 'foul'); break;
+      case 'ankle': if (P) this.good(P, 'ankle'); if (e.victim != null) this.bad(this.players[e.victim], 'crossed'); break;
+      case 'slam': if (e.poster >= 0 && e.poster != null) this.bad(this.players[e.poster], 'posterized'); break;
+      case 'screen': if (P) this.good(P, 'screen'); break;
+    }
+  }
+  // a play that helps the team: every second one gives back a little stamina and doubles recovery (no stacking)
+  // until a negative play; it also clears the repeated-mistake drain
+  good(p, kind) {
+    const s = p.stam;
+    s.negK = 1; s.lastNeg = null;
+    s.goodRun++;
+    if (s.goodRun % 2 === 0) { p.stamina = Math.min(1, p.stamina + 0.05); s.recBoost = true; }
+  }
+  // a play that hurts the team: ends the recovery bonus; the same mistake twice in a row (no positive play in
+  // between) doubles stamina drain, +0.1x for each repeat after that
+  bad(p, kind) {
+    if (!p) return;
+    const s = p.stam;
+    s.recBoost = false; s.goodRun = 0;
+    if (s.lastNeg === kind) s.negK = s.negK < 2 ? 2 : +(s.negK + 0.1).toFixed(2);
+    s.lastNeg = kind;
+  }
+  // going hot: 3 straight Excellent-release makes or finishes at the rim
+  hotStep(p) {
+    p.hotStreak++;
+    if (p.hotStreak >= 3 && !p.hot) { p.hot = 1; this.emit({ type: 'hot', player: p.id, on: true }); }
+  }
+  // going cold: more than 3 missed wide-open shots (resets on a make); any miss ends a hot streak
+  coldStep(p, open) {
+    p.hotStreak = 0;
+    if (p.hot) { p.hot = 0; this.emit({ type: 'hot', player: p.id, on: false }); }
+    if (open) { p.coldMisses++; if (p.coldMisses > 3 && !p.cold) { p.cold = true; this.emit({ type: 'cold', player: p.id, on: true }); } }
+  }
+  takeoverRelease(p, e) {
+    if (p.takeover.kind !== 'shooting' || e.kind === 'ft' || e.kind === 'layup' || e.kind === 'dunk') return;
+    if (e.kind === 'jumper' && e.grade === 'excellent') this.takeoverStep(p); // greens go in unless blocked
+    else if (e.kind === 'jumper') p.takeover.prog = 0; // released off the green
+  }
+  takeoverStep(p) {
+    const t = p.takeover;
+    if (t.active || !t.kind) return;
+    t.prog++;
+    if (t.prog >= TAKEOVER_NEED) {
+      t.active = true; t.left = TAKEOVER_SECS; t.prog = 0;
+      p.refreshRatings();
+      this.emit({ type: 'takeover', player: p.id, kind: t.kind, on: true, label: TAKEOVERS[t.kind].label });
+    } else this.emit({ type: 'takeoverProg', player: p.id, kind: t.kind, prog: t.prog });
+  }
+  // extra green-window share for a player (Sharp Eye Icon badge, shooting takeover)
+  greenK(p) { return 1 + (p.icon && ICON_BADGES[p.icon]?.green || 0) + (p.takeover.active && TAKEOVERS[p.takeover.kind].green || 0); }
 
   // v0.4.2: which badges visibly mattered for this event -> 'badge' events (the HUD shows the user's)
   badgeTriggers(e) {
@@ -242,6 +374,10 @@ export class Game {
     for (const p of this.players) {
       if (p.human && !this.assist) { p.intent = { ...this.humanIntent }; }
       else p.intent = blankIntent();
+      // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds
+      p.stam.grade = this.lockIn && this.lockIn.id === p.id ? this.lockIn.idx : null;
+      const t = p.takeover;
+      if (t.active) { t.left -= dt / this.speed; if (t.left <= 0) { t.active = false; t.left = 0; p.refreshRatings(); this.emit({ type: 'takeover', player: p.id, kind: t.kind, on: false }); } }
     }
     this.ai.think(dt);
     this.updatePhase(dt);
@@ -333,9 +469,29 @@ export class Game {
     if (it.call) { p.calling = 1.2; }
     if (p.calling > 0) p.calling -= dt;
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
+    // v0.4.5 posting up: backing a defender down near the rim (walking pace) recovers stamina like walking
+    if (has && p.speed < 2.2) {
+      const rim = this.rimFor(p.team), dr = Math.hypot(rim.x - p.x, rim.z - p.z);
+      if (dr < 5 && this.opponents(p).some(d => { const dd = d.dist(p); return dd < 1.4 && Math.hypot(rim.x - d.x, rim.z - d.z) < dr; })) p.posting = 0.25;
+    }
+    // v0.4.5 defensive assist (user only): guarding a post-up, the stick is gently pulled toward the spot
+    // between the post player and the rim, so you stay attached without perfect positioning
+    if (!has && p.human && !this.assist && p.stance === 'defense') {
+      const h = this.holder();
+      if (h && h.team !== p.team && h.posting > 0 && h.dist(p) < 1.9) {
+        const rim = this.rimFor(h.team), rx = rim.x - h.x, rz = rim.z - h.z, rl = Math.hypot(rx, rz) || 1;
+        const tx = h.x + rx / rl * 0.85 - p.x, tz = h.z + rz / rl * 0.85 - p.z, tl = Math.hypot(tx, tz);
+        if (tl > 0.12) { const k = Math.min(1, tl / 0.6) * 0.3; it.mx = it.mx * (1 - k) + tx / tl * k; it.mz = it.mz * (1 - k) + tz / tl * k; }
+      }
+    }
     if (has) {
       const a = p.action;
       if (a && a.type === 'shoot' && a.releaseAt == null && (it.shoot === 'release' || (p.human && !this.assist && !it.shootHeld && it.shoot !== 'press'))) a.releaseAt = a.t;
+      // v0.4.5 timed layups: every layup is timed. Let go of the button at the top; let go during the gather and
+      // it's flipped up early, right off the floor
+      if (a && a.type === 'layup' && !a.released && a.releaseAt == null && !a.untimed && p.human && !this.assist && !it.shootHeld && it.shoot !== 'press') {
+        a.releaseAt = a.t; a.timed = true;
+      }
       // v0.4.2 bailout: pass out of a jumper any time before the release, on the floor or in the air
       if (a && a.type === 'shoot' && it.pass && !a.released && this.mates(p).length) { this.bailout(p, it.pass); return; }
       if (!this.canAct(p)) return;
@@ -382,14 +538,18 @@ export class Game {
     if (a && (a.type === 'layup' || a.type === 'dunk' || a.type === 'oop' || a.type === 'move')) this.drive(p, a, dt);
     if (a && a.type === 'hang') { p.vx = p.vz = 0; }
     p.move(dt, has, lock);
-    if (a && a.type === 'hang') { p.y = a.hangY; p.vy = 0; p.airborne = true; }
+    if (a && a.type === 'hang') {
+      const k = Math.min(1, dt * 16);
+      p.x += (a.tx - p.x) * k; p.z += (a.tz - p.z) * k;
+      p.y += (a.hangY - p.y) * Math.min(1, dt * 20); p.vy = 0; p.airborne = true;
+    }
     if (a && a.type === 'move' && a.move === 'spin') p.facing = a.f0 + a.dir * Math.PI * 2 * Math.min(1, a.t / a.dur);
     // AI ball handlers never wander out of bounds on their own
     if (has && this.isAI(p) && this.phase === 'live') {
-      const mx = COURT.width / 2 - 0.12, mz = COURT.length / 2 - 0.12;
+      const mx = COURT.width / 2 - FOOT_R - 0.1, mz = COURT.length / 2 - FOOT_R - 0.1;
       if (Math.abs(p.x) > mx) { p.x = Math.sign(p.x) * mx; p.vx *= 0.3; }
       if (Math.abs(p.z) > mz) { p.z = Math.sign(p.z) * mz; p.vz *= 0.3; }
-      if (this.half && p.z < -0.6) { p.z = -0.6; p.vz = Math.max(0, p.vz); }
+      if (this.half && p.z < FOOT_R + 0.1) { p.z = FOOT_R + 0.1; p.vz = Math.max(0, p.vz); }
     }
     // court bounds clamp (fences/stands), players may step OOB a little
     const lim = COURT.width / 2 + 1.6, limZ = COURT.length / 2 + 1.6;
@@ -408,6 +568,18 @@ export class Game {
       p.x += p.vx * dt * 0; // integration happens in move()
       p.intent.mx = 0; p.intent.mz = 0;
       if (a.move !== 'spin') p.intent.face = a.face;
+      return;
+    }
+    // v0.4.5 alley-oop runner: sprint to the takeoff spot before leaving the floor
+    if (a.type === 'oop') {
+      if (!p.airborne && !a.jumped && a.spot) {
+        const tx = a.spot.x - p.x, tz = a.spot.z - p.z, tl = Math.hypot(tx, tz);
+        const sp = Math.min(p.phys.sprint, tl / Math.max(0.08, a.jumpAt - a.t));
+        p.vx += ((tl > 0.05 ? tx / tl * sp : 0) - p.vx) * Math.min(1, dt * 9);
+        p.vz += ((tl > 0.05 ? tz / tl * sp : 0) - p.vz) * Math.min(1, dt * 9);
+        p.intent.face = Math.atan2(a.T.x - p.x, a.T.z - p.z);
+      }
+      p.intent.mx = 0; p.intent.mz = 0;
       return;
     }
     // layup/dunk steering
@@ -429,12 +601,17 @@ export class Game {
     if (p.action?.type === 'move' && p.action.move === 'stepback' && !it.attack) ctx.forceJumper = true;
     const st = S.shotTypeFor(p, rim, ctx);
     if (st.type === 'none') return; // attack-the-rim pressed out of range: keep driving
+    this.endMoveChain(p);
     if (st.type === 'layup' || st.type === 'close' && it.sprint) return this.startLayup(p, rim, st);
     if (st.type === 'dunk') return this.startDunk(p, rim, st);
     const pkg = p.shotPkg;
     const close = st.type === 'close';
-    const tRel = close ? 0.42 : pkg.tRel * (p.speed > 2 ? 0.94 : 1);
+    p.spend(COST.shot);
     const stepback = p.action?.type === 'move' && p.action.move === 'stepback';
+    // v0.4.5: running jumpers come out quicker, step-backs and fadeaways a little slower, threes a touch slower
+    // than mid-range jumpers (shots.js jumperTimingK); the ratings still set every green window
+    const threeAtStart = isThree(p.x, p.z, this.sideFor(p.team));
+    const tRel = close ? 0.42 : pkg.tRel * S.jumperTimingK({ moving: p.speed, stepback, fade: !!st.fade, three: threeAtStart });
     // Biomechanics (jump-shot kinematics literature): a jumper's centre of mass rises only ~15-31 cm, a bit
     // less from deep, and the ball leaves the hand just before the apex. So the jump height is a fraction of
     // max vertical and the takeoff is timed back from the release instead of being a fixed share of it.
@@ -442,6 +619,7 @@ export class Game {
     const jumpH = p.phys.vertical * (close ? 0.4 : pkg.jumpK * 0.52) * (dRim > 7 ? 0.9 : 1) * (0.85 + 0.15 * p.stamina);
     const tUp = Math.sqrt(2 * jumpH / GRAVITY);
     const a = p.startAction('shoot', tRel + 0.55, {
+      icon: p.icon === 'sharp_eye' ? 'sharpeye' : null,
       tRel, takeoff: Math.max(close ? 0.1 : 0.2, tRel - tUp * 0.9), jumpH, dRim,
       kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback, stepback, startX: p.x, startZ: p.z, moving: p.speed,
       catchShoot: this.lastPass && this.lastPass.to === p.id && this.time - this.lastPass.time < 1.2 && !p.dribble.used && this.ball.mode === 'held',
@@ -464,13 +642,24 @@ export class Game {
     const dx = (rim.x - p.x) / (d || 1), dz = (rim.z - p.z) / (d || 1);
     const travel = Math.max(0, d - takeoffDist);
     const gs = Math.max(2.5, Math.min(5.2, p.speed));
-    const takeoff = Math.max(0.24, Math.min(0.55, travel / gs));
+    // v0.4.5 layup packages: the equipped package decides how the finish looks (and the ball's path) and when the
+    // ball should come out (shots.js LAYUP_FEEL). The gather and the jump vary from layup to layup, so the release
+    // point moves with them: read the gather, don't count frames.
+    const lstyle = p.layupStyle || 'basic', feel = S.LAYUP_FEEL[lstyle] || S.LAYUP_FEEL.basic;
+    const takeoff = Math.max(0.24, Math.min(0.55, travel / gs)) + feel.gather;
     const air = 2 * Math.sqrt(2 * p.phys.vertical * 0.75 / GRAVITY);
+    p.spend(COST.layup);
+    // v0.4.5: the defense's coverage at the gather changes the finish (shots.js layupCoverage / LAYUP_COVER)
+    const cov = S.layupCoverage(p, rim, this.opponents(p)), covSide = cov.side || (this.rng.next() < 0.5 ? 1 : -1);
+    const release = takeoff + air * Math.min(0.85, feel.rel + S.LAYUP_COVER[cov.kind].rel);
     const a = p.startAction('layup', takeoff + air + 0.12, {
-      takeoff, release: takeoff + air * 0.48, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
-      jumpH: p.phys.vertical * 0.75, side: this.sideFor(p.team), reverse: false, euro: p.intent.move === 'cross',
+      cov: cov.kind, covSide,
+      takeoff, release, tRel: release, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
+      jumpH: p.phys.vertical * 0.75, side: this.sideFor(p.team), reverse: false, euro: lstyle === 'euro' || p.intent.move === 'cross', lstyle,
+      lsDir: cov.side || (this.rng.next() < 0.5 ? 1 : -1), // a Euro steps away from the defender
     });
     this.ball.mode = 'held'; p.dribble.used = true;
+    if (this.isAI(p)) { const r = this.ai.layupTiming(p, a, rim); a.releaseAt = r.at; a.aiGrade = r.grade; }
     this.emit({ type: 'gather', player: p.id, kind: 'layup' });
     return a;
   }
@@ -484,13 +673,15 @@ export class Game {
     const tier = S.dunkTier(p);
     const style = this.dunkStyle(p, standing);
     const flair = S.STYLE_FLAIR[style] ?? 0;
-    const takeoffDist = standing ? Math.min(d, 0.9) : Math.min(d, 1.7 + tier * 0.12 + this.rng.range(-0.2, 0.3));
+    const takeoffDist = standing ? Math.min(d, 0.9) : Math.min(d, 1.7 + tier * 0.12 + (st.long ? 0.35 * n(p.ratings.vertical) : 0) + this.rng.range(-0.2, 0.3));
     const travel = Math.max(0, d - takeoffDist);
     const gs = Math.max(3, Math.min(6.5, p.speed));
-    const takeoff = standing ? 0.28 : Math.max(0.24, Math.min(0.5, travel / gs));
+    // a long attack (v0.4.5) gets the gather steps it needs to reach the takeoff spot
+    const takeoff = standing ? 0.28 : Math.max(0.24, Math.min(st.long ? 0.85 : 0.5, travel / gs));
     const need = COURT.rimY + 0.22 - p.phys.reach;
     const h = Math.max(need, Math.min(p.phys.vertical * (1.05 + 0.03 * tier), need + 0.25 + 0.05 * tier + (flair >= 2 ? 0.06 : 0)));
     const tUp = Math.sqrt(2 * h / GRAVITY);
+    p.spend(COST.dunk);
     const a = p.startAction('dunk', takeoff + tUp + 1.2, {
       takeoff, slam: takeoff + tUp * 0.98, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
       jumpH: h, standing, style, tUp, side: this.sideFor(p.team), tier, spinDir: this.rng.next() < 0.5 ? 1 : -1,
@@ -506,29 +697,62 @@ export class Game {
     const pk = p.dunkPkg || 'dunk_basic';
     const item = this.catalog[pk];
     let styles = item?.styles || ['power', 'onehand'];
+    // v0.4.5: the Hash-Slinging Icon badge unlocks a finish nobody else has
+    if (p.icon === 'hash_slinging' && !standing) styles = [...styles, 'hashsling', 'hashsling'];
     if (standing) { styles = styles.filter(s => (S.STYLE_FLAIR[s] ?? 0) <= 1.5); if (!styles.length) styles = ['power']; }
     const tier = S.dunkTier(p);
     const traffic = this.opponents(p).some(d => d.dist(p) < 1.6);
     const ws = styles.map(s => { const f = S.STYLE_FLAIR[s] ?? 0; return traffic ? (f <= 1 ? 2.5 : 0.6) : 1 + f * (0.2 + 0.45 * tier); });
+    // v0.4.5 stage 7: the package's signature finish (nobody else's package has it) is about half of its dunks,
+    // so two packages never look alike in a game
+    const si = styles.indexOf(item?.signature);
+    if (si >= 0) { const rest = ws.reduce((a, b, i) => a + (i === si ? 0 : b), 0); ws[si] = Math.max(ws[si], rest); }
     let r = this.rng.next() * ws.reduce((a, b) => a + b, 0);
     for (let i = 0; i < styles.length; i++) { r -= ws[i]; if (r <= 0) return styles[i]; }
     return styles[styles.length - 1];
   }
 
   startPass(p, spec) {
-    const type = spec.type || 'chest';
-    const P = PASS[type] || PASS.chest;
+    let type = spec.type || 'chest';
     let target = spec.target != null ? this.players[spec.target] : this.ai.bestPassTarget(p, spec.dir);
     if (!target || target.team !== p.team || target === p) target = this.ai.bestPassTarget(p, spec.dir);
     if (!target) return;
+    // v0.4.5: an alley-oop needs a receiver who can actually get to the rim in time: run to a takeoff spot and
+    // rise for the ball. Anyone further out gets a regular lob instead (no more flying in from half court).
+    if (type === 'alley' && !this.oopReachable(p, target)) {
+      type = 'lob';
+      if (p.human && !this.assist) this.feedMsg('Too far out for an alley-oop: lob pass');
+    }
     const flick = type === 'chest' && p.speed > 3.5;
+    const P = PASS[type] || PASS.chest;
+    p.spend(COST.pass); this.endMoveChain(p);
     // v0.4.1: better passers get the ball out quicker (release up to ~25% faster)
     const quick = 1.1 - 0.32 * n(p.ratings.pass_accuracy);
-    const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id });
+    const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id, icon: p.icon === 'oprah' ? 'oprah' : null });
     p.facing = Math.atan2(target.x - p.x, target.z - p.z) * 0.7 + p.facing * 0.3;
     this.ball.mode = 'held';
     if (type === 'alley') { target.oopCall = this.time; }
     this.emit({ type: 'passStart', player: p.id, to: target.id, ptype: type });
+  }
+
+  // the lob's aim point at the front of the rim along the receiver's approach, and where he takes off from
+  oopPoints(target) {
+    const rim = this.rimFor(target.team);
+    const ax = target.x - rim.x, az = target.z - rim.z, al = Math.hypot(ax, az) || 1;
+    const T = { x: rim.x + ax / al * 0.55, y: COURT.rimY + 0.35, z: rim.z + az / al * 0.55 };
+    const td = Math.min(OOP_TAKEOFF, Math.max(0.35, al - 0.55));
+    return { T, spot: { x: T.x + ax / al * td, z: T.z + az / al * td } };
+  }
+  // can he run to the takeoff spot before he has to leave the floor? (lob flight from the passer, minus the rise)
+  oopReachable(passer, target) {
+    if (target.airborne || target.action?.type === 'shoot') return false;
+    const { T, spot } = this.oopPoints(target);
+    const from = { x: passer.x, y: passer.phys.H * 0.9, z: passer.z };
+    const L = S.solveLaunch(from, T, 52);
+    const vh = Math.hypot(L.vx, L.vz) || 1, flight = Math.hypot(T.x - from.x, T.z - from.z) / vh + PASS.alley.rel;
+    const h = Math.min(target.phys.vertical * 1.05, Math.max(0.3, T.y + 0.15 - target.phys.reach)), tUp = Math.sqrt(2 * h / GRAVITY);
+    const run = Math.hypot(spot.x - target.x, spot.z - target.z);
+    return target.phys.reach + target.phys.vertical * 1.05 >= T.y - 0.05 && run <= target.phys.sprint * Math.max(0, flight - tUp) * 0.85 + 0.5;
   }
 
   releasePass(p, a) {
@@ -542,10 +766,8 @@ export class Game {
     let eta = 0.5;
     let T, vx, vy, vz;
     if (type === 'alley') {
-      const rim = this.rimFor(target.team);
       // lob to the front of the rim along the receiver's approach
-      const ax = target.x - rim.x, az = target.z - rim.z, al = Math.hypot(ax, az) || 1;
-      T = { x: rim.x + ax / al * 0.55, y: COURT.rimY + 0.35, z: rim.z + az / al * 0.55 };
+      T = this.oopPoints(target).T;
       const L = S.solveLaunch(from, T, 52);
       vx = L.vx; vy = L.vy; vz = L.vz;
       a.oopTarget = T;
@@ -612,11 +834,20 @@ export class Game {
     p.dribble.xover = null;
     const a = p.startAction('move', dur, { move, vx, vz, f0: p.facing, dir: toward, face: Math.atan2(rim.x - p.x, rim.z - p.z), handFrom: hand, switched: false, checked: false, lvl: p.sizeupLvl || 0 });
     if (move === 'spin') { a.dir = hand === 'R' ? -1 : 1; }
-    p.stamina -= 0.025 * (p.badges.handles_for_days ? 0.6 : 1);
+    // v0.4.5: the same move more than 3 times in a row doubles stamina drain, +0.1x per repeat after that
+    const st = p.stam;
+    if (st.lastMove === move) st.moveRun++; else { st.lastMove = move; st.moveRun = 1; st.moveK = 1; }
+    if (st.moveRun > 3) st.moveK = +(2 + 0.1 * (st.moveRun - 4)).toFixed(2);
+    p.spend(COST.move * Math.max(0.35, 1 - 0.12 * bk(p.badges, 'handles_for_days')));
     p.cool.move = dur * 0.75 / (p.moveSpeed || 1);
     this.ball.mode = 'dribble';
     this.emit({ type: 'move', player: p.id, move });
   }
+
+  closestDef(p) { let best = -1, bd = 9; for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd) { bd = dd; best = d.id; } } return best; }
+
+  // a different action (shot, pass, pickup) breaks a chain of the same dribble move
+  endMoveChain(p) { const st = p.stam; st.lastMove = null; st.moveRun = 0; st.moveK = 1; }
 
   // v0.4.4: a reach can be aimed. dir (world) picks the hand: the one on that side of the body; low = a swipe
   // down at the dribble. Without a direction the defender reaches with the hand on the ball's side.
@@ -627,8 +858,9 @@ export class Game {
     let hand;
     if (dir) hand = dir.x * lx + dir.z * lz >= 0 ? 'L' : 'R';
     else { const b = this.ball; hand = (b.x - p.x) * lx + (b.z - p.z) * lz >= 0 ? 'L' : 'R'; }
-    p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low });
-    p.cool.steal = 0.85 - (p.badges.pick_pocket || 0) * 0.08;
+    p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low, icon: p.icon === 'the_clamp' ? 'clamp' : null });
+    p.spend(COST.steal);
+    p.cool.steal = 0.85 - bk(p.badges, 'pick_pocket') * 0.08;
     this.emit({ type: 'reach', player: p.id, hand });
   }
 
@@ -641,8 +873,10 @@ export class Game {
     if (b.holder >= 0 && this.players[b.holder].team === p.team) type = 'rebound';
     const hgt = p.phys.vertical * (type === 'block' ? 0.95 : 0.9) * (0.8 + 0.2 * p.stamina);
     const air = 2 * Math.sqrt(2 * hgt / GRAVITY);
-    const act = p.startAction(type, air + 0.2, { jumpAt: 0.06, jumpH: hgt, jumped: false, triedBlock: false, air });
-    p.stamina -= 0.01;
+    // v0.4.5 Icon badges: Big Brother blocks and Open Arms rebound snags have their own animations
+    const iconAnim = (type === 'block' && p.icon === 'big_brother') ? 'bigbro' : (type === 'rebound' && p.icon === 'open_arms') ? 'openarms' : null;
+    const act = p.startAction(type, air + 0.2, { jumpAt: 0.06, jumpH: hgt, jumped: false, triedBlock: false, air, icon: iconAnim });
+    p.spend(COST.jump);
     if (type === 'block' && h) p.facing = Math.atan2(h.x - p.x, h.z - p.z);
     // v0.4.3: go *at* the ball. Shot blockers and rebounders travel toward it while airborne; how far they
     // can cover depends on Block / Rebounding, and in the paint on Interior D and size.
@@ -655,12 +889,15 @@ export class Game {
       // a closeout on a jump shot goes straight up (no lunge into the shooter); at the rim a shot blocker
       // attacks the ball
       const jumper = h && h.action?.type === 'shoot' && h.action.kind !== 'close';
-      const maxL = type === 'block'
-        ? (jumper ? 0 : 0.18 + 0.36 * n(p.ratings.block) + pw * (0.26 * n(p.ratings.interior_d) + size * 0.8))
-        : 0.18 + 0.38 * n(p.ratings[b.info && b.info.team === p.team ? 'off_rebound' : 'def_rebound']) + pw * 0.15 * n(p.ratings.interior_d);
+      // v0.4.5: +3.75% positioning reach, and a slight assist for the user so he needn't be pixel-perfect
+      const assist = p.human && !this.assist ? 0.22 * DEF_ASSIST_K : 0;
+      const maxL = (type === 'block'
+        ? (jumper ? 0 : 0.18 + 0.36 * n(p.ratings.block) + pw * (0.26 * n(p.ratings.interior_d) + size * 0.8) + assist)
+        : 0.18 + 0.38 * n(p.ratings[b.info && b.info.team === p.team ? 'off_rebound' : 'def_rebound']) + pw * 0.15 * n(p.ratings.interior_d) + assist) * DEF_K;
       const len = Math.min(dl - 0.4, maxL);
       if (len > 0.05) act.lunge = { x: dx / dl * len, z: dz / dl * len };
     }
+    if (p.human && !this.assist) act.steer = true; // gentle mid-air curve toward the ball (see tickAction)
   }
 
   // ---------- action timeline ----------
@@ -707,7 +944,27 @@ export class Game {
           const carry = Math.max(0, dl - 1.05) / (air * 0.5);
           p.vx = dx / dl * Math.min(4.5, carry); p.vz = dz / dl * Math.min(4.5, carry);
         }
-        if (!a.released && a.t >= a.release && b.holder === p.id) this.releaseLayup(p, a);
+        // v0.4.5: a stronger finisher can push off a defender in his path on the way up (a bump, never a knockdown)
+        if (a.jumped && !a.released && !a.pushed && p.airborne) {
+          for (const d of this.opponents(p)) {
+            if (d.action?.type === 'stumble' || d.dist(p) > p.phys.radius + d.phys.radius + 0.06) continue;
+            if (p.phys.strength - d.phys.strength < 0.08) continue;
+            a.pushed = true;
+            const ux = d.x - p.x, uz = d.z - p.z, ul = Math.hypot(ux, uz) || 1, f = 1.4 + 2 * (p.phys.strength - d.phys.strength);
+            d.vx = ux / ul * f; d.vz = uz / ul * f;
+            if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.45, { fall: false, back: true, dir: 1 }); }
+            this.emit({ type: 'bump', player: p.id, defender: d.id, v: 2.5 });
+            break;
+          }
+        }
+        if (!a.released && b.holder === p.id) {
+          // you're still holding it past the top: it comes out late
+          const timing = p.human && !this.assist && !a.untimed && a.releaseAt == null;
+          if (timing && a.t > a.release + 0.3) { a.releaseAt = a.t; a.timed = true; }
+          // (the ball can't leave before he's off the floor: an early let-go comes out just after the takeoff)
+          const at = a.releaseAt != null ? Math.max(a.releaseAt, Math.min(a.release, a.takeoff + 0.06)) : (timing ? Infinity : a.release);
+          if (a.t >= at) this.releaseLayup(p, a);
+        }
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
@@ -731,10 +988,12 @@ export class Game {
             if (dd > p.phys.radius + d.phys.radius + 0.06 || along < 0 || lat > 0.6 || along > ul + 0.3) continue;
             if (d.action?.type === 'stumble') continue;
             // finishing through contact: dunk ratings + Close Shot vs the defender's size and interior D
-            const tier = p.badges.posterizer || 0, traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
+            const tier = bk(p.badges, 'posterizer'), traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
             const pc = Math.max(0.12, Math.min(0.96, 0.45 + 0.44 * traffic + 0.07 * tier + 0.04 * pkT + (p.phys.strength - d.phys.strength) * 0.3 - 0.22 * n(d.ratings.interior_d) - Math.max(0, d.phys.H - p.phys.H) * 0.3 + (d.airborne ? 0.05 : 0)));
             if (this.rng.next() < pc) {
-              if (tier > 0 || this.rng.next() < 0.3 + 0.3 * traffic + 0.15 * pkT) this.posterize(p, d, a, rim, true);
+              // v0.4.5: the shove-and-knockdown is the Posterizer badge's alone; without it the dunker finishes
+              // through the contact and bumps the defender off the line (no knockdown)
+              if (tier > 0) this.posterize(p, d, a, rim, true);
               else this.shoulderThrough(p, d, a, rim);
             } else { a.stopped = d.id; p.vx *= 0.45; p.vz *= 0.45; this.emit({ type: 'bump', player: p.id, defender: d.id, v: 2 }); }
             break;
@@ -754,9 +1013,8 @@ export class Game {
           // transition to hang
           p.action = null;
           const hangY = COURT.rimY + 0.06 - p.phys.reach * 0.98;
-          p.startAction('hang', a.hang, { hangY: Math.max(0.2, hangY), side: a.side });
-          p.x = rim.x + Math.sin(p.facing + Math.PI) * 0.42; p.z = rim.z + Math.cos(p.facing + Math.PI) * 0.42;
-          p.x = rim.x - Math.sin(p.facing) * 0.4; p.z = rim.z - Math.cos(p.facing) * 0.4;
+          // v0.4.5: glide onto the rim over a few frames instead of snapping there
+          p.startAction('hang', a.hang, { hangY: Math.max(0.2, hangY), side: a.side, tx: rim.x - Math.sin(p.facing) * 0.4, tz: rim.z - Math.cos(p.facing) * 0.4 });
           this.emit({ type: 'hang', player: p.id, side: a.side });
           return;
         }
@@ -797,11 +1055,27 @@ export class Game {
             p.vx = vx; p.vz = vz;
           }
         }
+        // v0.4.5 defensive assist: the user's block / rebound jump bends slightly toward the ball in the air
+        if (a.steer && p.airborne && a.type !== 'tipjump') {
+          const h = this.holder();
+          const tgt = a.type === 'block' && h && h.team !== p.team ? this.holdPoint(h) : (b.mode === 'flight' ? b : null);
+          if (tgt) {
+            const dx = tgt.x - p.x, dz = tgt.z - p.z, dl = Math.hypot(dx, dz);
+            if (dl > 0.3 && dl < 2.2 * DEF_ASSIST_K) { const k = Math.min(1, dt * 2.2), sk = 0.35 * DEF_ASSIST_K; p.vx += (dx / dl * 1.6 - p.vx) * k * sk; p.vz += (dz / dl * 1.6 - p.vz) * k * sk; }
+          }
+        }
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
       case 'oop': {
-        if (!a.jumped && a.t >= a.jumpAt) { a.jumped = true; p.jump(a.jumpH); const dx = a.T.x - p.x, dz = a.T.z - p.z, dl = Math.hypot(dx, dz) || 1; const go = Math.max(0, dl - 0.35); p.vx = dx / dl * go / a.tUp; p.vz = dz / dl * go / a.tUp; }
+        // v0.4.5: a real jump from where he is: he carries his run-up into it, but the drift toward the ball
+        // through the rise is capped (about 1.8 m), so nobody glides in from the perimeter
+        if (!a.jumped && a.t >= a.jumpAt) {
+          a.jumped = true; p.jump(a.jumpH);
+          const dx = a.T.x - p.x, dz = a.T.z - p.z, dl = Math.hypot(dx, dz) || 1;
+          const go = Math.min(OOP_DRIFT, Math.max(0, dl - 0.35)), v = Math.min(go / a.tUp, 4.5);
+          p.vx = dx / dl * v; p.vz = dz / dl * v;
+        }
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
@@ -833,7 +1107,7 @@ export class Game {
     const P = this.holdPoint(p);
     const contest = S.contestFor(p, this.opponents(p), rim, P.y);
     const corner = three && Math.abs(a.startX) > 6.2;
-    const win = S.greenWindowMs(shotAttr, p.badges, { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: a.kind === 'close' ? null : p.shotPkg }) * this.speed * (p.human ? this.greenBonus : 1);
+    const win = S.greenWindowMs(shotAttr, p.badges, { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: a.kind === 'close' ? null : p.shotPkg, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
     let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(err, win));
     if (grade === 'excellent' && contest >= S.SMOTHER) grade = err < 0 ? 'early' : 'late'; // no greens while smothered
     const clutch = this.isClutch(p.team);
@@ -850,7 +1124,7 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three };
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, three, made: plan.made, kind: a.kind });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, three, made: plan.made, kind: a.kind, closest: this.closestDef(p) });
     if (foul) this.pendingFoul = foul;
   }
 
@@ -863,17 +1137,28 @@ export class Game {
     const contest = S.contestFor(p, this.opponents(p), rim, P.y);
     const blocker = this.checkBlockAtRelease(p, P, 'layup');
     if (blocker) return;
-    const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot });
+    // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
+    // boost that contact can still beat
+    let grade = 'none';
+    if (a.type === 'layup' && !a.oop) {
+      if (this.isAI(p) && a.aiGrade) grade = a.aiGrade;
+      else if (a.timed) {
+        const win = S.layupWindowMs(p.ratings.layup, p.badges, { contest, lstyle: a.lstyle, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
+        grade = S.gradeFromWindow(a.releaseAt - a.tRel, win);
+      }
+    }
+    const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade });
     const foul = this.checkShootingFoul(p, contest, 'layup');
     const made = this.rng.next() < chance;
     const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8 });
-    b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three: false, type: 'layup', made: plan.made, chance, side, contest, foul, released: this.time, d });
+    b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three: false, type: 'layup', made: plan.made, chance, side, contest, foul, released: this.time, d, oop: !!a.oop });
     b.wx = plan.wx * 0.5; b.wz = plan.wz * 0.5;
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.stats.fga++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
-    this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade: 'none' });
-    this.emit({ type: 'release', player: p.id, grade: 'none', chance, contest, three: false, made: plan.made, kind: 'layup' });
+    if (grade === 'excellent') p.stats.greens++;
+    this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p) });
     if (foul) this.pendingFoul = foul;
   }
 
@@ -881,6 +1166,7 @@ export class Game {
     a.slammed = true;
     const b = this.ball;
     const P = this.holdPoint(p);
+    p.lastRel = { grade: 'none', kind: 'dunk', contest: 0, closest: this.closestDef(p) };
     const blocker = this.checkBlockAtRelease(p, P, 'dunk');
     if (blocker) { a.hang = 0; return; }
     const contest = S.contestFor(p, this.opponents(p), rim, COURT.rimY + 0.3);
@@ -892,10 +1178,11 @@ export class Game {
     if (!poster && made) {
       // a contest in the air at the rim: the dunker goes through him -> knock him back as he comes down
       poster = this.opponents(p).find(d => d.dist(p) < 1.1 && (d.airborne || d.action?.type === 'block')) || null;
-      if (poster) this.posterize(p, poster, a, rim, false);
+      if (poster && p.badges.posterizer) this.posterize(p, poster, a, rim, false);
+      else if (poster) { this.shoulderThrough(p, poster, a, rim); poster = null; }
     }
     if (made) {
-      b.setFlight(rim.x + (this.rng.next() - 0.5) * 0.04, COURT.rimY + 0.22, rim.z + (this.rng.next() - 0.5) * 0.04, 0, -5.5, 0, 'shot', { shooter: p.id, team: p.team, three: false, type: 'dunk', made: true, chance, side: a.side, contest, released: this.time, poster: poster ? poster.id : -1, style: a.style });
+      b.setFlight(rim.x + (this.rng.next() - 0.5) * 0.04, COURT.rimY + 0.22, rim.z + (this.rng.next() - 0.5) * 0.04, 0, -5.5, 0, 'shot', { shooter: p.id, team: p.team, three: false, type: 'dunk', made: true, chance, side: a.side, contest, released: this.time, poster: poster ? poster.id : -1, style: a.style, oop: !!a.oop });
     } else {
       // rimmed out / stuffed by the rim
       const dx = p.x - rim.x, dz = p.z - rim.z, dl = Math.hypot(dx, dz) || 1;
@@ -908,7 +1195,7 @@ export class Game {
     if (foul) this.pendingFoul = foul;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made, grade: 'none' });
-    a.hang = made && (a.style === 'power' || a.style === 'tomahawk' || a.style === 'double' || this.rng.next() < 0.35 + 0.1 * (a.tier || 0)) ? 0.45 + 0.12 * (a.tier || 0) + this.rng.range(0, 0.35) : 0;
+    a.hang = made && (a.style === 'power' || a.style === 'tomahawk' || a.style === 'double' || a.style === 'rimrock' || a.style === 'bully' || this.rng.next() < 0.35 + 0.1 * (a.tier || 0)) ? 0.45 + 0.12 * (a.tier || 0) + this.rng.range(0, 0.35) : 0;
     this.emit({ type: 'slam', player: p.id, made, style: a.style, side: a.side, poster: poster ? poster.id : -1, tier: a.tier || 0, flair: S.STYLE_FLAIR[a.style] ?? 0 });
   }
 
@@ -923,10 +1210,10 @@ export class Game {
     const pkT = a.tier || 0;
     const push = (2.6 + 1.6 * Math.max(0, p.phys.strength - d.phys.strength + 0.3)) * (1 + 0.18 * pkT);
     d.action = null;
-    const fall = this.rng.next() < 0.45 + 0.1 * (p.badges.posterizer || 0) + 0.13 * pkT;
+    const fall = this.rng.next() < 0.45 + 0.1 * bk(p.badges, 'posterizer') + 0.13 * pkT;
     d.startAction('stumble', fall ? 2.4 + 0.3 * pkT + this.rng.range(0, 0.8) : 1.0 + 0.15 * pkT, { fall, back: !fall, dir: this.rng.next() < 0.5 ? 1 : -1, poster: true, hard: pkT });
-    d.vx = nx / nl * push; d.vz = nz / nl * push;
-    if (!d.airborne) { d.x += nx / nl * 0.22; d.z += nz / nl * 0.22; }
+    // v0.4.5: the shove is all velocity (no position jump), so you see him get moved
+    d.vx = nx / nl * push * 1.15; d.vz = nz / nl * push * 1.15;
     if (early) { p.vx *= 0.8; p.vz *= 0.8; }
     if (p.badges.posterizer) this.badgeFx(p, 'posterizer');
     this.emit({ type: 'posterContact', player: p.id, victim: d.id, fall });
@@ -938,8 +1225,7 @@ export class Game {
     const ux = rim.x - p.x, uz = rim.z - p.z, ul = Math.hypot(ux, uz) || 1;
     const sx = (d.x - p.x) * uz - (d.z - p.z) * ux > 0 ? 1 : -1; // which side of the line he is on
     const lx = uz / ul * sx, lz = -ux / ul * sx;
-    d.vx = lx * 2.2 + ux / ul * 0.8; d.vz = lz * 2.2 + uz / ul * 0.8;
-    if (!d.airborne) { d.x += lx * 0.18; d.z += lz * 0.18; }
+    d.vx = lx * 2.6 + ux / ul * 0.9; d.vz = lz * 2.6 + uz / ul * 0.9; // v0.4.5: velocity only, no position jump
     if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.6, { fall: false, back: true, dir: sx }); }
     this.emit({ type: 'bump', player: p.id, defender: d.id, v: 3 });
   }
@@ -961,14 +1247,14 @@ export class Game {
       const dist = Math.hypot(P.x - hx, P.z - hz), dy = P.y - hy;
       // v0.4.3: rim protectors cover more space around the rim (Interior D, Block, length)
       const rim = this.rimFor(p.team), pw = S.paintWeight(Math.hypot(P.x - rim.x, P.z - rim.z));
-      const env = 0.88 + 0.1 * n(d.ratings.block) + pw * (0.15 * n(d.ratings.interior_d) + Math.max(0, d.phys.WS - 2.05) * 0.4);
-      if (dist > env || dy > 0.3 + 0.12 * n(d.ratings.block)) continue;
+      const env = (0.88 + 0.1 * n(d.ratings.block) + pw * (0.15 * n(d.ratings.interior_d) + Math.max(0, d.phys.WS - 2.05) * 0.4)) * DEF_K;
+      if (dist > env || dy > (0.3 + 0.12 * n(d.ratings.block)) * DEF_K) continue;
       d.action.triedBlock = true;
       const behind = ((p.x - d.x) * Math.sin(p.facing) + (p.z - d.z) * Math.cos(p.facing)) > 0; // defender behind shooter
       const size = Math.max(-0.25, Math.min(0.3, d.phys.H - p.phys.H));
       let pb = 0.07 + 0.24 * n(d.ratings.block) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.25) - (kind === 'dunk' ? 0.26 * S.trafficSkill(p, !!p.action?.standing) : 0.15 * n(p.ratings.layup)) + (hy - P.y) * 0.3 - dist / env * 0.14;
-      pb += (d.badges.rim_protector || 0) * 0.025 + (behind ? (d.badges.chasedown || 0) * 0.04 : 0);
-      if (kind === 'dunk') pb -= (p.badges.posterizer || 0) * 0.05;
+      pb += bk(d.badges, 'rim_protector') * 0.025 + (behind ? bk(d.badges, 'chasedown') * 0.04 : 0);
+      if (kind === 'dunk') pb -= bk(p.badges, 'posterizer') * 0.05;
       if (pb > bestPb) { bestPb = pb; best = d; bestBehind = behind; }
     }
     if (best && this.rng.next() < bestPb) { this.blockBall(best, p, bestBehind); return best; }
@@ -994,7 +1280,7 @@ export class Game {
     for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd) { bd = dd; best = d; } }
     if (!best || bd > 1.15) return null;
     let pf = 0.02 + (best.airborne ? 0.08 : 0.02) + (kind !== 'jumper' ? 0.06 : 0) + Math.max(0, 1 - bd) * 0.1 - n(best.ratings.interior_d) * 0.04;
-    if (kind !== 'jumper' && p.badges.contact_finisher) pf += 0.02;
+    if (kind !== 'jumper' && p.badges.contact_finisher) pf += 0.01 * bk(p.badges, 'contact_finisher');
     if (this.rng.next() < pf) return { fouler: best.id, shooter: p.id, three: kind === 'jumper' && isThree(p.x, p.z, this.sideFor(p.team)) };
     return null;
   }
@@ -1009,7 +1295,7 @@ export class Game {
       // defender committed in the wrong direction
       const dv = Math.hypot(d.vx, d.vz);
       const moveDir = Math.hypot(a.vx, a.vz) > 0.1 ? (d.vx * a.vx + d.vz * a.vz) / ((dv || 1) * Math.hypot(a.vx, a.vz)) : 0;
-      let pk = 0.002 + 0.03 * n(p.ratings.ball_handle) - 0.03 * n(d.ratings.perimeter_d) + (p.badges.ankle_breaker || 0) * 0.015 + ((p.moveSpeed || 1) - 1) * 0.06;
+      let pk = 0.002 + 0.03 * n(p.ratings.ball_handle) - 0.03 * n(d.ratings.perimeter_d) + bk(p.badges, 'ankle_breaker') * 0.015 + ((p.moveSpeed || 1) - 1) * 0.06;
       if (dv > 2.5 && moveDir < -0.4) pk += 0.05;
       if (d.action?.type === 'steal') pk += 0.12;
       if (a.move === 'hesi' || a.move === 'stepback') pk *= 0.7;
@@ -1018,6 +1304,7 @@ export class Game {
         d.startAction('stumble', 1.35 + this.rng.range(0, 0.4), { fall: this.rng.next() < 0.55, dir: this.rng.next() < 0.5 ? 1 : -1 });
         d.vx *= 0.3; d.vz *= 0.3;
         p.stats.ankles++;
+        p.ankleT = this.time; // v0.4.5: the AI attacks right after an ankle-breaker (ai.js handler)
         this.emit({ type: 'ankle', player: p.id, victim: d.id });
         return;
       }
@@ -1035,7 +1322,7 @@ export class Game {
       p.plantT = 0.22; // lunged at air
       return;
     }
-    let pc = 0.012 + 0.2 * n(p.ratings.steal) + 0.015 * n(p.ratings.perimeter_d) - 0.15 * n(h.ratings.ball_handle) + (p.badges.pick_pocket || 0) * 0.02;
+    let pc = 0.012 + 0.2 * n(p.ratings.steal) + 0.015 * n(p.ratings.perimeter_d) - 0.15 * n(h.ratings.ball_handle) + bk(p.badges, 'pick_pocket') * 0.02;
     if (b.mode === 'dribble') pc += b.y < 0.6 ? 0.05 : -0.02; else pc -= 0.04;
     if (h.action?.type === 'move') pc += 0.05;
     if (h.action?.type === 'shoot' || h.action?.type === 'layup') pc -= 0.03;
@@ -1089,16 +1376,46 @@ export class Game {
     if (a && a.type === 'shoot') {
       const sh = p.shotPkg.hand === 'L' ? 1 : -1;
       const t = a.t, T = a.tRel;
-      const pocket = [sh * 0.06, 0.6 * H, 0.32], set = [sh * 0.07, p.shotPkg.setH * H, 0.2], rel = [sh * 0.05, p.phys.reach * (p.shotPkg.relK ?? 0.93), 0.3 + p.shotPkg.push];
-      const k1 = Math.min(1, t / (T * 0.62)), k2 = Math.max(0, Math.min(1, (t - T * 0.62) / (T * 0.38)));
-      const e1 = k1 * k1 * (3 - 2 * k1), e2 = k2 * k2;
-      lx = pocket[0] + (set[0] - pocket[0]) * e1 + (rel[0] - set[0]) * e2;
-      ly = pocket[1] + (set[1] - pocket[1]) * e1 + (rel[1] - set[1]) * e2;
-      lz = pocket[2] + (set[2] - pocket[2]) * e1 + (rel[2] - set[2]) * e2;
+      // v0.4.5 stage 7: every jump-shot base carries the ball on its own path (where it starts, where it sets,
+      // how long it sits there, where it's let go), so the bases differ in ball travel and not only in the legs
+      const sp = SHOT_PATH[a.kind === 'close' ? 'standard' : p.shotPkg.style] || SHOT_PATH.standard;
+      const pocket = [sh * 0.06, sp.py * H, 0.32], set = [sh * sp.sx, p.shotPkg.setH * H, sp.sz], rel = [sh * 0.05, p.phys.reach * (p.shotPkg.relK ?? 0.93), 0.3 + p.shotPkg.push + (sp.rz || 0)];
+      if (sp.line) {
+        // one motion from the pocket to the release, curving through the set point without stopping there
+        const k = Math.min(1, t / T), e = k * k * (3 - 2 * k), u = 1 - e;
+        lx = u * u * pocket[0] + 2 * u * e * set[0] + e * e * rel[0];
+        ly = u * u * pocket[1] + 2 * u * e * set[1] + e * e * rel[1];
+        lz = u * u * pocket[2] + 2 * u * e * set[2] + e * e * rel[2];
+      } else {
+        const ks = sp.ks, ps = sp.pause || 0;
+        const k1 = Math.min(1, t / (T * ks)), k2 = Math.max(0, Math.min(1, (t - T * (ks + ps)) / (T * (1 - ks - ps))));
+        const e1 = k1 * k1 * (3 - 2 * k1), e2 = k2 * k2;
+        lx = pocket[0] + (set[0] - pocket[0]) * e1 + (rel[0] - set[0]) * e2;
+        ly = pocket[1] + (set[1] - pocket[1]) * e1 + (rel[1] - set[1]) * e2;
+        lz = pocket[2] + (set[2] - pocket[2]) * e1 + (rel[2] - set[2]) * e2;
+        if (sp.drift) lx += sh * sp.drift * Math.sin(Math.PI * Math.min(1, t / T));
+      }
     } else if (a && a.type === 'layup') {
-      const t = Math.min(1, a.t / a.release), e = t * t * (3 - 2 * t);
+      const t = Math.min(1, a.t / a.release), e = t * t * (3 - 2 * t), ls = a.lstyle || 'basic';
       const sh = -1;
-      lx = sh * 0.1 * (1 - e) + sh * 0.05; ly = 0.62 * H + (p.phys.reach * 0.97 - 0.62 * H) * e; lz = 0.3 + e * 0.08;
+      if (ls === 'scoop') {
+        // underhand: the ball dips to the hip, swings out to the side, then rolls up off the palm
+        const dip = Math.sin(Math.min(1, t / 0.55) * Math.PI);
+        lx = sh * (0.12 + 0.2 * dip); ly = 0.5 * H - 0.08 * H * dip + (p.phys.reach * 0.88 - 0.5 * H) * e * e; lz = 0.34 + e * 0.22 + dip * 0.1;
+      } else if (ls === 'finger') {
+        // high and late: full extension, the ball carried out in front off the fingertips
+        lx = sh * 0.06; ly = 0.64 * H + (p.phys.reach * 1.02 - 0.64 * H) * Math.pow(e, 0.8); lz = 0.3 + e * 0.2;
+      } else if (ls === 'euro') {
+        // swept across the body on the long second step, then up on the far side
+        const sw = a.lsDir || 1, cross = Math.sin(Math.min(1, t / 0.7) * Math.PI);
+        lx = sh * 0.1 * (1 - e) + sw * 0.26 * cross + sh * 0.05 * e; ly = 0.56 * H + (p.phys.reach * 0.97 - 0.56 * H) * e; lz = 0.3 + e * 0.08;
+      } else { lx = sh * 0.1 * (1 - e) + sh * 0.05; ly = 0.62 * H + (p.phys.reach * 0.97 - 0.62 * H) * e; lz = 0.3 + e * 0.08; }
+      // v0.4.5 coverage variants on top of the package's path
+      const cv = a.cov || 'open', cs = a.covSide || 1;
+      if (cv === 'side') { const k = Math.sin(Math.min(1, t / 0.8) * Math.PI * 0.5); lx = lx * (1 - k) + cs * 0.28 * k; } // carried on the far side
+      else if (cv === 'front') { const dip = Math.sin(Math.min(1, Math.max(0, (t - 0.3) / 0.5)) * Math.PI); ly -= 0.17 * H * dip; lz -= 0.1 * dip; } // the double clutch
+      else if (cv === 'rim') { lx = lx * (1 - e) + cs * 0.32 * e; lz -= 0.3 * e * e; } // under and around to the far side
+      else if (cv === 'trail') { ly += 0.07 * H * Math.min(1, t * 1.8); lz += 0.06; } // up high, early
     } else if (a && a.type === 'dunk') {
       const t = Math.min(1, a.t / a.slam);
       const e = t * t * (3 - 2 * t);
@@ -1125,6 +1442,59 @@ export class Game {
         // tucked at the chest through the spin, then up and through
         const f = Math.max(0, (t - 0.72) / 0.28), ef = f * f * (3 - 2 * f);
         ly = 0.72 * H + (topY - 0.72 * H) * ef; lz = 0.24 + 0.28 * ef; lx = -0.02;
+      } else if (st === 'hammer') {
+        // v0.4.5 stage 7: cocked back over the shoulder, out wide on the ball side (the tomahawk goes straight back
+        // behind the head), then swung down and across
+        const back = Math.sin(Math.min(1, t / 0.72) * Math.PI);
+        ly = 0.68 * H + (topY * 1.02 - 0.68 * H) * e + back * 0.06; lz = 0.26 + e * 0.2 - back * 0.3; lx = -0.14 - back * 0.34;
+      } else if (st === 'rimrock') {
+        // Rim Rocker: both hands take it back behind the head, then a two-hand hammer straight down
+        const back = Math.sin(Math.min(1, t / 0.76) * Math.PI);
+        ly = 0.7 * H + (topY * 1.02 - 0.7 * H) * e + back * 0.12; lz = 0.28 + e * 0.2 - back * 0.56; lx = 0;
+      } else if (st === 'bully') {
+        // Contact: carried high and away from the defender on the far side, then thrown down through him
+        const k = Math.min(1, t / 0.8), ek = k * k * (3 - 2 * k), f = Math.max(0, (t - 0.8) / 0.2), ef = f * f * (3 - 2 * f);
+        lx = -0.4 * (1 - ef) - 0.08 * ef; ly = 0.74 * H + (0.97 * H - 0.74 * H) * ek + (topY - 0.97 * H) * ef; lz = 0.1 + 0.42 * ef;
+      } else if (st === 'aroundback') {
+        // Showtime: wrapped around the waist behind his back (right hand to left), then up and slammed left-handed
+        const k = Math.min(1, t / 0.72), ek = k * k * (3 - 2 * k), phi = -Math.PI / 3 - (4 * Math.PI / 3) * ek, R = 0.36;
+        const f = Math.max(0, (t - 0.72) / 0.28), ef = f * f * (3 - 2 * f), wx = R * Math.sin(phi), wz = R * Math.cos(phi);
+        lx = wx + (0.08 - wx) * ef; ly = 0.53 * H + (topY - 0.53 * H) * ef; lz = wz + (0.5 - wz) * ef;
+      } else if (st === 'superman') {
+        // High Flyer: stretched out flat, the ball held out in front at arm's length all the way in
+        ly = 0.84 * H + (topY - 0.84 * H) * e; lz = 0.64 - 0.14 * Math.pow(e, 3); lx = -0.06;
+      } else if (st === 'liberty') {
+        // held straight up and back at full extension, hanging there before it goes down
+        const k = Math.min(1, t / 0.85), ek = k * k * (3 - 2 * k), f = Math.max(0, (t - 0.85) / 0.15);
+        ly = 0.66 * H + (topY * 1.1 - 0.66 * H) * ek; lz = 0.26 - 0.2 * ek + 0.42 * f; lx = -0.1;
+      } else if (st === 'scoop') {
+        // scooped from the hip, rocked in underhand
+        const k = Math.min(1, t / 0.8), ek = k * k * (3 - 2 * k);
+        const dip = Math.sin(Math.min(1, t / 0.5) * Math.PI);
+        ly = 0.5 * H - 0.1 * H * dip + (topY * 0.98 - 0.5 * H) * ek * ek; lz = 0.3 + 0.28 * ek + dip * 0.14; lx = -0.16 - 0.1 * dip;
+      } else if (st === 'switch') {
+        // one hand out to the side, switched across to the other at the top
+        const sw = Math.max(0, Math.min(1, (t - 0.42) / 0.3)), esw = sw * sw * (3 - 2 * sw);
+        ly = 0.66 * H + (topY - 0.66 * H) * e; lz = 0.3 + e * 0.22; lx = -0.26 + 0.52 * esw;
+      } else if (st === '180') {
+        // carried low and wide through the half turn, then thrown down backward
+        const k = Math.min(1, t / 0.8), ek = k * k * (3 - 2 * k);
+        ly = 0.62 * H + (topY * 0.99 - 0.62 * H) * ek; lz = 0.3 - 0.3 * Math.sin(Math.PI * k) - 0.06 * ek; lx = -0.22 + 0.14 * ek;
+      } else if (st === 'eastbay') {
+        // between the legs in the air: down past the hip, through, then up and over on the other side
+        const k = Math.min(1, t / 0.88), ek = k * k * (3 - 2 * k);
+        const thr = Math.sin(Math.min(1, k / 0.62) * Math.PI);
+        ly = 0.72 * H - 0.3 * H * thr + (topY * 1.02 - 0.72 * H) * Math.pow(ek, 2.2);
+        lz = 0.3 - 0.34 * thr + 0.3 * Math.pow(ek, 2);
+        lx = -0.2 * (1 - ek) + 0.26 * ek;
+      } else if (st === 'hashsling') {
+        // Hash-Slinging (Icon badge only): a full wind-up behind the back, around the body, then slung over the top
+        const k = Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
+        const al = 0.2 * Math.PI - 2.1 * Math.PI * ek, R = 0.4 * H, cy = 0.92 * H;
+        const cyy = cy + R * Math.sin(al), czz = 0.04 + R * Math.cos(al) * 0.9;
+        const f = Math.max(0, (t - 0.84) / 0.16), ef = f * f * (3 - 2 * f);
+        lx = (-0.22 + 0.3 * Math.sin(Math.PI * k)) * (1 - ef) - 0.04 * ef;
+        ly = cyy + (topY * 1.04 - cyy) * ef; lz = czz + (0.52 - czz) * ef;
       } else if (st === 'reverse') {
         ly = 0.65 * H + (topY * 0.99 - 0.65 * H) * e; lz = 0.3 + e * 0.05 - Math.sin(Math.PI * t) * 0.18; lx = 0;
       } else { ly = 0.65 * H + (topY - 0.65 * H) * e; lz = 0.3 + e * 0.25; lx = st === 'onehand' ? -0.1 : 0; }
@@ -1150,8 +1520,9 @@ export class Game {
     } else if (b.mode === 'dribble' && b.holder === p.id) {
       const sp = p.speed;
       const ph = p.dribble.phase;
-      const hgt = (0.47 - Math.min(0.08, sp * 0.012)) * H;
-      let side = hs * (0.26 + Math.min(0.08, sp * 0.012));
+      const ds = p.dribbleStyle || { hgtK: 1, sideK: 1 }, su = S.sizeupOf(p);
+      const hgt = (0.47 - Math.min(0.08, sp * 0.012)) * H * ds.hgtK * (su ? su.hgt : 1);
+      let side = hs * (0.26 + Math.min(0.08, sp * 0.012)) * ds.sideK * (su ? su.side : 1);
       lz = 0.24 + Math.min(0.32, sp * 0.06);
       ly = BALL_R + (hgt - BALL_R) * Math.abs(Math.cos(Math.PI * ph));
       if (a && a.type === 'move') {
@@ -1171,10 +1542,16 @@ export class Game {
           ly = BALL_R + (0.55 * H - BALL_R) * Math.abs(Math.cos(Math.PI * Math.min(1, t * 1.5)));
         }
       } else if (p.dribble.xover) {
-        // v0.4.3 size-up rhythm (Quick / Elite packages): in-place crossovers and between-the-legs
-        const e = ph * ph * (3 - 2 * ph);
-        side = side * (1 - 2 * e);
-        if (p.dribble.xover === 'btl') lz = 0.04 + Math.abs(0.5 - e) * 0.4;
+        // size-up combos in place: crossovers, between the legs, behind the back, the snake's slide across and
+        // back, and the stutter's hesitation (held up at the hip for a beat)
+        const e = ph * ph * (3 - 2 * ph), xo = p.dribble.xover;
+        if (xo === 'half') side = side * (1 - 1.3 * Math.sin(Math.PI * e));
+        else if (xo === 'hesi') ly = BALL_R + (hgt * 1.12 - BALL_R) * Math.min(1, Math.abs(Math.cos(Math.PI * ph)) * 2.4);
+        else {
+          side = side * (1 - 2 * e);
+          if (xo === 'btl') lz = 0.04 + Math.abs(0.5 - e) * 0.4;
+          if (xo === 'btb') lz = -0.22 + Math.abs(0.5 - e) * 0.8;
+        }
       }
       lx = side;
     } else if (b.holder === p.id && b.mode === 'held') {
@@ -1189,17 +1566,12 @@ export class Game {
     if (b.holder >= 0 && (b.mode === 'held' || b.mode === 'dribble')) {
       const p = this.players[b.holder];
       if (b.mode === 'dribble') {
-        const freq = (1.55 + Math.min(1.1, p.speed * 0.2) + (p.action?.type === 'move' ? 0.6 : 0)) * (p.dribble.xover ? 1 + 0.12 * (p.sizeupLvl || 0) : 1);
-        const prev = p.dribble.phase;
-        p.dribble.phase = (p.dribble.phase + freq * dt) % 1;
-        if (p.dribble.phase < prev) {
-          // the ball is back in a hand: finish a size-up crossover, then maybe start another
-          if (p.dribble.xover) { p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R'; p.dribble.xover = null; }
-          const lvl = p.sizeupLvl || 0;
-          if (lvl > 0 && !p.action && p.speed < 1.2 && this.opponents(p).some(d => d.dist(p) < 2.6) && this.rng.next() < [0, 0.45, 0.7][lvl])
-            p.dribble.xover = lvl >= 2 && this.rng.next() < 0.45 ? 'btl' : 'cross';
+        // v0.4.5 stage 7: the size-up package sets the rhythm and the in-place combos (shots.js SIZEUP)
+        if (S.advanceDribble(p, dt, () => this.rng.next(), this.opponents(p).some(d => d.dist(p) < 2.6))) {
+          const w = this.holdPoint(p); this.emit({ type: 'dribble', x: w.x, z: w.z, player: p.id });
+          // v0.4.5: a dribble that comes down on or over a line is out
+          if (this.phase === 'live' && !this.practice && ballOut(w.x, w.z, this.half)) this.dribbleOut = p.id;
         }
-        if (prev < 0.5 && p.dribble.phase >= 0.5) { const w = this.holdPoint(p); this.emit({ type: 'dribble', x: w.x, z: w.z, player: p.id }); }
       }
       const w = this.holdPoint(p);
       const vx = (w.x - b.x) / dt, vy = (w.y - b.y) / dt, vz = (w.z - b.z) / dt;
@@ -1292,7 +1664,6 @@ export class Game {
         if (info.contest > 0.55 && !info.ft) shooter.stats.contested_makes++;
         if (info.poster >= 0 && info.poster != null) shooter.stats.posters++;
         if (info.oop) shooter.stats.alleyoops++;
-        shooter.hot = Math.min(3, shooter.hot + 1);
         // assist
         const lp = this.lastPass;
         if (lp && lp.to === shooter.id && this.players[lp.from].team === team && (info.released ?? this.time) - lp.time < 3.2 && !info.ft) {
@@ -1300,7 +1671,6 @@ export class Game {
           this.emit({ type: 'assist', player: lp.from, to: shooter.id });
         }
       }
-      for (const p of this.teams[1 - team]) p.hot = Math.max(0, p.hot - 0.5);
       this.emit({ type: 'score', team, pts, player: shooter?.id, kind: info.type || 'tip', three: !!info.three, swish: e.clean, andOne: !!this.pendingFoul, poster: info.poster, style: info.style, oop: !!info.oop, ft: !!info.ft, contest: info.contest || 0, catchShoot: !!info.catchShoot, corner: !!info.corner, d: info.d || 0, clutch: !!info.clutch });
       this.lastPass = null;
       b.kind = 'dead';
@@ -1347,12 +1717,12 @@ export class Game {
         if (!d.airborne || d.action?.type !== 'block' || d.action.triedBlock) continue;
         const hx = d.x + Math.sin(d.facing) * 0.3, hz = d.z + Math.cos(d.facing) * 0.3, hy = d.reachNow() + 0.12;
         const dd = Math.hypot(b.x - hx, b.z - hz), dy = b.y - hy;
-        if (dd < 0.56 + 0.08 * n(d.ratings.block) && dy < 0.15 && dy > -0.9) {
+        if (dd < (0.56 + 0.08 * n(d.ratings.block)) * DEF_K && dy < 0.15 * DEF_K && dy > -0.9 * DEF_K) {
           d.action.triedBlock = true;
           const shooter = this.players[b.info.shooter];
           // v0.4.3: Perimeter D outside, Interior D and size in the paint
           const pw = S.paintWeight(b.info.d ?? 6), size = Math.max(-0.25, Math.min(0.3, d.phys.H - shooter.phys.H));
-          const pb = 0.1 + 0.26 * n(d.ratings.block) + (1 - pw) * 0.06 * n(d.ratings.perimeter_d) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.3) - 0.1 * n(shooter.ratings.three_point) + (d.badges.rim_protector || 0) * 0.02 - dd * 0.25;
+          const pb = 0.1 + 0.26 * n(d.ratings.block) + (1 - pw) * 0.06 * n(d.ratings.perimeter_d) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.3) - 0.1 * n(shooter.ratings.three_point) + bk(d.badges, 'rim_protector') * 0.02 - dd * 0.25;
           if (this.rng.next() < pb) { b.info.blocked = true; this.blockBall(d, shooter, false, false); return; }
         }
       }
@@ -1387,8 +1757,8 @@ export class Game {
         if (p.team !== info.team) {
           if (info.tried.has(p.id)) continue;
           info.tried.add(p.id);
-          let pi = 0.05 + 0.2 * n(p.ratings.steal) - 0.15 * n(info.from >= 0 ? this.players[info.from].ratings.pass_accuracy : 80) + (p.badges.interceptor || 0) * 0.03 - dist * 0.25;
-          if (p.handsUp || p.stance === 'defense') pi += 0.05;
+          let pi = 0.05 + 0.2 * n(p.ratings.steal) - 0.15 * n(info.from >= 0 ? this.players[info.from].ratings.pass_accuracy : 80) + bk(p.badges, 'interceptor') * 0.03 - dist * 0.25;
+          if (p.handsUp || p.stance === 'defense') pi = (pi + 0.05) * DEF_K; // v0.4.5 lane pressure +3.75%
           // v0.4.4: a hand held out on the side the pass goes by
           if (p.handsSide && (b.x - p.x) * p.handsSide.x + (b.z - p.z) * p.handsSide.z > 0.1) pi += 0.08;
           if (info.type === 'lob' || info.type === 'alley') pi += b.y < p.reachNow() - 0.2 ? 0.1 : -0.15;
@@ -1421,12 +1791,12 @@ export class Game {
         if (p.action?.type === 'stumble' || p.action?.type === 'hang') continue;
         if (b.info && b.info.shooter === p.id && b.flightTime < 0.6) continue;
         if (p.fumbleUntil && this.time < p.fumbleUntil) continue;
-        if (this.isOut(p.x, p.z, 0.05) && !p.airborne) continue;
+        if (this.isOut(p.x, p.z) && !p.airborne) continue;
         const dist = Math.hypot(b.x - p.x, b.z - p.z);
         // v0.4.1: slightly bigger hands-on-ball radius (rebound rating helps), so fewer balls squirt free
         const off = b.info && b.info.team === p.team;
         const rr = n(off ? p.ratings.off_rebound : p.ratings.def_rebound);
-        const grabR = 0.62 + rr * 0.08 + Math.max(0, p.phys.WS - 2) * 0.25 + (p.airborne ? 0.14 : 0);
+        const grabR = (0.62 + rr * 0.08 + Math.max(0, p.phys.WS - 2) * 0.25 + (p.airborne ? 0.14 : 0)) * DEF_K;
         if (dist > grabR) continue;
         if (b.y > p.reachNow() + 0.15) continue;
         if (b.y > 2.2 && b.vy > 0.5) continue;
@@ -1434,7 +1804,7 @@ export class Game {
         // position beats luck: being closer, airborne at the right time, and sealing an opponent behind you
         let score = this.rng.next() * 0.4 + (1 - dist / grabR) * 1.0 + (p.airborne ? 0.35 : 0) + p.phys.strength * 0.25;
         // v0.4.3: the rebound rating and size weigh more
-        score += rr * 1.25 + Math.max(-0.15, Math.min(0.2, (p.phys.H - 1.98) * 0.7)) + (p.badges.rebound_chaser || 0) * 0.08;
+        score += rr * 1.25 + Math.max(-0.15, Math.min(0.2, (p.phys.H - 1.98) * 0.7)) + bk(p.badges, 'rebound_chaser') * 0.08;
         if (!off && wasShotBall) score += 0.3; // defenders start with inside position
         // box-outs: sealing an opponent behind you is worth more the stronger your Interior D is than his
         let seal = 0;
@@ -1442,7 +1812,7 @@ export class Game {
           const dq = Math.hypot(b.x - q.x, b.z - q.z);
           if (Math.hypot(q.x - p.x, q.z - p.z) < 1.4 && dq > dist + 0.2) {
             const edge = (n(p.ratings.interior_d) - n(q.ratings.interior_d)) * 0.8 + (p.phys.strength - q.phys.strength) * 0.5 + (p.phys.H - q.phys.H) * 0.4;
-            seal = Math.max(seal, 0.24 + 0.22 * n(p.ratings.interior_d) + Math.max(-0.15, Math.min(0.4, edge)));
+            seal = Math.max(seal, (0.24 + 0.22 * n(p.ratings.interior_d) + Math.max(-0.15, Math.min(0.4, edge))) * DEF_K);
           }
         }
         score += seal;
@@ -1473,8 +1843,10 @@ export class Game {
     b.mode = 'held'; b.holder = p.id; b.kind = null;
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.dribble.live = true; p.dribble.used = false;
+    this.endMoveChain(p);
+    p.heldDist = 0; p.heldT = 0;
     if (!p.action || p.action.type === 'catch' || p.action.type === 'rebound' || p.action.type === 'block') {
-      if (!p.airborne) { p.action = null; p.startAction('catch', 0.18, {}); }
+      if (!p.airborne) { p.action = null; p.startAction('catch', 0.2, {}); }
     }
     if (this.possession !== p.team) { this.possession = p.team; this.shotClock = 24; }
     if ((this.phase === 'inbound' && p !== this.inbounder) || this.phase === 'tip') { this.phase = 'live'; this.emit({ type: 'live' }); }
@@ -1488,7 +1860,7 @@ export class Game {
     const rim = this.rimFor(p.team);
     b.mode = 'held'; b.holder = p.id; b.kind = null;
     b.lastTouch = p.id; b.lastTeam = p.team;
-    const canDunk = (p.ratings.driving_dunk ?? 50) >= 58 && p.phys.reach + p.y > COURT.rimY + 0.05;
+    const canDunk = (p.raw.driving_dunk ?? 50) >= 58 && p.phys.reach + p.y > COURT.rimY + 0.05;
     const passer = this.lastPass ? this.players[this.lastPass.from] : null;
     if (canDunk) {
       p.action = null;
@@ -1499,7 +1871,7 @@ export class Game {
       a.oop = true;
     } else {
       p.action = null;
-      const a = p.startAction('layup', 0.5, { takeoff: 0, release: 0.1, jumped: true, jumpH: 0, spotX: p.x, spotZ: p.z, gatherSpeed: 0, side: this.sideFor(p.team) });
+      const a = p.startAction('layup', 0.5, { takeoff: 0, release: 0.1, tRel: 0.1, untimed: true, jumped: true, jumpH: 0, spotX: p.x, spotZ: p.z, gatherSpeed: 0, side: this.sideFor(p.team) });
       a.oop = true;
       this.emit({ type: 'oopCatch', player: p.id });
     }
@@ -1529,7 +1901,8 @@ export class Game {
     for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
       const a = ps[i], c = ps[j];
       if (a.action?.type === 'hang' || c.action?.type === 'hang') continue;
-      if ((a.action?.through === c.id) || (c.action?.through === a.id)) continue; // dunker already went through that contact
+      // v0.4.5: no passing through bodies. A dunker who beats the contact shoves the defender out of his path
+      // (velocity), so the two are kept apart here like everyone else
       const dx = c.x - a.x, dz = c.z - a.z, d = Math.hypot(dx, dz);
       const r = a.phys.radius + c.phys.radius;
       if (d >= r || d < 1e-5) continue;
@@ -1551,13 +1924,14 @@ export class Game {
         if (handler && -rv > 1.6 && handler.bumpT <= 0) {
           const def = handler === a ? c : a;
           handler.bumpT = 0.4; def.bumpT = 0.15;
-          handler.vx *= 0.5; handler.vz *= 0.5;
+          const set = def.speed < 1.2 ? DEF_K : 1; // v0.4.5: waiting in the lane for the drive stops it 3.75% harder
+          handler.vx *= 0.5 / set; handler.vz *= 0.5 / set;
           if (!handler.action) handler.startAction('bump', 0.32, {});
           this.emit({ type: 'bump', player: handler.id, defender: def.id, v: -rv });
           // v0.4.4: Brick Wall on bumps is a defensive badge: the defender stops the drive harder
-          if (def.badges.brick_wall) { handler.bumpT += 0.06 * def.badges.brick_wall; handler.vx *= 1 - 0.08 * def.badges.brick_wall; handler.vz *= 1 - 0.08 * def.badges.brick_wall; this.badgeFx(def, 'brick_wall'); }
+          if (def.badges.brick_wall) { const k = bk(def.badges, 'brick_wall'); handler.bumpT += 0.06 * k; handler.vx *= Math.max(0.3, 1 - 0.08 * k); handler.vz *= Math.max(0.3, 1 - 0.08 * k); this.badgeFx(def, 'brick_wall'); }
           const pwB = S.paintWeight(Math.hypot(def.x - this.rimFor(handler.team).x, def.z - this.rimFor(handler.team).z));
-          const strip = (0.012 + Math.max(0, def.phys.strength - handler.phys.strength) * 0.08 - n(handler.ratings.ball_handle) * 0.02 + (def.badges.brick_wall || 0) * 0.015) * (1 - 0.5 * pwB);
+          const strip = (0.012 + Math.max(0, def.phys.strength - handler.phys.strength) * 0.08 - n(handler.ratings.ball_handle) * 0.02 + bk(def.badges, 'brick_wall') * 0.015) * (1 - 0.5 * pwB) * set;
           if (this.ball.mode === 'dribble' && this.rng.next() < strip) {
             handler.stats.tov++; def.stats.stl++;
             const b = this.ball;
@@ -1575,13 +1949,54 @@ export class Game {
             if (shotUp || (this.ball.info && this.ball.info.shooter === s.id) || ['shoot', 'layup', 'dunk', 'land', 'celebrate'].includes(s.action?.type)) continue;
             if (d2.speed < 1.0) continue; // he has to be moving into it
             // Brick Wall: the screener's makes the screen hit harder (offense); a defender's fights through it (defense)
-            const bw = s.badges.brick_wall || 0, dbw = d2.badges.brick_wall || 0;
+            const bw = bk(s.badges, 'brick_wall'), dbw = bk(d2.badges, 'brick_wall');
             d2.bumpT = Math.max(0.12, 0.3 + bw * 0.08 - dbw * 0.05);
+            s.spend(COST.screen); d2.spend(COST.screen * 0.75); // (v0.4.5: screens cost stamina, both ways)
             this.emit({ type: 'screen', player: s.id, victim: d2.id });
             if (bw) this.badgeFx(s, 'brick_wall');
             if (dbw) this.badgeFx(d2, 'brick_wall');
           }
         }
+      }
+    }
+    this.settleBodies();
+  }
+
+  // v0.4.5: the ball has a body too: a dribble (or a ball held out in front) can't go through anybody's legs or
+  // chest. The handler and whoever he's leaning on are moved apart, weighted by size and strength like any other
+  // contact. Then two more position-only passes over the bodies, so a crowd (a drive into help, a scrum for a
+  // rebound) doesn't leave anyone half inside someone else.
+  settleBodies() {
+    const ps = this.players, mass = p => p.phys.W * (0.7 + 0.6 * p.phys.strength);
+    const h = this.holder(), b = this.ball;
+    if (h && (b.mode === 'dribble' || b.mode === 'held') && h.action?.type !== 'hang') {
+      const bp = this.holdPoint(h, this._ballProbe || (this._ballProbe = {}));
+      for (const q of ps) {
+        if (q === h || q.action?.type === 'hang' || Math.abs(q.y - h.y) > 1.2 || bp.y > q.y + q.phys.H * 0.95) continue;
+        const dx = bp.x - q.x, dz = bp.z - q.z, d = Math.hypot(dx, dz), r = q.phys.radius + BALL_R * 0.9;
+        if (d >= r || d < 1e-5) continue;
+        let mh = mass(h), mq = mass(q);
+        if (q.team !== h.team) { mh *= this.anchorK(h, q); mq *= this.anchorK(q, h); }
+        const pen = r - d, nx = dx / d, nz = dz / d, kh = mq / (mh + mq), kq = 1 - kh;
+        h.x += nx * pen * kh; h.z += nz * pen * kh;
+        q.x -= nx * pen * kq; q.z -= nz * pen * kq;
+        // no more closing speed into the ball
+        const rv = (h.vx - q.vx) * nx + (h.vz - q.vz) * nz;
+        if (rv < 0) { h.vx -= nx * rv * kh; h.vz -= nz * rv * kh; q.vx += nx * rv * kq; q.vz += nz * rv * kq; }
+      }
+    }
+    // (after the ball, so nobody it moved is left inside someone else)
+    for (let it = 0; it < 2; it++) {
+      for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i], c = ps[j];
+        if (a.action?.type === 'hang' || c.action?.type === 'hang' || Math.abs(a.y - c.y) > 1.2) continue;
+        const dx = c.x - a.x, dz = c.z - a.z, d = Math.hypot(dx, dz), r = a.phys.radius + c.phys.radius;
+        if (d >= r || d < 1e-5) continue;
+        let ma = mass(a), mc = mass(c);
+        if (a.team !== c.team) { ma *= this.anchorK(a, c); mc *= this.anchorK(c, a); }
+        const pen = r - d, ka = mc / (ma + mc), kc = 1 - ka;
+        a.x -= dx / d * pen * ka; a.z -= dz / d * pen * ka;
+        c.x += dx / d * pen * kc; c.z += dz / d * pen * kc;
       }
     }
   }
@@ -1598,16 +2013,25 @@ export class Game {
       // clear the ball (take it back)
       const h = this.holder();
       if (h && this.needsClear[h.team] && isThree(h.x, h.z, this.sideFor(h.team))) { this.needsClear[h.team] = false; this.emit({ type: 'cleared', team: h.team }); }
-      // out of bounds: ball handler
-      if (h && !h.airborne && this.isOut(h.x, h.z, 0.05)) { this.turnover(h, 'Out of bounds'); return; }
-      // ball out of bounds
-      if (b.mode === 'flight' && b.y < BALL_R + 0.02 && this.isOut(b.x, b.z, 0)) {
-        const team = 1 - (b.lastTeam >= 0 ? b.lastTeam : this.possession);
-        this.emit({ type: 'oob' });
-        this.feedMsg('Out of bounds');
-        this.deadBall(1.2, () => this.restartFor(team, b.x, b.z));
-        return;
-      }
+      // v0.4.5 traveling (every mode): after the gather (about two steps), moving with a held ball that isn't
+      // being dribbled is a travel
+      if (h && b.mode === 'held' && !h.airborne && !this.practice) {
+        const act = h.action?.type;
+        if (!act || act === 'catch' || act === 'pumpfake' || act === 'bump') {
+          h.heldT = (h.heldT || 0) + dt / this.speed;
+          if (h.heldT > 0.45) h.heldDist = (h.heldDist || 0) + Math.hypot(h.x - h.prevX, h.z - h.prevZ);
+          if (h.heldDist > 0.9) { h.heldT = 0; h.heldDist = 0; this.emit({ type: 'violation', what: 'Traveling', player: h.id }); this.turnover(h, 'Traveling'); return; }
+        }
+      } else if (h) { h.heldT = 0; h.heldDist = 0; }
+      // out of bounds (v0.4.5, on the painted lines): the ball handler with a foot on or over a line, or a
+      // dribble that comes down on or over one
+      if (h && !h.airborne && feetOut(h.x, h.z, this.half)) { this.turnover(h, 'Out of bounds'); return; }
+      if (h && this.dribbleOut === h.id) { this.dribbleOut = null; this.turnover(h, 'Out of bounds'); return; }
+      this.dribbleOut = null;
+      // a loose, passed or shot ball that touches the floor on or past a line
+      if (b.mode === 'flight' && b.y < BALL_R + 0.02 && ballOut(b.x, b.z, this.half)) { this.ballOutOfBounds('Out of bounds'); return; }
+      // over the top of a backboard, either way
+      if (b.mode === 'flight' && this.overBackboard(b)) { this.ballOutOfBounds('Over the backboard'); return; }
       if (!this.practice && this.shotClock <= 0 && !(b.mode === 'flight' && b.kind === 'shot')) {
         this.emit({ type: 'violation', what: 'Shot clock' });
         this.feedMsg('Shot clock violation');
@@ -1624,10 +2048,23 @@ export class Game {
     if (this.mode === 'proam' && this.phase !== 'live' && this.phase !== 'dead' && this.gameClock <= 0 && this.phase !== 'ft') this.endPeriod();
   }
 
-  isOut(x, z, pad) {
-    if (Math.abs(x) > COURT.width / 2 + pad) return true;
-    if (Math.abs(z) > COURT.length / 2 + pad) return true;
-    if (this.half && z < -1.0) return true;
+  isOut(x, z) { return feetOut(x, z, this.half); }
+  ballOutOfBounds(msg) {
+    const b = this.ball;
+    const team = 1 - (b.lastTeam >= 0 ? b.lastTeam : this.possession);
+    // a shot that goes out is still a miss for the shooter's line (it already counted as an attempt)
+    this.emit({ type: 'oob' });
+    this.feedMsg(msg);
+    this.deadBall(1.2, () => this.restartFor(team, b.x, b.z));
+  }
+  // the ball crossing the plane of a backboard above its top edge (and within its width)
+  overBackboard(b) {
+    if (b.px == null) return false;
+    for (const s of this.half ? [1] : [1, -1]) {
+      const plane = s * (COURT.boardZ + COURT.boardT / 2), before = (b.pz - plane) * s, after = (b.z - plane) * s;
+      if ((before < 0) === (after < 0)) continue;
+      if (b.y - BALL_R > COURT.boardBottom + COURT.boardH && Math.abs(b.x) < COURT.boardW / 2 + BALL_R) return true;
+    }
     return false;
   }
 
@@ -1708,7 +2145,7 @@ export class Game {
         if (p.human && !this.assist && a.releaseAt == null && a.t > a.tRel + 0.35) a.releaseAt = a.t;
         if (a.releaseAt != null && a.t >= a.releaseAt) {
           a.released = true;
-          const win = S.greenWindowMs(p.ratings.free_throw, p.badges, { ft: true }) * this.speed * (p.human ? this.greenBonus : 1);
+          const win = S.greenWindowMs(p.ratings.free_throw, p.badges, { ft: true, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
           const grade = a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(a.releaseAt - a.tRel, win);
           let chance = S.finalChance({ type: 'ft', d: 4.19, a: p.ratings, grade, stamina: p.stamina, badges: p.badges, clutch: this.isClutch(p.team) });
           if (grade === 'excellent') chance = 1;

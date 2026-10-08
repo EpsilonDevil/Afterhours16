@@ -3,6 +3,11 @@ import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
 import { Ball, cloneBall, predictShot } from './ball.js';
 
 import { rk as n } from './ratings.js';
+import { bk, tierTable } from './badges.js';
+// v0.4.5 badge tables: each tier step is 10% bigger than the one before
+const DEADEYE_WIN = tierTable([0, 0.15, 0.25, 0.35, 0.45]);
+const DEADEYE_CON = tierTable([0, 0.2, 0.35, 0.5, 0.6]);
+const FINISHER_CON = tierTable([0, 0.15, 0.25, 0.35, 0.45]);
 
 export const GRADE = {
   excellent: { label: 'Excellent Release', color: '#36e07a' },
@@ -21,6 +26,11 @@ export const BASE_FEEL = {
   push: { speed: 0.98, win: 1.07 }, lean: { speed: 1.02, win: 0.95 },
   // v0.4.4
   kick: { speed: 1.0, win: 1.0 }, wide: { speed: 1.02, win: 1.04 }, sniper: { speed: 0.93, win: 1.04 },
+  // v0.4.5 bases
+  fade: { speed: 1.04, win: 0.94 }, hitch: { speed: 1.08, win: 1.06 }, sling: { speed: 0.9, win: 0.96 },
+  scissor: { speed: 1.01, win: 1.02 }, tuck: { speed: 1.03, win: 1.03 }, sway: { speed: 0.97, win: 1.05 },
+  // v0.4.5 stage 7: Silk has its own base now (it used to share the Skyline's), with the same feel it always had
+  silk: { speed: 1.03, win: 0.97 },
 };
 export function jumpshotPackage(build, catalog) {
   const eq = build.equipment || {};
@@ -46,8 +56,7 @@ export function jumpshotPackage(build, catalog) {
 // v0.4.4: the timing window follows the rating curve, so a weak shooter's green window is tiny (about 22 ms
 // at 50 and 32 ms at 60), the 70-95 range climbs steadily, and a 99 gets a huge window (about 100 ms)
 export function timingWindowMs(attr, badges = {}) {
-  const tier = badges.green_machine || 0;
-  return 14 + 52 * Math.pow(n(attr), 1.25) + ((attr ?? 0) >= 99 ? 16 : 0) + tier * 5;
+  return 14 + 52 * Math.pow(n(attr), 1.25) + ((attr ?? 0) >= 99 ? 16 : 0) + bk(badges, 'green_machine') * 5;
 }
 
 // v0.4: an Excellent ("green") release always goes in unless the shot is blocked. Difficulty therefore
@@ -56,22 +65,89 @@ export function timingWindowMs(attr, badges = {}) {
 // ctx: {contest 0..1.25, moving m/s, fade, d (m to rim), three, ft}
 // v0.4.2: a smothered jumper (contest at or above SMOTHER, the HUD's "Smothered") has no green window at all
 export const SMOTHER = 0.75;
+export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
+// v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
+// package bonus included; the AI's green rate follows the same windows)
+export const GREEN_K = 0.9;
 export function greenWindowMs(attr, badges = {}, ctx = {}) {
-  let w = timingWindowMs(attr, badges);
-  if (ctx.ft) return w * 1.15;
+  let w = timingWindowMs(attr, badges) * (ctx.greenK || 1); // v0.4.5: Sharp Eye / shooting takeover
+  if (ctx.ft) return w * 1.15 * GREEN_K;
   if (ctx.pkg?.winK) w *= ctx.pkg.winK;
   if ((ctx.contest || 0) >= SMOTHER) return 0;
   const b = badges || {};
-  const c = Math.min(1, ctx.contest || 0) * (1 - [0, 0.15, 0.25, 0.35, 0.45][b.deadeye || 0]);
+  const c = Math.min(1, ctx.contest || 0) * (1 - DEADEYE_WIN[b.deadeye || 0]);
   // v0.4.4: every contested state (light contest and up, not open looks) bites 3.75% harder
   const ck = 1 + 0.0375 * Math.max(0, Math.min(1, ((ctx.contest || 0) - 0.15) / 0.05));
   w *= Math.max(0, 1 - 0.55 * ck * c);
   w *= 1 - 0.28 * Math.min(1, (ctx.moving || 0) / 5);
   if (ctx.fade) w *= 0.82;
-  if (ctx.three && (ctx.d || 0) > 7.9) w *= Math.max(0.3, 1 - ((ctx.d - 7.9) * 0.28) * (1 - 0.18 * (b.limitless || 0)));
-  if (ctx.catchShoot && b.catch_shoot) w *= 1 + 0.05 * b.catch_shoot;
-  if (ctx.corner && b.corner_specialist) w *= 1 + 0.05 * b.corner_specialist;
-  return Math.max(9, w);
+  if (ctx.three && (ctx.d || 0) > 7.9) w *= Math.max(0.3, 1 - ((ctx.d - 7.9) * 0.28) * (1 - Math.min(0.85, 0.18 * bk(b, 'limitless'))));
+  if (ctx.catchShoot && b.catch_shoot) w *= 1 + 0.05 * bk(b, 'catch_shoot');
+  if (ctx.corner && b.corner_specialist) w *= 1 + 0.05 * bk(b, 'corner_specialist');
+  return Math.max(9, w) * GREEN_K;
+}
+
+// v0.4.5 layup timing: hold the shot button through the gather and let go at the top. Each layup package has its
+// own timing (where in the air the ideal release is, and how forgiving it is) and the Layup rating sets the window
+// the same way the shooting ratings do for jumpers. rel: share of the air time; win: window multiplier; gather:
+// extra gather time (s) before the takeoff (the Euro's long second step).
+export const LAYUP_FEEL = {
+  basic: { rel: 0.48, win: 1.0, gather: 0 },
+  euro: { rel: 0.56, win: 0.95, gather: 0.06 },
+  finger: { rel: 0.6, win: 0.92, gather: 0 },
+  scoop: { rel: 0.4, win: 1.06, gather: 0.02 },
+};
+// v0.4.5: how the defense is covering a layup, read at the gather, changes the finish: its animation, the ball's
+// path and when it should come out (rel: extra share of the air time). side: +1 = away to the finisher's left.
+//   open  - the package's own finish
+//   side  - a defender on one side: the ball is carried on the far side and finished with the far hand, the
+//           shoulder into the contact
+//   front - a defender squarely in the path: he hangs and double-clutches (later)
+//   rim   - a shot blocker at the rim: a reverse, carried under to the far side and flipped up (later)
+//   trail - a chaser coming from behind: up high and quick off the glass (earlier)
+export const LAYUP_COVER = { open: { rel: 0 }, side: { rel: 0.03 }, front: { rel: 0.1 }, rim: { rel: 0.07 }, trail: { rel: -0.06 } };
+export function layupCoverage(p, rim, defs) {
+  const d = Math.hypot(rim.x - p.x, rim.z - p.z) || 1, ux = (rim.x - p.x) / d, uz = (rim.z - p.z) / d;
+  let best = { kind: 'open', side: 0, threat: 0, dist: 99 };
+  for (const q of defs) {
+    if (q.action?.type === 'stumble' || q.action?.type === 'hang') continue;
+    const rx = q.x - p.x, rz = q.z - p.z, dist = Math.hypot(rx, rz);
+    if (dist > 3.4) continue;
+    const along = rx * ux + rz * uz, lat = rx * uz - rz * ux; // lat > 0: on the finisher's left
+    const toRim = Math.hypot(q.x - rim.x, q.z - rim.z), chase = q.vx * ux + q.vz * uz;
+    let kind = null, threat = 0;
+    if (toRim < 1.8 && along > 0.4) { kind = 'rim'; threat = 3; }
+    else if (along > 0.25 && along < 1.8 && Math.abs(lat) < 0.7) { kind = 'front'; threat = 2.5; }
+    else if (along > -0.5 && along < 1.6 && Math.abs(lat) < 1.5) { kind = 'side'; threat = 2; }
+    else if (along > -2.2 && along <= -0.3 && Math.abs(lat) < 1.3 && chase > 1.5) { kind = 'trail'; threat = 1.5; }
+    if (kind && (threat > best.threat || (threat === best.threat && dist < best.dist))) best = { kind, side: lat > 0.05 ? -1 : lat < -0.05 ? 1 : 0, threat, dist };
+  }
+  return { kind: best.kind, side: best.side };
+}
+
+export const LAYUP_WIN_K = 1.2; // layups are a touch more forgiving than jumpers at the same rating
+// Layups happen in traffic (there's nearly always somebody at the rim), so the contest shrinks the window (to
+// about half against a wall of defenders, less with Contact Finisher) but never takes it away; and a green layup
+// is a big boost, not a guaranteed make, since contact can still beat it (see finalChance).
+// ctx: {contest, lstyle, greenK}
+export function layupWindowMs(attr, badges = {}, ctx = {}) {
+  const f = LAYUP_FEEL[ctx.lstyle] || LAYUP_FEEL.basic;
+  let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * f.win * (ctx.greenK || 1);
+  const c = Math.min(1.2, ctx.contest || 0) * (1 - FINISHER_CON[(badges || {}).contact_finisher || 0]);
+  w *= Math.max(0.5, 1 - 0.4 * c);
+  return Math.max(9, w) * GREEN_K;
+}
+
+// v0.4.5: jumpers don't all come out at the same speed. A running jumper is quicker (the momentum does some of
+// the work), a step-back and a fadeaway take a little longer (the gather back / the drift), and a three takes a
+// touch longer to load than a mid-range jumper. Multiplies the base's release time (tRel).
+export function jumperTimingK(o = {}) {
+  let k = 1;
+  if ((o.moving || 0) > 2) k *= 0.95;
+  if (o.stepback) k *= 1.06;
+  else if (o.fade) k *= 1.04;
+  if (o.three) k *= 1.03;
+  return k;
 }
 
 export function gradeFromWindow(errSec, windowMs) {
@@ -122,7 +198,7 @@ export function finalChance(o) {
   const attr = attrFor(o.type, o.three, o.a);
   const b = o.badges || {};
   if (o.type === 'jumper' || o.type === 'ft') {
-    if (o.grade === 'excellent') p = p + (1 - p) * (0.24 + 0.36 * n(attr) + (b.deadeye ? 0.03 : 0));
+    if (o.grade === 'excellent') p = p + (1 - p) * (0.24 + 0.36 * n(attr) + 0.01 * bk(b, 'deadeye'));
     else if (o.grade === 'early' || o.grade === 'late') p *= (attr ?? 0) >= 99 ? 0.97 : (attr ?? 0) > 95 ? 0.9 : 0.85;
     else if (o.grade === 'vearly' || o.grade === 'vlate') p *= 0.38;
   }
@@ -130,8 +206,8 @@ export function finalChance(o) {
   // which scales with the defender's own ratings) and fatigue bring it down
   if ((attr ?? 0) >= 99 && o.grade !== 'vearly' && o.grade !== 'vlate') p = Math.max(p, o.type === 'jumper' ? (o.three ? 0.9 : 0.93) : 0.96);
   // contest
-  const deadeye = [0, 0.2, 0.35, 0.5, 0.6][b.deadeye || 0];
-  const finisher = [0, 0.15, 0.25, 0.35, 0.45][b.contact_finisher || 0];
+  const deadeye = Math.min(0.85, DEADEYE_CON[b.deadeye || 0]);
+  const finisher = Math.min(0.75, FINISHER_CON[b.contact_finisher || 0]);
   let c = Math.min(1.2, o.contest || 0);
   if (o.type === 'jumper') c *= 1 - deadeye;
   if (o.type === 'layup' || o.type === 'close') c *= 1 - finisher;
@@ -140,14 +216,20 @@ export function finalChance(o) {
   if (o.type === 'jumper') {
     p *= 1 - 0.12 * Math.min(1, (o.moving || 0) / 5);
     if (o.fade) p *= 0.88;
-    if (o.three && b.limitless && o.d > 7.6) p *= 1 + 0.08 * b.limitless;
-    if (o.catchShoot && b.catch_shoot) p *= 1 + 0.04 * b.catch_shoot;
-    if (o.corner && b.corner_specialist) p *= 1 + 0.05 * b.corner_specialist;
+    if (o.three && b.limitless && o.d > 7.6) p *= 1 + 0.08 * bk(b, 'limitless');
+    if (o.catchShoot && b.catch_shoot) p *= 1 + 0.04 * bk(b, 'catch_shoot');
+    if (o.corner && b.corner_specialist) p *= 1 + 0.05 * bk(b, 'corner_specialist');
   }
-  if (o.type === 'layup' && b.acrobat && o.contest > 0.5) p *= 1 + 0.05 * b.acrobat;
+  if (o.type === 'layup' && b.acrobat && o.contest > 0.5) p *= 1 + 0.05 * bk(b, 'acrobat');
+  // v0.4.5 timed layups (an untimed tap, grade 'none', plays like it always did)
+  if (o.type === 'layup') {
+    if (o.grade === 'excellent') p = p + (1 - p) * (0.45 + 0.2 * n(attr));
+    else if (o.grade === 'early' || o.grade === 'late') p *= 0.92;
+    else if (o.grade === 'vearly' || o.grade === 'vlate') p *= 0.62;
+  }
   p *= 0.72 + 0.28 * Math.max(0, Math.min(1, o.stamina ?? 1));
-  if (o.hot) p *= 1 + o.hot * 0.04;
-  if (o.clutch && b.clutch) p *= 1 + 0.05 * b.clutch;
+  if (o.hot) p *= 1.06; // v0.4.5: on fire
+  if (o.clutch && b.clutch) p *= 1 + 0.05 * bk(b, 'clutch');
   return Math.max(0.01, Math.min(0.97, p));
 }
 
@@ -159,20 +241,64 @@ export function paintWeight(distToRim) { return Math.max(0, Math.min(1, (4.4 - d
 export function defSkill(d, pw) {
   const r = d.ratings, b = d.badges || {};
   const perim = 0.74 + 0.5 * n(r.perimeter_d);
-  const inside = 0.58 + 0.4 * n(r.interior_d) + 0.14 * n(r.block) + (b.rim_protector || 0) * 0.02;
+  const inside = 0.58 + 0.4 * n(r.interior_d) + 0.14 * n(r.block) + bk(b, 'rim_protector') * 0.02;
   return perim + (inside - perim) * pw;
 }
 
 // v0.4.3 dunk packages: higher packages (they need higher dunk ratings) are flashier and posterize harder
-export const DUNK_TIER = { dunk_basic: 0, dunk_rimrocker: 1, dunk_tomahawk: 1, dunk_windmill: 2, dunk_contact: 2, dunk_flight: 3, dunk_highflyer: 3, wheel_dunk_showtime: 3 };
-export const STYLE_FLAIR = { power: 0, onehand: 0.3, tomahawk: 1, reverse: 1.5, double: 2, windmill: 2, cradle: 2.5, '360': 3 };
+export const DUNK_TIER = {
+  dunk_basic: 0, dunk_rimrocker: 1, dunk_tomahawk: 1, dunk_windmill: 2, dunk_contact: 2, dunk_flight: 3, dunk_highflyer: 3, wheel_dunk_showtime: 3,
+  // v0.4.5 packages
+  dunk_hammer: 1, dunk_liberty: 1, dunk_scoop: 2, dunk_switch: 2, dunk_180: 3, dunk_eastbay: 4,
+};
+export const STYLE_FLAIR = {
+  power: 0, onehand: 0.3, tomahawk: 1, reverse: 1.5, double: 2, windmill: 2, cradle: 2.5, '360': 3,
+  // v0.4.5 finishes
+  hammer: 1.2, liberty: 1.3, scoop: 2.2, switch: 2.6, 180: 3, eastbay: 4, hashsling: 4,
+  // v0.4.5 stage 7 signatures: Rim Rocker, Contact, Showtime, High Flyer
+  rimrock: 1.1, bully: 0.8, aroundback: 3.1, superman: 3.3,
+};
 export const dunkTier = p => DUNK_TIER[p?.dunkPkg] ?? 0;
+
+// v0.4.5 stage 7: size-up packages change the ball, not only the body: how low and how wide he keeps it, how fast
+// it pounds, and which in-place combos he works the defender with (chance per dribble while he's sizing up).
+// cross / btl / btb change hands; half (snake) slides it across and back; hesi holds it up at the hip for a beat.
+export const SIZEUP = {
+  basic: { hgt: 1, side: 1, freq: 1, combos: [], chance: 0 },
+  rhythm: { hgt: 1.02, side: 1, freq: 0.86, combos: ['cross'], chance: 0.25 },
+  pound: { hgt: 0.72, side: 0.9, freq: 1.42, combos: [], chance: 0 },
+  quick: { hgt: 0.9, side: 0.9, freq: 1.16, combos: ['cross'], chance: 0.45 },
+  snake: { hgt: 0.6, side: 1.25, freq: 1.1, combos: ['half', 'half', 'cross'], chance: 0.65 },
+  crab: { hgt: 0.86, side: 1.5, freq: 0.94, combos: ['cross'], chance: 0.35 },
+  stutter: { hgt: 0.9, side: 1, freq: 1.3, combos: ['hesi', 'hesi', 'cross'], chance: 0.55 },
+  elite: { hgt: 0.82, side: 0.95, freq: 1.2, combos: ['cross', 'btl'], chance: 0.7 },
+  ankle: { hgt: 0.74, side: 1.05, freq: 1.33, combos: ['btl', 'cross', 'btb'], chance: 0.78 },
+  showtime: { hgt: 0.96, side: 1.12, freq: 1.12, combos: ['btb', 'btl', 'btb'], chance: 0.7 },
+};
+export const sizeupOf = p => (p.speed < 1.2 ? SIZEUP[p.sizeupStyle] || SIZEUP.basic : null);
+// one dribble's worth of time; true when the ball hits the floor. The game and the store preview share it.
+export function advanceDribble(p, dt, rnd, pressured) {
+  const su = sizeupOf(p);
+  const freq = (1.55 + Math.min(1.1, p.speed * 0.2) + (p.action?.type === 'move' ? 0.6 : 0)) * (p.dribble.xover ? 1 + 0.12 * (p.sizeupLvl || 0) : 1) * (p.dribbleStyle?.freqK || 1) * (su ? su.freq : 1);
+  const prev = p.dribble.phase;
+  p.dribble.phase = (p.dribble.phase + freq * dt) % 1;
+  if (p.dribble.phase < prev) {
+    // the ball is back in a hand: finish a size-up combo, then maybe start another
+    const xo = p.dribble.xover;
+    if (xo) { if (xo !== 'half' && xo !== 'hesi') p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R'; p.dribble.xover = null; }
+    if (su && su.chance > 0 && !p.action && pressured && rnd() < su.chance) p.dribble.xover = su.combos[Math.min(su.combos.length - 1, Math.floor(rnd() * su.combos.length))];
+  }
+  return prev < 0.5 && p.dribble.phase >= 0.5;
+}
 // extra body yaw during a 360 dunk (the sim's ball path and the animator both use it, so the ball stays in hand)
 export function dunkSpin(a) {
-  if (!a || a.type !== 'dunk' || a.style !== '360' || !(a.slam > 0)) return 0;
-  const t0 = (a.takeoff || 0) + 0.03, t1 = a.slam - 0.06;
+  // v0.4.5: the 180 turns half a revolution on the way up and stays backward through the slam
+  if (!a || a.type !== 'dunk' || !(a.slam > 0)) return 0;
+  const turn = a.style === '360' ? Math.PI * 2 : a.style === '180' ? Math.PI : 0;
+  if (!turn) return 0;
+  const t0 = (a.takeoff || 0) + 0.03, t1 = a.slam - (a.style === '180' ? 0.12 : 0.06);
   const k = Math.max(0, Math.min(1, (a.t - t0) / Math.max(0.1, t1 - t0)));
-  return (a.spinDir || 1) * Math.PI * 2 * k * k * k * (k * (k * 6 - 15) + 10);
+  return (a.spinDir || 1) * turn * k * k * k * (k * (k * 6 - 15) + 10);
 }
 
 // Contest from defenders: returns 0 (open) .. 1.2 (smothered)
@@ -183,16 +309,18 @@ export function contestFor(shooter, defenders, rim, releaseH) {
   for (const d of defenders) {
     const dx = d.x - shooter.x, dz = d.z - shooter.z, dist = Math.hypot(dx, dz);
     // v0.4.3: rim protectors cover more ground in the paint
-    const range = 2.6 + pw * 0.35 * n(d.ratings.interior_d);
+    const range = (2.6 + pw * 0.35 * n(d.ratings.interior_d)) * DEF_K;
     if (dist > range) continue;
     const front = (dx * fx + dz * fz) / (fl * (dist || 1));
     const ang = front > 0.35 ? 1 : front > -0.1 ? 0.55 : 0.18 + pw * 0.22 * n(d.ratings.block);
-    const prox = Math.max(0, Math.min(1, (2.0 + pw * 0.3 * n(d.ratings.interior_d) - dist) / 1.45));
-    const reach = d.phys.reach + (d.y || 0) + (d.handsUp || d.action?.type === 'contest' || d.action?.type === 'block' ? 0.12 : -0.35);
+    const prox = Math.max(0, Math.min(1, ((2.0 + pw * 0.3 * n(d.ratings.interior_d)) * DEF_K - dist) / 1.45));
+    // v0.4.5: hands up on a shot puts 3.75% more pressure on it
+    const up = d.handsUp || d.action?.type === 'contest' || d.action?.type === 'block';
+    const reach = d.phys.reach + (d.y || 0) + (up ? 0.12 * DEF_K : -0.35);
     // height and length count for more around the rim
     const hk = Math.max(0.35, Math.min(1.25 + 0.08 * pw, 0.75 + (reach - releaseH) * (0.7 + 0.3 * pw)));
-    const timing = d.airborne && d.action && d.action.type === 'block' ? 1.1 + 0.15 * n(d.ratings.block) : 1;
-    cs.push(prox * ang * hk * timing * defSkill(d, pw));
+    const timing = d.airborne && d.action && d.action.type === 'block' ? (1.1 + 0.15 * n(d.ratings.block)) * DEF_K : 1;
+    cs.push(prox * ang * hk * timing * defSkill(d, pw) * (up ? DEF_K : 1));
   }
   cs.sort((a, b) => b - a);
   return Math.min(1.25, (cs[0] || 0) + (cs[1] || 0) * 0.3);
@@ -300,13 +428,16 @@ export function shotTypeFor(player, rim, ctx = {}) {
   const a = player.ratings;
   if (ctx.forceJumper) return { type: 'jumper', d };
   const lift = player.phys.reach + player.phys.vertical;
-  const canDunk = (a.driving_dunk ?? 0) >= 55 && player.stamina > 0.12 && lift > 3.2;
-  const canStand = (a.standing_dunk ?? 0) >= 65 && lift > 3.25;
+  const raw = player.raw || a; // gating uses the build's real ratings
+  const canDunk = (raw.driving_dunk ?? 0) >= 55 && player.stamina > 0.12 && lift > 3.2;
+  const canStand = (raw.standing_dunk ?? 0) >= 65 && lift > 3.25;
   const cover = coverage(player, rim, d, ctx.defs || []);
   if (ctx.attack) {
     // dedicated bind: dunk whenever physically possible, otherwise the best available finish
     if (d < 1.6 && canStand) return { type: 'dunk', d, standing: true, cover };
     if (d < 4.2 && canDunk && (speed > 1.2 || d < 2.4)) return { type: 'dunk', d, cover };
+    // v0.4.5: with an empty lane ahead the bind takes off from further out (long gather), at full speed
+    if (d < 5.8 && canDunk && speed > 3 && toward > 0.7 && cover.open) return { type: 'dunk', d, cover, long: true };
     if (d < 4.4) return { type: d < 1.6 && speed < 1 ? 'close' : 'layup', d, cover };
     return { type: 'none', d };
   }

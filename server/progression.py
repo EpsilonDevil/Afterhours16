@@ -6,9 +6,13 @@ anything. Rewards, Rep and badges are computed here, never trusted from the clie
 """
 import re
 import time
-from .builds import Invalid, strict_keys, integer
+from .builds import Invalid, strict_keys, integer, hof_count, hof_init, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K
 
-MODES = {"park": {"formats": (1, 2, 3), "min_seconds": 40}, "proam": {"formats": (5,), "min_seconds": 120}, "practice": {"formats": (1,), "min_seconds": 0}}
+VC_K = 1.35  # v0.4.5: every game pays 35% more VC
+
+MODES = {"park": {"formats": (1, 2, 3), "min_seconds": 40}, "proam": {"formats": (5,), "min_seconds": 120}, "prorun": {"formats": (5,), "min_seconds": 120}, "practice": {"formats": (1,), "min_seconds": 0}}
+# v0.4.5 The Pro Run: VC and badge progress at 1.5x the park rate (no Rep: the Pro Run is its own career)
+PRORUN_K = 1.5
 AFFILIATIONS = ("harbor", "brick", "foundry")
 PARK_VENUES = AFFILIATIONS
 STAT_KEYS = ("pts", "reb", "oreb", "ast", "stl", "blk", "tov", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "pf",
@@ -40,6 +44,18 @@ BADGES = {
     "chasedown": {"name": "Chase-Down Artist", "group": "Defense", "stat": "blk", "tiers": (15, 50, 120, 250), "desc": "Blocks from behind on breakaways."},
     "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "games", "tiers": (10, 35, 90, 180), "desc": "Screens and bumps hit harder."},
     "rebound_chaser": {"name": "Rebound Chaser", "group": "Rebounding", "stat": "reb", "tiers": (40, 140, 350, 700), "desc": "Track down more boards."},
+}
+
+# v0.4.5 Archetype Icon badges (mirrors client/js/sim/badges.js ICON_BADGES): unlocked by a build's 7th HOF badge
+ICON_BADGES = {
+    "sharp_eye": {"name": "Sharp Eye", "archetype": "sharpshooter", "desc": "5% bigger green window on every shot, everywhere on the court. Unlocks exclusive ultra-flashy shooting animations."},
+    "hash_slinging": {"name": "Hash-Slinging", "archetype": "slasher", "desc": "+5% Driving Dunk and Standing Dunk (can pass 99). Unlocks exclusive ultra-flashy dunk animations."},
+    "oprah": {"name": "Oprah", "archetype": "playmaker", "desc": "+5% Ball Handle, Speed with Ball and Pass Accuracy (can pass 99). Unlocks exclusive ultra-flashy passing animations."},
+    "the_clamp": {"name": "The Clamp", "archetype": "lockdown", "desc": "+5% Perimeter D and Steal (can pass 99). Unlocks steal animations that exist only for this badge."},
+    "the_general": {"name": "The General", "archetype": "two_way", "desc": "+2.5% to every attribute (can pass 99). Unlocks an exclusive salute celebration."},
+    "big_brother": {"name": "Big Brother", "archetype": "glass_cleaner", "desc": "+5% Offensive and Defensive Rebound, Block and Interior D (can pass 99). Unlocks exclusive ultra-flashy block animations."},
+    "open_arms": {"name": "Open Arms", "archetype": "stretch_big", "desc": "+3% to every shooting and defense attribute (can pass 99). Unlocks exclusive ultra-flashy rebound snags."},
+    "sexy_red": {"name": "Sexy Red", "archetype": "post_scorer", "desc": "+5% Layup, Post Control and Close Shot (can pass 99). Unlocks exclusive post back-down animations."},
 }
 
 
@@ -107,10 +123,10 @@ def validate_summary(data, ticket):
             min_secs = max(MODES["park"]["min_seconds"], (max(score) // 3) * 4)
             if duration < min_secs:
                 raise Invalid("That game finished faster than a real game can.")
-    elif mode == "proam":
+    elif mode in ("proam", "prorun"):
         if not forfeit:
             if winner not in (0, 1) or score[0] == score[1] or score[winner] < score[1 - winner]:
-                raise Invalid("Pro-Am games need a winner.")
+                raise Invalid("Games with a clock need a winner.")
             q = ticket["meta"].get("quarter_len", 180) * ticket["meta"].get("quarters", 4)
             if duration < min(q * 0.75, q - 30):
                 raise Invalid("That game finished faster than the game clock allows.")
@@ -127,30 +143,44 @@ def rewards(summary, ticket, char):
     if summary["forfeit"]:
         return {"vc": 0, "rep": 0, "won": False, "streak": 0, "badges": {}}
     statline = s["pts"] * 8 + s["ast"] * 10 + s["reb"] * 6 + s["stl"] * 12 + s["blk"] * 12 + s["dunks"] * 5 + s["ankles"] * 15 - s["tov"] * 4
+    pot = 0
     if mode == "park":
         streak = ticket["meta"].get("streak", 0) + 1 if won else 0
         mult = streak_multiplier(streak) if won else 1.0
-        vc = 160 + (180 if won else 40) + max(0, statline)
-        vc = min(int(vc * mult), int(2200 * mult))
+        vc = (160 + (180 if won else 40) + max(0, statline)) * VC_K
+        vc = min(int(vc * mult), int(2200 * VC_K * mult))
         rep = (70 if won else 25) + s["pts"] * 2 + s["ast"] * 3 + s["reb"] * 2 + s["stl"] * 3 + s["blk"] * 3 + s["ankles"] * 6 + s["posters"] * 8
         rep = int(rep * mult)
+        # v0.4.5 King Tut Cup ante-up: the stake was taken when the game started. A win pays it back plus the
+        # other side's stake, boosted by the Cup streak multiplier; a loss pays nothing back.
+        ante = int(ticket["meta"].get("ante") or 0)
+        if ante and won:
+            pot = ante + int(ante * mult)
+            vc += pot
     elif mode == "proam":
         streak = 0
-        vc = min(3600, 300 + (300 if won else 80) + max(0, statline))
+        vc = min(int(3600 * VC_K), int((300 + (300 if won else 80) + max(0, statline)) * VC_K))
         rep = int(((50 if won else 20) + s["pts"] + s["ast"] * 2 + s["reb"] + s["stl"] * 2 + s["blk"] * 2) * 0.6)
+    elif mode == "prorun":
+        # the park formula without a streak, at 1.5x
+        streak, rep = 0, 0
+        vc = min(int((160 + (180 if won else 40) + max(0, statline)) * VC_K * PRORUN_K), int(2200 * VC_K * PRORUN_K))
     else:
         streak, vc, rep = 0, 0, 0
-    # badge progress
+    # badge progress (v0.4.5: 1.5x in the Pro Run)
     gains = {}
     stat_for = dict(s)
     stat_for["games"] = 1
+    k = PRORUN_K if mode == "prorun" else 1
     for bid, b in BADGES.items():
-        inc = min(stat_for.get(b["stat"], 0), 40)
+        inc = min(int(round(stat_for.get(b["stat"], 0) * k)), int(40 * k))
         if inc > 0:
             gains[bid] = inc
     out = {"vc": int(vc), "rep": int(max(0, rep)), "won": won, "streak": streak, "badges": gains}
     if mode == "park":
         out["streak_mult"] = streak_multiplier(streak) if won else 1.0
+        if ticket["meta"].get("venue") == "kingtut":
+            out["cup"] = {"ante": int(ticket["meta"].get("ante") or 0), "pot": pot}
     return out
 
 
@@ -163,8 +193,10 @@ def apply_progress(char, summary, rw):
     prog["rep"] = prog.get("rep", 0) + rw["rep"]
     after = rep_info(prog["rep"])
     mode = summary["mode"]
-    if mode in ("park", "proam"):
-        m = prog.setdefault(mode, {"games": 0, "wins": 0})
+    if mode in ("park", "proam", "prorun"):
+        # v0.4.5: King Tut Cup games keep their own record and streak (the park streak is untouched)
+        key = "cup" if rw.get("cup") is not None else mode
+        m = prog.setdefault(key, {"games": 0, "wins": 0})
         m["games"] = m.get("games", 0) + 1
         m["wins"] = m.get("wins", 0) + (1 if rw["won"] else 0)
         if mode == "park":
@@ -175,7 +207,7 @@ def apply_progress(char, summary, rw):
         career[k] = career.get(k, 0) + v
     # v0.4.4: lifetime splits per mode (games played, seconds, wins and the full stat line) for the Stats screen
     # and for the auto-play profile
-    if mode in ("park", "proam"):
+    if mode in ("park", "proam", "prorun"):
         split = prog.setdefault("career_modes", {}).setdefault(mode, {"gp": 0, "secs": 0, "wins": 0})
         split["gp"] = split.get("gp", 0) + 1
         split["secs"] = split.get("secs", 0) + int(summary["duration"])
@@ -184,15 +216,34 @@ def apply_progress(char, summary, rw):
             split[k] = split.get(k, 0) + v
     upgraded = []
     badges = char.setdefault("badges", {})
+    hof_init(char)
+    cap_breakers_awarded = 0
+    icon_unlocked = None
     for bid, inc in rw["badges"].items():
         b = badges.setdefault(bid, {"progress": 0, "tier": 0})
         b["progress"] += inc
         tiers = BADGES[bid]["tiers"]
         new_tier = sum(1 for t in tiers if b["progress"] >= t)
+        # v0.4.5: a build holds at most 7 Hall of Fame badges; others stop at Gold
+        if new_tier >= 4 and b["tier"] < 4 and hof_count(char) >= HOF_LIMIT:
+            new_tier = 3
         if new_tier > b["tier"]:
+            reached_hof = new_tier >= 4 and b["tier"] < 4
             upgraded.append({"id": bid, "name": BADGES[bid]["name"], "tier": new_tier})
             b["tier"] = new_tier
-    return {"rep_before": before, "rep_after": after, "badges_upgraded": upgraded}
+            if reached_hof:
+                n = hof_count(char)
+                # the first 5 Hall of Fame badges each bring 5 cap breakers; the 7th unlocks the Icon badge
+                if n <= CAP_BREAKER_HOF_LIMIT:
+                    cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
+                    cb["earned"] = cb.get("earned", 0) + CAP_BREAKERS_PER_HOF
+                    cb["available"] = cb.get("available", 0) + CAP_BREAKERS_PER_HOF
+                    cap_breakers_awarded += CAP_BREAKERS_PER_HOF
+                if n >= HOF_LIMIT and not char.get("icon_badge"):
+                    char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
+                    icon_unlocked = char["icon_badge"]
+    return {"rep_before": before, "rep_after": after, "badges_upgraded": upgraded,
+            "cap_breakers_awarded": cap_breakers_awarded, "icon_unlocked": icon_unlocked}
 
 
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -200,8 +251,9 @@ LOGOS = ("circle", "shield", "diamond", "hex", "star", "crown", "bolt")
 
 # ---------------- v0.4.2: park win-streak multiplier ----------------
 def streak_multiplier(streak):
-    """VC and Rep multiplier for a park win: 1.0 for the first win, +0.15 per extra straight win, up to 2.5x."""
-    return round(1 + 0.15 * min(10, max(0, streak - 1)), 2)
+    """VC and Rep multiplier for a park win: 1.0 for the first win, +0.30 per extra straight win, up to 4x
+    (v0.4.5 doubled the streak bonus; it was +0.15 up to 2.5x)."""
+    return round(1 + 0.30 * min(10, max(0, streak - 1)), 2)
 
 
 # ---------------- v0.4.2: daily rewards wheel ----------------
@@ -238,7 +290,7 @@ BOOSTS = {
     "athleticism": {"name": "Athleticism", "attrs": ("speed", "acceleration", "vertical", "strength", "stamina")},
 }
 BOOST_AMOUNT = 5
-BOOST_PACKS = {1: 600, 3: 1500, 5: 2250}  # games -> VC
+BOOST_PACKS = {1: 390, 3: 975, 5: 1460}  # games -> VC (v0.4.5: 35% cheaper)
 BOOST_MAX_GAMES = 10
 WOODS = ("natural", "blonde", "dark")
 

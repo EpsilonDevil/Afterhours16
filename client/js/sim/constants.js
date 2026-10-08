@@ -29,3 +29,17 @@ export function inBounds(x, z, pad = 0) {
 }
 export const INCH = 0.0254;
 export const LB = 0.4536;
+
+// v0.4.5 out of bounds, regulation style: the court's measurements run to the INSIDE edge of the painted
+// boundary lines, which are 2" (5.08 cm) wide and are themselves out of bounds. A ball touching the floor on or
+// past a line is out (its floor contact is right under its center); a player is out as soon as a foot touches
+// a line (feet reach about 12 cm from his center). Half-court games use the painted half-court line, drawn just
+// outside the half that's in play, as their back boundary.
+export const LINE_W = 0.0508;
+export const FOOT_R = 0.12;
+export function ballOut(x, z, half = false) {
+  return Math.abs(x) >= COURT.width / 2 || Math.abs(z) >= COURT.length / 2 || (half && z <= 0);
+}
+export function feetOut(x, z, half = false) {
+  return Math.abs(x) + FOOT_R >= COURT.width / 2 || Math.abs(z) + FOOT_R >= COURT.length / 2 || (half && z - FOOT_R <= 0);
+}
