@@ -187,6 +187,54 @@ vec3 aces(vec3 x) {
   return clamp(m2 * (a / b), 0.0, 1.0);
 }
 
+#ifdef FLAME
+// v0.4.5 quick patch: procedural fire for the park win-streak walls (world/streakfx.js). No texture, so nothing
+// repeats: value noise rising through the wall, warped by a second, slower noise, with tongue heights drifting
+// along the court's edge. vUV.x is metres along the edge (continuous all the way round), vUV.y is 0 at the floor
+// to 1 at the top of the wall.
+uniform vec4 uFlame;  // x: brightness, y: wall height (m), z: noise cells per metre along the edge, w: cells round the edge
+uniform vec4 uFlameT; // x: time (s, wraps every FLAME_LOOP s without a seam), y: per-court seed, z: density
+const float FLAME_SPEED = 289.0 / 240.0; // noise cells per second: the y lattice wraps every 289 cells, so the motion loops every 240 s
+float fl_hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+// value noise that wraps every per cells along x (so the fire closes round the court with no seam) and every 289
+// cells along y (so the rising motion loops seamlessly)
+float fl_noise(vec2 p, float per) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 i0 = vec2(mod(i.x, per), mod(i.y, 289.0)), i1 = vec2(mod(i.x + 1.0, per), mod(i.y + 1.0, 289.0));
+  return mix(mix(fl_hash(i0), fl_hash(vec2(i1.x, i0.y)), f.x), mix(fl_hash(vec2(i0.x, i1.y)), fl_hash(i1), f.x), f.y);
+}
+float fl_fbm(vec2 p, float per, int oct) {
+  float v = 0.0, a = 0.5, n = 0.0;
+  for (int k = 0; k < 5; k++) {
+    if (k >= oct) break;
+    v += a * fl_noise(p, per); n += a;
+    p = p * 2.0 + vec2(0.0, 7.0 * float(k + 1)); per *= 2.0; a *= 0.5;
+  }
+  return v / n;
+}
+vec3 flameColor(vec2 uv) {
+  float per = uFlame.w, t = uFlameT.x, sd = uFlameT.y;
+  float x = uv.x * uFlame.z, ym = uv.y * uFlame.y, h = uv.y;
+  // how tall the tongues reach drifts slowly along the edge
+  float tall = 0.3 + 0.7 * fl_noise(vec2(x * 0.25, t * FLAME_SPEED + sd), per * 0.25);
+  // a slow warp; the tongues (stretched upward) rising through it; finer flicker inside them
+  float w = fl_fbm(vec2(x * 0.5, ym * 0.5 - t * FLAME_SPEED * 2.0 + sd), per * 0.5, 3);
+  float n = fl_fbm(vec2(x + w * 1.3, ym * 0.7 - t * FLAME_SPEED * 4.0 + sd * 1.7), per, 5);
+  float det = fl_fbm(vec2(x * 2.0 + w, ym * 1.5 - t * FLAME_SPEED * 6.0 + sd * 2.3), per * 2.0, 3);
+  // the body: dense at the floor, breaking into tongues that thin out to their tips; clear at the top of the wall
+  float body = n - pow(h / tall, 1.2) * 0.9 + 0.15 + uFlameT.z;
+  float fire = smoothstep(0.0, 0.45, body) * (0.25 + 1.1 * det);
+  fire *= smoothstep(0.0, 0.06, ym) * (1.0 - smoothstep(0.82, 1.0, h));
+  // hottest (yellow-white) low down, cooling to orange and red towards the tips
+  float temp = fire * (0.85 - 0.75 * h);
+  vec3 c = mix(vec3(0.5, 0.04, 0.0), vec3(1.0, 0.33, 0.03), smoothstep(0.0, 0.35, temp));
+  c = mix(c, vec3(1.0, 0.72, 0.22), smoothstep(0.35, 0.7, temp));
+  c = mix(c, vec3(1.0, 0.95, 0.75), smoothstep(0.7, 1.0, temp));
+  return c * fire * uFlame.x;
+}
+#endif
+
 void main() {
   if (vWorld.y < uClipY) discard;
   vec4 base = vec4(uBaseColor, uOpacity) * vColor;
@@ -246,6 +294,10 @@ void main() {
 
 #ifdef UNLIT
   vec3 color = base.rgb + uEmissive;
+#ifdef FLAME
+  color = flameColor(vUV);
+  base.a = 1.0;
+#endif
 #else
   vec3 V = normalize(uCamPos - vWorld);
   float NoV = clamp(dot(N, V), 1e-3, 1.0);

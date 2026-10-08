@@ -432,30 +432,6 @@ export function flameTexture(size = 256) {
   g.bezierCurveTo(r * 0.34, -r * 0.02, r * 0.3, r * 0.24, 0, r * 0.3); g.fill(); g.restore();
   return c;
 }
-// v0.4.5 flame wall strip (park win streaks): flame tongues on black, tiling left-right, for additive blending.
-// The wall scrolls this upward so the fire rolls.
-export function flameWallTexture(w = 256, h = 256, seed = 5) {
-  const c = canvas(w, h), g = ctx2d(c), rng = new RNG(seed);
-  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
-  g.globalCompositeOperation = 'lighter';
-  const base = g.createLinearGradient(0, h, 0, h * 0.55);
-  base.addColorStop(0, 'rgba(255,170,60,0.9)'); base.addColorStop(1, 'rgba(255,60,0,0)');
-  g.fillStyle = base; g.fillRect(0, h * 0.55, w, h * 0.45);
-  for (let k = 0; k < 26; k++) {
-    const x = rng.next() * w, len = h * (0.35 + rng.next() * 0.6), wd = w * (0.04 + rng.next() * 0.06);
-    for (const ox of [-w, 0, w]) {
-      const fg = g.createLinearGradient(0, h, 0, h - len);
-      fg.addColorStop(0, 'rgba(255,230,150,0.85)'); fg.addColorStop(0.35, 'rgba(255,130,25,0.75)'); fg.addColorStop(1, 'rgba(200,30,0,0)');
-      g.fillStyle = fg; g.beginPath();
-      g.moveTo(x + ox - wd, h);
-      g.bezierCurveTo(x + ox - wd * 1.1, h - len * 0.4, x + ox - wd * 0.2, h - len * 0.8, x + ox + (rng.next() - 0.5) * wd, h - len);
-      g.bezierCurveTo(x + ox + wd * 0.2, h - len * 0.8, x + ox + wd * 1.1, h - len * 0.4, x + ox + wd, h);
-      g.closePath(); g.fill();
-    }
-  }
-  g.globalCompositeOperation = 'source-over';
-  return c;
-}
 export function iceTexture(size = 256) {
   const c = canvas(size, size), g = ctx2d(c), r = size / 2;
   g.clearRect(0, 0, size, size);

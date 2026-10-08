@@ -2,7 +2,7 @@
 // the podium. The Showroom draws it; tests drive it directly to check that every animation package looks
 // different (v0.4.5 stage 7).
 import { Player } from '../sim/player.js';
-import { Game } from '../sim/game.js';
+import { Game, MOVE_SNAP } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
 import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
 
@@ -73,7 +73,7 @@ export class PreviewSim {
           p.dribble.xover = null;
           const mv = ['cross', 'btl', 'btb', 'hesi', 'cross', 'spin'][Math.floor(this.pt / 0.6) % 6];
           const durs = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5 };
-          p.startAction('move', durs[mv] / ms, { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
+          p.startAction('move', durs[mv] * MOVE_SNAP / ms, { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
         }
       }
       if (p.action && p.action.type === 'move' && p.action.t >= p.action.dur) {

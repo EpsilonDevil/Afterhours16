@@ -1,12 +1,36 @@
 // In-game DOM HUD: score bug, shot meter, release feedback, player tags, feed, big callouts.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// the shot meter's track runs from the start of the shot (0) to 30% past the ideal release (1)
+export const METER_SCALE = 1.3;
+export const METER_COLORS = { core: '#1fe07a', boost: '#7fe25e', edge: '#ffc23a', line: 'rgba(4, 26, 12, .6)' };
+const METER_PX = 128; // .hud-meter height in app.css
+// The window's fill, bottom to top: yellow at the outer edges of the boosts, through lime, to the solid green core
+// (the natural window), with a hairline at the core's edges when there's room for it.
+export function meterGradient(lo, span, nat, half) {
+  const C = METER_COLORS;
+  if (nat >= half - 1e-6) return C.core;
+  const a = +(((1 - nat - lo) / span) * 100).toFixed(3), b = +(((1 + nat - lo) / span) * 100).toFixed(3);
+  const corePx = (nat * 2 / METER_SCALE) * METER_PX;
+  if (corePx < 6) return `linear-gradient(0deg, ${C.edge} 0%, ${C.boost} ${a}%, ${C.core} ${a}%, ${C.core} ${b}%, ${C.boost} ${b}%, ${C.edge} 100%)`;
+  return `linear-gradient(0deg, ${C.edge} 0%, ${C.boost} ${a}%, ${C.line} ${a}%, ${C.line} calc(${a}% + 1px), ${C.core} calc(${a}% + 1px), ${C.core} calc(${b}% - 1px), ${C.line} calc(${b}% - 1px), ${C.line} ${b}%, ${C.boost} ${b}%, ${C.edge} 100%)`;
+}
+
+// what the meter's colors mean (the Tab overlay shows it under the controls)
+export function meterLegendHTML() {
+  return `<h3>Shot meter</h3><div class="meter-legend">
+    <span><i class="ml-core"></i>Solid green: the green window your ratings give you on their own</span>
+    <span><i class="ml-boost"></i>Fading out to yellow: what boosts add (badges, Icon badge, takeover, animations). Still a green release</span>
+    <span><i class="ml-ring"></i>Outlined: perfect timing, but not an automatic make (layups, shots from past 35 ft)</span>
+    <span>Let go anywhere inside the window for an Excellent release. No window: smothered, or past half court.</span></div>`;
+}
+
 export class HUD {
   constructor(root) {
     this.root = root;
     root.innerHTML = `
       <div class="hud-score" id="hud-score"></div>
-      <div class="hud-meter" id="hud-meter"><div class="hud-meter-fill"></div><div class="hud-meter-green"></div></div>
+      <div class="hud-meter" id="hud-meter"><div class="hm-track"><div class="hm-fill"></div></div><div class="hm-win"></div><div class="hm-edge"></div><div class="hm-cursor"></div></div>
       <div class="hud-feedback" id="hud-feedback"></div>
       <div class="hud-tags" id="hud-tags"></div>
       <div class="hud-feed" id="hud-feed"></div>
@@ -21,8 +45,11 @@ export class HUD {
     this.el = id => root.querySelector('#' + id);
     this.score = this.el('hud-score');
     this.meter = this.el('hud-meter');
-    this.meterFill = this.meter.querySelector('.hud-meter-fill');
-    this.meterGreen = this.meter.querySelector('.hud-meter-green');
+    this.meterFill = this.meter.querySelector('.hm-fill');
+    this.meterWin = this.meter.querySelector('.hm-win');
+    this.meterEdge = this.meter.querySelector('.hm-edge');
+    this.meterCursor = this.meter.querySelector('.hm-cursor');
+    this.meterKey = '';
     this.feedback = this.el('hud-feedback');
     this.tags = this.el('hud-tags');
     this.feed = this.el('hud-feed');
@@ -60,17 +87,34 @@ export class HUD {
       <div class="sb-shot ${info.shot <= 5 ? 'low' : ''}">${info.shot != null ? Math.ceil(info.shot) : ''}</div>`;
   }
 
-  // meter: {x,y, fill 0..1.3, greenAt (0..1), greenW, state: 'charging'|'released', grade}
+  // v0.4.5 quick patch shot meter. m: {x, y, fill (1 = the ideal release), half (the green window's half-width, same
+  // units: you get an Excellent anywhere in 1 ± half), nat (the half-width the build's own ratings give, without any
+  // badge, Icon badge, takeover or animation bonus), sure (an Excellent there is an automatic make), smothered, grade}.
+  // Everything is drawn to scale on one track, so the window on screen is exactly the window that's graded:
+  //   solid green core   - the build's natural window (ratings only)
+  //   gradient to yellow - the part added by boosts
+  //   outlined window    - perfect timing, but not an automatic make (layups, past 35 ft)
   setMeter(m) {
-    if (!m) { this.meter.classList.remove('on'); return; }
+    if (!m) { this.meter.classList.remove('on'); this.meterKey = ''; return; }
     this.meter.classList.add('on');
-    this.meter.style.transform = `translate(${m.x + 34}px, ${m.y - 70}px)`;
-    const f = Math.min(1.25, m.fill);
-    this.meterFill.style.height = `${Math.min(100, f / 1.25 * 100)}%`;
-    this.meterGreen.style.bottom = `${(m.greenAt / 1.25) * 100 - m.greenW / 1.25 * 50}%`;
-    this.meterGreen.style.height = `${m.greenW / 1.25 * 100}%`;
+    this.meter.style.transform = `translate(${m.x + 34}px, ${m.y - 78}px)`;
+    const pct = v => `${(v / METER_SCALE) * 100}%`;
+    const f = Math.max(0, Math.min(METER_SCALE, m.fill));
+    this.meterFill.style.height = pct(f);
+    this.meterCursor.style.bottom = pct(f);
     this.meter.dataset.grade = m.grade || '';
     this.meter.classList.toggle('smothered', !!m.smothered);
+    this.meter.classList.toggle('luck', !m.sure);
+    const half = Math.max(0, m.half || 0), nat = Math.min(half, Math.max(0, m.nat ?? half));
+    const key = `${half.toFixed(5)}|${nat.toFixed(5)}`;
+    if (key === this.meterKey) return;
+    this.meterKey = key;
+    const win = this.meterWin, edge = this.meterEdge;
+    if (half <= 0) { win.hidden = edge.hidden = true; return; }
+    win.hidden = edge.hidden = false;
+    const lo = Math.max(0, 1 - half), hi = Math.min(METER_SCALE, 1 + half), span = hi - lo;
+    for (const el of [win, edge]) { el.style.bottom = pct(lo); el.style.height = pct(span); }
+    win.style.background = edge.style.background = meterGradient(lo, span, nat, half);
   }
 
   release(x, y, text, color, sub) {

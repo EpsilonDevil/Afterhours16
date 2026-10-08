@@ -38,11 +38,15 @@ export class Material {
     this.depthWrite = o.depthWrite ?? !this.blend;
     this.depthTest = o.depthTest ?? true;
     this.fog = o.fog ?? true;
+    // v0.4.5 quick patch: procedural fire (shaders.js FLAME): [brightness, wall height m, cells/m, cells round]
+    // and [time s, seed, density, 0]
+    this.flame = o.flame || null;
+    this.flameT = o.flameT || [0, 0, 0, 0];
   }
   defines(ldr) {
     return {
       HAS_MAP: !!this.map, HAS_NORMALMAP: !!this.normalMap, HAS_RMAP: !!this.roughMap, HAS_EMAP: !!this.emissiveMap, HAS_DETAIL: !!this.detailMap,
-      ALPHA_MASK: this.alphaTest > 0, ALPHA_BLEND: !!this.blend, UNLIT: this.shading === 'unlit',
+      ALPHA_MASK: this.alphaTest > 0, ALPHA_BLEND: !!this.blend, UNLIT: this.shading === 'unlit' || !!this.flame, FLAME: !!this.flame,
       SKIN: this.shading === 'skin', CLOTH: this.shading === 'cloth', FLOOR: !!this.floor,
       REFLECTIVE: this.reflective, CHARACTER: this.character, CROWD: this.crowd, LDR: ldr,
     };
@@ -308,6 +312,7 @@ export class Renderer {
     if (m.floor) { c.set(p, 'uOverlay', m.floor.overlay); c.set(p, 'uOverlayRect', m.floor.rect); c.set(p, 'uFloorTile', m.floor.tile || [1, 1]); c.set(p, 'uFloorSwap', m.floor.swap ? 1 : 0); }
     if (m.reflective) c.set(p, 'uReflectStrength', this.reflRT && this.reflOn ? m.reflectStrength : 0);
     c.set(p, 'uFogDensity', m.fog ? this.fogDensity : 0);
+    if (m.flame) { c.set(p, 'uFlame', m.flame); c.set(p, 'uFlameT', m.flameT); }
   }
 
   drawList(list, scene, cam, pass) {

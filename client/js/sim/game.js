@@ -2,7 +2,7 @@
 // Park: halfcourt 21 by 2s/3s with check-ball and take-it-back. Pro-Am: full court 5v5 with quarters,
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
 import { RNG } from '../core/rng.js';
-import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R } from './constants.js';
+import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
 import * as S from './shots.js';
@@ -16,6 +16,11 @@ import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES } from './badg
 import { DEF_K } from './shots.js';
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 const MOVE_DUR = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5, stepback: 0.56, inout: 0.4 };
+// v0.4.5 quick patch: snappier dribble moves. Every move is 20% shorter, and a better Ball Handle and Speed With
+// Ball make it quicker still (up to about a third quicker on top). The next move can start once the current one is
+// 60% through (CHAIN_AT), and a different move started within COMBO_GAP of the last one is a combo: it costs no
+// stamina and is a little more likely to break ankles. Spamming the same move still drains you harder.
+export const MOVE_SNAP = 0.8, CHAIN_AT = 0.6, COMBO_GAP = 0.4;
 // v0.4.5: the ball travels 0.985% slower on passes
 const PASS_K = 1 - 0.00985;
 // v0.4.5 alley-oops: takeoff spot distance from the lob's aim point, and the most a receiver can drift in the air
@@ -203,6 +208,46 @@ export class Game {
   }
   // extra green-window share for a player (Sharp Eye Icon badge, shooting takeover)
   greenK(p) { return 1 + (p.icon && ICON_BADGES[p.icon]?.green || 0) + (p.takeover.active && TAKEOVERS[p.takeover.kind].green || 0); }
+
+  // v0.4.5 quick patch: the green window a release is graded against (ms of action time: ±total around the ideal
+  // release), and the part of it the build earns with its own ratings alone (natural: the attributes as the build
+  // shows them, with no badges, no Icon badge, no takeover and no animation bonus; it's never more than the real
+  // window, so a stat playing under its rating for want of badges is all core). The shot meter draws both from these
+  // same functions, so the green on screen is exactly the green that's graded. sure: an Excellent there is an
+  // automatic make (jumpers inside 35 ft and free throws; a green layup or a green from deep is a boost).
+  natural(p) { return p.raw || p.ratings; }
+  jumperWindow(p, a, contest) {
+    const rim = this.rimFor(p.team), side = this.sideFor(p.team);
+    const three = !this.practiceFT && isThree(a.startX, a.startZ, side);
+    const d = Math.hypot(rim.x - a.startX, rim.z - a.startZ);
+    const corner = three && Math.abs(a.startX) > 6.2, key = three ? 'three_point' : 'mid_range';
+    const ctx = { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p) };
+    const k = this.speed * (p.human ? this.greenBonus : 1);
+    const total = S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
+    const natural = S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
+    return { total, natural: Math.min(total, natural), sure: d <= S.DEEP_D && contest < S.SMOTHER, three, d, corner };
+  }
+  layupWindow(p, a, contest) {
+    const k = this.speed * (p.human ? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p) };
+    const total = S.layupWindowMs(p.ratings.layup, p.badges, ctx) * k;
+    const natural = S.layupWindowMs(this.natural(p).layup, {}, { ...ctx, greenK: 1, natural: true }) * k;
+    return { total, natural: Math.min(total, natural), sure: false };
+  }
+  // the contest a release on the next step would be graded with: releaseShot / releaseLayup measure it at the ball
+  // after that step's action tick, so the meter looks one tick ahead and matches the grade frame for frame
+  contestIfReleased(p) {
+    const a = p.action, t0 = a.t;
+    a.t = t0 + DT;
+    const y = this.holdPoint(p).y;
+    a.t = t0;
+    return S.contestFor(p, this.opponents(p), this.rimFor(p.team), y);
+  }
+  ftWindow(p) {
+    const k = this.speed * (p.human ? this.greenBonus : 1);
+    const total = S.greenWindowMs(p.ratings.free_throw, p.badges, { ft: true, greenK: this.greenK(p) }) * k;
+    const natural = S.greenWindowMs(this.natural(p).free_throw, {}, { ft: true }) * k;
+    return { total, natural: Math.min(total, natural), sure: true };
+  }
 
   // v0.4.2: which badges visibly mattered for this event -> 'badge' events (the HUD shows the user's)
   badgeTriggers(e) {
@@ -494,6 +539,8 @@ export class Game {
       }
       // v0.4.2 bailout: pass out of a jumper any time before the release, on the floor or in the air
       if (a && a.type === 'shoot' && it.pass && !a.released && this.mates(p).length) { this.bailout(p, it.pass); return; }
+      // v0.4.5 quick patch: chain the next dribble move once the current one is CHAIN_AT through
+      if (it.move && a && a.type === 'move' && a.t >= a.dur * CHAIN_AT && b.mode === 'dribble') { this.startMove(p, it.move); return; }
       if (!this.canAct(p)) return;
       if (this.phase === 'inbound') {
         if (it.pass && p === this.inbounder && this.phaseT <= 0) this.startPass(p, { ...it.pass, type: 'inbound' });
@@ -503,7 +550,8 @@ export class Game {
       if (it.shoot === 'press') { this.startShot(p, it); return; }
       if (it.pass) { this.startPass(p, it.pass); return; }
       if (it.move && b.mode === 'dribble') { this.startMove(p, it.move); return; }
-      if (it.move && b.mode === 'held' && !p.dribble.used && (it.move === 'stepback' || it.move === 'cross' || it.move === 'spin')) { b.mode = 'dribble'; this.startMove(p, it.move); return; }
+      // (v0.4.5: any move out of triple threat starts the dribble, as long as he hasn't already picked it up)
+      if (it.move && b.mode === 'held' && !p.dribble.used) { b.mode = 'dribble'; this.startMove(p, it.move); return; }
       // start dribbling when moving from triple threat
       if (b.mode === 'held' && Math.hypot(it.mx, it.mz) > 0.25 && !p.dribble.used) { b.mode = 'dribble'; p.dribble.phase = 0.0; }
       if (it.celebrate) { /* only after scores */ }
@@ -808,16 +856,24 @@ export class Game {
   }
 
   startMove(p, move) {
-    if (p.cool.move > 0 || p.stamina < 0.04) return;
-    // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder
-    const dur = (MOVE_DUR[move] || 0.45) / (p.moveSpeed || 1);
+    if (p.cool.move > 0) return;
+    // v0.4.5 quick patch: an exhausted player still does the move you called (it used to be silently refused under
+    // 4% stamina, which felt like the stick wasn't working); he's just slower and it bites less
+    const gassed = p.stamina < 0.12 ? 1 - p.stamina / 0.12 : 0;
     const handle = n(p.ratings.ball_handle);
+    // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder
+    const handleK = 1 + 0.22 * Math.min(1.2, handle) + 0.1 * Math.min(1.2, n(p.ratings.speed_with_ball));
+    const dur = (MOVE_DUR[move] || 0.45) * MOVE_SNAP / (p.moveSpeed || 1) / handleK * (1 + 0.25 * gassed);
+    // a different move straight out of the last one is a combo
+    const prev = p.lastMove, combo = !!prev && prev.move !== move && this.time <= prev.end + COMBO_GAP;
+    p.combo = combo ? (p.combo || 1) + 1 : 1;
+    p.lastMove = { move, end: this.time + dur };
     const fwdX = Math.sin(p.facing), fwdZ = Math.cos(p.facing), leftX = Math.cos(p.facing), leftZ = -Math.sin(p.facing);
     const hand = p.dribble.hand;
     const toward = hand === 'R' ? 1 : -1; // crossing from right hand moves ball to the left (+left)
     let vx = 0, vz = 0;
     const it = p.intent, il = Math.hypot(it.mx, it.mz);
-    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5);
+    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5) * (1 - 0.25 * gassed);
     const dirX = il > 0.2 ? it.mx / il : fwdX, dirZ = il > 0.2 ? it.mz / il : fwdZ;
     switch (move) {
       case 'cross': case 'btl': case 'btb':
@@ -838,8 +894,9 @@ export class Game {
     const st = p.stam;
     if (st.lastMove === move) st.moveRun++; else { st.lastMove = move; st.moveRun = 1; st.moveK = 1; }
     if (st.moveRun > 3) st.moveK = +(2 + 0.1 * (st.moveRun - 4)).toFixed(2);
-    p.spend(COST.move * Math.max(0.35, 1 - 0.12 * bk(p.badges, 'handles_for_days')));
-    p.cool.move = dur * 0.75 / (p.moveSpeed || 1);
+    if (!combo) p.spend(COST.move * Math.max(0.35, 1 - 0.12 * bk(p.badges, 'handles_for_days'))); // combos are free
+    p.cool.move = dur * 0.55; // (below CHAIN_AT, so a move can chain into the next)
+    a.combo = p.combo;
     this.ball.mode = 'dribble';
     this.emit({ type: 'move', player: p.id, move });
   }
@@ -1100,22 +1157,20 @@ export class Game {
     const b = this.ball;
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const err = a.releaseAt - a.tRel;
-    const attr = a.kind === 'close' ? p.ratings.close_shot : null;
-    const three = !this.practiceFT && isThree(a.startX, a.startZ, side);
-    const d = Math.hypot(rim.x - a.startX, rim.z - a.startZ);
-    const shotAttr = a.kind === 'close' ? attr : (three ? p.ratings.three_point : p.ratings.mid_range);
     const P = this.holdPoint(p);
     const contest = S.contestFor(p, this.opponents(p), rim, P.y);
-    const corner = three && Math.abs(a.startX) > 6.2;
-    const win = S.greenWindowMs(shotAttr, p.badges, { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: a.kind === 'close' ? null : p.shotPkg, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
+    // (a close shot isn't timed: no window, no Excellent)
+    const W = this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
     let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(err, win));
     if (grade === 'excellent' && contest >= S.SMOTHER) grade = err < 0 ? 'early' : 'late'; // no greens while smothered
     const clutch = this.isClutch(p.team);
     let chance = S.finalChance({ type: a.kind === 'close' ? 'close' : 'jumper', d, a: p.ratings, three, grade, contest, moving: a.moving, fade: a.fade, stamina: p.stamina, badges: p.badges, catchShoot: a.catchShoot, corner, hot: p.hot, clutch });
-    if (grade === 'excellent') chance = 1; // greens always go in (unless blocked in flight)
+    // greens always go in (unless blocked in flight), except past 35 ft, where it's mostly luck (shots.js DEEP_D)
+    const sure = grade === 'excellent' && d <= S.DEEP_D;
+    if (sure) chance = 1;
     const foul = this.checkShootingFoul(p, contest, 'jumper');
-    const made = grade === 'excellent' || this.rng.next() < chance;
-    const plan = S.planShot(this.rng, P, rim, side, made, a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: grade === 'excellent', guarantee: grade === 'excellent', bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' });
+    const made = sure || this.rng.next() < chance;
+    const plan = S.planShot(this.rng, P, rim, side, made, a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: sure, guarantee: sure, bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three, type: a.kind, made: plan.made, grade, chance, side, contest, foul, released: this.time, d, putback: false, catchShoot: !!a.catchShoot, corner, clutch: clutch && !!p.badges.clutch });
     b.wx = plan.wx; b.wy = plan.wy; b.wz = plan.wz;
     b.ghost = !!plan.ghost;
@@ -1124,7 +1179,7 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three };
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, three, made: plan.made, kind: a.kind, closest: this.closestDef(p) });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, three, made: plan.made, kind: a.kind, closest: this.closestDef(p), ...(a.kind === 'close' ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
     if (foul) this.pendingFoul = foul;
   }
 
@@ -1139,12 +1194,12 @@ export class Game {
     if (blocker) return;
     // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
     // boost that contact can still beat
-    let grade = 'none';
+    let grade = 'none', W = null;
     if (a.type === 'layup' && !a.oop) {
       if (this.isAI(p) && a.aiGrade) grade = a.aiGrade;
       else if (a.timed) {
-        const win = S.layupWindowMs(p.ratings.layup, p.badges, { contest, lstyle: a.lstyle, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
-        grade = S.gradeFromWindow(a.releaseAt - a.tRel, win);
+        W = this.layupWindow(p, a, contest);
+        grade = S.gradeFromWindow(a.releaseAt - a.tRel, W.total);
       }
     }
     const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade });
@@ -1158,7 +1213,7 @@ export class Game {
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     if (grade === 'excellent') p.stats.greens++;
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p) });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p), ...(W ? { err: a.releaseAt - a.tRel, tRel: a.tRel, win: W.total, nat: W.natural, sure: W.sure } : {}) });
     if (foul) this.pendingFoul = foul;
   }
 
@@ -1299,6 +1354,10 @@ export class Game {
       if (dv > 2.5 && moveDir < -0.4) pk += 0.05;
       if (d.action?.type === 'steal') pk += 0.12;
       if (a.move === 'hesi' || a.move === 'stepback') pk *= 0.7;
+      // v0.4.5 quick patch: moves are quicker now, so each one is a touch less likely to break ankles on its own (about
+      // the same ankle-breakers per minute as before); combos bite a little harder
+      pk *= 0.78;
+      if ((a.combo || 1) > 1) pk += 0.008 * Math.min(4, a.combo - 1);
       if (this.rng.next() < Math.max(0, pk)) {
         d.action = null;
         d.startAction('stumble', 1.35 + this.rng.range(0, 0.4), { fall: this.rng.next() < 0.55, dir: this.rng.next() < 0.5 ? 1 : -1 });
@@ -2145,7 +2204,7 @@ export class Game {
         if (p.human && !this.assist && a.releaseAt == null && a.t > a.tRel + 0.35) a.releaseAt = a.t;
         if (a.releaseAt != null && a.t >= a.releaseAt) {
           a.released = true;
-          const win = S.greenWindowMs(p.ratings.free_throw, p.badges, { ft: true, greenK: this.greenK(p) }) * this.speed * (p.human ? this.greenBonus : 1);
+          const W = this.ftWindow(p), win = W.total;
           const grade = a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(a.releaseAt - a.tRel, win);
           let chance = S.finalChance({ type: 'ft', d: 4.19, a: p.ratings, grade, stamina: p.stamina, badges: p.badges, clutch: this.isClutch(p.team) });
           if (grade === 'excellent') chance = 1;
@@ -2156,7 +2215,7 @@ export class Game {
           b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, ft: true, type: 'ft', made: plan.made, grade, chance, side: f.side, released: this.time });
           b.wx = plan.wx; b.wz = plan.wz; b.ghost = !!plan.ghost;
           p.stats.fta++;
-          this.emit({ type: 'release', player: p.id, grade, chance, contest: 0, three: false, made: plan.made, kind: 'ft' });
+          this.emit({ type: 'release', player: p.id, grade, chance, contest: 0, three: false, made: plan.made, kind: 'ft', err: a.releaseAt - a.tRel, tRel: a.tRel, win, nat: W.natural, sure: W.sure });
           this.phase = 'ftflight';
           this.phaseFlightGuard = true;
         }

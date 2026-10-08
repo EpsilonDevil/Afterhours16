@@ -69,6 +69,13 @@ export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
 // v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
 // package bonus included; the AI's green rate follows the same windows)
 export const GREEN_K = 0.9;
+// v0.4.5 quick patch: really deep shots are luck. Past 35 ft (10.67 m from the rim) the make chance slides down to
+// pure luck at the half-court line (12.73 m) and stays there beyond it: well under 1%, and 1% at the very most for
+// a 99 three-point shooter. Limitless helps up to 35 ft, not past it. The green window closes over the same stretch
+// (none at all past half court), and a green past 35 ft is a boost, not a sure make.
+export const DEEP_D = 35 * 0.3048, HALF_D = COURT.hoopZ;
+export const deepK = d => Math.max(0, Math.min(1, ((d || 0) - DEEP_D) / (HALF_D - DEEP_D)));
+export const deepLuck = attr => 0.001 + 0.009 * Math.pow(Math.max(0, Math.min(1, n(attr))), 2);
 export function greenWindowMs(attr, badges = {}, ctx = {}) {
   let w = timingWindowMs(attr, badges) * (ctx.greenK || 1); // v0.4.5: Sharp Eye / shooting takeover
   if (ctx.ft) return w * 1.15 * GREEN_K;
@@ -84,8 +91,12 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   if (ctx.three && (ctx.d || 0) > 7.9) w *= Math.max(0.3, 1 - ((ctx.d - 7.9) * 0.28) * (1 - Math.min(0.85, 0.18 * bk(b, 'limitless'))));
   if (ctx.catchShoot && b.catch_shoot) w *= 1 + 0.05 * bk(b, 'catch_shoot');
   if (ctx.corner && b.corner_specialist) w *= 1 + 0.05 * bk(b, 'corner_specialist');
+  if ((ctx.d || 0) > DEEP_D) return Math.max(0, w * (1 - deepK(ctx.d))) * GREEN_K; // (no 9 ms floor out there)
   return Math.max(9, w) * GREEN_K;
 }
+
+// v0.4.5 quick patch, shot meter: a jumpshot base's window bonus counts as a boost, its penalty as part of the build
+export const naturalPkg = pkg => (pkg ? { ...pkg, winK: Math.min(1, pkg.winK ?? 1) } : pkg);
 
 // v0.4.5 layup timing: hold the shot button through the gather and let go at the top. Each layup package has its
 // own timing (where in the air the ideal release is, and how forgiving it is) and the Layup rating sets the window
@@ -132,7 +143,8 @@ export const LAYUP_WIN_K = 1.2; // layups are a touch more forgiving than jumper
 // ctx: {contest, lstyle, greenK}
 export function layupWindowMs(attr, badges = {}, ctx = {}) {
   const f = LAYUP_FEEL[ctx.lstyle] || LAYUP_FEEL.basic;
-  let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * f.win * (ctx.greenK || 1);
+  // (ctx.natural: the shot meter's "ratings only" part keeps a package's penalty but not its bonus)
+  let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * (ctx.natural ? Math.min(1, f.win) : f.win) * (ctx.greenK || 1);
   const c = Math.min(1.2, ctx.contest || 0) * (1 - FINISHER_CON[(badges || {}).contact_finisher || 0]);
   w *= Math.max(0.5, 1 - 0.4 * c);
   return Math.max(9, w) * GREEN_K;
@@ -204,7 +216,8 @@ export function finalChance(o) {
   }
   // v0.4.4: a 99 is close to automatic when it isn't badly mistimed; from here only the defense (the contest,
   // which scales with the defender's own ratings) and fatigue bring it down
-  if ((attr ?? 0) >= 99 && o.grade !== 'vearly' && o.grade !== 'vlate') p = Math.max(p, o.type === 'jumper' ? (o.three ? 0.9 : 0.93) : 0.96);
+  const deep = o.type === 'jumper' && (o.d || 0) > DEEP_D;
+  if ((attr ?? 0) >= 99 && o.grade !== 'vearly' && o.grade !== 'vlate' && !deep) p = Math.max(p, o.type === 'jumper' ? (o.three ? 0.9 : 0.93) : 0.96);
   // contest
   const deadeye = Math.min(0.85, DEADEYE_CON[b.deadeye || 0]);
   const finisher = Math.min(0.75, FINISHER_CON[b.contact_finisher || 0]);
@@ -230,6 +243,12 @@ export function finalChance(o) {
   p *= 0.72 + 0.28 * Math.max(0, Math.min(1, o.stamina ?? 1));
   if (o.hot) p *= 1.06; // v0.4.5: on fire
   if (o.clutch && b.clutch) p *= 1 + 0.05 * bk(b, 'clutch');
+  if (deep) {
+    // past 35 ft: slide down to luck by the half-court line, and luck only beyond it (whatever the badges say)
+    const k = deepK(o.d), luck = deepLuck(attr);
+    p = p * (1 - k) * (1 - k) + luck * k;
+    return Math.max(0.0005, Math.min(o.d >= HALF_D ? luck : 0.97, p));
+  }
   return Math.max(0.01, Math.min(0.97, p));
 }
 
@@ -433,11 +452,14 @@ export function shotTypeFor(player, rim, ctx = {}) {
   const canStand = (raw.standing_dunk ?? 0) >= 65 && lift > 3.25;
   const cover = coverage(player, rim, d, ctx.defs || []);
   if (ctx.attack) {
-    // dedicated bind: dunk whenever physically possible, otherwise the best available finish
-    if (d < 1.6 && canStand) return { type: 'dunk', d, standing: true, cover };
-    if (d < 4.2 && canDunk && (speed > 1.2 || d < 2.4)) return { type: 'dunk', d, cover };
+    // dedicated bind: the finish you're better at, Driving Dunk (Standing Dunk right under the rim) or Layup, and on
+    // an exact tie the one your archetype plays (v0.4.5 quick patch; it used to dunk whenever it physically could).
+    // A dunk still has to be physically possible.
+    const dunkOver = dunkAttr => betterFinish(player, dunkAttr, raw.layup) === 'dunk';
+    if (d < 1.6 && canStand && dunkOver(raw.standing_dunk)) return { type: 'dunk', d, standing: true, cover };
+    if (d < 4.2 && canDunk && (speed > 1.2 || d < 2.4) && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover };
     // v0.4.5: with an empty lane ahead the bind takes off from further out (long gather), at full speed
-    if (d < 5.8 && canDunk && speed > 3 && toward > 0.7 && cover.open) return { type: 'dunk', d, cover, long: true };
+    if (d < 5.8 && canDunk && speed > 3 && toward > 0.7 && cover.open && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover, long: true };
     if (d < 4.4) return { type: d < 1.6 && speed < 1 ? 'close' : 'layup', d, cover };
     return { type: 'none', d };
   }
@@ -469,10 +491,29 @@ export function coverage(p, rim, d, defs) {
   return { rimProtector, wall, open: !rimProtector && !wall };
 }
 
-// 'dunk' | 'layup' | 'jumper' for a driving shot press
+// v0.4.5 quick patch: which finish an archetype plays when its dunk and layup ratings are exactly the same. Slashers
+// and the bigs who live in the paint dunk; the guards, shooters, stretch bigs and two-way wings lay it in.
+export const FINISH_STYLE = {
+  slasher: 'dunk', glass_cleaner: 'dunk', post_scorer: 'dunk',
+  playmaker: 'layup', sharpshooter: 'layup', stretch_big: 'layup', lockdown: 'layup', two_way: 'layup',
+};
+export function archetypeOf(p) {
+  const b = p.entry?.build || {};
+  return b.archetype || ({ outside: 'sharpshooter', inside: 'slasher' }[b.style]) || 'two_way';
+}
+// The higher rating wins (the build's own ratings, as its card shows them); an exact tie goes to the archetype's style
+export function betterFinish(p, dunk, layup) {
+  if ((dunk ?? 0) !== (layup ?? 0)) return (dunk ?? 0) > (layup ?? 0) ? 'dunk' : 'layup';
+  return FINISH_STYLE[archetypeOf(p)] || 'layup';
+}
+
+// 'dunk' | 'layup' | 'jumper' for a driving shot press: the finish with the highest rating, adjusted for the defense
+// (a rim protector favors a finesse layup, a defender walling off the lane a pull-up); an exact tie between the dunk
+// and the layup goes to the archetype (betterFinish). v0.4.5 quick patch: no more flat +8 (+4 more in an open lane)
+// head start for the dunk, so a better layup or pull-up wins even when the dunk is close.
 export function pickFinish(p, d, cover, canDunk) {
-  const a = p.ratings;
-  let dunk = canDunk && d < 3.8 ? (a.driving_dunk ?? 0) + 8 : -1e9; // dunks are the preferred finish
+  const a = p.raw || p.ratings;
+  let dunk = canDunk && d < 3.8 ? (a.driving_dunk ?? 0) : -1e9;
   let layup = (a.layup ?? 0);
   let pull = d > 3.0 ? (a.mid_range ?? 0) - 10 : -1e9; // pulling up off a drive is harder than a set jumper
   const rp = cover.rimProtector;
@@ -482,7 +523,7 @@ export function pickFinish(p, d, cover, canDunk) {
     layup += 3 + (p.badges?.acrobat ? 2 : 0); // finesse finish around length
   }
   if (cover.wall) { pull += 6; dunk -= 4; } // cut off in front: stop and pop
-  if (cover.open) { dunk += 4; pull -= 4; }
-  if (dunk >= layup && dunk >= pull) return 'dunk';
-  return pull > layup ? 'jumper' : 'layup';
+  if (cover.open) pull -= 4; // an open lane: take it all the way
+  const rim = dunk > -1e8 ? betterFinish(p, dunk, layup) : 'layup';
+  return pull > Math.max(dunk, layup) ? 'jumper' : rim;
 }

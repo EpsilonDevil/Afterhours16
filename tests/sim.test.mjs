@@ -75,7 +75,7 @@ test('a Pro-Am game plays four quarters and produces a winner', () => {
 import { pickFinish, shotTypeFor } from '../client/js/sim/shots.js';
 import { LockedInGrade, GRADES } from '../client/js/game/grade.js';
 
-test('driving finishes: dunk preferred, ratings and defense can override it', () => {
+test('driving finishes: the highest rating wins, the defense adjusts it', () => {
   const mk = r => ({ ratings: { driving_dunk: 80, layup: 75, mid_range: 70, block: 50, ...r }, phys: { reach: 2.65, vertical: 0.75 }, badges: {}, stamina: 1, x: 0, z: 0, vx: 0, vz: 5 });
   const open = { open: true, rimProtector: null, wall: null };
   assert.equal(pickFinish(mk({}), 3, open, true), 'dunk');
@@ -84,7 +84,7 @@ test('driving finishes: dunk preferred, ratings and defense can override it', ()
   const protector = { ratings: { block: 95 }, phys: { reach: 2.9 } };
   assert.equal(pickFinish(mk({ driving_dunk: 78, layup: 78 }), 3, { open: false, rimProtector: protector, wall: null }, true), 'layup');
   assert.equal(pickFinish(mk({ driving_dunk: 60, layup: 60, mid_range: 92 }), 4, { open: false, rimProtector: null, wall: { ratings: {} } }, true), 'jumper');
-  // the dedicated attack bind dunks whenever physically possible, and does nothing out of range
+  // the dedicated attack bind takes the better finish (here the dunk), and does nothing out of range
   const p = mk({}); p.z = 0; const rim = { x: 0, z: 3 };
   assert.equal(shotTypeFor(p, rim, { attack: true, defs: [] }).type, 'dunk');
   assert.equal(shotTypeFor(p, { x: 0, z: 9 }, { attack: true, defs: [] }).type, 'none');
@@ -412,7 +412,7 @@ test('v0.4.5 rules: traveling, knockdowns only with Posterizer, long attack-the-
   }
   // attack the rim from further out with an open lane
   const p = testGame().players[0];
-  p.raw.driving_dunk = 85; p.ratings.driving_dunk = 85; p.stamina = 1; p.phys.vertical = Math.max(p.phys.vertical, 3.4 - p.phys.reach);
+  p.raw.driving_dunk = 85; p.ratings.driving_dunk = 85; p.raw.layup = Math.min(p.raw.layup, 80); p.stamina = 1; p.phys.vertical = Math.max(p.phys.vertical, 3.4 - p.phys.reach);
   const rim = { x: 0, y: 3.05, z: 12.725 };
   p.x = 0; p.z = rim.z - 5.3; p.vx = 0; p.vz = 6;
   const st = S.shotTypeFor(p, rim, { attack: true, defs: [] });

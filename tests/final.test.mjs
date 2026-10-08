@@ -190,3 +190,16 @@ test('every King Tut Cup court has the sphinx, not the KTC placeholder', async (
   const src = fs.readFileSync(new URL('../client/js/gfx/textures.js', import.meta.url), 'utf8');
   assert.ok(src.includes("if (shape === 'sphinx')") && src.includes('function sphinxPath('));
 });
+
+test('past 35 ft it is luck: a slide down to half court, then 1% at most (a 99 three with Limitless included)', () => {
+  const fc = (ft, v, grade = 'none') => S.finalChance({ type: 'jumper', d: ft * 0.3048, a: { three_point: v, mid_range: v }, three: true, grade, contest: 0, stamina: 1, badges: { limitless: 4 } });
+  assert.ok(fc(38, 99) < fc(34, 99) * 0.3, 'falls off a cliff past 35 ft');
+  for (const ft of [42.5, 47, 60, 85]) {
+    assert.ok(fc(ft, 99) <= 0.01 + 1e-9 && fc(ft, 99, 'excellent') <= 0.01 + 1e-9, `${ft} ft, 99 three: ${(fc(ft, 99) * 100).toFixed(2)}%`);
+    assert.ok(fc(ft, 75) < fc(ft, 99) && fc(ft, 75) < 0.01, `${ft} ft, 75 three: ${(fc(ft, 75) * 100).toFixed(2)}%`);
+    assert.equal(S.greenWindowMs(99, { limitless: 4 }, { three: true, d: ft * 0.3048 }), 0, 'no green past half court');
+  }
+  // in a game a green past 35 ft is not a sure make
+  const src = fs.readFileSync(new URL('../client/js/sim/game.js', import.meta.url), 'utf8');
+  assert.ok(src.includes("const sure = grade === 'excellent' && d <= S.DEEP_D;"));
+});

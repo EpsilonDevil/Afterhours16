@@ -1,4 +1,103 @@
-# Status — v0.4.5 (complete: seven stages plus the final touches, shipping)
+# Status — v0.4.5 (complete: seven stages, the final touches and a quick patch)
+
+## v0.4.5 quick patch: right-stick dribble moves, deep shots, attack-bind layups, finish selection, the shot meter and the streak fire
+
+### Right stick: responsiveness
+
+- **Why it felt unresponsive:**
+  - **Flick detection.** A flick only counted if the stick went from under 0.45 to over 0.7 between two consecutive frames. At 120/144 Hz almost no real flick does that, and at 60 Hz a slightly slower one didn't either. A sweep straight from one side to the other was missed, and a spin needed more than half a turn.
+  - **Chaining.** A move called during another one was thrown away after 0.22 s, so combos needed frame-perfect timing.
+  - **Triple threat.** Only the step-back, crossover and spin worked from a held ball.
+  - **Stamina.** Under 4% stamina, moves were silently refused. With the doubled stamina drain that happened a lot more often.
+- **Fixes:**
+  - **New gesture detector** (`stickGesture` in `core/input.js`), timed in seconds rather than frames. On offense, every deliberate push out of the middle is a move. A quick snap counts as a flick, as does a sweep straight across between frames. A spin is ~170° of rotation while held out. Holding the stick out fires once. Defense still reads only quick snaps as reaches, so holding a hand out doesn't reach.
+  - **Moves chain:** a move called during another one waits for it (up to 0.65 s), and a spin replaces whatever move was waiting.
+  - **Any move from triple threat** starts the dribble, unless you've already picked it up.
+  - **Exhausted players still do the move**, up to 25% slower and with up to 25% less burst near empty.
+
+### Right stick: snappy moves and combos
+
+- **Every move is quicker** (`MOVE_SNAP` 0.8 in `sim/game.js`), and quicker still with a better handle: the duration is divided by `1 + 0.22·Ball Handle + 0.1·Speed with Ball` (each normalized, capped at 1.2), on top of the size-up package's speed. A crossover:
+
+  | Build (Ball Handle / Speed with Ball, size-up) | Crossover before | Crossover now |
+  |---|---|---|
+  | 55 / 55, Basic | 400 ms | 289 ms (−28%) |
+  | 75 / 75, Basic | 400 ms | 263 ms (−34%) |
+  | 90 / 85, Quick Handle | 357 ms | 224 ms (−37%) |
+  | 99 / 99, Elite Handle | 328 ms | 190 ms (−42%) |
+
+- **Moves cancel into each other:** a different move called once the current one is 60% through (`CHAIN_AT`) starts right away instead of waiting for the end. The move cooldown is 55% of the move.
+- **Combos are free:** a different move called during the last one or within 0.4 s of it ending (`COMBO_GAP`) costs no stamina, and each step of a combo adds a little to the ankle-breaker chance (+0.8% per step, up to four).
+- **Spam is still punished:** the same move again costs stamina every time, and the repeat penalty (drain doubles after three) is unchanged.
+- **Balance:** quicker moves alone pushed ankle-breakers and FG up (20 games: FG 38.0% → 44.3%, ankles 6.1 → 7.8 a game), so the base ankle-breaker chance is ×0.78. Over 40 headless games: FG 38.4% → 38.3%, ankle-breakers 6.0 → 6.75 a game.
+
+### Deep shots
+
+- **Past 35 ft it's luck.** From the 35 ft mark (`DEEP_D`) to the half-court line (`HALF_D`, 41.7 ft from the rim), the make chance fades from the normal value down to a luck floor, and the green window shrinks to nothing. Limitless Range fades out with it (it still helps a little before half court), a green there is no longer a guaranteed make, and the 99-rating floor doesn't apply.
+- **Past half court:** at most 1% (`deepLuck`: 0.1% + 0.9% × 3PT²). A 99 three-point shooter has 1.00%, an 85 has 0.69% and a 60 has 0.27%. There's no green window.
+- **38 ft, 99 three-pointer with Hall of Fame Limitless Range:** 15% without a green and 35% with one (it was a near-certain make). Without the badge: 11% and 26%.
+
+### Attack-bind layups are timed
+
+- **The problem:** holding the attack bind (Z, or the right stick held down) didn't count as holding the shot. When a drive turned into a layup (no dunk in the build, or out of dunk range), it was let go on the first frame and always flipped up very early.
+- **The fix:** the attack bind counts as holding the shot (`stepIntent` in `game/session.js`). Hold it through the gather and let go at the top, exactly like the shoot button. On the stick: keep it pushed down and let it come back to release. You can let go of sprint once the layup has started.
+- Dunks are unchanged (untimed).
+
+### Finish selection: the highest rating wins, ties go to the archetype
+
+- **Double-checked the old rule, and it didn't quite prioritize the highest rating:**
+  - Shoot-button drives (`pickFinish`) gave the dunk a flat +8 head start, plus +4 more with an open lane, so a layup had to be 9–13 points better to win.
+  - The attack bind ignored the ratings: it dunked whenever a dunk was physically possible.
+- **Now** (`betterFinish` and `FINISH_STYLE` in `shots.js`):
+  - Both compare the build's own ratings (as its card shows them): **Driving Dunk vs Layup**, and **Standing Dunk vs Layup** right under the rim. The higher one wins.
+  - On an **exact tie**, the archetype decides: Slasher, Glass Cleaner and Post Scorer dunk; Playmaker, Sharpshooter, Stretch Big, Lockdown and Two-Way lay it in. So a 99/99 Slasher dunks and a 99/99 Playmaker lays it in.
+  - A dunk still has to be physically possible (Driving Dunk 55+, enough lift, stamina). When the layup wins, the attack bind doesn't take off from the long-dunk range; it keeps driving until it's in layup range.
+  - Shoot-button drives still weigh the pull-up (Mid-Range − 10, from 3 m out) and the defense: a rim protector favors the layup, a wall favors the pull-up. An open lane no longer adds to the dunk (it still takes 4 off the pull-up).
+- **Balance** (40 AI park games, same seeds): FG 34.9% → 33.7%, dunks 1.4 → 0.5 a game, blocks 2.8 → 3.4. Fewer dunks because most AI guards and wings have a higher Layup than Driving Dunk, and the head start used to hide that.
+
+### Shot meter redesign
+
+- **One slim bar** (10 × 128 px, glass track) beside the player. The fill rises to the ideal release at 77% of the height (`METER_SCALE` 1.3), and a bright marker shows "now".
+- **The window is drawn to scale from the grading code itself.** New `Game.jumperWindow`, `layupWindow` and `ftWindow` return the exact window the release is graded against, plus its `natural` part. `releaseShot`, `releaseLayup` and the free throw now grade with these functions (same numbers as before), and the meter draws them (`MatchSession.liveMeter`). The contest is measured exactly as the release measures it, at the ball one tick ahead (`Game.contestIfReleased`), and the distance from where the shot started.
+- **Natural vs boosted:**
+  - **Solid green core** = the window from the build's own ratings with no badges, no Icon badge, no takeover and no animation bonus (`natural`, never more than the real window).
+  - **Gradient out to yellow** = everything the boosts add: Green Machine, Deadeye (under a contest), Limitless Range (from deep), Catch & Shoot, Corner Specialist, Contact Finisher (layups), the Icon badge's green bonus (Sharp Eye) and its rating boosts, the Shooting Takeover (+8 and +12% window), and a jumpshot base or layup package whose window multiplier is above 1. A base or package below 1 is part of the core, not a negative boost.
+  - A hairline marks the edges of the core. A stat that plays under its rating for want of badges is all core, with nothing yellow.
+- **Solid vs outlined:** solid where an Excellent is an automatic make (jumpers inside 35 ft, free throws). Outlined (a gradient ring over a faint fill) where it's perfect timing but not automatic: layups, and shots from past 35 ft.
+- **No window:** smothered (the bar turns red), past half court, or a close shot (not timed, so no meter at all; the old meter showed a window there that could never be green).
+- **After the release:** the bar is frozen where you let go, on the exact window that was graded (the release event now carries `err`, `tRel`, `win`, `nat`, `sure`), with the marker green, orange or red by grade. The old meter jumped to the top with a fixed, made-up window.
+- **Legend:** the Tab controls overlay has a "Shot meter" legend (`meterLegendHTML`).
+- **Accuracy:** the old live window disagreed with the grade on 1 release in 226 in the test sweep. The new one matches on every frame (`tests/meter.test.mjs`).
+
+### Streak fire
+
+- **What was wrong:** the wall was a 256 px flame picture (`flameWallTexture`) tiled every 2.4 m along each side, two copies scrolling upward with wrap. The tiling read as a repeating image, the wrap brought the glowing base round to the top of the wall, and the whole wall was rescaled every frame for "flicker", so it jittered. Each side also restarted the picture, leaving seams at the corners.
+- **Now:** procedural fire in the shader (`FLAME` in `gfx/shaders.js`, `Material.flame` / `flameT` in `gfx/renderer.js`):
+  - one strip all the way round the court (`StreakFX.buildFlames`), with u in metres along the edge, so the fire is continuous through the corners;
+  - domain-warped value noise rising through the wall: tongues stretched upward, finer flicker inside them, tongue heights drifting slowly along the edge; hottest (yellow-white) low down, cooling to orange and red at the tips;
+  - the noise wraps after a whole number of cells round the court (a multiple of 4, for the coarser octaves) and its motion loops every 240 s, so there's no seam anywhere and no jump in time;
+  - no texture at all, so nothing repeats; `flameWallTexture` is gone.
+- **Growth:** 1.4 m at 3 wins, 2.2 m at 6, 3.0 m at 9, 3.8 m at 12 (it was 1.55 / 2.5 / 3.45 / 4.4 m), and brighter and fuller at each step. The level eases in (no frame grows more than a few centimetres), and the mesh isn't touched while a level holds.
+- The King Tut Cup's lasers are unchanged.
+
+### Verified
+
+- 77 Node tests and 32 Python tests pass; lint is clean.
+- `tests/streakfx.test.mjs`: one continuous strip that closes where it started, a whole number of noise cells round the court, the four heights, smooth growth, no per-frame rescaling, a procedural shader with no texture lookups.
+- In the browser (headless Chromium, Harbor Point): the fire at 3, 6, 9 and 12 wins, animating between frames, with no console errors. The seam and the 240 s loop also check out numerically (differences around 1e-13).
+- `tests/meter.test.mjs`:
+  - jumpers released on every frame from 10 to 60 (open, and with a defender closing out), and layups of all four packages with and without a rim protector: Excellent exactly when the meter showed the marker inside the window;
+  - the frozen meter is the graded window; badges, Sharp Eye, a Shooting Takeover and a bigger-window base only grow the yellow part;
+  - outlined past 35 ft and on layups, nothing past half court or when smothered, no meter on close shots.
+- `tests/finish.test.mjs`: the 99/99 Slasher dunks and the 99/99 Playmaker lays it in (bind and shoot button, and in a game); the higher rating wins either way; Standing Dunk under the rim; a rim protector still favors the layup.
+- In the browser (headless Chromium): the live meter, the frozen meter after a green, an outlined layup window and the legend render with no console errors.
+- `tests/stick.test.mjs`:
+  - flicks register at 30–240 Hz; a slow push is a move but not a defensive reach; holding out fires once; sweeps and spins;
+  - moves from triple threat and when exhausted;
+  - quicker moves with a better handle, cancelling at 60%, free combos, spam still costs;
+  - an attack-bind layup from the Z key and from the stick: let go at the top is a green, let go on the gather is early. (It fails without the fix.)
+- `tests/final.test.mjs`: past 35 ft is luck, past half court at most 1%, no green window there.
+- In the browser, with a simulated gamepad: a 30 ms flick at 144 Hz and a two-frame flick at 60 Hz fire, and a slow push on defense holds a hand out without reaching.
 
 ## v0.4.5 final touches
 

@@ -10,9 +10,8 @@ import * as T from '../gfx/textures.js';
 import * as M from '../core/math.js';
 import { cachedTexture } from '../world/court.js';
 import { CameraRig, CAM_LABEL } from './camera.js';
-import { GRADE, greenWindowMs, layupWindowMs, contestFor, SMOTHER } from '../sim/shots.js';
+import { GRADE, SMOTHER } from '../sim/shots.js';
 import { promptGlyph } from '../core/input.js';
-import { isThree } from '../sim/constants.js';
 import { audio } from '../core/audio.js';
 import { B } from '../char/skeleton.js';
 import { LockedInGrade } from './grade.js';
@@ -20,6 +19,7 @@ import { TAKEOVERS, TAKEOVER_NEED } from '../sim/badges.js';
 import { settings, saveSettings } from '../core/settings.js';
 import { GameIntro } from './present.js';
 import { visualKey } from './vispool.js';
+import { meterLegendHTML } from './hud.js';
 
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
 
@@ -156,7 +156,7 @@ export class MatchSession {
     this.highlight = null;
     this.ended = false; this.endT = 0;
     this.paused = false;
-    this.meterGrade = null; this.meterHold = 0;
+    this.meterFreeze = null; this.meterHold = 0;
     this.lastPlant = new Map();
     this.prevBall = { x: 0, y: 1, z: 0 };
     this.tagsOn = true;
@@ -229,7 +229,10 @@ export class MatchSession {
             move = (toLeft && hand === 'R') || (!toLeft && hand === 'L') ? (inp.isDown('sprint') ? 'btl' : 'cross') : 'inout';
             if (mv.m < 0.2) { mx = dx; mz = dz; }
           }
-          P.move = { move, mx, mz, ttl: 0.22 };
+          // v0.4.5 quick patch: a move called during another one waits for it to finish (it used to be dropped
+          // after 0.22 s, so chaining needed frame-perfect timing); a spin replaces whatever was waiting
+          const cur = me.action, left = cur && cur.type === 'move' ? Math.max(0, cur.dur - cur.t) : 0;
+          if (!P.move || move === 'spin' || P.move.move !== 'spin') P.move = { move, mx, mz, ttl: Math.min(0.65, Math.max(0.22, left + 0.14)) };
         }
       }
       if (inp.wasPressed('screen')) this.callScreen(me);
@@ -263,9 +266,12 @@ export class MatchSession {
     const mv = inp.moveVector();
     const basis = this.basis || this.rig.inputBasis();
     const wx = basis.rx * mv.x + basis.fx * mv.y, wz = basis.rz * mv.x + basis.fz * mv.y;
+    // v0.4.5 quick patch: the attack bind (dunk key, or right stick held down) counts as holding the shot, so when
+    // a drive turns into a layup you time it the same way: let go at the top (it used to come out on the gather)
+    const attackHeld = inp.isDown('dunk') || (!!inp.gp.dunkHeld && inp.ctx === 'offense');
     const it = {
       mx: wx, mz: wz, sprint: inp.isDown('sprint'), defense: false, handsUp: false, face: null, stickFace: true,
-      shoot: null, shootHeld: inp.isDown('shoot'), pass: null, move: null, steal: false, jump: false, call: false, screen: false,
+      shoot: null, shootHeld: inp.isDown('shoot') || attackHeld, pass: null, move: null, steal: false, jump: false, call: false, screen: false,
     };
     const P = this.pend;
     if (P.shoot) {
@@ -462,7 +468,8 @@ export class MatchSession {
           // (v0.4.5: timed layups get the same feedback; an untimed tap doesn't)
           if (mine && (e.kind !== 'layup' || e.grade !== 'none')) {
             const gr = GRADE[e.grade] || GRADE.none;
-            this.meterGrade = e.grade; this.meterHold = 0.7;
+            this.meterHold = 0.7;
+            this.meterFreeze = e.win != null ? this.meterOf(e.win, e.nat, e.tRel, e.err, e.sure, e.kind !== 'layup' && e.kind !== 'ft' && e.contest >= SMOTHER, e.grade) : null;
             const pos = this.screenOf(P, 2.4);
             const pct = Math.round(e.chance * 100);
             if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, `${pct}% · ${e.contest > 0.75 ? 'Smothered' : e.contest > 0.45 ? 'Contested' : e.contest > 0.2 ? 'Light contest' : 'Wide open'}`);
@@ -572,7 +579,7 @@ export class MatchSession {
     if (el) { el.remove(); return; }
     const d = document.createElement('div');
     d.id = 'help-overlay'; d.className = 'help-overlay';
-    import('../ui/screens.js').then(S => { d.innerHTML = `<h3>Controls</h3>${S.controlsTable(this.app)}<p class="muted small">Tab / RS click to close</p>`; document.body.appendChild(d); });
+    import('../ui/screens.js').then(S => { d.innerHTML = `<h3>Controls</h3>${S.controlsTable(this.app)}${meterLegendHTML()}<p class="muted small">Tab / RS click to close</p>`; document.body.appendChild(d); });
   }
 
   checkCelebrations() { for (const p of this.game.players) { p.pendingCelly = null; if (p.action?.type === 'celebrate') p.action = null; } }
@@ -590,6 +597,28 @@ export class MatchSession {
   jumboInfo() {
     const g = this.game, t = this.teams;
     return { title: this.opts.jumboTitle || (t[0].name ? 'PRO-AM' : 'AFTERHOURS'), home: g.score[0], away: g.score[1], homeName: t[0].abbr, awayName: t[1].abbr, homeColor: t[0].color, awayColor: t[1].color, clock: fmtClock(g.gameClock), period: g.quarter > g.quarters ? 'OT' : `Q${g.quarter}` };
+  }
+
+  // v0.4.5 quick patch: the live shot meter, from the very functions that grade the release (Game.jumperWindow /
+  // layupWindow / ftWindow), with the contest measured the way the release measures it (at the ball), so the window
+  // on screen is the window you get if you let go now. null: no timed shot in progress (close shots aren't timed).
+  liveMeter(me, a) {
+    const g = this.game;
+    if (!a || g.assist || a.released || !a.tRel) return null;
+    let W, contest = 0;
+    if (a.type === 'ftshot') W = g.ftWindow(me);
+    else if (a.type === 'shoot' && a.kind !== 'close') {
+      contest = g.contestIfReleased(me);
+      W = g.jumperWindow(me, a, contest);
+    } else if (a.type === 'layup' && !a.oop && !a.untimed && a.releaseAt == null && a.t > 0.04) {
+      contest = g.contestIfReleased(me);
+      W = g.layupWindow(me, a, contest);
+    } else return null;
+    return this.meterOf(W.total, W.natural, a.tRel, (a.releaseAt ?? a.t) - a.tRel, W.sure, a.type === 'shoot' && contest >= SMOTHER, '');
+  }
+  // windows (ms of action time, ± around the ideal) and the release error (s) → the meter's units (1 = ideal release)
+  meterOf(total, natural, tRel, err, sure, smothered, grade) {
+    return { fill: 1 + err / tRel, half: total / 1000 / tRel, nat: natural / 1000 / tRel, sure, smothered, grade };
   }
 
   updateHUD(dt) {
@@ -615,29 +644,12 @@ export class MatchSession {
     if (me) {
       const a = me.action;
       const pos = this.screenOf(me, me.phys.H * 0.62);
-      if (a && (a.type === 'shoot' || a.type === 'ftshot') && !a.released && !g.assist) {
-        // live green window: shrinks as a defender closes out (the same rule that grades the release)
-        const ft = a.type === 'ftshot';
-        const rim = g.rimFor(me.team), side = g.sideFor(me.team);
-        const three = !ft && isThree(a.startX ?? me.x, a.startZ ?? me.z, side);
-        const attr = ft ? me.ratings.free_throw : (three ? me.ratings.three_point : me.ratings.mid_range);
-        const d = Math.hypot(rim.x - me.x, rim.z - me.z);
-        const contest = ft ? 0 : contestFor(me, g.opponents(me), rim, me.phys.reach * (me.shotPkg?.relK ?? 0.93) + (a.jumpH ?? 0) * 0.95);
-        const winMs = greenWindowMs(attr, me.badges, { ft, contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner: three && Math.abs(a.startX ?? 0) > 6.2, pkg: ft || a.kind === 'close' ? null : me.shotPkg, greenK: g.greenK(me) });
-        const win = winMs * g.speed / 1000 / a.tRel;
-        if (settings.shotMeter === false) hud.setMeter(null);
-        else hud.setMeter({ x: pos.x, y: pos.y, fill: a.t / a.tRel, greenAt: 1, greenW: win * 2, grade: '', contest, smothered: !ft && contest >= SMOTHER });
-      } else if (a && a.type === 'layup' && !a.released && !g.assist && !a.untimed && a.releaseAt == null && a.t > 0.04) {
-        // v0.4.5 timed layup: the same meter, filling to the top of the layup (its own window and timing)
-        const rim = g.rimFor(me.team);
-        const contest = contestFor(me, g.opponents(me), rim, me.phys.reach + (a.jumpH ?? 0) * 0.9);
-        const winMs = layupWindowMs(me.ratings.layup, me.badges, { contest, lstyle: a.lstyle, greenK: g.greenK(me) });
-        const win = winMs * g.speed / 1000 / a.tRel;
-        if (settings.shotMeter === false) hud.setMeter(null);
-        else hud.setMeter({ x: pos.x, y: pos.y, fill: a.t / a.tRel, greenAt: 1, greenW: win * 2, grade: '', contest, smothered: false });
-      } else if (this.meterHold > 0 && settings.shotMeter !== false) {
+      const live = this.liveMeter(me, a);
+      if (live) hud.setMeter(settings.shotMeter === false ? null : { x: pos.x, y: pos.y, ...live });
+      else if (this.meterHold > 0 && this.meterFreeze && settings.shotMeter !== false) {
+        // after the release: frozen where you let go, on the exact window the release was graded against
         this.meterHold -= dt;
-        hud.setMeter({ x: pos.x, y: pos.y, fill: 1, greenAt: 1, greenW: 0.06, grade: this.meterGrade });
+        hud.setMeter({ x: pos.x, y: pos.y, ...this.meterFreeze });
       } else hud.setMeter(null);
       hud.setStamina(pos.x, pos.y + 70, me.stamina, me.sprinting || me.stamina < 0.5);
       const to = me.takeover, TO = TAKEOVERS[to.kind];

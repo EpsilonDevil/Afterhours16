@@ -65,6 +65,43 @@ export function padFamily(id = '') {
   return 'xbox';
 }
 
+// v0.4.5 quick patch: right-stick gestures, independent of the frame rate. The old detector needed the stick to go
+// from under 0.45 to over 0.7 between two consecutive frames, so a flick that took a few frames (any normal flick at
+// 120/144 Hz, or a slightly slower one at 60) never registered, a sweep from one side straight to the other was
+// missed, and the spin needed more than half a turn on top of that.
+//  flick: a snap: from the middle (under ARM) past FIRE in under WINDOW s, however many frames that takes; or a
+//         sweep across from one side to the other between two frames. Defense reads only these, so holding a hand
+//         out isn't a reach.
+//  push:  any push past FIRE that started in the middle, however slow (offense: every push is a move).
+//  spin:  SPIN radians of rotation while held out (sweeps excluded).
+// After a push the stick has to come back toward the middle (or sweep across) before it fires again.
+export const STICK = { REST: 0.3, ARM: 0.42, FIRE: 0.62, WINDOW: 0.08, SPIN: Math.PI * 0.95, HOLD: 0.55 };
+export function newStickState() { return { armed: true, outT: 0, prev: [0, 0], rot: 0 }; }
+const stickDir = (x, y) => (Math.abs(x) > Math.abs(y) ? (x > 0 ? 'right' : 'left') : (y < 0 ? 'up' : 'down'));
+export function stickGesture(s, rx, ry, dt) {
+  const out = { flick: null, push: null, spin: false };
+  const m = Math.hypot(rx, ry), [px, py] = s.prev, pm = Math.hypot(px, py);
+  s.prev = [rx, ry];
+  if (m < STICK.ARM) { s.armed = true; s.outT = 0; s.rot = 0; return out; }
+  s.outT += dt;
+  // angle moved since the last frame (a sweep across the middle jumps by more than ~110°)
+  let d = 0;
+  if (pm >= 0.2) { d = Math.atan2(ry, rx) - Math.atan2(py, px); while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; }
+  const sweep = pm >= STICK.ARM && Math.abs(d) > 1.9;
+  if (m >= STICK.FIRE && (s.armed || sweep)) {
+    const dir = stickDir(rx, ry);
+    out.push = dir;
+    if (sweep || s.outT <= STICK.WINDOW) out.flick = dir;
+    s.armed = false; s.rot = 0;
+    return out;
+  }
+  if (m >= STICK.HOLD && pm >= STICK.HOLD && !sweep) {
+    s.rot += d;
+    if (Math.abs(s.rot) >= STICK.SPIN) { out.spin = true; s.rot = 0; }
+  } else if (sweep) s.rot = 0;
+  return out;
+}
+
 export class Input {
   constructor(target = window) {
     this.down = new Set();
@@ -83,7 +120,7 @@ export class Input {
     this.gp = {
       index: -1, id: '', family: 'xbox', connected: false,
       buttons: [], prev: [], values: [], axes: [0, 0, 0, 0],
-      flick: null, rot: 0, stickPrev: [0, 0], rsHoldT: 0, rsHoldDir: null, rsFlickT: 0, rsShoot: false, rsShootEdge: false,
+      flick: null, push: null, rs: newStickState(), stickPrev: [0, 0], rsShoot: false, rsShootEdge: false,
       lbDownT: 0, lbUsed: false, lbTap: false, menuRepeat: { dir: null, t: 0 },
     };
     const typing = e => e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && e.target.type !== 'range';
@@ -174,21 +211,12 @@ export class Input {
     g.axes = [p.axes[0] || 0, p.axes[1] || 0, p.axes[2] || 0, p.axes[3] || 0];
     const lsm = Math.hypot(g.axes[0], g.axes[1]), rsm = Math.hypot(g.axes[2], g.axes[3]);
     if (g.buttons.some((b, i) => b && !g.prev[i]) || lsm > 0.45 || rsm > 0.45) this.lastDevice = 'gamepad';
-    // ---- right stick: flick (fast push), hold (stays pushed), rotate (spin) ----
+    // ---- right stick: flick / push (dribble moves, reaches) and rotation (spin), see stickGesture ----
     const rx = g.axes[2], ry = g.axes[3];
-    const [px, py] = g.stickPrev, pm = Math.hypot(px, py);
-    g.flick = null; g.rsShootEdge = false;
-    const dirOf = (x, y) => Math.abs(x) > Math.abs(y) ? (x > 0 ? 'right' : 'left') : (y < 0 ? 'up' : 'down');
-    if (rsm > 0.7 && pm < 0.45) { g.flick = dirOf(rx, ry); g.rsFlickT = 0; g.rsHoldDir = g.flick; }
-    if (rsm > 0.6) {
-      g.rsHoldT += dt;
-      if (pm > 0.6) {
-        const a0 = Math.atan2(py, px), a1 = Math.atan2(ry, rx);
-        let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
-        g.rot += d;
-        if (Math.abs(g.rot) > Math.PI * 1.05) { g.flick = 'spin'; g.rot = 0; g.rsHoldT = 0; }
-      }
-    } else { g.rsHoldT = 0; g.rot = 0; g.rsHoldDir = null; }
+    g.rsShootEdge = false;
+    const gs = stickGesture(g.rs || (g.rs = newStickState()), rx, ry, dt);
+    g.flick = gs.spin ? 'spin' : gs.flick; // fast flicks (defense reads only these, so a held hand isn't a reach)
+    g.push = gs.spin ? null : gs.push;     // any deliberate push out of the middle (offense: every one is a move)
     // pro-stick shooting: keep the stick pushed (not a quick flick) to rise up, let go to release
     // v0.4.2: the right stick is for dribble moves and attacking the rim only (no stick shooting)
     g.rsShoot = false;
@@ -200,7 +228,8 @@ export class Input {
       if (!g.dunkHeld) g.dunkEdge = true;
       g.dunkHeld = true;
       if (g.flick === 'down') g.flick = null;
-      g.rsShoot = false; g.rsHoldT = 0;
+      if (g.push === 'down') g.push = null;
+      g.rsShoot = false;
     } else if (!downward) g.dunkHeld = false;
     g.stickPrev = [rx, ry];
     // ---- LB: tap = call screen, hold + face button = icon pass ----
@@ -319,6 +348,7 @@ export class Input {
     if (K('stickDown')) return 'down';
     if (K('spin') && this.ctx === 'offense') return 'spin';
     if (this.gp.flick) return this.gp.flick;
+    if (this.gp.push && this.ctx === 'offense') return this.gp.push; // v0.4.5: no push gets lost
     return null;
   }
 
@@ -336,7 +366,7 @@ export class Input {
     this.pressed.clear(); this.released.clear();
     this.mouse.dx = 0; this.mouse.dy = 0; this.mouse.wheel = 0;
     if (this.gp.connected) this.gp.prev = this.gp.buttons.slice();
-    this.gp.flick = null; this.gp.rsShootEdge = false; this.gp.lbTap = false; this.gp.dunkEdge = false;
+    this.gp.flick = null; this.gp.push = null; this.gp.rsShootEdge = false; this.gp.lbTap = false; this.gp.dunkEdge = false;
   }
 }
 

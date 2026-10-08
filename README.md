@@ -53,7 +53,7 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
   - **Boosts:** 2K17-style boosts by category (Shooting, Finishing, Playmaking, Defense, Rebounding, Athleticism). Each adds +5 to every attribute in its category, up to 99, for 1, 3 or 5 games. A boost game is used when a park or Pro-Am game tips off.
 - **Shootaround:** hit the practice hoop by the 1v1 court.
 
-**The King Tut Cup (v0.4.5 park event).** A glow-in-the-dark park among the pyramids — neon court lines, sphinxes, obelisks, a mini-golf strip and laser-tag barriers — where every game is an ante-up. Pick a stake (500 to 10,000 VC) when you claim a spot: win and you take the other side's stake too, boosted by your Cup win streak, on top of the normal game VC; lose and the stake is gone. Each Cup runs for 48 hours and ranks the most VC won against the AI hoopers who entered it. The winner gets the glow-in-the-dark mo-cap suit, and the top finishers get exclusive shoes, a celebration, a headband and VC. In every park, a 3-game win streak lights a wall of fire around the court (it grows at 6, 9 and 12 wins); in the Cup it's green lasers instead.
+**The King Tut Cup (v0.4.5 park event).** A glow-in-the-dark park among the pyramids — neon court lines, sphinxes, obelisks, a mini-golf strip and laser-tag barriers — where every game is an ante-up. Pick a stake (500 to 10,000 VC) when you claim a spot: win and you take the other side's stake too, boosted by your Cup win streak, on top of the normal game VC; lose and the stake is gone. Each Cup runs for 48 hours and ranks the most VC won against the AI hoopers who entered it. The winner gets the glow-in-the-dark mo-cap suit, and the top finishers get exclusive shoes, a celebration, a headband and VC. In every park, a 3-game win streak lights a wall of fire around the court (it grows at 6, 9 and 12 wins); in the Cup it's green lasers instead. Since the v0.4.5 quick patch the fire is live and procedural: one continuous wall all the way round with no repeating picture, about 1.4 m tall at 3 wins, 2.2 m at 6, 3 m at 9 and 3.8 m at 12, brighter and fuller at each step, and it eases in as it grows.
 
 **Crews and the Crew HQ (v0.4.5).** Start a crew with up to 39 of your friends (name, tag and color), from the Crew HQ building on any park's plaza or the social phone's Crew tab. Crews level from 1 to 40 (level rewards are coming soon). Every game you play earns crew XP — about 30% of the Rep it pays, ×1.1 in the park, ×1.3 in Pro-Am, ×1.5 in park events, and doubled when a crew member runs with you — and your members earn it too whenever they play, even while you're away. Inside the HQ: a full court and a shootaround court in your crew's colors, your online members hanging out and getting shots up, the members and level boards, and practice 5-on-5 runs once four members are on. Interior customization is coming soon.
 
@@ -116,9 +116,9 @@ Controllers are first-class in v0.4. Any controller Chrome/Edge sees with the st
 | Action | Keyboard / mouse | Controller (Xbox names) |
 |---|---|---|
 | Move / sprint | WASD / Shift | Left stick (analog: walk → jog) / RT |
-| Shoot: hold, release at the top (a green always goes in; never while smothered) | Hold Space or left mouse | Hold X |
+| Shoot: hold, release at the top (a green always goes in inside 35 ft; never while smothered) | Hold Space or left mouse | Hold X |
 | Bailout: pass out of your jumper any time before the release | Pass key while shooting | A while shooting |
-| Attack the rim: dunk if you can, otherwise your best finish | Z | Right stick down while sprinting |
+| Attack the rim: your better finish, dunk or layup (a layup is timed: hold, let go at the top) | Hold Z | Right stick down while sprinting, held |
 | Pump fake | Tap Space | Tap X |
 | Pass (aims with your stick) / bounce / lob / alley-oop | E / R / T / Y | A / B / Y / RB+Y |
 | Icon pass to a teammate | 1–4 | LB + face button |
@@ -135,7 +135,7 @@ Controllers are first-class in v0.4. Any controller Chrome/Edge sees with the st
 
 **Remap anything:** open **Settings → Remap buttons…**, pick an action, then press the new key, mouse button or controller button. Keyboard and controller bindings are separate, offense and defense actions can share a button (like the defaults do), a ⚠ marks two actions fighting over one button, and **Reset to defaults** undoes it all. The controls list in Settings and the in-game Tab overlay always show your current bindings.
 
-On offense the right stick is for dribble moves and attacking the rim. There's no stick shooting. On defense it's **your hands**, like older 2K games:
+On offense the right stick is for dribble moves and attacking the rim. There's no stick shooting. Since the v0.4.5 quick patch, every push out of the middle is a move at any frame rate and sweeping straight across works. Moves come out quickly, and quicker with a better Ball Handle and Speed with Ball; call the next one and it cuts in once the current move is 60% done. Mixing moves in quick succession costs no stamina, while repeating the same one does. When a drive with the stick held down ends in a layup, keep holding and let the stick come back at the top to time it. On defense it's **your hands**, like older 2K games:
 - **Flick left or right:** reach with that hand. The hand on the ball side has a much better chance. The wrong hand fouls more.
 - **Flick down:** a low swipe at a low dribble.
 - **Hold up:** hands up to contest.
@@ -144,6 +144,13 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 **Settings → Controller & window** also has vibration on/off, stick deadzone, prompt style, inverted park camera, lock-in, the Locked-In grade display and pause-on-focus-loss.
 
 **Settings → Shot meter / Shot feedback** (both on by default). Turn the meter off and your green window gets **10% wider**. With the meter on or off, and with any jumpshot base or release, the middle of the green window is the exact moment the ball leaves your hands. Shot feedback is the grade and percentage that pops up over your player after a shot.
+
+**The shot meter** (v0.4.5 quick patch) is a slim bar next to your player that fills as you shoot. The window on it is drawn to scale from the same numbers that grade your release, so letting go anywhere inside it is an Excellent release and anywhere outside isn't, with the contest measured live:
+- **Solid green** in the middle is the window your ratings give you on their own.
+- **Fading out to yellow** around it is what boosts add: badges (Green Machine, Deadeye under a contest, Limitless Range from deep, Catch & Shoot, Corner Specialist, Contact Finisher on layups), your Icon badge, a Shooting Takeover and a forgiving jumpshot base or layup package. Releasing in the yellow is still a green.
+- **Solid** means a green there always goes in (jumpers inside 35 ft, free throws). **Outlined** means perfect timing, but not an automatic make: layups, and shots from past 35 ft.
+- **No window:** you're smothered (the bar turns red) or you're past half court. Close shots aren't timed, so they get no meter.
+- After the release, the bar stays for a moment, frozen where you let go, with the marker colored by the grade. The Tab overlay has a legend.
 
 ## How it plays
 
@@ -167,6 +174,13 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
   - **Alley-oops only go to teammates who can get there.** Anyone further out gets a regular lob.
   - **AI that attacks after an ankle-breaker:** slashers, playmakers and bigs go to the rim; shooters rise up. Fewer pointless kick-outs.
   - **No more hitching in the parks.** People arriving and courts rotating used to build new players mid-frame, worst at the King Tut Cup; they're now reused or built a slice at a time.
+- **v0.4.5 quick patch:**
+  - **Snappier dribble moves:** every move is 28% quicker at 55 Ball Handle and up to 42% quicker at 99 (a crossover: 400 → 289 ms at 55 with the Basic size-up, 328 → 190 ms at 99 with Elite Handle). The next move cuts in 60% of the way through the current one. Combos of different moves are free; spamming the same move still costs stamina.
+  - **Deep shots are luck:** past 35 ft the make chance fades fast, Limitless Range included, and the green window shrinks away. Past half court it's at most 1% (a 99 three-point shooter), with no green window.
+  - **Attack-bind layups are timed:** hold Z or the right stick down through the gather and let go at the top, same as the shoot button.
+  - **Finishing follows your best rating:** the attack bind no longer dunks whenever it can, and shoot-button drives no longer give the dunk a head start. The higher of Driving Dunk and Layup wins; on an exact tie your archetype decides.
+  - **A new shot meter** that shows your exact green window: solid green for what your ratings give, fading to yellow for what boosts add, outlined where a green isn't an automatic make.
+  - **Streak fire redone:** an animated, procedural wall of fire all the way round the court that grows at each milestone (3, 6, 9, 12 wins). The old one was a flame picture repeated every couple of metres, and it glitched as it scrolled.
 - **Ratings matter more at the ends (v0.4.4):**
   - **Under 70:** effectiveness drops off steeply. A 55 shooter's green window is about two thirds of a 70's (27 ms vs 42 ms), and it shrinks further below that.
   - **Over 95:** extra weight on top.
@@ -178,7 +192,7 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
   - Never on a jump shot or a landing, so an open three can't set it off.
 - **Shooting is timed, and greens are guaranteed.** An Excellent (green) release always goes in unless the shot is blocked. Difficulty doesn't lower that chance. It shrinks the green window instead: a hand in your face, shooting on the move, fading, or pulling up from deep all make the green harder to hit, and the meter shows the live window. When you're **smothered** (the meter outline turns red), there is no green at all, so pass out of it. Moving away from the hoop, your player turns and fades; otherwise he squares up to the rim before he rises. Early or late releases cost a lot, and Very Early or Very Late releases mostly miss. Every shot then flies as a real ball: drag, backspin, rim and backboard collisions, a cloth net, and bank shots near the glass. Makes and misses are decided first, then a matching trajectory is solved, so a miss rattles out and a make drops.
 - **Movement and animation follow real measurements.** Jump-shot depth, release height and hang time, running stride, cadence and ground-contact time, and landing absorption use numbers from published basketball and running biomechanics (see `docs/FIDELITY.md`).
-- **Finishing:** layups, finger-rolls, dunks (tomahawk, windmill and flight packages), alley-oops, putbacks, posters and chase-down blocks. Driving at the rim with the shoot button **prefers a dunk** when you can dunk. If your layup or pull-up rating is clearly better, that's the finish you get. The defense matters too: a shot-blocker waiting at the rim favors a finesse layup, and a defender walling off the lane favors a pull-up. The separate **attack-the-rim** bind (Z, or right stick down while sprinting) always dunks when it's physically possible.
+- **Finishing:** layups, finger-rolls, dunks (tomahawk, windmill and flight packages), alley-oops, putbacks, posters and chase-down blocks. Driving at the rim with the shoot button takes **the finish you're best at**: Driving Dunk, Layup, or a pull-up (Mid-Range) from a little further out. The defense adjusts it: a shot-blocker waiting at the rim favors a finesse layup, and a defender walling off the lane favors a pull-up. The separate **attack-the-rim** bind (Z, or right stick down while sprinting) takes the better of your dunk (Standing Dunk right under the rim) and your layup, as long as a dunk is physically possible. On an **exact tie**, your archetype decides: Slashers, Glass Cleaners and Post Scorers dunk; Playmakers, Sharpshooters, Stretch Bigs, Lockdowns and Two-Way players lay it in.
 - **Dunks are physical.** Your hands have to actually reach the rim. If a body stops you short, it becomes a flip at the rim instead of a teleport-dunk.
   - Finishing through contact depends on Driving or Standing Dunk plus Close Shot, against the defender's size, strength and Interior D.
   - A **Posterizer** shoves the defender back or knocks him to the floor for a few seconds, and the dunker never passes through him.

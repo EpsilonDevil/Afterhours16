@@ -5,12 +5,13 @@
 //     out (phase), with more beams and brighter ones every three wins, also capped at 12.
 import * as G from '../gfx/geometry.js';
 import * as M from '../core/math.js';
-import * as T from '../gfx/textures.js';
 import { Material, Mesh } from '../gfx/renderer.js';
-import { cachedTexture } from './court.js';
 import { COURT } from '../sim/constants.js';
 
 export const streakLevel = streak => Math.min(4, Math.floor(Math.max(0, streak || 0) / 3));
+// the fire shader's noise: cells per metre along the edge, and how often its motion loops (shaders.js FLAME_SPEED)
+const FLAME_CELLS_PER_M = 2.2, FLAME_LOOP = 240;
+const hashStr = s => { let h = 7; for (const ch of String(s ?? '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 
 // the court's outline at the fence line (the same runs venues.js fences)
 function outline(court, inset = 0.35) {
@@ -26,28 +27,30 @@ export class StreakFX {
     this.meshes = [];
     const pts = outline(court);
     this.sides = pts.map((p, i) => [p, pts[(i + 1) % 4]]);
-    if (kind === 'flame') this.buildFlames(); else this.buildLasers();
+    if (kind === 'flame') this.buildFlames(court); else this.buildLasers();
   }
 
-  buildFlames() {
-    const tex = cachedTexture(this.ctx, 'flamewall', () => T.flameWallTexture(), { wrap: 'repeat' });
-    const parts = [];
-    for (const [[x0, z0], [x1, z1]] of this.sides) {
-      const len = Math.hypot(x1 - x0, z1 - z0), yaw = Math.atan2(x1 - x0, z1 - z0) - Math.PI / 2;
-      const q = G.quad(len, 1);
-      // quad is centered; lift it so its base sits on the floor, tile the strip along its length
-      for (let i = 1; i < q.position.length; i += 3) q.position[i] += 0.5;
-      for (let i = 0; i < q.uv.length; i += 2) q.uv[i] *= len / 2.4;
-      parts.push({ geo: q, matrix: M.m4fromYaw(M.m4(), (x0 + x1) / 2, 0, (z0 + z1) / 2, yaw) });
-    }
-    const geo = this.ctx.geometry(G.merge(parts, false));
-    // two layers scrolling at different speeds so the fire never looks like a looping strip
-    this.layers = [0, 1].map(k => {
-      const mat = new Material({ map: tex, color: [2.2, 1.6, 1.1], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true, uvOffset: [k * 0.37, 0] });
-      const m = new Mesh(geo, mat, { castShadow: false, reflect: false });
-      m.order = 6; m.visible = false; this.scene.add(m); this.meshes.push(m);
-      return { m, mat, speed: k ? 0.55 : 0.85, drift: k ? -0.04 : 0.03, scale: k ? 0.85 : 1 };
+  // v0.4.5 quick patch: one continuous wall of procedural fire all the way round the court (shaders.js FLAME). It
+  // used to be a flame picture tiled every 2.4 m and scrolled upward, which repeated visibly, wrapped its glowing
+  // base round to the top, and jittered as the whole wall was rescaled every frame.
+  buildFlames(court) {
+    // one strip round the outline; u = metres along the edge, continuous through the corners and back to the start
+    const pts = [...this.sides.map(s => s[0]), this.sides[0][0]];
+    const pos = [], nrm = [], uv = [], idx = [];
+    let u = 0;
+    pts.forEach(([x, z], i) => {
+      if (i) u += Math.hypot(x - pts[i - 1][0], z - pts[i - 1][1]);
+      pos.push(x, 0, z, x, 1, z); nrm.push(0, 0, 1, 0, 0, 1); uv.push(u, 0, u, 1);
+      if (i) { const k = i * 2; idx.push(k - 2, k, k + 1, k - 2, k + 1, k - 1); }
     });
+    this.perimeter = u;
+    const geo = this.ctx.geometry({ position: new Float32Array(pos), normal: new Float32Array(nrm), uv: new Float32Array(uv), index: new Uint16Array(idx) });
+    // the noise has to close round the court: a whole number of cells (a multiple of 4, for the coarser octaves)
+    const cells = Math.max(8, Math.round(u * FLAME_CELLS_PER_M / 4) * 4);
+    this.flameMat = new Material({ color: [1, 1, 1], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true, flame: [0, 1, cells / u, cells], flameT: [0, (court.seed ?? hashStr(court.id)) % 97, 0, 0] });
+    this.wall = new Mesh(geo, this.flameMat, { castShadow: false, reflect: false });
+    this.wall.order = 6; this.wall.visible = false; this.scene.add(this.wall); this.meshes.push(this.wall);
+    this.flameT = Math.random() * FLAME_LOOP;
   }
 
   buildLasers() {
@@ -77,17 +80,17 @@ export class StreakFX {
     this.show = M.damp(this.show, this.level, 2.5, dt);
     const lv = this.show;
     if (this.kind === 'flame') {
-      const h = lv < 0.02 ? 0 : 0.6 + lv * 0.95; // 1.55 m at 3 wins, 2.5 at 6, 3.45 at 9, 4.4 m (over the fence) at 12
-      for (const L of this.layers) {
-        L.m.visible = h > 0;
-        if (!L.m.visible) continue;
-        L.mat.uvOffset[1] = (L.mat.uvOffset[1] + L.speed * dt) % 1;
-        L.mat.uvOffset[0] = (L.mat.uvOffset[0] + L.drift * dt) % 1;
-        const flick = 1 + 0.06 * Math.sin(this.t * 13 + L.speed * 7) + 0.04 * Math.sin(this.t * 23);
-        M.m4compose(L.m.matrix, [0, 0, 0], M.q4(), [1, h * L.scale * flick, 1]);
-        const b = 0.6 + 0.25 * lv;
-        L.mat.color[0] = 2.2 * b; L.mat.color[1] = 1.55 * b; L.mat.color[2] = 1.0 * b;
-      }
+      // each milestone (3, 6, 9, 12 wins) makes it taller, brighter and fuller: 1.4 m, 2.2 m, 3.0 m, 3.8 m. The level
+      // eases in, so it grows smoothly instead of popping, and nothing is rescaled per frame
+      const on = lv > 0.02;
+      this.wall.visible = on;
+      if (!on) return;
+      this.flameT = (this.flameT + dt) % FLAME_LOOP; // the shader's motion loops seamlessly every FLAME_LOOP seconds
+      const h = 0.6 + 0.8 * lv, fade = Math.min(1, lv / 0.6);
+      M.m4compose(this.wall.matrix, [0, 0, 0], M.q4(), [1, h, 1]);
+      const F = this.flameMat.flame, T = this.flameMat.flameT;
+      F[0] = fade * (0.75 + 0.15 * lv); F[1] = h;
+      T[0] = this.flameT; T[2] = 0.02 * lv;
       return;
     }
     const on = lv > 0.02, n = Math.round(Math.max(this.level, lv));
