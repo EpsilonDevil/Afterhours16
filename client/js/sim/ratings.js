@@ -36,7 +36,12 @@ export const ATTR_LABEL = {
 // v0.4.4 rating curve used for every skill check (shooting, finishing, handles, passing, defense, boards):
 // linear 70..95, a stronger push above 95, a big jump at 99 (near-certain unless an opposing stat fights it),
 // and a steeper fall-off under 70. Roughly 0 at 40, 0.43 at 60, 0.61 at 70, 0.95 at 95, 1.32 at 99.
-export function rk(v) {
+// v0.4.5 quick patch: a stat under 70 isn't proficient: it plays 10% less effective, across the board (skills here,
+// physical attributes below; a shooting stat's green window is cut 10% in shots.js instead, exactly)
+export const SUB70_K = 0.9;
+export const proficient = v => (v ?? 60) >= 70;
+export function rk(v) { const x = rkRaw(v); return proficient(v) ? x : x * SUB70_K; }
+export function rkRaw(v) {
   v = v ?? 60;
   let x = (v - 25) / 74;
   if (v < 70) x -= Math.pow((70 - v) / 30, 1.4) * 0.2;
@@ -47,7 +52,7 @@ export function rk(v) {
   return Math.max(0, x);
 }
 // physical attributes (speed, bounce, strength, stamina) get a gentler top end so movement stays sane
-const n = v => { v = v ?? 60; return (v - 25) / 74 + (v > 95 ? (v - 95) * 0.012 : 0) + (v >= 99 ? 0.03 : 0); };
+const n = v => { v = v ?? 60; return ((v - 25) / 74 + (v > 95 ? (v - 95) * 0.012 : 0) + (v >= 99 ? 0.03 : 0)) * (v < 70 ? SUB70_K : 1); };
 
 export function physical(build) {
   const a = build.attributes || {};

@@ -1,5 +1,6 @@
 // Player state + movement physics (momentum, braking, plant cuts, jumps, stamina).
 import { physical } from './ratings.js';
+import { bodyDims } from '../char/skeleton.js';
 import { DT, GRAVITY, COURT } from './constants.js';
 import { jumpshotPackage } from './shots.js';
 
@@ -11,6 +12,8 @@ export const SPRINT_DRAIN_K = 2;
 // v0.4.5 Lock-In grade -> stamina: A- 1.1x / A 1.25x / A+ 1.5x recovery, D+ 1.1x / D 1.25x / D- and F 1.5x drain
 const GRADE_REC = { 10: 1.1, 11: 1.25, 12: 1.5 };
 const GRADE_DRAIN = { 3: 1.1, 2: 1.25, 1: 1.5, 0: 1.5 };
+
+export const DRIBBLE_SPEED_K = 1 - 0.0745;
 
 export class Player {
   constructor(id, team, entry, catalog) {
@@ -34,6 +37,9 @@ export class Player {
     this.stam = { lastMove: null, moveRun: 0, moveK: 1, lastNeg: null, negK: 1, goodRun: 0, recBoost: false, grade: null };
     this.hotStreak = 0; this.coldMisses = 0; this.cold = false;
     this.phys = physical(entry.build);
+    // v0.4.5 quick patch: the body model's real shoulder and arm (char/skeleton.js), so a ball held at the top of a
+    // shot is somewhere the hands can actually be (see Game.reachTop)
+    { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen }; }
     this.shotPkg = jumpshotPackage(entry.build, catalog);
     this.dunkPkg = entry.build.equipment?.dunk || 'dunk_basic';
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves
@@ -102,7 +108,8 @@ export class Player {
     const defense = this.stance === 'defense';
     this.sprinting = !!it.sprint && mag > 0.3 && this.stamina > 0.04 && !defense;
     let top = this.sprinting ? ph.sprint : ph.jog;
-    if (hasBall) top *= this.sprinting ? ph.ballSpeedK : 0.95;
+    // v0.4.5 quick patch: everyone moves 7.45% slower with the ball (DRIBBLE_SPEED_K)
+    if (hasBall) top *= (this.sprinting ? ph.ballSpeedK : 0.95) * DRIBBLE_SPEED_K;
     // v0.4.3: Perimeter D sets how fast a defender slides (and Lateral Quickness via speed, through jog)
     if (defense) top = ph.jog * (0.76 + 0.16 * pd(this.ratings.perimeter_d));
     if (this.handsUp) top *= 0.7;

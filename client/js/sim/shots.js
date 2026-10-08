@@ -2,7 +2,7 @@
 import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
 import { Ball, cloneBall, predictShot } from './ball.js';
 
-import { rk as n } from './ratings.js';
+import { rk as n, rkRaw, proficient, SUB70_K } from './ratings.js';
 import { bk, tierTable } from './badges.js';
 // v0.4.5 badge tables: each tier step is 10% bigger than the one before
 const DEADEYE_WIN = tierTable([0, 0.15, 0.25, 0.35, 0.45]);
@@ -56,8 +56,10 @@ export function jumpshotPackage(build, catalog) {
 // v0.4.4: the timing window follows the rating curve, so a weak shooter's green window is tiny (about 22 ms
 // at 50 and 32 ms at 60), the 70-95 range climbs steadily, and a 99 gets a huge window (about 100 ms)
 export function timingWindowMs(attr, badges = {}) {
-  return 14 + 52 * Math.pow(n(attr), 1.25) + ((attr ?? 0) >= 99 ? 16 : 0) + bk(badges, 'green_machine') * 5;
+  return 14 + 52 * Math.pow(rkRaw(attr), 1.25) + ((attr ?? 0) >= 99 ? 16 : 0) + bk(badges, 'green_machine') * 5;
 }
+// v0.4.5 quick patch: a shooting stat under 70 isn't proficient: that shot's green window is 10% smaller
+const profK = attr => (proficient(attr) ? 1 : SUB70_K);
 
 // v0.4: an Excellent ("green") release always goes in unless the shot is blocked. Difficulty therefore
 // shrinks the green window instead of lowering the make chance of a green: a smothering contest, shooting
@@ -67,8 +69,15 @@ export function timingWindowMs(attr, badges = {}) {
 export const SMOTHER = 0.75;
 export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
 // v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
-// package bonus included; the AI's green rate follows the same windows)
-export const GREEN_K = 0.9;
+// package bonus included; the AI's green rate follows the same windows); the quick patch takes another 6.5% off
+export const GREEN_K = 0.9 * (1 - 0.065);
+// v0.4.5 quick patch: the contest's bite on the green window is 5% bigger in every guarded tier (Open, Light contest,
+// Contested; Smothered has no window at all), each on its own; a wide-open look (10% guarded or less) is untouched
+export const CONTEST_TIER_BOOST = 0.05;
+export const contestTierK = c => ((c || 0) > 0.1 ? 1 + CONTEST_TIER_BOOST : 1);
+// v0.4.5 quick patch: a timed shot (jumper, free throw, layup) let go outside the green window very rarely goes in:
+// slightly early or late keeps 5% of its chance, 3% at most; very early or late 1%, half a percent at most
+export const OFF_TIMING = { early: { k: 0.05, cap: 0.03 }, late: { k: 0.05, cap: 0.03 }, vearly: { k: 0.01, cap: 0.005 }, vlate: { k: 0.01, cap: 0.005 } };
 // v0.4.5 quick patch: really deep shots are luck. Past 35 ft (10.67 m from the rim) the make chance slides down to
 // pure luck at the half-court line (12.73 m) and stays there beyond it: well under 1%, and 1% at the very most for
 // a 99 three-point shooter. Limitless helps up to 35 ft, not past it. The green window closes over the same stretch
@@ -77,7 +86,7 @@ export const DEEP_D = 35 * 0.3048, HALF_D = COURT.hoopZ;
 export const deepK = d => Math.max(0, Math.min(1, ((d || 0) - DEEP_D) / (HALF_D - DEEP_D)));
 export const deepLuck = attr => 0.001 + 0.009 * Math.pow(Math.max(0, Math.min(1, n(attr))), 2);
 export function greenWindowMs(attr, badges = {}, ctx = {}) {
-  let w = timingWindowMs(attr, badges) * (ctx.greenK || 1); // v0.4.5: Sharp Eye / shooting takeover
+  let w = timingWindowMs(attr, badges) * (ctx.greenK || 1) * profK(attr); // v0.4.5: Sharp Eye / shooting takeover
   if (ctx.ft) return w * 1.15 * GREEN_K;
   if (ctx.pkg?.winK) w *= ctx.pkg.winK;
   if ((ctx.contest || 0) >= SMOTHER) return 0;
@@ -85,7 +94,7 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   const c = Math.min(1, ctx.contest || 0) * (1 - DEADEYE_WIN[b.deadeye || 0]);
   // v0.4.4: every contested state (light contest and up, not open looks) bites 3.75% harder
   const ck = 1 + 0.0375 * Math.max(0, Math.min(1, ((ctx.contest || 0) - 0.15) / 0.05));
-  w *= Math.max(0, 1 - 0.55 * ck * c);
+  w *= Math.max(0, 1 - 0.55 * ck * c * contestTierK(ctx.contest));
   w *= 1 - 0.28 * Math.min(1, (ctx.moving || 0) / 5);
   if (ctx.fade) w *= 0.82;
   if (ctx.three && (ctx.d || 0) > 7.9) w *= Math.max(0.3, 1 - ((ctx.d - 7.9) * 0.28) * (1 - Math.min(0.85, 0.18 * bk(b, 'limitless'))));
@@ -94,6 +103,9 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   if ((ctx.d || 0) > DEEP_D) return Math.max(0, w * (1 - deepK(ctx.d))) * GREEN_K; // (no 9 ms floor out there)
   return Math.max(9, w) * GREEN_K;
 }
+
+// which hand finishes a layup: the far hand when a defender is on one side or at the rim (the animator draws it)
+export function layupHand(a) { return (a.cov === 'side' || a.cov === 'rim') && (a.covSide || 1) > 0 ? 'L' : 'R'; }
 
 // v0.4.5 quick patch, shot meter: a jumpshot base's window bonus counts as a boost, its penalty as part of the build
 export const naturalPkg = pkg => (pkg ? { ...pkg, winK: Math.min(1, pkg.winK ?? 1) } : pkg);
@@ -144,9 +156,9 @@ export const LAYUP_WIN_K = 1.2; // layups are a touch more forgiving than jumper
 export function layupWindowMs(attr, badges = {}, ctx = {}) {
   const f = LAYUP_FEEL[ctx.lstyle] || LAYUP_FEEL.basic;
   // (ctx.natural: the shot meter's "ratings only" part keeps a package's penalty but not its bonus)
-  let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * (ctx.natural ? Math.min(1, f.win) : f.win) * (ctx.greenK || 1);
+  let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * (ctx.natural ? Math.min(1, f.win) : f.win) * (ctx.greenK || 1) * profK(attr);
   const c = Math.min(1.2, ctx.contest || 0) * (1 - FINISHER_CON[(badges || {}).contact_finisher || 0]);
-  w *= Math.max(0.5, 1 - 0.4 * c);
+  w *= Math.max(0.5, 1 - 0.4 * c * contestTierK(ctx.contest));
   return Math.max(9, w) * GREEN_K;
 }
 
@@ -217,7 +229,8 @@ export function finalChance(o) {
   // v0.4.4: a 99 is close to automatic when it isn't badly mistimed; from here only the defense (the contest,
   // which scales with the defender's own ratings) and fatigue bring it down
   const deep = o.type === 'jumper' && (o.d || 0) > DEEP_D;
-  if ((attr ?? 0) >= 99 && o.grade !== 'vearly' && o.grade !== 'vlate' && !deep) p = Math.max(p, o.type === 'jumper' ? (o.three ? 0.9 : 0.93) : 0.96);
+  const off = (o.type === 'jumper' || o.type === 'ft' || o.type === 'layup') ? OFF_TIMING[o.grade] : null;
+  if ((attr ?? 0) >= 99 && !off && !deep) p = Math.max(p, o.type === 'jumper' ? (o.three ? 0.9 : 0.93) : 0.96);
   // contest
   const deadeye = Math.min(0.85, DEADEYE_CON[b.deadeye || 0]);
   const finisher = Math.min(0.75, FINISHER_CON[b.contact_finisher || 0]);
@@ -247,8 +260,10 @@ export function finalChance(o) {
     // past 35 ft: slide down to luck by the half-court line, and luck only beyond it (whatever the badges say)
     const k = deepK(o.d), luck = deepLuck(attr);
     p = p * (1 - k) * (1 - k) + luck * k;
-    return Math.max(0.0005, Math.min(o.d >= HALF_D ? luck : 0.97, p));
+    p = Math.max(0.0005, Math.min(o.d >= HALF_D ? luck : 0.97, p));
+    return off ? Math.max(0.0005, Math.min(off.cap, p * off.k)) : p;
   }
+  if (off) return Math.max(0.0005, Math.min(off.cap, p * off.k));
   return Math.max(0.01, Math.min(0.97, p));
 }
 

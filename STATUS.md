@@ -1,6 +1,6 @@
 # Status — v0.4.5 (complete: seven stages, the final touches and a quick patch)
 
-## v0.4.5 quick patch: right-stick dribble moves, deep shots, attack-bind layups, finish selection, the shot meter and the streak fire
+## v0.4.5 quick patch: right-stick dribble moves, deep shots, attack-bind layups, finish selection, the shot meter, the streak fire, and a second round (timing, release point, tuning, AI)
 
 ### Right stick: responsiveness
 
@@ -26,6 +26,7 @@
   | 90 / 85, Quick Handle | 357 ms | 224 ms (−37%) |
   | 99 / 99, Elite Handle | 328 ms | 190 ms (−42%) |
 
+- (The second round slows these by position and then 5% for everyone: a point guard's crossover at 75/75 Basic ends up at 277 ms, see "Dribble moves by position" below.)
 - **Moves cancel into each other:** a different move called once the current one is 60% through (`CHAIN_AT`) starts right away instead of waiting for the end. The move cooldown is 55% of the move.
 - **Combos are free:** a different move called during the last one or within 0.4 s of it ending (`COMBO_GAP`) costs no stamina, and each step of a combo adds a little to the ankle-breaker chance (+0.8% per step, up to four).
 - **Spam is still punished:** the same move again costs stamina every time, and the repeat penalty (drain doubles after three) is unchanged.
@@ -79,10 +80,45 @@
   - no texture at all, so nothing repeats; `flameWallTexture` is gone.
 - **Growth:** 1.4 m at 3 wins, 2.2 m at 6, 3.0 m at 9, 3.8 m at 12 (it was 1.55 / 2.5 / 3.45 / 4.4 m), and brighter and fuller at each step. The level eases in (no frame grows more than a few centimetres), and the mesh isn't touched while a level holds.
 - The King Tut Cup's lasers are unchanged.
+- **Whose streak a court shows, fixed** (`park.js`):
+  - **Your court didn't light up until the tip-off, and the last court you played on could light up instead.** `myCourt` was only set once your game had loaded and was never cleared when you walked off, so while a new game was being set up the old court showed your streak and the new one stayed dark. It's now set the moment you step up (`startMyGame`) and cleared when you leave (`leaveCourt`).
+  - **Kings who beat you could show a streak they didn't have.** Your games don't run through the AI court bookkeeping, so the winners inherited whatever streak the court last had (another group's). Now kings you challenged and lost to go up by one, challengers who beat you start at one, and a court you won and left starts fresh (`myOppStreak`).
+  - A court with no game on it shows nothing; an AI court shows its kings' streak only while they're playing on it.
+
+### Second round
+
+- **Timing is everything.** A jumper, free throw or layup let go outside the green window very rarely goes in: slightly early or late keeps 5% of its chance and 3% at most; very early or late keeps 1% and half a percent at most (`OFF_TIMING` in `shots.js`). That holds whatever the rating (the 99 floor no longer covers a mistimed shot), the badges or a hot hand. A green is unchanged.
+- **The green window is centred on the ball leaving his hand, for every build and animation.**
+  - **What was wrong:** the ball's release point came from the sim's reach (`reach × relK`), which grows 2.5× faster with wingspan than the body model's arm does. For most builds the model's hand couldn't get there, so the ball floated up out of the hand and the visual release came as much as 0.1 s before the middle of the window (0.15–0.5 m above the fingers at the top, worst for long arms, finger rolls and contested layups).
+  - **Now:** `Game.reachTop` works out the highest the ball can be held from the body model's own shoulder and arm (`char/skeleton.js bodyDims`, on `Player.arm`), with the arm 97% straight, the shoulder raised 2.5% of height (the animator now lifts the collarbone when reaching up: `Animator.liftShoulder`) and the torso's lean per jump-shot base (`SHOT_PATH.back`) or per layup package and coverage (`LAYUP_BODY`, measured off the animator's poses). The release point, the set point, the free throw and every layup finish are kept under it, and layups don't reach out further than 80% of the arm. The layup grip now matches the jumper's.
+  - **Checked on the real rig** (`tests/release.test.mjs`, and a 3,000-trace sweep): every jump-shot base × the fastest and slowest release × set shot, three, fade × short, average and tall/long builds, free throws, and all 4 layup packages × 7 coverages: at the ideal release the hand is on the ball (under 5 mm short; it was up to 51 cm) and the ball and the hand both top out within one frame of it.
+  - **Gameplay unchanged:** the contest and the layup block check still use the release height the build's reach gives (`holdPoint().gy`), so wingspan keeps its value and the balance doesn't move; only where the ball is drawn changed.
+- **Windows 6.5% smaller across the board** (`GREEN_K` 0.9 × 0.935): jumpers, free throws, layups, every badge and package included.
+- **Contest tiers bite 5% harder, each on its own** (`CONTEST_TIER_BOOST`): the contest's cut to the green window is ×1.05 in the Open, Light contest and Contested tiers (jumpers and layups); wide open (10% guarded or less) is untouched and smothered still has no window.
+- **Stats under 70 aren't proficient** (`SUB70_K` 0.9, `proficient` in `ratings.js`):
+  - every skill rating under 70 plays 10% below its curve (`rk`), and so does every physical one (speed, acceleration, vertical, strength, stamina): base chances, finishing, handles, passing, defense, boards, speed, bounce, stamina drain;
+  - a shooting stat under 70 gets exactly a 10% smaller green window for that shot type (mid-range, three, free throw, layup), counted once (the window uses the raw curve, then ×0.9);
+  - a 69 sits clearly below a 70 everywhere (the step from 69 to 70 is more than three times the step from 70 to 71).
+- **Game speed −3.75%** (`GAME_SPEED`, now ×1.1187 overall) and **everyone moves 7.45% slower with the ball** (`DRIBBLE_SPEED_K`, jogging and sprinting).
+- **Dribble moves by position** (`POS_MOVE_SPEED` in `game.js`, also in the store preview): PF and C moves come out 10% slower, SF and SG 5% slower, PG unchanged; then **every move for everyone 5% slower** on top (`MOVE_SPEED_ALL` 0.95). A crossover at 75 Ball Handle / 75 Speed with Ball with the Basic size-up: PG 277 ms, SG/SF 292 ms, PF/C 308 ms (it was 400 ms for everyone before the quick patch).
+- **Icon pass inputs over teammates' heads** for the device in use: your key on a keyboard (your binding), the modifier + face button on a controller in your pad's symbols (`MatchSession.iconPassGlyph`).
+- **Shot feedback shows % guarded:** the exact contest the release was graded with (positions, angle, hands up, length, the defender's ratings, help), as "62% guarded · Contested" (`guardedText`). It used to show the make chance.
+- **Dunks:** no slow motion on slams or posters any more; every slam hits harder instead (bigger rim shake, camera kick, sparks and sound). A made dunk is thrown straight out of his hand down through the rim at 8.5 m/s (`SLAM_V`) instead of appearing above the rim and dropping at 5.5, and the dunker follows through: the arm drives down, the chest crunches over it and the knees snap up.
+- **Smarter AI** (`ai.js`):
+  - a basketball-IQ bump in every tier that grows with the player's IQ (+0.04 + 0.08 × IQ, `AI_IQ_BONUS`);
+  - dribble moves are mixed up (`pickMove`): repeats get rarer the smarter he is, combos are favoured, and after three in a row the same move is almost never called; tired smart players dribble less;
+  - shot selection knows the new timing rules: a shot that's going to be smothered is passed up, a takeover or hot hand is a reason to look for your own, tired legs a reason not to force a drive or a contested shot;
+  - passers feed a teammate in a takeover or on fire (and not one who's out of gas); defenders crowd a hot shooter or one in a shooting takeover and sag off a tired handler. All of it scales with IQ.
+- **The AI's timing, recalibrated:** its near-misses used to keep 85% of their chance; now they'd be worth almost nothing, so its green rate is set to keep the make rate its old timing gave it, shot for shot (`keepMakeRate`), with a per-type factor for shots that get smothered after they're chosen (`AI_TIMING_COMP`).
+- **Balance** (24 AI park games, same seeds, by shot type, before → after everything above): mid-range 30.0% → 28.8%, threes 29.6% → 31.3%, layups 54.5% → 54.3%, points per game 36.5 → 35.0, game length 8.3 → 8.2 min. 40 park games: FG 33.7% → 35.1%, 3P 29.0% → 32.4%, dunks 0.5 a game either way, blocks 3.4 either way, steals 4.4 → 4.2.
 
 ### Verified
 
-- 77 Node tests and 32 Python tests pass; lint is clean.
+- 90 Node tests and 32 Python tests pass; lint is clean.
+- `tests/streakcourt.test.mjs`: your streak lights the court you step up on from the start and leaves with you; kings who beat you carry the right streak (it fails on the old code).
+- `tests/qp2.test.mjs`: off-window caps for every shot type and rating, the new constants, sub-70 (curve, windows, physicals, base chances), icon pass glyphs for keyboard, Xbox and PlayStation, % guarded, a dunk thrown down hard from the hand with no slow motion, the AI's move variety and IQ bump, the contest tier boost, dribble-move speed by position and overall.
+- `tests/release.test.mjs`: the release-point sweep above.
+- In the browser (headless Chromium): the feedback reads "0% guarded · Wide open" on an open green; no console errors.
 - `tests/streakfx.test.mjs`: one continuous strip that closes where it started, a whole number of noise cells round the court, the four heights, smooth growth, no per-frame rescaling, a procedural shader with no texture lookups.
 - In the browser (headless Chromium, Harbor Point): the fire at 3, 6, 9 and 12 wins, animating between frames, with no console errors. The seam and the 240 s loop also check out numerically (differences around 1e-13).
 - `tests/meter.test.mjs`:

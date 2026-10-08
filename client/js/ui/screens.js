@@ -157,7 +157,7 @@ function home(app, root) {
         <button class="tile t-codes" data-go="codes"><span class="tile-k">CODES</span><b>Redeem</b><small>Locker codes</small></button>
         <button class="tile t-social" data-social><span class="tile-k">SOCIAL</span><b>Friends</b><small>${app.ai ? `Squad ${app.ai.squad.length}/4` : 'Your regulars'}</small></button>
       </nav>
-      <div class="controls-hint muted small">Tip: hold ${promptGlyph(app.input, 'Space', 'X')} to shoot and let go at the top of your jump — a green release always goes in unless it's blocked. ${app.input.usingPad ? `${padGlyph(app.input.gp.family, 'RS')} click` : '<kbd>Tab</kbd>'} in-game shows all controls.</div>
+      <div class="controls-hint muted small">Tip: hold ${promptGlyph(app.input, 'Space', 'X')} to shoot and let go at the top of your jump — a green release always goes in unless it's blocked (inside 35 ft), and one outside the window almost never does. ${app.input.usingPad ? `${padGlyph(app.input.gp.family, 'RS')} click` : '<kbd>Tab</kbd>'} in-game shows all controls.</div>
     </section>`;
   $$('[data-go]', root).forEach(b => b.onclick = () => go(app, b.dataset.go));
   const soc = $('[data-social]', root); if (soc) soc.onclick = () => import('./phone.js').then(P => P.openPhone(app));
@@ -222,13 +222,13 @@ export function controlsTable(app) {
   const rows = [
     ['Offense', null, null],
     ['Move / sprint', `${K('up', 'left', 'down', 'right')} / ${K('sprint')}`, `${G('LS')} / ${P('sprint')}`],
-    ['Shoot — hold, release at the top (a green inside 35 ft is a guaranteed make; never while smothered)', K('shoot'), P('shoot')],
+    ['Shoot — hold, release at the top (a green inside 35 ft is a guaranteed make, outside the window almost never; never while smothered)', K('shoot'), P('shoot')],
     ['Bailout — pass out of your jumper before the release', `${K('pass')} while shooting`, `${P('pass')} while shooting`],
     ['Attack the rim — your better finish, dunk or layup (hold; a layup is timed like a shot)', K('dunk'), `${G('RS')} down while sprinting, held`],
     ['Pump fake', `Tap ${K('shoot')}`, `Tap ${P('shoot')}`],
     ['Pass (aims with your stick) / bounce / lob', K('pass', 'bounce', 'lob'), `${P('pass')} / ${P('bounce')} / ${P('lob')}`],
     ['Alley-oop', K('alley'), `${P('alleyMod')}+${P('lob')}`],
-    ['Icon pass to a teammate', '1 2 3 4', `${P('mod')} + ${P('pass')}/${P('bounce')}/${P('shoot')}/${P('lob')}`],
+    ['Icon pass to a teammate (shown over their heads)', K('icon1', 'icon2', 'icon3', 'icon4'), `${P('mod')} + ${P('pass')}/${P('bounce')}/${P('shoot')}/${P('lob')}`],
     ['Crossover · in-and-out', K('stickLeft', 'stickRight'), `Flick ${G('RS')} left / right`],
     ['Hesitation · step-back', K('stickUp', 'stickDown'), `Flick ${G('RS')} up / down`],
     ['Spin · behind-the-back', K('spin', 'btb'), `Rotate ${G('RS')} / flick down while moving`],

@@ -55,6 +55,11 @@ input, select { font: inherit; }
 .ptag.opp { color: rgba(255,190,180,.8); }
 .ptag.me b { font-family: var(--display); color: var(--accent); font-size: 13px; }
 .ptag i { font-style: normal; display: inline-flex; width: 17px; height: 17px; align-items: center; justify-content: center; border-radius: 50%; background: var(--blue); color: #fff; font-family: var(--display); font-size: 11px; }
+/* v0.4.5 quick patch: icon pass inputs over teammates' heads (the key, or the modifier + face button) */
+.ptag .tag-in { display: inline-flex; align-items: center; gap: 2px; text-transform: none; letter-spacing: 0; }
+.ptag .tag-in kbd { min-width: 18px; text-align: center; padding: 1px 5px; font-weight: 700; color: #fff; background: rgba(63,160,255,.85); border-color: rgba(255,255,255,.5); }
+.ptag .tag-in .pad-glyph { min-width: 18px; height: 18px; font-size: 10px; padding: 0 4px; }
+.ptag .tag-in .pad-glyph.b-lb, .ptag .tag-in .pad-glyph.b-rb { min-width: 0; height: 14px; font-size: 8px; padding: 0 3px; opacity: .85; }
 .ptag.calling::after { content: '!'; color: var(--accent); font-family: var(--display); margin-left: 2px; }
 .hud-feed { position: absolute; left: 22px; top: 86px; display: flex; flex-direction: column; gap: 6px; }
 .feed-item { background: rgba(10,12,16,.78); border-left: 3px solid var(--muted); padding: 6px 12px; font-size: 13px; border-radius: 0 6px 6px 0; transition: opacity .6s, transform .6s; max-width: 360px; }

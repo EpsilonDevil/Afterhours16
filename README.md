@@ -116,12 +116,12 @@ Controllers are first-class in v0.4. Any controller Chrome/Edge sees with the st
 | Action | Keyboard / mouse | Controller (Xbox names) |
 |---|---|---|
 | Move / sprint | WASD / Shift | Left stick (analog: walk → jog) / RT |
-| Shoot: hold, release at the top (a green always goes in inside 35 ft; never while smothered) | Hold Space or left mouse | Hold X |
+| Shoot: hold, release at the top (a green always goes in inside 35 ft; outside the window it almost never does; never while smothered) | Hold Space or left mouse | Hold X |
 | Bailout: pass out of your jumper any time before the release | Pass key while shooting | A while shooting |
 | Attack the rim: your better finish, dunk or layup (a layup is timed: hold, let go at the top) | Hold Z | Right stick down while sprinting, held |
 | Pump fake | Tap Space | Tap X |
 | Pass (aims with your stick) / bounce / lob / alley-oop | E / R / T / Y | A / B / Y / RB+Y |
-| Icon pass to a teammate | 1–4 | LB + face button |
+| Icon pass to a teammate (the input shows over each teammate's head) | 1–4 | LB + face button |
 | Crossover · in-and-out / hesitation · step-back | ← → / ↑ ↓ | Flick right stick left/right / up/down |
 | Spin / behind-the-back | Q / F | Rotate right stick / flick down while moving |
 | Call screen / call for ball | C / E without the ball | Tap LB / A |
@@ -149,7 +149,9 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 - **Solid green** in the middle is the window your ratings give you on their own.
 - **Fading out to yellow** around it is what boosts add: badges (Green Machine, Deadeye under a contest, Limitless Range from deep, Catch & Shoot, Corner Specialist, Contact Finisher on layups), your Icon badge, a Shooting Takeover and a forgiving jumpshot base or layup package. Releasing in the yellow is still a green.
 - **Solid** means a green there always goes in (jumpers inside 35 ft, free throws). **Outlined** means perfect timing, but not an automatic make: layups, and shots from past 35 ft.
+- **Outside the window** a shot almost never goes in: 3% at most slightly early or late, half a percent badly off, whatever your rating.
 - **No window:** you're smothered (the bar turns red) or you're past half court. Close shots aren't timed, so they get no meter.
+- The middle of the window is the moment the ball leaves your player's hand, for every jump-shot base, release, layup package and build: the ball never floats up out of his hand.
 - After the release, the bar stays for a moment, frozen where you let go, with the marker colored by the grade. The Tab overlay has a legend.
 
 ## How it plays
@@ -175,14 +177,22 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
   - **AI that attacks after an ankle-breaker:** slashers, playmakers and bigs go to the rim; shooters rise up. Fewer pointless kick-outs.
   - **No more hitching in the parks.** People arriving and courts rotating used to build new players mid-frame, worst at the King Tut Cup; they're now reused or built a slice at a time.
 - **v0.4.5 quick patch:**
-  - **Snappier dribble moves:** every move is 28% quicker at 55 Ball Handle and up to 42% quicker at 99 (a crossover: 400 → 289 ms at 55 with the Basic size-up, 328 → 190 ms at 99 with Elite Handle). The next move cuts in 60% of the way through the current one. Combos of different moves are free; spamming the same move still costs stamina.
+  - **Snappier dribble moves:** every move is quicker, more so with a better handle (a point guard's crossover: 400 → 304 ms at 55 with the Basic size-up, 328 → 200 ms at 99 with Elite Handle; wings' moves are 5% slower than that, bigs' 10%). The next move cuts in 60% of the way through the current one. Combos of different moves are free; spamming the same move still costs stamina.
   - **Deep shots are luck:** past 35 ft the make chance fades fast, Limitless Range included, and the green window shrinks away. Past half court it's at most 1% (a 99 three-point shooter), with no green window.
   - **Attack-bind layups are timed:** hold Z or the right stick down through the gather and let go at the top, same as the shoot button.
   - **Finishing follows your best rating:** the attack bind no longer dunks whenever it can, and shoot-button drives no longer give the dunk a head start. The higher of Driving Dunk and Layup wins; on an exact tie your archetype decides.
   - **A new shot meter** that shows your exact green window: solid green for what your ratings give, fading to yellow for what boosts add, outlined where a green isn't an automatic make.
+  - **Timing is everything:** a release outside the green window almost never goes in, and every window is another 6.5% smaller. The contest bites 5% harder on the window in every guarded tier.
+  - **The release point is where the ball leaves his hand**, on the body model, for every build and animation, so the middle of the green window is the release you see.
+  - **Stats under 70 aren't proficient:** 10% less effective across the board, and a 10% smaller green window for a shooting stat under 70.
+  - **The game runs 3.75% slower**, and everyone moves 7.45% slower with the ball. Dribble moves come out 10% slower for PFs and Cs and 5% slower for SFs and SGs, and then 5% slower for everyone.
+  - **Icon pass inputs over teammates' heads** for whatever you're playing with, and **shot feedback shows how guarded you were** ("62% guarded · Contested").
+  - **Dunks don't go into slow motion any more:** the slam hits harder instead, thrown straight down through the rim, with a follow-through.
+  - **Smarter AI in every tier:** better shot selection, mixed-up dribble moves, aware of stamina, takeovers and hot hands.
+  - **Streak effects show on the right court:** yours from the moment you step up to play (it used to wait for the tip-off, and could light up the last court you played on instead), and kings who beat you show their real streak.
   - **Streak fire redone:** an animated, procedural wall of fire all the way round the court that grows at each milestone (3, 6, 9, 12 wins). The old one was a flame picture repeated every couple of metres, and it glitched as it scrolled.
 - **Ratings matter more at the ends (v0.4.4):**
-  - **Under 70:** effectiveness drops off steeply. A 55 shooter's green window is about two thirds of a 70's (27 ms vs 42 ms), and it shrinks further below that.
+  - **Under 70:** effectiveness drops off steeply. A 55 shooter's green window is about two thirds of a 70's, and it shrinks further below that. Since the v0.4.5 quick patch a stat under 70 isn't proficient: it plays 10% less effective across the board (skills and physical attributes alike), and a shooting stat under 70 has a 10% smaller green window for that shot.
   - **Over 95:** extra weight on top.
   - **99:** a different class. The green window is about 1.65× a 95's. An open 99 layup or free throw is about 97%, and an open 99 three that isn't badly mistimed is about 90%. Only the defense (whose contest scales with the defender's own ratings) or fatigue brings it down.
   - **Contested shots:** every contested state shrinks the green window 3.75% more than before (open shots are unchanged).

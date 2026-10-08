@@ -2,7 +2,7 @@
 // stance blending, ball-hand IK, and timed action bodies (jumpshots, layups, dunks, passes, defense).
 import { P, GROUP_SIZE, neutral, newPose } from './pose.js';
 import { COURT, BALL_R } from '../sim/constants.js';
-import { dunkSpin } from '../sim/shots.js';
+import { dunkSpin, layupHand } from '../sim/shots.js';
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -13,7 +13,9 @@ const TAU = Math.PI * 2;
 const ONE_HAND_DUNK = new Set(['onehand', 'tomahawk', 'windmill', 'cradle', 'reverse', 'hammer', 'liberty', 'scoop', 'switch', 'eastbay', 'hashsling', 'bully', 'aroundback', 'superman']);
 // the hand a layup is finished with: the far hand when he takes it away from a defender (side) or around a shot
 // blocker (rim); otherwise the right
-export function layupHand(a) { return (a.cov === 'side' || a.cov === 'rim') && (a.covSide || 1) > 0 ? 'L' : 'R'; }
+export { layupHand }; // (shots.js: the sim needs it too, to keep the ball where that hand can reach)
+// collarbone roll that raises the shoulder joint by ARM_LIFT (0.025H) over the 0.072H collarbone-to-shoulder span
+const CLAV_LIFT = Math.asin(0.025 / 0.072);
 export function dunkHand(a) {
   const q = a.t / Math.max(0.1, a.slam || 1);
   return (a.style === 'switch' && q > 0.57) || (a.style === 'eastbay' && q > 0.6) || (a.style === 'aroundback' && q > 0.5) ? 'L' : 'R';
@@ -357,6 +359,13 @@ export class Animator {
     return set;
   }
 
+  // v0.4.5 quick patch: reaching up with the ball, the shoulder rises (the collarbone lifts), as real shooters' do:
+  // ARM_LIFT×H at full height (game.js reachTop counts on it). by: ball height in reference units (H/2)
+  liftShoulder(T, side, by) {
+    const k = sm(1.9, 2.4, by), sg = side === 'L' ? 1 : -1;
+    T[P['clav' + side] + 2] += sg * CLAV_LIFT * k;
+  }
+
   // Hand targets for whoever is holding/dribbling the ball (positions in reference units)
   ballHands(T, p, g, a, b, mode) {
     const r = BALL_R / this.s;
@@ -371,6 +380,7 @@ export class Animator {
       const est = a.type === 'shoot' && a.kind !== 'close' ? p.shotPkg?.style : 'standard';
       set3(T, 'elbow' + sh, sgn(sh) * (est === 'push' ? 0.6 : est === 'high' ? 0.04 : 0.15), -1, 0.5);
       palm[sh] = { normal: [0, 0.85, 0.5], fingers: [0, 0.75, -0.6], w: 0.9 };
+      this.liftShoulder(T, sh, b[1]);
       set3(T, 'hand' + gh, b[0] + sgn(gh) * (r + 0.075), b[1] - 0.04, b[2] - 0.06);
       set3(T, 'elbow' + gh, sgn(gh) * 1, -0.4, 0.1);
       palm[gh] = { normal: [-sgn(gh), 0.1, 0.1], fingers: [0, 0.9, 0.3], w: 0.85 };
@@ -381,8 +391,9 @@ export class Animator {
       // hand switch, the eastbay and the around-the-back finish in the other hand
       const one = a.type === 'layup' || ONE_HAND_DUNK.has(a.style);
       const sh = a.type === 'dunk' ? dunkHand(a) : layupHand(a), oh = sh === 'L' ? 'R' : 'L', sg = sh === 'L' ? 1 : -1;
-      set3(T, 'hand' + sh, b[0] + sg * 0.02, b[1] - r - 0.06, b[2] - 0.05);
+      set3(T, 'hand' + sh, b[0] + sg * 0.02, b[1] - r - 0.07, b[2] - 0.06);
       palm[sh] = { normal: [0, 0.8, 0.55], fingers: [0, 0.8, -0.5], w: 0.85 };
+      if (a.type === 'layup') this.liftShoulder(T, sh, b[1]);
       set3(T, 'elbow' + sh, sg * 0.4, -1, 0.3);
       if (!one || (a.type === 'dunk' && a.t < a.takeoff * 0.8) || (a.type === 'layup' && a.t < a.takeoff)) {
         set3(T, 'hand' + oh, b[0] - sg * (r + 0.075), b[1] - 0.03, b[2] - 0.05);
@@ -754,7 +765,17 @@ export class Animator {
           if (!a.slammed && st === 'bully') { set3(T, 'handL', 0.2, 1.62, 0.38); set3(T, 'elbowL', 1, -0.5, 0.2); }
           if (!a.slammed && st === 'superman') { set3(T, 'handL', 0.34, 1.25, -0.5); set3(T, 'elbowL', 1, -0.3, -0.6); }
           if (a.type === 'oop') { set3(T, 'handL', 0.15, 2.5, 0.35); set3(T, 'handR', -0.15, 2.5, 0.35); }
-          if (a.slammed) { set3(T, 'handR', -0.08, 2.3, 0.45); set3(T, 'handL', 0.25, 2.1, 0.3); }
+          if (a.slammed) {
+            // v0.4.5 quick patch: an emphatic finish: the slamming arm keeps driving down through the rim, the chest
+            // crunches over it and the knees snap up (it used to freeze with the hands up)
+            const k = sm(0, 0.16, t - (a.slamAt ?? a.slam ?? t)), dh = dunkHand(a), ds = dh === 'L' ? 1 : -1, oh = dh === 'L' ? 'R' : 'L';
+            set3(T, 'hand' + dh, ds * (0.08 - 0.02 * k), 2.3 - 0.62 * k, 0.45 + 0.12 * k);
+            set3(T, 'elbow' + dh, ds * 0.5, -0.3 - 0.5 * k, 0.6);
+            set3(T, 'hand' + oh, -ds * (0.25 + 0.15 * k), 2.1 - 0.75 * k, 0.3 - 0.05 * k);
+            T[P.spine] += 0.22 * k; T[P.chest] += 0.16 * k; T[P.head] += 0.12 * k;
+            T[P.pitchL] = Math.max(T[P.pitchL], 0.7); T[P.pitchR] = Math.max(T[P.pitchR], 0.7);
+            set3(T, 'kneeL', 0.25, 0.35 * k, 1); set3(T, 'kneeR', -0.25, 0.35 * k, 1);
+          }
           if (!a.slammed && a.style === 'reverse') { T[P.chest + 1] = 0.3; }
         } else { T[P.root + 1] = -0.18; T[P.spine] = 0.25; }
         break;

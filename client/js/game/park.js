@@ -629,7 +629,7 @@ export class ParkHub {
           let opp = null;
           if (l1 && this.lineSet(c, l1)) { opp = l1.members.map(w => w.entry); l1.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l1.members.includes(w)); this.shiftLines(c, 1); }
           else { const streak = this.char.progression?.park?.streak || 0; opp = this.takeEntries(c.format, { topUp: true, level: Math.min(0.95, 0.5 + 0.05 * streak) }); }
-          this.startMyGame(c, opp);
+          this.startMyGame(c, opp, 0);
         }
       }
       return;
@@ -673,8 +673,9 @@ export class ParkHub {
     if (l0 && l0.mine && l0.ready) {
       s.dispose(); c.session = null;
       // kings who logged off (or left to join your squad) are replaced by whoever's around
-      const opp = winners.every(e => this.stays(e) && !this.world.inSquad(e.aiId)) ? winners : this.takeEntries(c.format, { topUp: true, exclude: new Set(l0.members.map(w => w.entry.aiId)) });
-      this.startMyGame(c, opp);
+      const kept = winners.every(e => this.stays(e) && !this.world.inSquad(e.aiId));
+      const opp = kept ? winners : this.takeEntries(c.format, { topUp: true, exclude: new Set(l0.members.map(w => w.entry.aiId)) });
+      this.startMyGame(c, opp, kept ? c.kingsStreak : 0); // (the kings bring their streak; fill-ins don't)
       this.syncSquad();
       if (off.length === c.format && this.rng.next() < 0.45) this.formAILine(c, off);
       return;
@@ -691,7 +692,10 @@ export class ParkHub {
   }
 
   // ---------------- v0.4.5 streaks you can see ----------------
-  // the streak each court's holders are on: yours while you hold the court, the AI kings' otherwise
+  // the streak each court's holders are on: yours from the moment you step up to play on it (myCourt is set when your
+  // game starts and cleared when you walk off), the AI kings' otherwise. v0.4.5 quick patch fixes: myCourt used to
+  // stay set after you left, so starting a game on another court lit up the old one with your streak while the new
+  // one stayed dark until the tip-off; and kings who beat you inherited whatever streak the court last had.
   myStreak() { const p = this.app.char()?.progression; return (this.cup ? p?.cup?.streak : p?.park?.streak) || 0; }
   courtStreak(c) {
     if (c === this.myCourt && (this.mySession || this.mode === 'starting')) return this.myStreak();
@@ -721,15 +725,17 @@ export class ParkHub {
   anteFor() { return this.cup ? this.ante : undefined; }
 
   // ---------------- my games ----------------
-  async startMyGame(c, opponents, streakRetry = false) {
+  // oppStreak: the streak the opponents bring (the kings' when you challenge them, 0 for a fresh group)
+  async startMyGame(c, opponents, oppStreak = 0) {
     const app = this.app;
+    this.myCourt = c; this.myOppStreak = oppStreak || 0;
     this.mode = 'starting';
     let ticket;
     try {
       ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: c.format, target: app.settings.parkTarget, difficulty: app.settings.difficulty, ante: this.anteFor() });
       if (ticket.meta.ante) app.setBalance((app.profile.balance || 0) - ticket.meta.ante);
     } catch (e) {
-      this.ui.toast(e.message, 'error'); this.mode = 'roam'; this.unclaim(c); this.newBackgroundGame(c, opponents); return;
+      this.ui.toast(e.message, 'error'); this.mode = 'roam'; this.myCourt = null; this.unclaim(c); this.newBackgroundGame(c, opponents); return;
     }
     this.ticket = ticket;
     consumeBoostsLocal(app, ticket);
@@ -810,7 +816,7 @@ export class ParkHub {
     if (l0 && !l0.mine && this.lineSet(c, l0)) { challengers = l0.members.map(w => w.entry); l0.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l0.members.includes(w)); this.shiftLines(c); }
     else challengers = this.takeEntries(c.format, { topUp: true, level: Math.min(0.97, 0.5 + 0.06 * (this.char.progression?.park?.streak || 0)) });
     for (const e of challengers) e.look = e.look || resolveLook(e.build, this.catalog);
-    this.myOpp = challengers;
+    this.myOpp = challengers; this.myOppStreak = 0; // (challengers have no streak; you're the one holding the court)
     this.mode = 'starting';
     this.app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: c.format, target: this.app.settings.parkTarget, difficulty: this.app.settings.difficulty, ante: this.anteFor() })
       .then(ticket => {
@@ -837,7 +843,9 @@ export class ParkHub {
       this.walkers.push(w);
     }
     this.myMates = [];
-    // court continues: whoever won keeps the court (if I won and left, fresh kings)
+    // court continues: whoever won keeps the court (if I won and left, fresh kings). Their streak: one more than they
+    // brought if they beat you, nothing if you won and walked off (or no game was played)
+    c.kingsStreak = session && !won ? (this.myOppStreak || 0) + 1 : 0;
     const opp = this.myOpp; this.myOpp = [];
     if (won && opp) for (const e of opp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] - 4, e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     this.newBackgroundGame(c, won ? null : opp);
@@ -846,6 +854,7 @@ export class ParkHub {
     // back in your roaming athlete (the one from the game, with any new gear)
     this.rebuildMe();
     this.syncSquad();
+    this.myCourt = null; this.myOppStreak = 0; // you're off the court: it shows its kings' streak, not yours
     this.mode = 'roam';
     this.app.mode = 'park';
     this.rig.snap();

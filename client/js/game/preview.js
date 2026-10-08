@@ -2,7 +2,7 @@
 // the podium. The Showroom draws it; tests drive it directly to check that every animation package looks
 // different (v0.4.5 stage 7).
 import { Player } from '../sim/player.js';
-import { Game, MOVE_SNAP } from '../sim/game.js';
+import { Game, MOVE_SNAP, posMoveK } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
 import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
 
@@ -17,7 +17,7 @@ export class PreviewSim {
   }
   setPlayer(build, catalog) {
     this.player = new Player(0, 0, { build: { ...build, attributes: build.attributes || {} }, name: build.name || 'Player' }, catalog);
-    this.fake = { ball: { mode: 'dribble', holder: 0 }, phase: 'live', players: [this.player] };
+    this.fake = { ball: { mode: 'dribble', holder: 0 }, phase: 'live', players: [this.player], reachTop: Game.prototype.reachTop };
     this.pt = 0;
   }
   setPreview(kind, opts = {}) { this.preview = kind; this.previewOpts = opts; this.pt = 0; this.loopT = 0; this.loopN = 0; this.ballFree = null; this.prng = 0; if (this.player) { this.player.action = null; this.player.y = 0; this.player.airborne = false; } }
@@ -73,7 +73,7 @@ export class PreviewSim {
           p.dribble.xover = null;
           const mv = ['cross', 'btl', 'btb', 'hesi', 'cross', 'spin'][Math.floor(this.pt / 0.6) % 6];
           const durs = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5 };
-          p.startAction('move', durs[mv] * MOVE_SNAP / ms, { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
+          p.startAction('move', durs[mv] * MOVE_SNAP / ms / posMoveK(p.position), { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
         }
       }
       if (p.action && p.action.type === 'move' && p.action.t >= p.action.dur) {

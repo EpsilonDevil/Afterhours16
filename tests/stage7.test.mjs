@@ -70,7 +70,8 @@ test('alley-oops: a teammate near the paint gets one, one at half court gets a l
     let maxAir = 0, oop = false;
     for (let i = 0; i < 240; i++) { g.step(1 / 60); if (r.action?.type === 'oop') oop = true; if (r.airborne) maxAir = Math.max(maxAir, Math.hypot(r.vx, r.vz)); }
     assert.equal(oop, oopOk);
-    assert.ok(maxAir <= 4.6, `nobody flies in from far away (air speed ${maxAir.toFixed(1)} m/s)`);
+    // (a running catch-and-jump is ~4.6 m/s; flying in from half court was 8+)
+    assert.ok(maxAir <= 5.0, `nobody flies in from far away (air speed ${maxAir.toFixed(3)} m/s from (${rx}, ${rz}))`);
   }
 });
 
@@ -110,12 +111,13 @@ test('after an ankle-breaker, slashers, playmakers and bigs attack the rim; shoo
 });
 
 // ---------------- green windows ----------------
-test('every green window is 10% smaller', () => {
+test('every green window is 10% smaller (and 6.5% more since the quick patch)', () => {
   for (const v of [50, 70, 85, 99]) {
-    assert.ok(Math.abs(S.greenWindowMs(v, {}, {}) - Math.max(9, S.timingWindowMs(v)) * 0.9) < 1e-9, `jumper ${v}`);
-    assert.ok(Math.abs(S.greenWindowMs(v, {}, { ft: true }) - S.timingWindowMs(v) * 1.15 * 0.9) < 1e-9, `free throw ${v}`);
+    const sub = v < 70 ? 0.9 : 1;
+    assert.ok(Math.abs(S.greenWindowMs(v, {}, {}) - Math.max(9, S.timingWindowMs(v) * sub) * S.GREEN_K) < 1e-9, `jumper ${v}`);
+    assert.ok(Math.abs(S.greenWindowMs(v, {}, { ft: true }) - S.timingWindowMs(v) * sub * 1.15 * S.GREEN_K) < 1e-9, `free throw ${v}`);
   }
-  assert.equal(S.GREEN_K, 0.9);
+  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935) < 1e-12);
   assert.equal(S.greenWindowMs(90, {}, { contest: S.SMOTHER }), 0, 'smothered is still no window at all');
 });
 

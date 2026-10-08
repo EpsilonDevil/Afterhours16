@@ -11,7 +11,7 @@ import * as M from '../core/math.js';
 import { cachedTexture } from '../world/court.js';
 import { CameraRig, CAM_LABEL } from './camera.js';
 import { GRADE, SMOTHER } from '../sim/shots.js';
-import { promptGlyph } from '../core/input.js';
+import { promptGlyph, padGlyph } from '../core/input.js';
 import { audio } from '../core/audio.js';
 import { B } from '../char/skeleton.js';
 import { LockedInGrade } from './grade.js';
@@ -25,6 +25,11 @@ const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Ma
 
 // v0.4.5: auto-play (H) carries over from one game to the next (park, Pro-Am, the Pro Run, crew runs) until you
 // turn it off yourself; the shootaround always starts with you in control, and AI-only games use their own flag
+// shot feedback: how guarded the shooter was at the release (contestFor's value, 1 = a full contest)
+export function guardedText(contest) {
+  const c = Math.max(0, contest || 0), pct = Math.round(Math.min(1, c) * 100);
+  return `${pct}% guarded · ${c >= SMOTHER ? 'Smothered' : c > 0.45 ? 'Contested' : c > 0.2 ? 'Light contest' : c > 0.1 ? 'Open' : 'Wide open'}`;
+}
 export function startsOnAutoPlay(opts) { return opts.background ? !!opts.assist : (opts.assist ?? (opts.mode !== 'practice' && !!settings.autoPlay)); }
 export function toggleAutoPlay(g) { g.assist = !g.assist; if (g.mode !== 'practice') { settings.autoPlay = g.assist; saveSettings(); } return g.assist; }
 
@@ -471,8 +476,10 @@ export class MatchSession {
             this.meterHold = 0.7;
             this.meterFreeze = e.win != null ? this.meterOf(e.win, e.nat, e.tRel, e.err, e.sure, e.kind !== 'layup' && e.kind !== 'ft' && e.contest >= SMOTHER, e.grade) : null;
             const pos = this.screenOf(P, 2.4);
-            const pct = Math.round(e.chance * 100);
-            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, `${pct}% · ${e.contest > 0.75 ? 'Smothered' : e.contest > 0.45 ? 'Contested' : e.contest > 0.2 ? 'Light contest' : 'Wide open'}`);
+            // v0.4.5 quick patch: the % is how guarded you were at the release: the exact contest the release was
+            // graded with (who was where, facing which way, hands up or not, their length and their defensive
+            // ratings, help defense), 100% being a full contest
+            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.contest));
             if (e.grade === 'excellent') { audio.ui('green'); this.r.particles.burst(P.x + ox, 2.6 + P.y, P.z + oz, 26, { color: [0.3, 2.2, 0.8], speed: 2.4, life: 0.7, size: 0.035, gravity: -2 }); }
           }
           break;
@@ -484,7 +491,7 @@ export class MatchSession {
           this.scene.hype = big ? 1 : 0.5;
           const who = shooter ? shooter.name : 'Tip-in';
           hud.pushFeed(`${e.team === myTeam ? '▲' : '▼'} ${who} +${e.pts}${e.kind === 'dunk' ? ' · dunk' : e.three ? ' · three' : e.kind === 'layup' ? ' · layup' : ''}`, e.team === myTeam ? 'good' : 'bad');
-          if (e.poster >= 0 && e.poster != null) { hud.callout('POSTERIZED!', 'hot'); this.slow(0.9); }
+          if (e.poster >= 0 && e.poster != null) hud.callout('POSTERIZED!', 'hot'); // (v0.4.5 quick patch: no slow motion; play goes on)
           else if (e.oop) hud.callout('ALLEY-OOP!', 'hot');
           else if (e.kind === 'dunk' && (mine || shooter?.team === myTeam)) hud.callout({ '360': 'THREE-SIXTY!', windmill: 'WINDMILL!', cradle: 'CRADLE JAM!', double: 'DOUBLE CLUTCH!', reverse: 'REVERSE JAM!', tomahawk: 'TOMAHAWK!' }[this.lastDunkStyle] || ['SLAM!', 'JAM!', 'FLUSHED!'][g.tick % 3], 'hot');
           else if (e.three && mine) hud.callout('SPLASH!', 'good');
@@ -496,11 +503,18 @@ export class MatchSession {
         }
         case 'slam': {
           const h = this.hoopFor(e.side);
-          // v0.4.3: flashier packages land harder: more rim shake, camera kick and slow motion
-          const tier = e.tier || 0, flash = (e.flair || 0) >= 2;
+          // v0.4.3: flashier packages land harder. v0.4.5 quick patch: no slow motion on dunks any more (the game flows
+          // straight through the rise and the finish); every slam hits harder instead: a bigger rim shake, camera
+          // kick, sparks and sound, more for the flashier packages and posters
+          const tier = e.tier || 0, flash = (e.flair || 0) >= 2, poster = e.poster >= 0 && e.poster != null;
           this.lastDunkStyle = e.style;
-          if (e.made && h) { h.hit(3.2 + tier * 0.45); audio.rim(2.5 + tier * 0.3); this.rig.shake(0.18 + tier * 0.05, 0.4 + tier * 0.08); this.r.particles.burst(h.rim.x, h.rim.y, h.rim.z, 18 + tier * 8, { color: [1.6, 1.4, 1.0], speed: 2 + tier * 0.4, life: 0.5, size: 0.02 }); if (flash) audio.cheer(1.1); }
-          if (P && (P.human || e.poster >= 0 || (flash && e.made))) { this.highlightAt(P, 1.1); this.slow(0.5 + (flash ? 0.3 : 0) + (e.poster >= 0 ? tier * 0.1 : 0)); }
+          if (e.made && h) {
+            h.hit(4.2 + tier * 0.5 + (poster ? 0.8 : 0)); audio.rim(3 + tier * 0.3); audio.board(1 + tier * 0.15);
+            this.rig.shake(0.26 + tier * 0.05 + (poster ? 0.08 : 0), 0.34 + tier * 0.06);
+            this.r.particles.burst(h.rim.x, h.rim.y, h.rim.z, 26 + tier * 10, { color: [1.7, 1.45, 1.0], speed: 2.6 + tier * 0.45, life: 0.5, size: 0.022 });
+            if (flash || poster) audio.cheer(1.1);
+          }
+          if (P && (P.human || poster || (flash && e.made))) this.highlightAt(P, 0.9);
           break;
         }
         case 'hang': { const h = this.hoopFor(e.side); if (h) h.hang = 1; break; }
@@ -572,6 +586,17 @@ export class MatchSession {
       else if (e.type === 'dribble' && near && Math.random() < 0.5) audio.bounce(0.3 * k, this.pan(e.x + ox));
       else if (e.type === 'score' && near) audio.cheer(0.15);
     }
+  }
+
+  // v0.4.5 quick patch: the icon pass input over a teammate's head, for whatever you're playing with right now: the
+  // key on a keyboard (your binding), the modifier + face button on a controller (your binding, your pad's symbols)
+  iconPassGlyph(i) {
+    const inp = this.input, esc = t => String(t).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+    if (inp.usingPad) {
+      const fam = inp.gp.family, face = ['pass', 'bounce', 'shoot', 'lob'][i];
+      return `<span class="tag-in pad">${padGlyph(fam, inp.padLabel('mod'))}${padGlyph(fam, inp.padLabel(face))}</span>`;
+    }
+    return `<span class="tag-in"><kbd>${esc(inp.keyLabel('icon' + (i + 1)))}</kbd></span>`;
   }
 
   toggleHelp() {
@@ -665,7 +690,7 @@ export class MatchSession {
         const s = this.screenOf(p, p.phys.H + 0.32 + p.y);
         const icon = showIcons ? mates.indexOf(p) : -1;
         const team = this.teams[p.team];
-        const txt = p.human ? `<b>YOU</b>` : icon >= 0 ? `<i>${icon + 1}</i>${p.name.split(' ').slice(-1)[0]}` : `${p.name.split(' ').slice(-1)[0]}`;
+        const txt = p.human ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${p.name.split(' ').slice(-1)[0]}` : `${p.name.split(' ').slice(-1)[0]}`;
         list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (p.human ? 'me ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
       }
       hud.setTags(list);

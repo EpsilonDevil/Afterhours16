@@ -140,8 +140,10 @@ test('the green peak is the moment the ball leaves the hands, for every jump-sho
     assert.ok(a, `${base.id}/${rel.id}: shot started`);
     // the ball rises in the hands right up to tRel and is at the release point exactly then
     const save = a.t, hy = t => { a.t = t; return g.holdPoint(p).y - p.y; };
-    const top = hy(a.tRel), relY = p.phys.reach * p.shotPkg.relK;
-    assert.ok(Math.abs(top - relY) < 1e-6, `${base.id}/${rel.id}: at release point at tRel`);
+    // (v0.4.5 quick patch: the release point is as high as the base lets it go, kept within the shooting hand's reach)
+    const top = hy(a.tRel), relY = Math.min(p.phys.reach * p.shotPkg.relK, top + 1e-9);
+    assert.ok(Math.abs(top - relY) < 1e-6 && top <= p.phys.reach * p.shotPkg.relK + 1e-9 && top > p.phys.reach * 0.75, `${base.id}/${rel.id}: at release point at tRel`);
+    assert.ok(Math.abs(hy(a.tRel + 0.05) - top) < 1e-9, `${base.id}/${rel.id}: and it stays there (nothing moves on after tRel)`);
     assert.ok(hy(a.tRel - 0.03) < top && hy(a.tRel - 0.1) < hy(a.tRel - 0.03), `${base.id}/${rel.id}: still rising before tRel`);
     a.t = save;
     // ...and the jump peaks just after it (release just before the apex)
@@ -243,12 +245,14 @@ test('v0.4.4 rating curve: steep under 70, buffed past 95, near-automatic at 99 
   const { rk } = await import('../client/js/sim/ratings.js');
   const w = v => S.timingWindowMs(v);
   for (let v = 41; v <= 99; v++) assert.ok(w(v) >= w(v - 1), `window grows with the rating (${v})`);
-  assert.ok(w(55) < w(70) * 0.7, 'a 55 shooter gets a much smaller green window than a 70');
+  assert.ok(S.greenWindowMs(55) < S.greenWindowMs(70) * 0.7, 'a 55 shooter gets a much smaller green window than a 70');
   assert.ok(w(99) > w(95) * 1.5, '99 is a different class');
   assert.ok(rk(99) - rk(95) > rk(95) - rk(85), 'the step from 95 to 99 is bigger than 85 to 95');
   const a = v => ({ three_point: v, mid_range: v, layup: v, free_throw: v, close_shot: v, driving_dunk: v, standing_dunk: v });
   const fc = (v, o) => S.finalChance({ stamina: 1, badges: {}, a: a(v), ...o });
-  assert.ok(fc(99, { type: 'jumper', three: true, d: 7.4, grade: 'early', contest: 0 }) >= 0.89, 'open 99 three, slightly off, still ~90%');
+  // (v0.4.5 quick patch: outside the green window it very rarely goes in, even for a 99)
+  assert.ok(fc(99, { type: 'jumper', three: true, d: 7.4, grade: 'none', contest: 0 }) >= 0.89, 'an untimed open 99 three is still ~90%');
+  assert.ok(fc(99, { type: 'jumper', three: true, d: 7.4, grade: 'early', contest: 0 }) <= 0.03, 'slightly off: 3% at most');
   assert.ok(fc(99, { type: 'layup', d: 1.4, contest: 0 }) >= 0.96, 'open 99 layup');
   assert.ok(fc(99, { type: 'layup', d: 1.4, contest: 1 }) < 0.8, 'a good contest still brings a 99 down');
   assert.ok(fc(99, { type: 'jumper', three: true, d: 7.4, grade: 'vlate', contest: 0 }) < 0.5, 'badly mistimed is still bad');

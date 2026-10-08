@@ -30,7 +30,7 @@ test('layups are timed: every package has its own timing, and the Layup rating s
   for (let v = 41; v <= 99; v++) assert.ok(S.layupWindowMs(v) >= S.layupWindowMs(v - 1), `window grows with Layup (${v})`);
   assert.ok(S.layupWindowMs(90, {}, { contest: 1 }) < S.layupWindowMs(90) * 0.7, 'traffic shrinks it');
   assert.ok(S.layupWindowMs(90, {}, { contest: 1.2 }) > 0, 'but never takes it away');
-  assert.ok(Math.abs(S.layupWindowMs(80) - S.timingWindowMs(80) * S.LAYUP_WIN_K * 0.9) < 1e-9, 'including the 10% cut');
+  assert.ok(Math.abs(S.layupWindowMs(80) - S.timingWindowMs(80) * S.LAYUP_WIN_K * S.GREEN_K) < 1e-9, 'including the cuts (10%, then 6.5%)');
   // a green is a big boost, early/late a little worse than an untimed layup, way off much worse
   const fc = grade => S.finalChance({ type: 'layup', d: 1.2, a: { layup: 80 }, contest: 0.8, stamina: 1, badges: {}, grade });
   assert.ok(fc('excellent') > fc('none') + 0.15 && fc('excellent') < 0.97);
@@ -108,12 +108,13 @@ test('running jumpers come out quicker, step-backs and fadeaways slower, threes 
   assert.ok(tRelFrom(7.6) > tRelFrom(5) * 1.02, 'a three loads longer');
 });
 
-test('every green window in the game is 10% smaller (jumpers, free throws, layups)', () => {
-  assert.equal(S.GREEN_K, 0.9);
+test('every green window in the game is 10% smaller, then 6.5% more in the quick patch (jumpers, free throws, layups)', () => {
+  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935) < 1e-12);
   for (const v of [55, 75, 90]) {
-    assert.ok(Math.abs(S.greenWindowMs(v) - Math.max(9, S.timingWindowMs(v)) * 0.9) < 1e-9);
-    assert.ok(Math.abs(S.greenWindowMs(v, {}, { ft: true }) - S.timingWindowMs(v) * 1.15 * 0.9) < 1e-9);
-    assert.ok(Math.abs(S.layupWindowMs(v) - Math.max(9, S.timingWindowMs(v) * S.LAYUP_WIN_K) * 0.9) < 1e-9);
+    const sub = v < 70 ? 0.9 : 1; // (and a stat under 70 isn't proficient: another 10%)
+    assert.ok(Math.abs(S.greenWindowMs(v) - Math.max(9, S.timingWindowMs(v) * sub) * S.GREEN_K) < 1e-9);
+    assert.ok(Math.abs(S.greenWindowMs(v, {}, { ft: true }) - S.timingWindowMs(v) * sub * 1.15 * S.GREEN_K) < 1e-9);
+    assert.ok(Math.abs(S.layupWindowMs(v) - Math.max(9, S.timingWindowMs(v) * S.LAYUP_WIN_K * sub) * S.GREEN_K) < 1e-9);
   }
 });
 
@@ -161,11 +162,13 @@ test('AI +10% in every tier, game speed −0.75%, stamina drain ×2 from every s
   const { g } = practice();
   const ai = g.ai;
   for (const iq of [0.2, 0.5, 0.8]) {
-    assert.ok(Math.abs(ai.iq({ iq, human: false }) - iq * 1.1) < 1e-9, `AI at IQ ${iq}`);
+    // (the quick patch adds a basketball-IQ bump on top: +0.04 + 0.08×IQ)
+    const k = iq * 1.1;
+    assert.ok(Math.abs(ai.iq({ iq, human: false }) - Math.min(1, k + 0.04 + 0.08 * k)) < 1e-9, `AI at IQ ${iq}`);
     assert.equal(ai.iq({ iq, human: true }), iq, 'your own player is untouched');
   }
   assert.equal(ai.iq({ iq: 0.98 }), 1, 'capped at 1');
-  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * 0.9925) < 1e-12);
+  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * 0.9925 * 0.9625) < 1e-12, 'and 3.75% slower in the quick patch');
   assert.equal(g.speed, GAME_SPEED);
   assert.equal(STAMINA_K, 2); assert.equal(SPRINT_DRAIN_K, 2);
   assert.ok(Math.abs(COST.shot - 0.018) < 1e-12 && Math.abs(COST.layup - 0.024) < 1e-12 && Math.abs(COST.dunk - 0.036) < 1e-12);

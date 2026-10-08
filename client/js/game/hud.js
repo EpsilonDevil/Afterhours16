@@ -22,7 +22,7 @@ export function meterLegendHTML() {
     <span><i class="ml-core"></i>Solid green: the green window your ratings give you on their own</span>
     <span><i class="ml-boost"></i>Fading out to yellow: what boosts add (badges, Icon badge, takeover, animations). Still a green release</span>
     <span><i class="ml-ring"></i>Outlined: perfect timing, but not an automatic make (layups, shots from past 35 ft)</span>
-    <span>Let go anywhere inside the window for an Excellent release. No window: smothered, or past half court.</span></div>`;
+    <span>Let go anywhere inside the window for an Excellent release; outside it, the shot almost never goes in. No window: smothered, or past half court.</span></div>`;
 }
 
 export class HUD {

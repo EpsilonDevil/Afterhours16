@@ -21,6 +21,11 @@ const MOVE_DUR = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5, step
 // 60% through (CHAIN_AT), and a different move started within COMBO_GAP of the last one is a combo: it costs no
 // stamina and is a little more likely to break ankles. Spamming the same move still drains you harder.
 export const MOVE_SNAP = 0.8, CHAIN_AT = 0.6, COMBO_GAP = 0.4;
+// v0.4.5 quick patch: how fast each position's dribble moves come out (bigs are 10% slower, wings 5%; PGs as they were),
+// and then every move for everyone 5% slower on top (MOVE_SPEED_ALL)
+export const POS_MOVE_SPEED = { PG: 1, SG: 0.95, SF: 0.95, PF: 0.9, C: 0.9 };
+export const MOVE_SPEED_ALL = 0.95;
+export const posMoveK = pos => (POS_MOVE_SPEED[pos] ?? 1) * MOVE_SPEED_ALL;
 // v0.4.5: the ball travels 0.985% slower on passes
 const PASS_K = 1 - 0.00985;
 // v0.4.5 alley-oops: takeoff spot distance from the lob's aim point, and the most a receiver can drift in the air
@@ -31,7 +36,7 @@ const PASS = { chest: { dur: 0.3, rel: 0.13, speed: 12.5 * PASS_K }, bounce: { d
 // reaching (steals), jumping, dribble moves and screens (sprinting follows it in player.js)
 export const STAMINA_K = 2;
 export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
-export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075);
+export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375); // (v0.4.5 quick patch: −3.75%)
 // v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
 export const DEF_ASSIST_K = 1.0375;
 
@@ -39,22 +44,37 @@ export const DEF_ASSIST_K = 1.0375;
 // shooting side / in front (m); ks: share of the shot spent getting to the set point; pause: a beat at the set
 // point (Hitch); rz: release in front (+) or behind (−) the usual spot; drift: swings out toward the shooting
 // side and back (Sway); line: no set point at all, one curving motion (Slingshot, Silk)
+// back: how far the shoulders sit behind upright at the release (×H), from the base's lean in the air (animator)
 const SHOT_PATH = {
-  standard: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.62 },
-  high: { py: 0.62, sx: 0.035, sz: 0.15, ks: 0.6 },
-  flick: { py: 0.56, sx: 0.09, sz: 0.25, ks: 0.52 },
-  push: { py: 0.57, sx: 0.11, sz: 0.31, ks: 0.6 },
-  lean: { py: 0.62, sx: 0.05, sz: 0.1, ks: 0.66, rz: -0.07 },
-  kick: { py: 0.6, sx: 0.14, sz: 0.2, ks: 0.62 },
-  wide: { py: 0.52, sx: 0.0, sz: 0.25, ks: 0.67 },
-  sniper: { py: 0.63, sx: 0.015, sz: 0.22, ks: 0.48 },
-  fade: { py: 0.6, sx: 0.06, sz: 0.09, ks: 0.6, rz: -0.13 },
-  hitch: { py: 0.6, sx: 0.07, sz: 0.18, ks: 0.42, pause: 0.26 },
-  sling: { py: 0.54, sx: 0.04, sz: 0.32, line: true },
-  scissor: { py: 0.6, sx: 0.22, sz: 0.19, ks: 0.62 },
-  tuck: { py: 0.49, sx: 0.07, sz: 0.24, ks: 0.68 },
-  sway: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.6, drift: 0.14 },
-  silk: { py: 0.47, sx: -0.02, sz: 0.24, line: true },
+  standard: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.62, back: 0.014 },
+  high: { py: 0.62, sx: 0.035, sz: 0.15, ks: 0.6, back: 0.022 },
+  flick: { py: 0.56, sx: 0.09, sz: 0.25, ks: 0.52, back: 0 },
+  push: { py: 0.57, sx: 0.11, sz: 0.31, ks: 0.6, back: 0 },
+  lean: { py: 0.62, sx: 0.05, sz: 0.1, ks: 0.66, rz: -0.07, back: 0.067 },
+  kick: { py: 0.6, sx: 0.14, sz: 0.2, ks: 0.62, back: 0.019 },
+  wide: { py: 0.52, sx: 0.0, sz: 0.25, ks: 0.67, back: 0.008 },
+  sniper: { py: 0.63, sx: 0.015, sz: 0.22, ks: 0.48, back: 0.014 },
+  fade: { py: 0.6, sx: 0.06, sz: 0.09, ks: 0.6, rz: -0.13, back: 0.095 },
+  hitch: { py: 0.6, sx: 0.07, sz: 0.18, ks: 0.42, pause: 0.26, back: 0.016 },
+  sling: { py: 0.54, sx: 0.04, sz: 0.32, line: true, back: 0 },
+  scissor: { py: 0.6, sx: 0.22, sz: 0.19, ks: 0.62, back: 0.014 },
+  tuck: { py: 0.49, sx: 0.07, sz: 0.24, ks: 0.68, back: 0.024 },
+  sway: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.6, drift: 0.14, back: 0.024 },
+  silk: { py: 0.47, sx: -0.02, sz: 0.24, line: true, back: 0 },
+};
+// v0.4.5 quick patch: reaching up for the release, the shooting shoulder rises this much (×H; the animator lifts the
+// collarbone to match), and the arm ends 97% straight
+export const ARM_LIFT = 0.025, ARM_EXT = 0.97;
+// v0.4.5 quick patch: how hard a made dunk is thrown down through the rim (m/s)
+export const SLAM_V = 8.5;
+// where the finishing shoulder sits at the top of a layup, against upright (×H): [drop, back, out to the side, and a
+// trim off the top where the pose also turns the arm away]. Measured off the animator's layup poses for each package
+// and coverage across builds, rounded up a little
+const LAYUP_BODY = {
+  basic: { open: [0.047, 0.022, 0], side: [0.07, 0.043, 0.038], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
+  euro: { open: [0.023, 0.024, 0], side: [0.083, 0.045, 0.087], front: [0.023, 0, 0], rim: [0.085, 0.1, 0.064, 0.033], trail: [0.031, 0.05, 0] },
+  finger: { open: [0.059, 0.037, 0], side: [0.084, 0.056, 0.038, 0.021], front: [0.055, 0, 0], rim: [0.048, 0.089, 0, 0.008], trail: [0.067, 0.046, 0, 0.054] },
+  scoop: { open: [0.065, 0, 0], side: [0.084, 0, 0.042], front: [0.063, 0, 0], rim: [0.061, 0.072, 0], trail: [0.064, 0.028, 0, 0.076] },
 };
 
 export class Game {
@@ -67,7 +87,7 @@ export class Game {
     this.rng = new RNG(cfg.seed || 1);
     // v0.4.2: the whole game runs 15% faster than real time (movement, animation, ball). Clocks still count
     // real seconds and the timing windows are widened in sim time so they feel the same in real time.
-    this.speed = cfg.speed ?? GAME_SPEED; // v0.4.2 +15%, v0.4.4 +3.75%, v0.4.5 -1.85% and then -0.75%
+    this.speed = cfg.speed ?? GAME_SPEED; // v0.4.2 +15%, v0.4.4 +3.75%, v0.4.5 -1.85%, -0.75%, then -3.75%
     // v0.4.3: the user's green window is 10% wider with the shot meter turned off
     this.greenBonus = cfg.greenBonus || 1;
     this.catalog = cfg.catalog || {};
@@ -238,7 +258,7 @@ export class Game {
   contestIfReleased(p) {
     const a = p.action, t0 = a.t;
     a.t = t0 + DT;
-    const y = this.holdPoint(p).y;
+    const y = this.holdPoint(p).gy;
     a.t = t0;
     return S.contestFor(p, this.opponents(p), this.rimFor(p.team), y);
   }
@@ -863,7 +883,7 @@ export class Game {
     const handle = n(p.ratings.ball_handle);
     // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder
     const handleK = 1 + 0.22 * Math.min(1.2, handle) + 0.1 * Math.min(1.2, n(p.ratings.speed_with_ball));
-    const dur = (MOVE_DUR[move] || 0.45) * MOVE_SNAP / (p.moveSpeed || 1) / handleK * (1 + 0.25 * gassed);
+    const dur = (MOVE_DUR[move] || 0.45) * MOVE_SNAP / (p.moveSpeed || 1) / handleK / posMoveK(p.position) * (1 + 0.25 * gassed);
     // a different move straight out of the last one is a combo
     const prev = p.lastMove, combo = !!prev && prev.move !== move && this.time <= prev.end + COMBO_GAP;
     p.combo = combo ? (p.combo || 1) + 1 : 1;
@@ -1158,7 +1178,7 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const err = a.releaseAt - a.tRel;
     const P = this.holdPoint(p);
-    const contest = S.contestFor(p, this.opponents(p), rim, P.y);
+    const contest = S.contestFor(p, this.opponents(p), rim, P.gy);
     // (a close shot isn't timed: no window, no Excellent)
     const W = this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
     let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(err, win));
@@ -1189,8 +1209,8 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const P = this.holdPoint(p);
     const d = Math.hypot(rim.x - p.x, rim.z - p.z);
-    const contest = S.contestFor(p, this.opponents(p), rim, P.y);
-    const blocker = this.checkBlockAtRelease(p, P, 'layup');
+    const contest = S.contestFor(p, this.opponents(p), rim, P.gy);
+    const blocker = this.checkBlockAtRelease(p, { x: P.x, y: P.gy, z: P.z }, 'layup');
     if (blocker) return;
     // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
     // boost that contact can still beat
@@ -1236,8 +1256,17 @@ export class Game {
       if (poster && p.badges.posterizer) this.posterize(p, poster, a, rim, false);
       else if (poster) { this.shoulderThrough(p, poster, a, rim); poster = null; }
     }
+    a.slamAt = a.t;
     if (made) {
-      b.setFlight(rim.x + (this.rng.next() - 0.5) * 0.04, COURT.rimY + 0.22, rim.z + (this.rng.next() - 0.5) * 0.04, 0, -5.5, 0, 'shot', { shooter: p.id, team: p.team, three: false, type: 'dunk', made: true, chance, side: a.side, contest, released: this.time, poster: poster ? poster.id : -1, style: a.style, oop: !!a.oop });
+      // v0.4.5 quick patch: thrown down hard, straight out of his hand through the middle of the rim (it used to appear
+      // above the rim and drop at 5.5 m/s); from too far off, the old way
+      const info = { shooter: p.id, team: p.team, three: false, type: 'dunk', made: true, chance, side: a.side, contest, released: this.time, poster: poster ? poster.id : -1, style: a.style, oop: !!a.oop };
+      const tx = rim.x + (this.rng.next() - 0.5) * 0.04, tz = rim.z + (this.rng.next() - 0.5) * 0.04, h = P.y - COURT.rimY;
+      if (h > 0.03 && Math.hypot(P.x - tx, P.z - tz) < 0.5) {
+        const v0 = SLAM_V, tt = (-v0 + Math.sqrt(v0 * v0 + 2 * GRAVITY * h)) / GRAVITY;
+        b.setFlight(P.x, P.y, P.z, (tx - P.x) / tt, -v0, (tz - P.z) / tt, 'shot', info);
+      } else b.setFlight(tx, COURT.rimY + 0.22, tz, 0, -SLAM_V, 0, 'shot', info);
+      b.ghost = true;
     } else {
       // rimmed out / stuffed by the rim
       const dx = p.x - rim.x, dz = p.z - rim.z, dl = Math.hypot(dx, dz) || 1;
@@ -1428,22 +1457,45 @@ export class Game {
 
   // ---------- ball ----------
   // World position where `p` holds the ball, consistent with animation targets.
+  // v0.4.5 quick patch: the highest the ball can be held at (bx, bz) in character space (metres from the feet) with
+  // the `side` hand: the wrist within ARM_EXT of the arm's length from the shoulder, the shoulder raised by ARM_LIFT and
+  // sitting `back`×H behind upright (a lean). The hand grips the ball BALL_R + 0.035H under its centre, 0.03H behind it
+  // and 0.01H to the outside (animator ballHands). Above this the ball would float out of the hand before the release.
+  // body: [drop, back, out] (×H) where the pose moves the shoulder from upright; otherwise back alone (a jumper's lean)
+  reachTop(p, side, bx, bz, back = 0, body = null) {
+    const A = p.arm;
+    if (!A) return Infinity;
+    const H = A.H, sg = side === 'L' ? 1 : -1, L = A.len * ARM_EXT;
+    const [drop, bk, out, trim = 0] = body || [1.85 * back * back, back, 0];
+    const dx = bx + sg * 0.01 * H - sg * (A.shoulderX + out * H), dz = bz - 0.03 * H - (A.z - bk * H);
+    const up = Math.sqrt(Math.max(0, L * L - dx * dx - dz * dz));
+    return A.shoulderY + (ARM_LIFT - drop - trim) * H + up + BALL_R + 0.035 * H;
+  }
+
   holdPoint(p, out = {}) {
     const H = p.phys.H, a = p.action, b = this.ball;
     const hs = p.dribble.hand === 'R' ? -1 : 1;
-    let lx = hs * 0.12, ly = 0.53 * H, lz = 0.3;
+    let lx = hs * 0.12, ly = 0.53 * H, lz = 0.3, gdy = 0;
     if (a && a.type === 'shoot') {
       const sh = p.shotPkg.hand === 'L' ? 1 : -1;
       const t = a.t, T = a.tRel;
       // v0.4.5 stage 7: every jump-shot base carries the ball on its own path (where it starts, where it sets,
       // how long it sits there, where it's let go), so the bases differ in ball travel and not only in the legs
       const sp = SHOT_PATH[a.kind === 'close' ? 'standard' : p.shotPkg.style] || SHOT_PATH.standard;
-      const pocket = [sh * 0.06, sp.py * H, 0.32], set = [sh * sp.sx, p.shotPkg.setH * H, sp.sz], rel = [sh * 0.05, p.phys.reach * (p.shotPkg.relK ?? 0.93), 0.3 + p.shotPkg.push + (sp.rz || 0)];
+      const rel = [sh * 0.05, 0, 0.3 + p.shotPkg.push + (sp.rz || 0)];
+      // the release point: as high as the base lets it go, but never out of the shooting hand's reach (so the top of
+      // the ball's travel, the middle of the green window, is where it leaves his hand, whatever his build)
+      rel[1] = Math.min(p.phys.reach * (p.shotPkg.relK ?? 0.93), this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', rel[0], rel[2], a.fade ? Math.max(sp.back, 0.065) : sp.back));
+      const pocket = [sh * 0.06, sp.py * H, 0.32], set = [sh * sp.sx, Math.min(p.shotPkg.setH * H, rel[1] - 0.04 * H), sp.sz];
+      // (gameplay still measures the contest at the height the build's reach gives the release, as it always has:
+      // relU/setU, the uncapped points; the cap is the body model's, it doesn't move the defense)
+      const relU = p.phys.reach * (p.shotPkg.relK ?? 0.93), setU = p.shotPkg.setH * H;
       if (sp.line) {
         // one motion from the pocket to the release, curving through the set point without stopping there
         const k = Math.min(1, t / T), e = k * k * (3 - 2 * k), u = 1 - e;
         lx = u * u * pocket[0] + 2 * u * e * set[0] + e * e * rel[0];
         ly = u * u * pocket[1] + 2 * u * e * set[1] + e * e * rel[1];
+        gdy = 2 * u * e * (setU - set[1]) + e * e * (relU - rel[1]);
         lz = u * u * pocket[2] + 2 * u * e * set[2] + e * e * rel[2];
       } else {
         const ks = sp.ks, ps = sp.pause || 0;
@@ -1451,30 +1503,43 @@ export class Game {
         const e1 = k1 * k1 * (3 - 2 * k1), e2 = k2 * k2;
         lx = pocket[0] + (set[0] - pocket[0]) * e1 + (rel[0] - set[0]) * e2;
         ly = pocket[1] + (set[1] - pocket[1]) * e1 + (rel[1] - set[1]) * e2;
+        gdy = (setU - set[1]) * e1 + ((relU - setU) - (rel[1] - set[1])) * e2;
         lz = pocket[2] + (set[2] - pocket[2]) * e1 + (rel[2] - set[2]) * e2;
         if (sp.drift) lx += sh * sp.drift * Math.sin(Math.PI * Math.min(1, t / T));
       }
     } else if (a && a.type === 'layup') {
       const t = Math.min(1, a.t / a.release), e = t * t * (3 - 2 * t), ls = a.lstyle || 'basic';
       const sh = -1;
+      const cv = a.cov || 'open', cs = a.covSide || 1;
+      // v0.4.5 quick patch: the top of each finish (where the ball leaves his hand, the middle of the green window) is
+      // kept within the finishing hand's reach: work out where the ball ends up (package, then coverage) and cap it
+      const end = { scoop: [-0.12, 0.56], finger: [-0.06, 0.5], euro: [-0.05, 0.38] }[ls] || [-0.05, 0.38];
+      const body = (LAYUP_BODY[ls] || LAYUP_BODY.basic)[cv] || LAYUP_BODY.basic.open, hand = S.layupHand(a);
+      // (and never so far out in front that a shorter arm can't get there: at most 80% of the arm out from the shoulder)
+      const A = p.arm, zMax = A ? A.z - body[1] * H + 0.03 * H + 0.8 * A.len : Infinity;
+      const ex = cv === 'side' ? cs * 0.28 : cv === 'rim' ? cs * 0.32 : end[0], ez = Math.min(zMax, end[1] + (cv === 'rim' ? -0.3 : cv === 'trail' ? 0.06 : 0));
+      const cap = this.reachTop(p, hand, ex, ez, 0, body) - (cv === 'trail' ? 0.07 * H : 0);
+      const top = k => Math.min(p.phys.reach * k, cap);
+      const ue = ls === 'scoop' ? e * e : ls === 'finger' ? Math.pow(e, 0.8) : e, uk = ls === 'scoop' ? 0.88 : ls === 'finger' ? 1.02 : 0.97;
+      gdy = (p.phys.reach * uk - top(uk)) * ue; // (the uncapped finish, for the contest and blocks, as before)
       if (ls === 'scoop') {
         // underhand: the ball dips to the hip, swings out to the side, then rolls up off the palm
         const dip = Math.sin(Math.min(1, t / 0.55) * Math.PI);
-        lx = sh * (0.12 + 0.2 * dip); ly = 0.5 * H - 0.08 * H * dip + (p.phys.reach * 0.88 - 0.5 * H) * e * e; lz = 0.34 + e * 0.22 + dip * 0.1;
+        lx = sh * (0.12 + 0.2 * dip); ly = 0.5 * H - 0.08 * H * dip + (top(0.88) - 0.5 * H) * e * e; lz = 0.34 + e * 0.22 + dip * 0.1;
       } else if (ls === 'finger') {
         // high and late: full extension, the ball carried out in front off the fingertips
-        lx = sh * 0.06; ly = 0.64 * H + (p.phys.reach * 1.02 - 0.64 * H) * Math.pow(e, 0.8); lz = 0.3 + e * 0.2;
+        lx = sh * 0.06; ly = 0.64 * H + (top(1.02) - 0.64 * H) * Math.pow(e, 0.8); lz = 0.3 + e * 0.2;
       } else if (ls === 'euro') {
         // swept across the body on the long second step, then up on the far side
         const sw = a.lsDir || 1, cross = Math.sin(Math.min(1, t / 0.7) * Math.PI);
-        lx = sh * 0.1 * (1 - e) + sw * 0.26 * cross + sh * 0.05 * e; ly = 0.56 * H + (p.phys.reach * 0.97 - 0.56 * H) * e; lz = 0.3 + e * 0.08;
-      } else { lx = sh * 0.1 * (1 - e) + sh * 0.05; ly = 0.62 * H + (p.phys.reach * 0.97 - 0.62 * H) * e; lz = 0.3 + e * 0.08; }
+        lx = sh * 0.1 * (1 - e) + sw * 0.26 * cross + sh * 0.05 * e; ly = 0.56 * H + (top(0.97) - 0.56 * H) * e; lz = 0.3 + e * 0.08;
+      } else { lx = sh * 0.1 * (1 - e) + sh * 0.05; ly = 0.62 * H + (top(0.97) - 0.62 * H) * e; lz = 0.3 + e * 0.08; }
       // v0.4.5 coverage variants on top of the package's path
-      const cv = a.cov || 'open', cs = a.covSide || 1;
       if (cv === 'side') { const k = Math.sin(Math.min(1, t / 0.8) * Math.PI * 0.5); lx = lx * (1 - k) + cs * 0.28 * k; } // carried on the far side
       else if (cv === 'front') { const dip = Math.sin(Math.min(1, Math.max(0, (t - 0.3) / 0.5)) * Math.PI); ly -= 0.17 * H * dip; lz -= 0.1 * dip; } // the double clutch
       else if (cv === 'rim') { lx = lx * (1 - e) + cs * 0.32 * e; lz -= 0.3 * e * e; } // under and around to the far side
       else if (cv === 'trail') { ly += 0.07 * H * Math.min(1, t * 1.8); lz += 0.06; } // up high, early
+      lz = Math.min(lz, zMax);
     } else if (a && a.type === 'dunk') {
       const t = Math.min(1, a.t / a.slam);
       const e = t * t * (3 - 2 * t);
@@ -1574,7 +1639,8 @@ export class Game {
         const ph = (-t * 1.6) % 1; ly = BALL_R + (0.5 * H - BALL_R) * Math.abs(Math.cos(Math.PI * ph)); lz = 0.32; lx = -0.12;
       } else {
         const k = Math.min(1, t / T), e = k * k * (3 - 2 * k);
-        ly = 0.6 * H + (p.phys.reach * 0.88 - 0.6 * H) * e; lz = 0.3 + e * 0.1; lx = -0.05;
+        const top = Math.min(p.phys.reach * 0.88, this.reachTop(p, p.shotPkg?.hand === 'L' ? 'L' : 'R', -0.05, 0.4));
+        ly = 0.6 * H + (top - 0.6 * H) * e; lz = 0.3 + e * 0.1; lx = -0.05;
       }
     } else if (b.mode === 'dribble' && b.holder === p.id) {
       const sp = p.speed;
@@ -1617,7 +1683,9 @@ export class Game {
       if (this.phase === 'check' || this.phase === 'inbound') { lx = 0; ly = 0.64 * H; lz = 0.32; }
       else { lx = hs * 0.14; ly = 0.56 * H; lz = 0.3; }
     }
-    return toWorld(p, lx, ly, lz, out);
+    const w = toWorld(p, lx, ly, lz, out);
+    w.gy = w.y + gdy; // gameplay height of the ball (contests and blocks); y is where it's drawn, in his hand
+    return w;
   }
 
   updateBall(dt) {

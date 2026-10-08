@@ -14,6 +14,42 @@ const hyp = Math.hypot;
 
 const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
 export const AI_SKILL_K = 1.1;
+// v0.4.5 quick patch: on top of that, a basketball-IQ bump for every AI hooper that grows with how good he already is
+export const AI_IQ_BONUS = [0.04, 0.08];
+const aiIQ = x => Math.min(1, x + AI_IQ_BONUS[0] + AI_IQ_BONUS[1] * Math.min(1, x));
+// v0.4.5 quick patch: the dribble move to call: the AI mixes them up (a different move right after the last one is a
+// free combo) instead of repeating one; the smarter he is, the less he repeats and the more he strings combos.
+// Tired, a smart player saves his legs for the shot.
+const MOVES = ['cross', 'btb', 'btl', 'hesi', 'stepback', 'spin'];
+export function pickMove(p, rng, iq, weights) {
+  const st = p.stam || {}, last = st.lastMove, run = st.moveRun || 0;
+  const ws = MOVES.map(m => {
+    let w = weights[m] || 0;
+    if (m === last) w *= Math.max(0.03, 0.6 - 0.5 * iq - (run >= 2 ? 0.3 : 0));
+    else if (last) w *= 1 + 0.6 * iq; // a combo
+    return w;
+  });
+  let r = rng.next() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < MOVES.length; i++) { r -= ws[i]; if (r <= 0) return MOVES[i]; }
+  return MOVES[0];
+}
+
+
+// v0.4.5 quick patch: a release outside the green window almost never goes in any more (shots.js OFF_TIMING). The AI
+// used to make a good share of its near-misses, so its timing is now set to keep the make rate its old timing gave
+// it, shot for shot: the same green rate, plus its near-misses (good) and bad misses as they used to count (offK,
+// veryK of the untimed chance pNone), turned into greens. pEx: what a green is worth (1 for a sure make). Same
+// shooters, same contests, same percentages; it just gets there by timing them.
+const offK = attr => (attr ?? 0) >= 99 ? 0.97 : (attr ?? 0) > 95 ? 0.9 : 0.85;
+// The timing is chosen when the shot starts, from the contest the AI expects; about half its jumpers end up smothered
+// by the closeout, and a smothered shot has no green window to hit (it used to keep ~10% then). These make up for
+// it on the rest, so its percentages by shot type stay where they were (measured in 24 AI park games each).
+export const AI_TIMING_COMP = { mid: 1.48, three: 1.22, layup: 1.04, ft: 1 };
+function keepMakeRate(pGreen, good, pEx, pNone, nearK, veryK, fc) {
+  const old = pGreen * pEx + (1 - pGreen) * (good * nearK + (1 - good) * veryK) * pNone;
+  const eps = good * S.finalChance({ ...fc, grade: 'early' }) + (1 - good) * S.finalChance({ ...fc, grade: 'vearly' });
+  return Math.max(0, Math.min(0.97, (old - eps) / Math.max(1e-3, pEx - eps)));
+}
 
 export class AI {
   constructor(game) {
@@ -56,11 +92,12 @@ export class AI {
   // difficulty setting nudges everyone. Players without one (practice dummies, the user) use the difficulty.
   // v0.4.5 final: every AI hooper, in every tier, plays 10% smarter (AI_SKILL_K; the user's own player isn't
   // touched). IQ drives reads, reaction times, defense, shot selection and the AI's green rate.
+  // v0.4.5 quick patch: smarter again, every tier, the better ones more (AI_IQ_BONUS: +0.04 + 0.08×IQ)
   iq(p) {
     const g = this.g;
-    if (p.iq == null) return p.human ? 0.6 : Math.min(1, g.difficulty * AI_SKILL_K);
+    if (p.iq == null) return p.human ? 0.6 : aiIQ(g.difficulty * AI_SKILL_K);
     const base = Math.max(0, Math.min(1, p.iq + (g.difficulty - 0.6) * 0.5));
-    return p.human ? base : Math.min(1, base * AI_SKILL_K);
+    return p.human ? base : aiIQ(base * AI_SKILL_K);
   }
   skill(p) { return Math.min(1, this.iq(p) * 0.6 + 0.4 * (p.human ? 0.7 : n(p.ratings.perimeter_d) * 0.5 + 0.5)); }
 
@@ -123,7 +160,8 @@ export class AI {
     const attr = three ? p.ratings.three_point : p.ratings.mid_range;
     const win = S.greenWindowMs(attr, p.badges, { contest, moving: 0, d, three, pkg: type === 'close' ? null : p.shotPkg });
     const gExp = type === 'close' ? 0 : Math.max(0.02, Math.min(attr >= 99 ? 0.88 : attr > 95 ? 0.72 : 0.65, 0.13 + 0.3 * n(attr) + (this.iq(p) - 0.6) * 0.24)) * Math.pow(win / S.timingWindowMs(attr, p.badges), 0.8) * (three ? 1.0 : 1);
-    const miss = S.finalChance({ type, d, a: p.ratings, three, grade: type === 'close' ? 'none' : 'early', contest, stamina: p.stamina, badges: p.badges });
+    // (what a near-miss used to be worth: the AI's timing is set to keep that make rate, see keepMakeRate)
+    const miss = type === 'close' ? S.finalChance({ type, d, a: p.ratings, three, grade: 'none', contest, stamina: p.stamina, badges: p.badges }) : S.finalChance({ type, d, a: p.ratings, three, grade: 'none', contest, stamina: p.stamina, badges: p.badges }) * offK(attr);
     const pct = gExp + (1 - gExp) * miss;
     return { val: pct * (three ? 3 : 2), d, three, contest, pct };
   }
@@ -226,6 +264,10 @@ export class AI {
       pGreen = Math.max(0.01, Math.min(0.9, pGreen * Math.pow(k, 1.4)));
       good = Math.max(0.55, Math.min(0.97, 1 - 0.14 / k));
     }
+    {
+      const fc = { type: 'layup', d: hyp(rim.x - p.x, rim.z - p.z), a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot };
+      pGreen = Math.min(0.97, AI_TIMING_COMP.layup * keepMakeRate(pGreen, good, S.finalChance({ ...fc, grade: 'excellent' }), S.finalChance({ ...fc, grade: 'none' }), 0.92, 0.62, fc));
+    }
     const r = g.rng.next();
     const grade = r < pGreen ? 'excellent' : r < pGreen + (1 - pGreen) * good ? (g.rng.next() < 0.5 ? 'early' : 'late') : (g.rng.next() < 0.5 ? 'vearly' : 'vlate');
     const w = Math.max(win, base * 0.4, 9) * g.speed / 1000;
@@ -255,6 +297,10 @@ export class AI {
       const k = Math.max(0.35, Math.min(2.4, (ft ? pr.ft : three ? pr.tp : pr.fg2) / prior));
       pGreen = Math.max(0.01, Math.min(0.94, pGreen * Math.pow(k, 1.4)));
       good = Math.max(0.55, Math.min(0.97, 1 - 0.14 / k));
+    }
+    {
+      const fc = { type: ft ? 'ft' : 'jumper', d, a: p.ratings, three, contest, moving: p.speed, fade: !!st?.fade, stamina: p.stamina, badges: p.badges };
+      pGreen = Math.min(0.97, AI_TIMING_COMP[ft ? 'ft' : three ? 'three' : 'mid'] * keepMakeRate(pGreen, good, ft || d <= S.DEEP_D ? 1 : S.finalChance({ ...fc, grade: 'excellent' }), S.finalChance({ ...fc, grade: 'none' }), offK(attr), 0.38, fc));
     }
     const r = g.rng.next();
     const grade = r < pGreen ? 'excellent' : r < pGreen + (1 - pGreen) * good ? (g.rng.next() < 0.5 ? 'early' : 'late') : (g.rng.next() < 0.5 ? 'vearly' : 'vlate');
@@ -365,7 +411,7 @@ export class AI {
         o.driveSide = go;
         if (block.al < 1.0 && Math.abs(block.la) < 0.5 && p.cool.move <= 0 && n(p.ratings.ball_handle) > 0.45 && g.rng.next() < 0.35) {
           const lx = Math.cos(p.facing), lz = -Math.sin(p.facing);
-          it.move = g.rng.next() < 0.6 ? 'cross' : 'spin';
+          it.move = pickMove(p, g.rng, this.iq(p), { cross: 0.6, spin: 0.4 });
           it.mx = px * go; it.mz = pz * go;
           return;
         }
@@ -394,7 +440,7 @@ export class AI {
         const sp = spotsFor(1, side)[0]; o.target = { x: p.x * 0.7, z: sp.z + side * 1.5 };
         return;
       }
-      if (!this.laneOpen(p, rim.x, rim.z, 0.6) && defDist < 1.2 && p.cool.move <= 0 && g.rng.next() < 0.05 + n(p.ratings.ball_handle) * 0.08) it.move = g.rng.next() < 0.5 ? 'spin' : 'cross';
+      if (!this.laneOpen(p, rim.x, rim.z, 0.6) && defDist < 1.2 && p.cool.move <= 0 && g.rng.next() < 0.05 + n(p.ratings.ball_handle) * 0.08) it.move = pickMove(p, g.rng, this.iq(p), { spin: 0.5, cross: 0.5 });
       return;
     }
     // shot clock emergency
@@ -417,6 +463,8 @@ export class AI {
       passVal = tsv.val + (this.openness(passTarget) > 3 ? 0.25 : 0) - this.passRisk(p, passTarget) * (1.8 + T.safe * 1.0) * (0.45 + 0.75 * IQ) + (passTarget.human ? 0.15 : 0) + (passTarget.calling > 0 ? 0.3 : 0) - 0.25 + (T.pass - 0.5) * 0.8;
       const lp = g.lastPass;
       if (lp && lp.from === passTarget.id && g.time - lp.time < 3) passVal -= 0.6;
+      // v0.4.5 quick patch: feed the man who's rolling (a takeover or on fire), more so the smarter the passer
+      passVal += IQ * ((passTarget.takeover?.active ? 0.35 : 0) + (passTarget.hot ? 0.2 : 0) - (passTarget.stamina < 0.3 ? 0.15 : 0));
       // v0.4.5: don't pass a good look to get a worse one
       const own = this.shotValue(p, p.x, p.z, defs).val * (1 - 0.5 * Math.min(1, this.estimateContest(p, defs, rim)));
       passVal -= Math.max(0, own - tsv.val) * (0.4 + 0.5 * IQ);
@@ -438,9 +486,18 @@ export class AI {
     const finisher = n(p.ratings.layup) * 0.5 + n(p.ratings.driving_dunk) * 0.4;
     // a rim protector waiting in the lane makes drives less attractive
     const anchor = defs.reduce((m, q) => q !== myDef && hyp(q.x - rim.x, q.z - rim.z) < 3 ? Math.max(m, n(q.ratings.interior_d) * 0.6 + n(q.ratings.block) * 0.4) : m, 0);
-    const driveVal = laneOpen ? 1.15 + finisher + T.drive * 0.8 - anchor * 0.2 - Math.max(0, d - 8) * 0.1 : (defDist > 1.0 && d < 9 ? 0.3 + T.drive * 1.0 + finisher * 0.5 - (myDef ? n(myDef.ratings.perimeter_d) * 0.55 : 0) - anchor * 0.15 : 0.1);
+    let driveVal = laneOpen ? 1.15 + finisher + T.drive * 0.8 - anchor * 0.2 - Math.max(0, d - 8) * 0.1 : (defDist > 1.0 && d < 9 ? 0.3 + T.drive * 1.0 + finisher * 0.5 - (myDef ? n(myDef.ratings.perimeter_d) * 0.55 : 0) - anchor * 0.15 : 0.1);
     const estC = this.estimateContest(p, defs, rim);
-    const shootVal = sv.val * (1 - 0.5 * Math.min(1, estC)) + (estC < 0.3 ? 0.3 : estC > 0.6 ? -0.5 * (0.3 + IQ) : 0) + (T.shoot - 0.5) * 0.7 + 0.1 - (g.shotClock > 16 ? 0.15 : 0);
+    let shootVal = sv.val * (1 - 0.5 * Math.min(1, estC)) + (estC < 0.3 ? 0.3 : estC > 0.6 ? -0.5 * (0.3 + IQ) : 0) + (T.shoot - 0.5) * 0.7 + 0.1 - (g.shotClock > 16 ? 0.15 : 0);
+    // v0.4.5 quick patch: better shots. A shot that's going to be smothered has no green window (next to no chance
+    // now), so a smart shooter passes it up; a takeover or a hot hand is a reason to look for your own; tired legs
+    // are a reason not to force a drive or a contested pull-up
+    const to = p.takeover?.active ? p.takeover.kind : null;
+    if (estC > 0.5) shootVal -= IQ * (estC - 0.5) * 2.2;
+    if (to === 'shooting' || p.hot) shootVal += 0.25 * (0.5 + IQ);
+    const tired = Math.max(0, 0.5 - p.stamina);
+    shootVal -= IQ * tired * estC * 1.2;
+    driveVal += (to === 'finishing' ? 0.3 * (0.5 + IQ) : 0) - IQ * tired * 1.4;
     // post scorers back down toward the block from the mid-post
     const postVal = T.post > 0.4 && myDef && d < 6.8 && d > 2.6 && !sv.three ? 0.25 + T.post * 0.9 + n(p.ratings.post_control) * 0.45 + (p.phys.strength - myDef.phys.strength) * 0.6 - n(myDef.ratings.interior_d) * 0.3 : -9;
     // v0.4.4: low-IQ players misjudge their options (bad shots, forced passes); high-IQ ones rarely do
@@ -469,10 +526,9 @@ export class AI {
     // probe: dribble move or reposition, call a screen. Ball-dominant builds work the defender; bigs with
     // a loose handle don't dribble into traffic.
     const handle = n(p.ratings.ball_handle);
-    if (defDist < 1.7 && p.cool.move <= 0 && (handle > 0.42 || T.dribble > 0.6) && g.rng.next() < (0.3 + handle * 0.3) * (0.5 + 0.7 * T.dribble)) {
-      const shooter = n(p.ratings.three_point) > 0.6 && !sv.three === false;
-      const r = g.rng.next();
-      it.move = r < 0.3 ? 'cross' : r < 0.45 ? 'btb' : r < 0.6 ? 'btl' : r < 0.72 ? 'hesi' : r < 0.86 && n(p.ratings.mid_range) > 0.5 ? 'stepback' : 'spin';
+    const legs = 1 - IQ * Math.max(0, 0.45 - p.stamina) * 1.6; // (tired and smart: fewer moves)
+    if (defDist < 1.7 && p.cool.move <= 0 && (handle > 0.42 || T.dribble > 0.6) && g.rng.next() < (0.3 + handle * 0.3) * (0.5 + 0.7 * T.dribble) * legs) {
+      it.move = pickMove(p, g.rng, IQ, { cross: 0.3, btb: 0.15, btl: 0.15, hesi: 0.12, stepback: n(p.ratings.mid_range) > 0.5 ? 0.14 : 0, spin: n(p.ratings.mid_range) > 0.5 ? 0.14 : 0.28 });
       if (it.move === 'cross' || it.move === 'btb' || it.move === 'btl') {
         // cross toward open side
         const lx = Math.cos(p.facing), lz = -Math.sin(p.facing);
@@ -660,6 +716,11 @@ export class AI {
       const T = this.tend(p);
       // lockdown builds press up; Perimeter D lets a defender play closer without getting blown by
       let gap = 1.05 + (1 - threat) * 0.6 - n(p.ratings.perimeter_d) * 0.25 - (T.press - 0.5) * 0.3;
+      // v0.4.5 quick patch: a smart defender crowds a hot shooter or one in a shooting takeover, and sags off a
+      // tired one who can't blow by him
+      const dIQ = this.iq(p);
+      if (man.hot || (man.takeover?.active && man.takeover.kind === 'shooting')) gap -= 0.25 * dIQ;
+      if (man.stamina < 0.3) gap += 0.2 * dIQ;
       if (dl < 4) gap = 0.8;
       if (dl > 9.5) gap = 2.2;
       tx = seenM.x + dx / dl * gap; tz = seenM.z + dz / dl * gap;
