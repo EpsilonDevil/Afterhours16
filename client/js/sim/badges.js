@@ -49,15 +49,15 @@ export const ICON_BADGES = {
 };
 export const ICON_FOR_ARCH = Object.fromEntries(Object.entries(ICON_BADGES).map(([k, v]) => [v.archetype, k]));
 
-// v0.4.5 takeovers (position-locked): what each one boosts and by how much (rating points)
+// v0.4.5 takeovers (position-locked): what each one boosts and by how much (rating points). v0.4.7.5: 90 s, +6
 export const TAKEOVERS = {
-  shooting: { label: 'Shooting Takeover', positions: ['PG', 'SG'], stats: ['close_shot', 'mid_range', 'three_point', 'free_throw'], boost: 8, green: 0.12 },
-  finishing: { label: 'Finishing Takeover', positions: ['SF', 'PF'], stats: ['layup', 'driving_dunk', 'standing_dunk', 'close_shot', 'post_control'], boost: 8 },
-  glass: { label: 'Glass & Rim Takeover', positions: ['C'], stats: ['off_rebound', 'def_rebound', 'block', 'interior_d'], boost: 8 },
+  shooting: { label: 'Shooting Takeover', positions: ['PG', 'SG'], stats: ['close_shot', 'mid_range', 'three_point', 'free_throw'], boost: 6, green: 0.12 },
+  finishing: { label: 'Finishing Takeover', positions: ['SF', 'PF'], stats: ['layup', 'driving_dunk', 'standing_dunk', 'close_shot', 'post_control'], boost: 6 },
+  glass: { label: 'Glass & Rim Takeover', positions: ['C'], stats: ['off_rebound', 'def_rebound', 'block', 'interior_d'], boost: 6 },
 };
 export const TAKEOVER_FOR_POS = { PG: 'shooting', SG: 'shooting', SF: 'finishing', PF: 'finishing', C: 'glass' };
 export const TAKEOVER_NEED = 6;
-export const TAKEOVER_SECS = 60; // real seconds
+export const TAKEOVER_SECS = 90; // real seconds (v0.4.7.5: 90, and +6 instead of +8)
 
 // Effective sim ratings. `raw` = the build's attributes; badges = {id: tier}; icon = icon badge id or null.
 export function effectiveRatings(raw, badges = {}, icon = null, takeover = null) {

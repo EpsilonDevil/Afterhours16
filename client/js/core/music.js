@@ -30,7 +30,9 @@ export class Soundtrack {
     if (!this.el) {
       this.el = new Audio();
       this.el.preload = 'auto';
-      this.el.addEventListener('ended', () => this.next());
+      // v0.4.7.5: a long mix split into parts plays its parts back to back (the next part is preloaded)
+      this.el.addEventListener('ended', () => { if (!this.nextPart()) this.next(); });
+      this.el.addEventListener('timeupdate', () => this.preloadPart());
       // a missing or broken file is skipped for the rest of the session; if none of them load, the music
       // simply stays off (no ticker, no retry loop)
       this.el.addEventListener('error', () => {
@@ -81,12 +83,33 @@ export class Soundtrack {
       this.queue = q;
     }
     const t = this.tracks[this.queue.shift()];
-    this.current = t;
+    this.current = t; this.part = 0; this.preloaded = null;
     const el = this.element();
-    el.src = 'audio/music/' + t.file;
+    el.src = 'audio/music/' + (t.parts ? t.parts[0] : t.file);
     el.volume = this.level;
     if (this.wanted && !this.suppressed) el.play().catch(() => {});
     this.pendingTicker = t;
+  }
+
+  // v0.4.7.5 multi-part tracks: {file: first part, parts: [...]}
+  nextPart() {
+    const t = this.current;
+    if (!t?.parts || this.part >= t.parts.length - 1) return false;
+    this.part++;
+    const el = this.element();
+    el.src = 'audio/music/' + t.parts[this.part];
+    el.volume = this.level;
+    if (this.wanted && !this.suppressed) el.play().catch(() => {});
+    return true;
+  }
+  preloadPart() {
+    const t = this.current, el = this.el;
+    if (!t?.parts || !el || this.part >= t.parts.length - 1 || !(el.duration - el.currentTime < 8)) return;
+    const f = t.parts[this.part + 1];
+    if (this.preloaded === f) return;
+    this.preloaded = f;
+    const pre = new Audio(); pre.preload = 'auto'; pre.src = 'audio/music/' + f; // (warms the cache so the part change is quick)
+    this.preEl = pre;
   }
 
   fade() {

@@ -27,6 +27,7 @@ export class Material {
     this.alphaTest = o.alphaTest ?? 0;
     this.blend = o.blend || null; // 'alpha' | 'add' | 'multiply'
     this.doubleSided = !!o.doubleSided;
+    this.viewBias = o.viewBias || 0; // v0.4.7.5: drawn this many metres toward the camera (see STD_VS)
     this.layer = o.layer || 0; // v0.4.4: a small depth bias so worn layers win near-coplanar ties (skin 0 < shorts 2 < top 3 < gear worn over
     // clothes 4 < shoes/chain 5). The garments themselves are built with real clearance; this only breaks ties.
     this.shading = o.shading || 'std'; // std | skin | cloth | unlit
@@ -291,9 +292,11 @@ export class Renderer {
   materialUniforms(p, m, pass) {
     const c = this.ctx;
     if (pass === 'shadow') {
+      c.set(p, 'uViewBias', 0);
       if (m.alphaTest > 0 && m.map) { c.set(p, 'uMap', m.map); c.set(p, 'uAlphaTest', m.alphaTest); c.set(p, 'uUVScale', m.uvScale); c.set(p, 'uUVOffset', m.uvOffset); }
       return;
     }
+    c.set(p, 'uViewBias', m.viewBias || 0);
     c.set(p, 'uBaseColor', m.color);
     c.set(p, 'uOpacity', m.opacity);
     c.set(p, 'uRoughness', m.roughness);
@@ -548,7 +551,7 @@ const IDENTITY = M.m4();
 class Particles {
   constructor(ctx) {
     this.ctx = ctx;
-    this.max = 1500;
+    this.max = 3000; // (v0.4.7.5: green release effects)
     this.list = [];
     this.pos = new Float32Array(this.max * 18);
     this.nrm = new Float32Array(this.max * 18);
@@ -557,7 +560,11 @@ class Particles {
   }
   emit(o) {
     if (this.list.length >= this.max) this.list.shift();
-    this.list.push({ x: o.x, y: o.y, z: o.z, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life || 1, age: 0, size: o.size || 0.05, color: o.color || [1, 1, 1], g: o.gravity ?? 0, drag: o.drag ?? 0.5, fade: o.fade ?? 1 });
+    // (v0.4.7.5: grow scales the size over the life, -1 shrinks to nothing; flick twinkles it at that rate)
+    // hold: full brightness until the last fifth of its life (a shape an effect moves around itself)
+    const q = { x: o.x, y: o.y, z: o.z, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life || 1, age: 0, size: o.size || 0.05, color: o.color || [1, 1, 1], g: o.gravity ?? 0, drag: o.drag ?? 0.5, fade: o.fade ?? 1, grow: o.grow || 0, flick: o.flick || 0, ph: Math.random() * 6.3, hold: !!o.hold };
+    this.list.push(q);
+    return q;
   }
   burst(x, y, z, n, o = {}) {
     for (let i = 0; i < n; i++) {
@@ -566,6 +573,7 @@ class Particles {
     }
   }
   draw(cam, dt) {
+    if (this.preDraw) this.preDraw(dt); // (v0.4.7.5: the green release effects schedule their particles here)
     if (!this.list.length) return;
     const gl = this.ctx.gl, c = this.ctx;
     let n = 0;
@@ -578,10 +586,11 @@ class Particles {
       const k = Math.exp(-p.drag * dt);
       p.vx *= k; p.vy *= k; p.vz *= k;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      const t = p.age / p.life, a = (1 - t) * p.fade;
+      const t = p.age / p.life, a = (p.hold ? Math.min(1, (1 - t) * 5, p.age * 20) : 1 - t) * p.fade * (p.flick ? 0.55 + 0.45 * Math.sin(p.age * p.flick * 6.283 + p.ph) : 1);
+      const size = p.size * Math.max(0, 1 + p.grow * t);
       for (let j = 0; j < 6; j++) {
         this.pos.set([p.x, p.y, p.z], (n * 6 + j) * 3);
-        this.nrm.set([corners[j][0], corners[j][1], p.size], (n * 6 + j) * 3);
+        this.nrm.set([corners[j][0], corners[j][1], size], (n * 6 + j) * 3);
         this.col.set([p.color[0], p.color[1], p.color[2], a], (n * 6 + j) * 4);
       }
       n++;

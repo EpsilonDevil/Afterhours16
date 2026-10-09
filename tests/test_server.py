@@ -17,7 +17,7 @@ import uuid
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from server import app as server_app
+from server import app as server_app, bugs
 from server import builds, progression, cup, crew
 from server.database import Database
 
@@ -119,6 +119,20 @@ class ProgressionTests(unittest.TestCase):
         self.assertEqual(char["progression"]["park"]["streak"], 1)
         self.assertGreaterEqual(out["rep_after"]["points"], out["rep_before"]["points"])
         self.assertGreater(char["badges"]["catch_shoot"]["progress"], 0)
+
+    def test_court_bounty_pays_whoever_breaks_a_streak_above_six(self):
+        self.assertEqual(progression.bounty_for(6), 0)
+        self.assertEqual(progression.bounty_for(7), 2500)
+        self.assertEqual(progression.bounty_for(9), 4000)
+        self.assertEqual(progression.bounty_for(60), 15000)
+        line = dict(pts=11, fgm=4, fga=9, tpm=3, tpa=5, ast=4, reb=3)
+        plain = progression.rewards(progression.validate_summary(summary(**line), PARK), PARK, {})
+        ticket = {"mode": "park", "meta": {"target": 21, "streak": 0, "bounty": 4000, "bounty_streak": 9}}
+        won = progression.rewards(progression.validate_summary(summary(**line), ticket), ticket, {})
+        self.assertEqual(won["vc"], plain["vc"] + 4000)
+        self.assertEqual(won["bounty"], 4000)
+        lost = progression.rewards(progression.validate_summary(summary(winner=1, score=(15, 21), **line), ticket), ticket, {})
+        self.assertEqual(lost["bounty"], 0)
 
     def test_pro_run_pays_vc_and_badges_at_one_and_a_half_times_the_park_rate(self):
         line = dict(pts=11, fgm=4, fga=9, tpm=3, tpa=5, ast=4, reb=3, stl=1)
@@ -235,6 +249,10 @@ class CupTests(unittest.TestCase):
         self.assertEqual(cup.prize_for(30, 200)["vc"], cup.TOP_HALF_VC)
         self.assertEqual(cup.prize_for(150, 200)["vc"], cup.PLAYED_VC)
         self.assertIsNone(cup.prize_for(None, 200))
+        # v0.4.7.5: the green release exclusives come with the top 10 (sound) and the top 3 (effect)
+        self.assertIn("cup_gsnd_pharaoh", cup.prize_for(9, 200)["items"])
+        self.assertNotIn("cup_gfx_ankh", cup.prize_for(9, 200)["items"])
+        self.assertIn("cup_gfx_ankh", cup.prize_for(3, 200)["items"])
         for _, _, _, items in cup.PRIZES:
             for i in items:
                 self.assertIn(i, server_app.CATALOG)
@@ -316,6 +334,7 @@ class ApiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.service = server_app.Service(Path(cls.tmp.name) / "api.sqlite3")
+        cls.service.bug_root = Path(cls.tmp.name)
         handler = type("QuietHandler", (server_app.Handler,), {"log_message": lambda *a: None})
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         cls.server.daemon_threads = True
@@ -374,9 +393,22 @@ class ApiTests(unittest.TestCase):
         eq = self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "top", "item_id": "jersey_coral"})
         self.assertEqual(eq["character"]["equipment"]["top"], "jersey_coral")
         self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "shoes", "item_id": "jersey_coral"}, expect=400)  # wrong slot
+        # v0.4.7.5 green releases: the free ones are yours, the rest are bought, the Cup's are won
+        self.assertEqual(self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "greensound", "item_id": "gsnd_basic"})["character"]["equipment"]["greensound"], "gsnd_basic")
+        self.call("/api/store/purchase", {"key": self.key(), "item_id": "gsnd_eagle", "character_id": cid})
+        self.assertEqual(self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "greensound", "item_id": "gsnd_eagle"})["character"]["equipment"]["greensound"], "gsnd_eagle")
+        self.call("/api/store/purchase", {"key": self.key(), "item_id": "gfx_flame", "character_id": cid})
+        self.assertEqual(self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "greenfx", "item_id": "gfx_flame"})["character"]["equipment"]["greenfx"], "gfx_flame")
+        self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "greenfx", "item_id": "gsnd_eagle"}, expect=400)  # wrong slot
+        self.call("/api/store/purchase", {"key": self.key(), "item_id": "cup_gsnd_pharaoh", "character_id": cid}, expect=400)  # won, not bought
         # affiliation is chosen once
         self.call(f"/api/characters/{cid}/affiliation", {"key": self.key(), "affiliation": "brick"})
         self.call(f"/api/characters/{cid}/affiliation", {"key": self.key(), "affiliation": "harbor"}, expect=400)
+        # v0.4.7.5: challenging kings above 6 straight puts their bounty on the ticket
+        b = self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "park", "venue": "brick", "format": 3, "target": 21, "bounty_streak": 8})
+        self.assertEqual(b["meta"]["bounty"], 3250)
+        self.assertNotIn("bounty", self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "park", "venue": "brick", "format": 3, "target": 21, "bounty_streak": 6})["meta"])
+        self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "park", "venue": "brick", "format": 3, "target": 21, "bounty_streak": "lots"}, expect=400)
         # park game: early results are refused, then a legitimate result pays out once
         t = self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "park", "venue": "brick", "format": 3, "target": 21})
         good = summary(pts=11, fgm=4, fga=9, tpm=3, tpa=5, ast=2, reb=3, duration=420)
@@ -461,6 +493,22 @@ class ApiTests(unittest.TestCase):
         finally:
             self.opener = prev
 
+    def test_bug_reports_land_in_a_text_file_next_to_the_exe(self):
+        r = self.call("/api/bug-report", {"key": self.key(), "category": "animation", "what": "My elbow went through my chest\non a step-back.", "expected": "No clipping", "steps": "", "context": {"where": "The Park · Court 2", "system": "test", "errors": ["TypeError: x is undefined"], "events": ["12.3s release excellent made", {"t": 13}]}})
+        self.assertEqual(r["number"], 1)
+        path = Path(self.tmp.name) / bugs.BUG_FILE
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("BUG REPORT #1", text)
+        self.assertIn("Animation / visuals", text)
+        self.assertIn("  My elbow went through my chest", text)
+        self.assertIn("TypeError: x is undefined", text)
+        self.assertIn("The Park · Court 2", text)
+        r2 = self.call("/api/bug-report", {"key": self.key(), "category": "nope", "what": "Second one", "context": {}})
+        self.assertEqual(r2["number"], 2)
+        self.assertIn("BUG REPORT #2", path.read_text(encoding="utf-8"))
+        self.call("/api/bug-report", {"key": self.key(), "what": ""}, expect=400)
+        self.call("/api/bug-report", {"key": self.key(), "what": "x" * 10, "hack": 1}, expect=400)
+
     def test_locker_codes_and_ai_world(self):
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         prev, self.opener = self.opener, opener
@@ -483,8 +531,12 @@ class ApiTests(unittest.TestCase):
             # social: friends and squad persist; junk is dropped; the squad must be friends
             self.assertIsNone(prof["ai_world"])
             w = self.call("/api/ai-world", {"key": self.key(), "world": {"seed": 1234, "born": 1.7e12, "friends": ["ai-7", "ai-12", "nope", 5], "squad": ["ai-7", "ai-99"], "met": {"ai-7": {"games": 3, "with": 2, "vs": 1, "wins": True, "last": 1.5}, "x": 1}}})["world"]
-            self.assertEqual(w, {"seed": 1234, "born": 1.7e12, "friends": ["ai-7", "ai-12"], "squad": ["ai-7"], "met": {"ai-7": {"games": 3, "with": 2, "vs": 1, "wins": 0, "last": 1.5}}})
+            self.assertEqual(w, {"seed": 1234, "born": 1.7e12, "friends": ["ai-7", "ai-12"], "squad": ["ai-7"], "met": {"ai-7": {"games": 3, "with": 2, "vs": 1, "wins": 0, "last": 1.5}}, "prog": {}})
             self.assertEqual(self.call("/api/me")["ai_world"], w)
+            # v0.4.7.5: AI progress (games and wins) and the squad that broke up when the game closed are kept
+            w = self.call("/api/ai-world", {"key": self.key(), "world": {"seed": 1234, "friends": ["ai-7"], "squad": [], "met": {}, "prog": {"ai-7": {"g": 12, "w": 30}, "ai-8": {"g": 0}, "zz": {"g": 3}}, "exSquad": {"ids": ["ai-7", "bad"], "at": 1.7e12}}})["world"]
+            self.assertEqual(w["prog"], {"ai-7": {"g": 12, "w": 12}})
+            self.assertEqual(w["exSquad"], {"ids": ["ai-7"], "at": 1.7e12})
             self.call("/api/ai-world", {"key": self.key(), "world": {"seed": -1}}, expect=400)
         finally:
             self.opener = prev
@@ -708,7 +760,9 @@ class V045ProgressionTests(unittest.TestCase):
                     for w in (150, 210, 300):
                         for ws in (h - 1, h + 3, h + 8):
                             b = {"position": pos, "archetype": arch, "height": h, "weight": w, "wingspan": ws}
-                            self.assertEqual(builds.overall(builds.caps(b), pos), 90, b)
+                            # v0.4.7.5: a new build's VC max is 80; Pro Run games take it up to exactly 90
+                            self.assertEqual(builds.overall(builds.caps(b), pos), 80, b)
+                            self.assertEqual(builds.overall(builds.caps(b, 90), pos), 90, b)
 
     def test_costs_down_35_and_vc_up_35(self):
         self.assertEqual(builds.upgrade_cost(60, 61), builds.jround((150 + 20 * 16) * 0.65))
@@ -731,7 +785,8 @@ class V045ProgressionTests(unittest.TestCase):
     def test_hof_badges_bring_cap_breakers_then_the_icon_badge(self):
         char = self._char()
         self.assertEqual(char["cap_breakers"]["available"], 0)
-        ids = list(progression.BADGES)
+        cap = builds.badge_caps(char)
+        ids = [b for b in progression.BADGES if cap[b] >= 4] + [b for b in progression.BADGES if cap[b] == 3]  # v0.4.7.5 caps
         got = []
         for i, bid in enumerate(ids[:9]):
             got.append(self._hof(char, bid))
@@ -743,9 +798,101 @@ class V045ProgressionTests(unittest.TestCase):
         self.assertEqual(char["icon_badge"], "sharp_eye")
         self.assertEqual(char["badges"][ids[8]]["tier"], 3)  # stops at Gold past the limit
 
+    def test_max_ovr_80_then_plus_one_per_3_pro_run_games(self):
+        char = self._char()
+        self.assertEqual((builds.max_ovr(char), char["ovr_floor"]), (80, 0))
+        self.assertEqual(builds.overall(builds.caps(char), char["position"]), 80)
+        self.assertEqual(builds.describe(char)["prorun_to_next"], 3)
+        unlocked = []
+        summ = {"mode": "prorun", "duration": 600, "forfeit": False, "stats": {k: 0 for k in progression.STAT_KEYS}}
+        rw = {"vc": 0, "rep": 0, "won": True, "streak": 0, "badges": {}}
+        # a forfeit doesn't count
+        progression.apply_progress(char, {**summ, "forfeit": True}, rw)
+        self.assertEqual(char["progression"]["prorun_completed"], 0)
+        # park games don't count either
+        progression.apply_progress(char, {**summ, "mode": "park"}, rw)
+        self.assertEqual(char["progression"]["prorun_completed"], 0)
+        for g in range(1, 34):
+            unlocked.append(progression.apply_progress(char, summ, rw)["max_ovr_unlocked"])
+        self.assertEqual([u for u in unlocked if u], [{"from": 80 + i, "to": 81 + i} for i in range(10)])
+        self.assertEqual([i + 1 for i, u in enumerate(unlocked) if u][:3], [3, 6, 9], "after every third game")
+        self.assertEqual(builds.max_ovr(char), 90)
+        self.assertEqual(builds.overall(builds.caps(char), char["position"]), 90)
+        self.assertTrue(builds.describe(char)["cap_breakers_unlocked"])
+        self.assertEqual(builds.describe(char)["prorun_to_next"], 0)
+
+    def test_older_builds_keep_the_ovr_they_reached(self):
+        b = builds.spec({"position": "SG", "archetype": "sharpshooter", "height": 76})
+        old = {**b, "attributes": builds.caps(b, 86), "schema": 3, "badges": {}, "cap_breakers": {"earned": 0, "available": 0, "applied": {}}}
+        builds.normalize(old)
+        self.assertEqual(old["ovr_floor"], 86)
+        self.assertEqual(builds.max_ovr(old), 86)
+        self.assertEqual(builds.quote(old, {})[0], 0)
+        used = {**b, "attributes": builds.caps(b, 90), "schema": 3, "badges": {}, "cap_breakers": {"earned": 5, "available": 2, "applied": {"three_point": 3}}}
+        builds.normalize(used)
+        self.assertTrue(builds.cap_breakers_unlocked(used))
+        fresh = builds.normalize({**b, "attributes": builds.starting_attributes(b)})
+        self.assertEqual(fresh["ovr_floor"], 0)
+        normalize_again = builds.normalize(dict(old))
+        self.assertEqual(normalize_again["ovr_floor"], 86)
+
+    def test_badges_stop_at_the_tier_the_build_allows(self):
+        # v0.4.7.5: archetype sets the base cap, height opens or closes doors
+        ss = self._char()  # 6'4" sharpshooter
+        cap = builds.badge_caps(ss)
+        self.assertEqual((cap["limitless"], cap["posterizer"], cap["rim_protector"]), (4, 1, 1))
+        got = self._hof(ss, "posterizer")
+        self.assertEqual(ss["badges"]["posterizer"]["tier"], 1)
+        self.assertEqual(got["badges_upgraded"][0]["tier"], 1)
+        self._hof(ss, "posterizer")  # more progress never pushes it past the cap
+        self.assertEqual(ss["badges"]["posterizer"]["tier"], 1)
+        big = builds.spec({"position": "C", "archetype": "glass_cleaner", "height": 86})
+        small = builds.spec({"position": "PG", "archetype": "glass_cleaner", "height": 72})
+        self.assertEqual(builds.height_band(86), "giant")
+        self.assertGreater(builds.badge_caps(big)["rebound_chaser"], builds.badge_caps(small)["rebound_chaser"])
+        self.assertLess(builds.badge_caps(big)["ankle_breaker"], 3)
+        self.assertGreater(builds.badge_caps(builds.spec({"position": "PG", "archetype": "playmaker", "height": 70}))["ankle_breaker"],
+                           builds.badge_caps(builds.spec({"position": "C", "archetype": "playmaker", "height": 86}))["ankle_breaker"])
+        # every build can still unlock its Icon badge: the 7th Hall of Fame badge, or all it can reach if fewer
+        for arch in builds.ARCHETYPES:
+            for h in range(67, 88):
+                b = {"archetype": arch, "height": h}
+                self.assertGreaterEqual(builds.hof_capacity(b), 3, (arch, h))
+                self.assertEqual(builds.icon_need(b), min(7, builds.hof_capacity(b)))
+        # a natural build of each archetype reaches all 7
+        for arch, h in (("sharpshooter", 76), ("slasher", 77), ("playmaker", 74), ("lockdown", 78), ("two_way", 79),
+                        ("glass_cleaner", 83), ("stretch_big", 82), ("post_scorer", 81)):
+            self.assertGreaterEqual(builds.hof_capacity({"archetype": arch, "height": h}), 7, arch)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_badge_caps_match_the_client(self):
+        script = ("import('./client/js/sim/builds.js').then(m => { const o = {}; for (const a of Object.keys(m.BADGE_ARCH_CAPS))"
+                  " for (let h = 67; h <= 87; h++) o[a + h] = m.badgeCaps({ archetype: a, height: h }); console.log(JSON.stringify(o)); })")
+        out = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        js = json.loads(out.stdout)
+        for arch in builds.ARCHETYPES:
+            for h in range(67, 88):
+                self.assertEqual(js[arch + str(h)], builds.badge_caps({"archetype": arch, "height": h}), (arch, h))
+        self.assertEqual(set(builds.BADGE_IDS), set(progression.BADGES))
+
+    def test_icon_badge_on_a_build_with_fewer_hof_slots(self):
+        b = builds.spec({"position": "PG", "archetype": "glass_cleaner", "height": 72})
+        char = builds.normalize({**b, "attributes": builds.starting_attributes(b)})
+        need = builds.icon_need(char)
+        self.assertLess(need, 7)
+        hof = [k for k, v in builds.badge_caps(char).items() if v >= 4]
+        got = [self._hof(char, k) for k in hof]
+        self.assertEqual(char["icon_badge"], "big_brother")
+        self.assertEqual(got[need - 1]["icon_unlocked"], "big_brother")
+
     def test_cap_breakers_raise_a_maxed_attribute_past_the_90_cap(self):
         char = self._char()
         char["cap_breakers"] = {"earned": 25, "available": 25, "applied": {}}
+        # v0.4.7.5: banked until the build's max OVR reaches 90
+        with self.assertRaises(builds.Invalid):
+            builds.apply_cap_breakers(char, "three_point", 1)
+        char["progression"]["prorun_completed"] = 30
+        self.assertTrue(builds.cap_breakers_unlocked(char))
         cap = builds.caps(char)
         attr = next(a for a in builds.ATTRIBUTES if cap[a] < 95)
         with self.assertRaises(builds.Invalid):

@@ -1,4 +1,28 @@
-# Status — v0.4.5 (complete: seven stages, the final touches and a quick patch)
+# Status — v0.4.7.5 (complete)
+
+v0.4.7.5 was built in twelve stages (A–L), each committed with its own tests. The full player-facing list is in `PATCH_NOTES_v0.4.7.5.docx` (source: `PATCH_NOTES_v0.4.7.5.md`). Where things live:
+
+| Area | Files | Notes |
+|---|---|---|
+| Contests, hot, takeovers, wide-open dunks, Contact Finisher, posting, defensive X, AI Lock-In | `sim/shots.js`, `sim/badges.js`, `sim/game.js`, `sim/player.js` | no-badge contest ×0.53 (was 0.44) per unit; HOT_BOOST 0.03; TAKEOVER_SECS 90, +6; WIDE_OPEN 0.1 |
+| Badge caps by archetype and height, badge art, HOF vibrance, Icon designs | `server/builds.py` (BADGE_ARCH_CAPS, HEIGHT_BANDS), `sim/builds.js` (mirror), `ui/badgeart.js` | caps applied for the user, bots, park, intros and phone |
+| 80 OVR VC cap, +1 per 3 Pro Run games to 90, banked cap breakers | `server/builds.py`, `server/progression.py`, `ui/myplayer.js`, `ui/modes.js` | builds already past 80 keep an ovr_floor |
+| Stick moves, combos, packages, passing, box-outs, speed | `sim/moves.js`, `core/input.js`, `sim/game.js` | 14 moves, 21 combos, 20 size-up styles |
+| AI moves, shot selection, screens, cuts, anti cherry-pick, calibration | `sim/ai.js` | AI_TIMING_COMP {mid 1.3, three 1.08, layup 1.32}: 36 park games → mid 34.6%, 3PT 31.9%, layup 53.0% |
+| Doubled animations, movement styles, hustle shots, dunks, ankle reactions | `server/catalog.json`, `sim/game.js`, `sim/shots.js`, `char/animator.js` | uniqueness checked pairwise (tests) |
+| Limb collisions, springs, straps, traps, skin | `char/rig.js`, `char/animator.js`, `char/athlete.js`, `char/view.js`, `gfx/shaders.js` | clipping audit in the patch notes |
+| Green release sounds and effects | `core/greensound.js`, `game/greenfx.js`, `game/session.js`, `sim/bots.js` (spreadGreens) | Web Audio synthesis; particle effects with held shapes |
+| Two Got Next spots, overview, bounties, ticker, AI growth, squads on close | `world/themes.js`, `world/venues.js`, `game/park.js`, `ui/modes.js`, `sim/world.js`, `server/progression.py` | bounty 2,500 + 750/win above 7, max 15,000 (server-paid) |
+| Inventory, store split, menu/HUD polish | `ui/inventory.js`, `ui/store.js`, `ui/screens.js`, `css/*.css` | |
+| Soundtrack, bug reports | `client/audio/music/`, `core/music.js`, `ui/bugreport.js`, `server/bugs.py` | parts play back to back; reports in `Afterhours16_Bug_Reports.txt` |
+
+Tests: `node --test tests/*.test.mjs` (121) and `python -m unittest discover -s tests` (39).
+
+**Known limits:** the model is still the v0.4 low-poly athlete (faces and hands are next in the v0.5 overhaul); knees can still brush in some strides; the Juice WRLD freestyle has no pause to split at, so its part change is mid-verse (it plays straight through).
+
+---
+
+# v0.4.5 (complete: seven stages, the final touches and a quick patch)
 
 ## v0.4.5 quick patch: right-stick dribble moves, deep shots, attack-bind layups, finish selection, the shot meter, the streak fire, and a second round (timing, release point, tuning, AI)
 

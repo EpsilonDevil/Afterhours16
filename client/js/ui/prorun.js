@@ -17,6 +17,7 @@ import * as Rewards from './rewards.js';
 import * as Screens from './screens.js';
 import { leaveWorld, showResults, pauseMatch } from './modes.js';
 import { badgeTiers } from '../game/park.js';
+import { maxOvr, OVR_CAP, PRORUN_GAMES_PER_OVR } from '../sim/builds.js';
 
 // ---------- load / save ----------
 let saving = Promise.resolve();
@@ -77,12 +78,21 @@ export async function render(app, root, params = {}) {
   syncMe(app, career);
   const state = { tab: params.tab || 'overview' };
   const draw = () => {
-    if (!career) return drawNew(app, root, c => { career = c; draw(); });
-    if (career.phase === 'college') return drawCollege(app, root, career, draw);
-    if (career.phase === 'draft') return drawDraft(app, root, career, draw);
-    return drawSeason(app, root, career, state, draw);
+    if (!career) drawNew(app, root, c => { career = c; draw(); });
+    else if (career.phase === 'college') drawCollege(app, root, career, draw);
+    else if (career.phase === 'draft') drawDraft(app, root, career, draw);
+    else drawSeason(app, root, career, state, draw);
+    maxOvrStrip(app, root);
   };
   draw();
+}
+
+// v0.4.7.5: games played here raise your max OVR (+1 every 3, from 80 up to 90)
+function maxOvrStrip(app, root) {
+  const c = app.char(); if (!c) return;
+  const max = maxOvr(c), left = c.prorun_to_next ?? 0, per = PRORUN_GAMES_PER_OVR;
+  const el = root.querySelector('.pr > .eyebrow'); if (!el || root.querySelector('.pr-maxovr')) return;
+  el.insertAdjacentHTML('afterend', `<div class="pr-maxovr"><b>MAX OVR ${max}</b>${max >= OVR_CAP ? '<span>fully unlocked · cap breakers open</span>' : `<span>${left} game${left === 1 ? '' : 's'} played here to +1</span>${[0, 1, 2].map(k => `<i class="${k < per - left ? 'on' : ''}"></i>`).join('')}`}</div>`);
 }
 
 function drawNew(app, root, done) {

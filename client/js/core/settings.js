@@ -10,6 +10,8 @@ const DEFAULTS = {
   shotMeter: true, shotFeedback: true,
   // v0.4.5: auto-play (H) stays on from one game to the next until you turn it off
   autoPlay: false,
+  // v0.4.7.5: green release sounds and effects: 'all' players, 'mine' only, or 'off'
+  greens: 'all',
 };
 export const settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* private mode */ }

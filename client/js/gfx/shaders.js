@@ -25,6 +25,10 @@ uniform vec2 uUVOffset;
 uniform float uTime;
 uniform float uHype;
 uniform vec4 uCrowd; // v0.4.3 crowd: x = wave strength, y = clap, z = wave speed, w = standing ovation
+// v0.4.7.5: a material can be drawn a few centimetres toward the camera (jersey straps and edges always show over
+// the skin under them)
+uniform vec3 uCamPos;
+uniform float uViewBias;
 out vec3 vWorld;
 out vec3 vNormal;
 out vec2 vUV;
@@ -76,7 +80,9 @@ void main() {
   vNormal = normalize(mat3(model) * nrm);
   vUV = aUV * uUVScale + uUVOffset;
   vShadow = uShadowMat * world;
-  gl_Position = uViewProj * world;
+  vec4 clipW = world;
+  if (uViewBias > 0.0) clipW.xyz += normalize(uCamPos - world.xyz) * uViewBias;
+  gl_Position = uViewProj * clipW;
 }`;
 
 export const STD_FS = /* glsl */`
@@ -343,10 +349,17 @@ void main() {
     float att = pow(clamp(1.0 - pow(d / range, 4.0), 0.0, 1.0), 2.0) / (d * d * 0.02 + 1.0);
     float cosO = uLightDir[i].w;
     if (cosO > -1.0) { float cd = dot(-l, normalize(uLightDir[i].xyz)); att *= smoothstep(cosO, cosO + 0.12, cd); }
-    float nl = clamp(dot(N, l), 0.0, 1.0);
+    float nlRaw = dot(N, l), nl = clamp(nlRaw, 0.0, 1.0);
     vec3 h = normalize(l + V);
     vec3 sp = D_GGX(clamp(dot(N, h), 0.0, 1.0), a) * V_Smith(NoV, nl, a) * F_Schlick(f0, clamp(dot(V, h), 0.0, 1.0));
+#ifdef SKIN
+    // v0.4.7.5: the floodlights wrap around skin too (soft terminator, warm scatter) instead of a hard plastic edge
+    float nlw = clamp((nlRaw + 0.3) / 1.3, 0.0, 1.0);
+    vec3 dl = vec3(nlw) + vec3(0.9, 0.3, 0.2) * (nlw - nl) * 0.45;
+    color += (diffuseColor / PI * dl + sp * nl) * uLightColor[i].rgb * uLightColor[i].a * att;
+#else
     color += (diffuseColor / PI + sp) * nl * uLightColor[i].rgb * uLightColor[i].a * att;
+#endif
   }
 
   // Ambient: hemisphere irradiance + environment specular
@@ -360,6 +373,11 @@ void main() {
   irr *= vec3(1.03, 0.98, 0.96); // light bleeding through skin warms the fill
 #endif
   color += diffuseColor * irr * ao;
+#ifdef SKIN
+  // v0.4.7.5: a soft velvet edge where skin turns away from the camera (fine hair and scatter), so limbs read as
+  // rounded flesh rather than a hard doll shell
+  color += diffuseColor * pow(1.0 - NoV, 3.0) * (irr * 0.35 + uSunColor * sh * 0.08) * ao;
+#endif
   vec3 R = reflect(-V, N);
   vec3 env = textureLod(uEnvMap, equirect(R), rough * 6.0).rgb * uEnvIntensity;
   vec3 specAmb = envBRDF(f0, rough, NoV);

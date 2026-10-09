@@ -6,6 +6,8 @@ import { jumpshotPackage } from './shots.js';
 
 import { rk as pd } from './ratings.js';
 import { effectiveRatings, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
+import { capBadges } from './builds.js';
+import { greenVoice } from '../core/greensound.js';
 // v0.4.5 final: sprinting drains stamina twice as fast
 export const SPRINT_DRAIN_K = 2;
 
@@ -27,7 +29,8 @@ export class Player {
     // v0.4.5: `raw` is the build as shown in menus; `ratings` is what the sim plays with (the no-badge
     // penalty, Icon badge and takeover boosts applied). Gating checks (can he dunk at all) use raw.
     this.raw = { ...entry.build.attributes };
-    this.badges = { ...(entry.badges || {}) };
+    // v0.4.7.5: every badge plays at most at the tier the build allows (archetype and height)
+    this.badges = capBadges(entry.badges || {}, entry.build.archetype || entry.build.height ? entry.build : null);
     this.icon = entry.icon || entry.build.icon_badge || null;
     this.ratings = effectiveRatings(this.raw, this.badges, this.icon);
     // takeover: which kind this position can earn, progress toward it, seconds left while active
@@ -46,11 +49,17 @@ export class Player {
     const su = entry.build.equipment?.sizeup || 'sizeup_basic';
     // v0.4.5: a package's own lvl (from the catalog) decides how hard it sells the handle; `style` is its look
     this.sizeupLvl = catalog?.[su]?.lvl ?? ({ sizeup_rhythm: 0, sizeup_quick: 1, sizeup_elite: 2, sizeup_ankle_taker: 2 }[su] ?? 0);
+    // v0.4.7.5 movement style (how he walks and runs: animator MOVE_GAIT)
+    this.moveStyle = catalog?.[entry.build.equipment?.movement]?.style || 'standard';
     this.sizeupStyle = catalog?.[su]?.style || ({ sizeup_quick: 'quick', sizeup_elite: 'elite', sizeup_ankle_taker: 'ankle', sizeup_rhythm: 'rhythm' }[su] || 'basic');
     this.moveSpeed = catalog?.[su]?.move_speed ?? [1, 1.12, 1.22][this.sizeupLvl];
     // v0.4.5 layup packages: the finish style used on drives
     this.layupPkg = entry.build.equipment?.layup || 'layup_basic';
     this.layupStyle = catalog?.[this.layupPkg]?.style || 'basic';
+    // v0.4.7.5 green releases: his sound and his effect, and (AI) his own pitch and tempo on the sound
+    this.greenSound = entry.build.equipment?.greensound || 'gsnd_basic';
+    this.greenFx = entry.build.equipment?.greenfx || 'gfx_basic';
+    this.greenVoice = this.human ? { pitch: 1, rate: 1 } : greenVoice(`${this.name}|${entry.build.archetype || ''}|${entry.build.height || ''}`);
     this.hand = entry.build.hand || 'R';
     this.iq = entry.iq ?? null; // v0.4.4 basketball IQ (world AI hoopers)
     this.x = 0; this.z = 0; this.y = 0;
@@ -154,12 +163,15 @@ export class Player {
       if (this.y <= 0) { this.y = 0; this.vy = 0; this.airborne = false; this.landed = true; }
     }
     // stamina (v0.4.5): sprinting drains the most; jogging, sliding on defense and hands-up defense drain a
-    // little; standing, walking and posting up recover
-    const posting = this.posting > 0;
+    // little; standing and walking recover. v0.4.7.5: posting up is neutral, for the post player and the man
+    // guarding him: it neither drains nor recovers
+    const posting = this.posting > 0 || this.postD > 0;
     if (this.sprinting && spd > 3) this.stamina -= ph.staminaRate * SPRINT_DRAIN_K * dt * this.drainK; // v0.4.5 final: ×2
-    else if (!posting && !this.airborne && (spd > 2.1 || (defense && spd > 0.8) || this.handsUp)) this.stamina -= ph.staminaRate * 0.2 * dt * this.drainK;
+    else if (posting) { /* neutral */ }
+    else if (!this.airborne && (spd > 2.1 || (defense && spd > 0.8) || this.handsUp)) this.stamina -= ph.staminaRate * 0.2 * dt * this.drainK;
     else this.stamina += ph.recover * dt * (spd < 1 ? 1.4 : 0.6) * this.recK;
     if (this.posting > 0) this.posting -= dt;
+    if (this.postD > 0) this.postD -= dt;
     this.stamina = Math.max(0, Math.min(1, this.stamina));
     if (this.bumpT > 0) this.bumpT -= dt;
     for (const k in this.cool) if (this.cool[k] > 0) this.cool[k] -= dt;

@@ -14,8 +14,9 @@ import { rk as n } from './ratings.js';
 import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES } from './badges.js';
 // v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
 import { DEF_K } from './shots.js';
+import { LockedInGrade } from '../game/grade.js';
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
-const MOVE_DUR = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5, stepback: 0.56, inout: 0.4 };
+import { MOVES, moveProfile, switchesHand, comboName, moveStyle } from './moves.js';
 // v0.4.5 quick patch: snappier dribble moves. Every move is 20% shorter, and a better Ball Handle and Speed With
 // Ball make it quicker still (up to about a third quicker on top). The next move can start once the current one is
 // 60% through (CHAIN_AT), and a different move started within COMBO_GAP of the last one is a combo: it costs no
@@ -26,6 +27,10 @@ export const MOVE_SNAP = 0.8, CHAIN_AT = 0.6, COMBO_GAP = 0.4;
 export const POS_MOVE_SPEED = { PG: 1, SG: 0.95, SF: 0.95, PF: 0.9, C: 0.9 };
 export const MOVE_SPEED_ALL = 0.95;
 export const posMoveK = pos => (POS_MOVE_SPEED[pos] ?? 1) * MOVE_SPEED_ALL;
+// v0.4.7.5: the better the handle, the sooner the next move can cut in (60% through at a 60 handle, 40% at 99) and the
+// harder the burst snaps in (the velocity blend rate)
+export const chainAt = p => Math.max(0.4, Math.min(CHAIN_AT, CHAIN_AT - ((p.ratings.ball_handle ?? 60) - 60) * 0.0052));
+export const moveSnapRate = p => 12 + 10 * Math.max(0, Math.min(1, ((p.ratings.ball_handle ?? 60) - 50) / 49));
 // v0.4.5: the ball travels 0.985% slower on passes
 const PASS_K = 1 - 0.00985;
 // v0.4.5 alley-oops: takeoff spot distance from the lob's aim point, and the most a receiver can drift in the air
@@ -45,9 +50,9 @@ export const DEF_ASSIST_K = 1.0375;
 // point (Hitch); rz: release in front (+) or behind (−) the usual spot; drift: swings out toward the shooting
 // side and back (Sway); line: no set point at all, one curving motion (Slingshot, Silk)
 // back: how far the shoulders sit behind upright at the release (×H), from the base's lean in the air (animator)
-const SHOT_PATH = {
+export const SHOT_PATH = {
   standard: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.62, back: 0.014 },
-  high: { py: 0.62, sx: 0.035, sz: 0.15, ks: 0.6, back: 0.022 },
+  high: { py: 0.62, sx: 0.0, sz: 0.12, ks: 0.6, back: 0.022 },
   flick: { py: 0.56, sx: 0.09, sz: 0.25, ks: 0.52, back: 0 },
   push: { py: 0.57, sx: 0.11, sz: 0.31, ks: 0.6, back: 0 },
   lean: { py: 0.62, sx: 0.05, sz: 0.1, ks: 0.66, rz: -0.07, back: 0.067 },
@@ -61,20 +66,83 @@ const SHOT_PATH = {
   tuck: { py: 0.49, sx: 0.07, sz: 0.24, ks: 0.68, back: 0.024 },
   sway: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.6, drift: 0.14, back: 0.024 },
   silk: { py: 0.47, sx: -0.02, sz: 0.24, line: true, back: 0 },
+  // v0.4.7.5 bases (each with its own ball path; the legs and the body are in the animator)
+  pogo: { py: 0.58, sx: 0.05, sz: 0.17, ks: 0.56, back: 0.014 },
+  stork: { py: 0.61, sx: 0.09, sz: 0.21, ks: 0.6, back: 0.02 },
+  frog: { py: 0.5, sx: 0.04, sz: 0.27, ks: 0.66, back: 0.012 },
+  corkscrew: { py: 0.57, sx: 0.16, sz: 0.14, ks: 0.6, drift: -0.1, back: 0.03 },
+  heel: { py: 0.6, sx: 0.08, sz: 0.22, ks: 0.6, back: 0.016 },
+  turbo: { py: 0.63, sx: 0.06, sz: 0.28, ks: 0.42, back: 0.006 },
+  onestep: { py: 0.55, sx: 0.1, sz: 0.3, ks: 0.64, rz: 0.04, back: 0.004 },
+  tilt: { py: 0.6, sx: 0.2, sz: 0.16, ks: 0.6, drift: 0.08, back: 0.082 },
+  catapult: { py: 0.66, sx: 0.04, sz: -0.04, ks: 0.58, pause: 0.12, back: 0.048 },
+  statue: { py: 0.64, sx: 0.03, sz: 0.12, ks: 0.5, pause: 0.18, back: 0.012 },
+  bounce: { py: 0.54, sx: 0.12, sz: 0.26, ks: 0.62, back: 0.014 },
+  whip: { py: 0.5, sx: -0.18, sz: 0.2, line: true, back: 0.01 },
+  dip: { py: 0.4, sx: 0.08, sz: 0.3, ks: 0.7, back: 0.018 },
+  leaner: { py: 0.6, sx: 0.06, sz: 0.3, ks: 0.6, rz: 0.02, back: 0 },
+  bicycle: { py: 0.59, sx: 0.1, sz: 0.2, ks: 0.6, back: 0.02 },
 };
+// v0.4.7.5 ankle-breaker reactions (the victim's animation) and how long each keeps him out of the play
+export const ANKLE_REACT = { sit: { dur: 1.4 }, slip: { dur: 1.3 }, tangle: { dur: 1.15 }, split: { dur: 1.5 }, lean: { dur: 1.0 }, stagger: { dur: 1.2 }, spun: { dur: 1.1 }, faceplant: { dur: 1.6 }, knee: { dur: 1.4 } };
+
+// v0.4.7.5 dunk finishes: the ball's path, local to the dunker ([x right-negative, y up, z ahead]); t: share of the
+// way to the slam, e: its smoothstep, H: height, topY: where the slam happens. The hands follow the ball.
+const sstep = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const toTop = (x, y, z, f, topY) => { const ef = sstep(f); return [x * (1 - ef) - 0.04 * ef, y + (topY - y) * ef, z + (0.5 - z) * ef]; };
+export const DUNK_PATH2 = {
+  // two hands go all the way round together in front of the body, then down through
+  twomill: (t, e, H, topY) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, R = 0.34 * H; return toTop(0, 0.88 * H + R * Math.sin(al), 0.06 + R * Math.cos(al), (t - 0.82) / 0.18, topY); },
+  // a big circle out to the side: in at the shoulder, down past the hip, out wide, up over the top
+  sidemill: (t, e, H, topY) => { const k = sstep(t / 0.88), al = Math.PI + 1.5 * Math.PI * k, R = 0.36 * H; return toTop(-0.26 - R * Math.cos(al) * 0.9, 0.92 * H + R * Math.sin(al) * -1, 0.16, (t - 0.8) / 0.2, topY); },
+  // up over the head and dropped down the back between the shoulder blades, then whipped over the top
+  backscratch: (t, e, H, topY) => { const up = sstep(t / 0.32), dn = sstep((t - 0.32) / 0.3), ov = (t - 0.66) / 0.34; const y = 0.62 * H + (1.02 * H - 0.62 * H) * up - 0.24 * H * dn, z = 0.3 - 0.22 * up - 0.34 * dn; return toTop(-0.08, y, z, ov, topY); },
+  // held high over the head with both hands right through a reverse full turn
+  rev360: (t, e, H, topY) => { const k = sstep(t / 0.3); return toTop(0, 0.62 * H + (1.0 * H - 0.62 * H) * k, 0.3 - 0.24 * k, (t - 0.8) / 0.2, topY); },
+  // a full spin with the arm windmilling round through it
+  spinmill: (t, e, H, topY) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, R = 0.36 * H; return toTop(-0.16, 0.9 * H + R * Math.sin(al), 0.02 + R * Math.cos(al), (t - 0.84) / 0.16, topY); },
+  // thrust out at eye level at arm's length, back, out again, then up and in
+  pump: (t, e, H, topY) => { const k = Math.min(1, t / 0.74), z = 0.26 + 0.38 * Math.abs(Math.sin(2 * Math.PI * k)); return toTop(0, 0.84 * H, z, (t - 0.74) / 0.26, topY); },
+  // carried low at the hip with the knee driving up, then thrown up at the last moment
+  kneeup: (t, e, H, topY) => toTop(-0.2, 0.55 * H, 0.26, (t - 0.62) / 0.38, topY),
+  // swung across the body from the far shoulder to the near side overhead
+  crossleg: (t, e, H, topY) => { const k = sstep(t / 0.85); return toTop(0.28 - 0.4 * k, 0.86 * H + 0.14 * H * k, 0.2, (t - 0.85) / 0.15, topY); },
+  // a full turn with the ball held out to the side at arm's length, like a rotor
+  helicopter: (t, e, H, topY) => { const k = sstep(t / 0.25); return toTop(-0.2 - 0.36 * k, 0.86 * H, 0.06, (t - 0.8) / 0.2, topY); },
+  // passed behind the head from the right hand to the left, slammed left-handed
+  behindhead: (t, e, H, topY) => { const k = sstep(t / 0.8), ph = Math.PI * k; return toTop(-0.26 * Math.cos(ph), 0.9 * H + 0.05 * H * Math.sin(ph), 0.12 - 0.34 * Math.sin(ph), (t - 0.8) / 0.2, topY); },
+  // tucked to the chest in a cannonball, then thrown down with both hands
+  cannonball: (t, e, H, topY) => toTop(0, 0.7 * H, 0.26, (t - 0.78) / 0.22, topY),
+  // up overhead early with both hands while the legs go out in a split
+  splits: (t, e, H, topY) => { const k = sstep(t / 0.35); return toTop(0, 0.66 * H + 0.36 * H * k, 0.3 - 0.12 * k, (t - 0.82) / 0.18, topY); },
+  // carried at the shoulder while the lead leg shoots out straight ahead
+  hurdle: (t, e, H, topY) => toTop(-0.16, 0.78 * H, 0.18, (t - 0.72) / 0.28, topY),
+  // folded over: the ball reaches long out in front over the piked legs
+  jackknife: (t, e, H, topY) => { const k = sstep(t / 0.6); return toTop(-0.08, 0.7 * H + 0.08 * H * k, 0.3 + 0.32 * k, (t - 0.84) / 0.16, topY); },
+};
+
 // v0.4.5 quick patch: reaching up for the release, the shooting shoulder rises this much (×H; the animator lifts the
 // collarbone to match), and the arm ends 97% straight
 export const ARM_LIFT = 0.025, ARM_EXT = 0.97;
+// v0.4.7.5: how far the shoulders sit back at the release of a running fade (it leans back the furthest)
+export const RUNFADE_BACK = 0.135;
 // v0.4.5 quick patch: how hard a made dunk is thrown down through the rim (m/s)
 export const SLAM_V = 8.5;
+// v0.4.7.5: "wide open": 10% guarded or less (the shot feedback's tier)
+export const WIDE_OPEN = 0.1;
 // where the finishing shoulder sits at the top of a layup, against upright (×H): [drop, back, out to the side, and a
 // trim off the top where the pose also turns the arm away]. Measured off the animator's layup poses for each package
 // and coverage across builds, rounded up a little
-const LAYUP_BODY = {
+export const LAYUP_BODY = {
   basic: { open: [0.047, 0.022, 0], side: [0.07, 0.043, 0.038], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
   euro: { open: [0.023, 0.024, 0], side: [0.083, 0.045, 0.087], front: [0.023, 0, 0], rim: [0.085, 0.1, 0.064, 0.033], trail: [0.031, 0.05, 0] },
   finger: { open: [0.059, 0.037, 0], side: [0.084, 0.056, 0.038, 0.021], front: [0.055, 0, 0], rim: [0.048, 0.089, 0, 0.008], trail: [0.067, 0.046, 0, 0.054] },
   scoop: { open: [0.065, 0, 0], side: [0.084, 0, 0.042], front: [0.063, 0, 0], rim: [0.061, 0.072, 0], trail: [0.064, 0.028, 0, 0.076] },
+  // v0.4.7.5 packages (fitted the same way: tools fit them against the rig for every build and coverage)
+  reverse: { open: [0.05, 0.087, 0, 0.014], side: [0.07, 0.043, 0.038, 0.006], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0, 0.036] },
+  hop: { open: [0.047, 0.022, 0], side: [0.07, 0.043, 0.038], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
+  floater: { open: [0.047, 0.022, 0, 0.034], side: [0.07, 0.043, 0.038, 0.034], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
+  spin: { open: [0.047, 0.022, 0], side: [0.07, 0.043, 0.038], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
 };
 
 export class Game {
@@ -129,6 +197,7 @@ export class Game {
     this.lastShot = null;
     this.buzzer = false;
     this.lockIn = null; // v0.4.5: {id, idx} the user's Lock-In grade (set by the session), drives his stamina
+    this.aiGrades = new Map(); // v0.4.7.5: player id -> LockedInGrade, for every AI player
     this.setup();
   }
 
@@ -241,7 +310,7 @@ export class Game {
     const three = !this.practiceFT && isThree(a.startX, a.startZ, side);
     const d = Math.hypot(rim.x - a.startX, rim.z - a.startZ);
     const corner = three && Math.abs(a.startX) > 6.2, key = three ? 'three_point' : 'mid_range';
-    const ctx = { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p) };
+    const ctx = { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p), hustle: a.hustle };
     const k = this.speed * (p.human ? this.greenBonus : 1);
     const total = S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
     const natural = S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
@@ -439,8 +508,9 @@ export class Game {
     for (const p of this.players) {
       if (p.human && !this.assist) { p.intent = { ...this.humanIntent }; }
       else p.intent = blankIntent();
-      // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds
-      p.stam.grade = this.lockIn && this.lockIn.id === p.id ? this.lockIn.idx : null;
+      // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds. v0.4.7.5: every AI
+      // player keeps a Lock-In grade of his own too (aiGrades), so good and bad play move their stamina as well
+      p.stam.grade = this.lockIn && this.lockIn.id === p.id ? this.lockIn.idx : (this.aiGrades.get(p.id)?.index ?? null);
       const t = p.takeover;
       if (t.active) { t.left -= dt / this.speed; if (t.left <= 0) { t.active = false; t.left = 0; p.refreshRatings(); this.emit({ type: 'takeover', player: p.id, kind: t.kind, on: false }); } }
     }
@@ -451,10 +521,25 @@ export class Game {
     this.humanActed = !!hp && (hp.action ? hp.action.id : 0) !== hpAct;
     for (const p of this.players) this.tickAction(p, dt);
     for (const p of this.players) this.moveOne(p, dt);
+    this.boxOuts(dt);
     this.collide(dt);
     this.updateBall(dt);
     this.interactions(dt);
     this.rules(dt);
+    this.updateAIGrades(dt);
+  }
+
+  // v0.4.7.5: a Lock-In grade for every AI player, fed the same events the user's is
+  updateAIGrades(dt) {
+    if (this.practice) return;
+    for (const p of this.players) {
+      if (p.human && !this.assist) continue;
+      if (!this.aiGrades.has(p.id)) this.aiGrades.set(p.id, new LockedInGrade(this, p.id));
+    }
+    for (const g of this.aiGrades.values()) {
+      for (const e of this.events) g.onEvent(e);
+      g.tick(dt);
+    }
   }
 
   updatePhase(dt) {
@@ -534,10 +619,11 @@ export class Game {
     if (it.call) { p.calling = 1.2; }
     if (p.calling > 0) p.calling -= dt;
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
-    // v0.4.5 posting up: backing a defender down near the rim (walking pace) recovers stamina like walking
+    // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
     if (has && p.speed < 2.2) {
       const rim = this.rimFor(p.team), dr = Math.hypot(rim.x - p.x, rim.z - p.z);
-      if (dr < 5 && this.opponents(p).some(d => { const dd = d.dist(p); return dd < 1.4 && Math.hypot(rim.x - d.x, rim.z - d.z) < dr; })) p.posting = 0.25;
+      const postD = this.opponents(p).find(d => { const dd = d.dist(p); return dd < 1.4 && Math.hypot(rim.x - d.x, rim.z - d.z) < dr; });
+      if (dr < 5 && postD) { p.posting = 0.25; postD.postD = 0.25; } // (both stamina-neutral, player.js)
     }
     // v0.4.5 defensive assist (user only): guarding a post-up, the stick is gently pulled toward the spot
     // between the post player and the rim, so you stay attached without perfect positioning
@@ -560,7 +646,7 @@ export class Game {
       // v0.4.2 bailout: pass out of a jumper any time before the release, on the floor or in the air
       if (a && a.type === 'shoot' && it.pass && !a.released && this.mates(p).length) { this.bailout(p, it.pass); return; }
       // v0.4.5 quick patch: chain the next dribble move once the current one is CHAIN_AT through
-      if (it.move && a && a.type === 'move' && a.t >= a.dur * CHAIN_AT && b.mode === 'dribble') { this.startMove(p, it.move); return; }
+      if (it.move && a && a.type === 'move' && a.t >= a.dur * chainAt(p) && b.mode === 'dribble') { this.startMove(p, it.move); return; }
       if (!this.canAct(p)) return;
       if (this.phase === 'inbound') {
         if (it.pass && p === this.inbounder && this.phaseT <= 0) this.startPass(p, { ...it.pass, type: 'inbound' });
@@ -604,6 +690,8 @@ export class Game {
     if (has && this.ball.mode === 'held' && p.dribble.used) lock = Math.max(lock, 0.92); // picked up dribble: pivot only
     if (this.phase === 'ft') lock = 1;
     if (a && (a.type === 'layup' || a.type === 'dunk' || a.type === 'oop' || a.type === 'move')) this.drive(p, a, dt);
+    if (a && a.type === 'pass' && a.face != null && !a.released) p.intent.face = a.face; // (turning to the receiver)
+    if (a && a.type === 'shoot' && a.hopVX != null && !a.jumped) { const on = a.t < a.hopEnd; p.vx = on ? a.hopVX : p.vx * 0.6; p.vz = on ? a.hopVZ : p.vz * 0.6; }
     if (a && a.type === 'hang') { p.vx = p.vz = 0; }
     p.move(dt, has, lock);
     if (a && a.type === 'hang') {
@@ -612,6 +700,12 @@ export class Game {
       p.y += (a.hangY - p.y) * Math.min(1, dt * 20); p.vy = 0; p.airborne = true;
     }
     if (a && a.type === 'move' && a.move === 'spin') p.facing = a.f0 + a.dir * Math.PI * 2 * Math.min(1, a.t / a.dur);
+    // (v0.4.7.5 spin layup: a full turn through the gather steps, square to the rim at the takeoff)
+    if (a && a.type === 'layup' && a.lstyle === 'spin' && a.t < a.takeoff) p.facing = (a.face0 ?? p.facing) + (a.spinDir || 1) * Math.PI * 2 * Math.min(1, a.t / Math.max(0.1, a.takeoff));
+    // (v0.4.7.5: an ankle-breaker victim who got spun is turned right round)
+    if (a && a.type === 'stumble' && a.react === 'spun') { const q = Math.min(1, a.t / (a.dur * 0.6)); p.facing = a.f0 + a.dir * Math.PI * 1.15 * q * q * (3 - 2 * q); }
+    // (v0.4.7.5 half spin: round to face away from the defender and straight back)
+    if (a && a.type === 'move' && a.move === 'halfspin') p.facing = a.f0 + a.dir * Math.PI * 0.85 * Math.sin(Math.PI * Math.min(1, a.t / a.dur));
     // AI ball handlers never wander out of bounds on their own
     if (has && this.isAI(p) && this.phase === 'live') {
       const mx = COURT.width / 2 - FOOT_R - 0.1, mz = COURT.length / 2 - FOOT_R - 0.1;
@@ -629,13 +723,13 @@ export class Game {
   drive(p, a, dt) {
     if (a.type === 'move') {
       const t = a.t / a.dur;
-      let vx = a.vx, vz = a.vz;
-      const k = a.move === 'stepback' ? (t < 0.45 ? 1 : 0.15) : a.move === 'hesi' ? (t < 0.6 ? 0.25 : 1.25) : 1;
-      p.vx += (vx * k - p.vx) * Math.min(1, dt * 14);
-      p.vz += (vz * k - p.vz) * Math.min(1, dt * 14);
-      p.x += p.vx * dt * 0; // integration happens in move()
+      const k = moveProfile(a.move, t);
+      // v0.4.7.5: the burst snaps in faster with a better handle
+      const r = Math.min(1, dt * (a.snap || 14));
+      p.vx += (a.vx * k - p.vx) * r;
+      p.vz += (a.vz * k - p.vz) * r;
       p.intent.mx = 0; p.intent.mz = 0;
-      if (a.move !== 'spin') p.intent.face = a.face;
+      if (a.move !== 'spin' && a.move !== 'halfspin') p.intent.face = a.face;
       return;
     }
     // v0.4.5 alley-oop runner: sprint to the takeoff spot before leaving the floor
@@ -675,11 +769,25 @@ export class Game {
     const pkg = p.shotPkg;
     const close = st.type === 'close';
     p.spend(COST.shot);
+    // v0.4.7.5: a drive forced into a pull-up (walled off): a Contact Finisher shoulders the man in front off him
+    // to rise up (instead of Posterizer, which only ever works on the dunk)
+    if (st.pullup && p.badges.contact_finisher) {
+      const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
+      const d = this.opponents(p).find(q => { const dx = q.x - p.x, dz = q.z - p.z, dd = Math.hypot(dx, dz); return dd < 1.25 && (dx * fx + dz * fz) / (dd || 1) > 0.4 && q.action?.type !== 'stumble'; });
+      if (d) this.cfPushOff(p, d, rim);
+    }
     const stepback = p.action?.type === 'move' && p.action.move === 'stepback';
     // v0.4.5: running jumpers come out quicker, step-backs and fadeaways a little slower, threes a touch slower
     // than mid-range jumpers (shots.js jumperTimingK); the ratings still set every green window
     const threeAtStart = isThree(p.x, p.z, this.sideFor(p.team));
-    const tRel = close ? 0.42 : pkg.tRel * S.jumperTimingK({ moving: p.speed, stepback, fade: !!st.fade, three: threeAtStart });
+    // v0.4.7.5 hustle shots: rising up at full speed. Toward the rim: a running pull-up; away: a running fade;
+    // across: a pro hop (a two-foot hop sideways, then square and up)
+    let hustle = null;
+    if (!close && !stepback && p.speed > 3.6) {
+      const dR = Math.hypot(rim.x - p.x, rim.z - p.z) || 1, tw = ((rim.x - p.x) * p.vx + (rim.z - p.z) * p.vz) / (dR * p.speed);
+      hustle = tw > 0.45 ? 'pullup' : tw < -0.35 ? 'runfade' : 'prohop';
+    }
+    const tRel = close ? 0.42 : pkg.tRel * S.jumperTimingK({ moving: p.speed, stepback, fade: !!st.fade || hustle === 'runfade', three: threeAtStart, hustle });
     // Biomechanics (jump-shot kinematics literature): a jumper's centre of mass rises only ~15-31 cm, a bit
     // less from deep, and the ball leaves the hand just before the apex. So the jump height is a fraction of
     // max vertical and the takeoff is timed back from the release instead of being a fixed share of it.
@@ -689,11 +797,16 @@ export class Game {
     const a = p.startAction('shoot', tRel + 0.55, {
       icon: p.icon === 'sharp_eye' ? 'sharpeye' : null,
       tRel, takeoff: Math.max(close ? 0.1 : 0.2, tRel - tUp * 0.9), jumpH, dRim,
-      kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback, stepback, startX: p.x, startZ: p.z, moving: p.speed,
+      kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback || hustle === 'runfade', stepback, startX: p.x, startZ: p.z, moving: p.speed, hustle,
       catchShoot: this.lastPass && this.lastPass.to === p.id && this.time - this.lastPass.time < 1.2 && !p.dribble.used && this.ball.mode === 'held',
     });
     // momentum carry & fade
     if (st.fade) { const dx = p.x - rim.x, dz = p.z - rim.z, dl = Math.hypot(dx, dz) || 1; a.driftX = dx / dl * 0.8; a.driftZ = dz / dl * 0.8; }
+    // hustle momentum: the pull-up carries on toward the rim in the air, the running fade drifts well back, and the
+    // pro hop travels sideways on the hop (before the takeoff) and goes straight up
+    if (hustle === 'pullup') { a.driftX = p.vx * 0.22; a.driftZ = p.vz * 0.22; }
+    else if (hustle === 'runfade') { const dx = p.x - rim.x, dz = p.z - rim.z, dl = Math.hypot(dx, dz) || 1; a.driftX = dx / dl * 1.5; a.driftZ = dz / dl * 1.5; }
+    else if (hustle === 'prohop') { const sp = p.speed || 1; a.hopVX = p.vx / sp * 2.8; a.hopVZ = p.vz / sp * 2.8; a.hopEnd = a.takeoff * 0.62; }
     // v0.4.2: square up on the gather. Moving away from the hoop the player turns and fades; otherwise he
     // turns to face the rim (the old code averaged angles and could leave him shooting with his back turned).
     a.faceRim = Math.atan2(rim.x - p.x, rim.z - p.z);
@@ -725,6 +838,7 @@ export class Game {
       takeoff, release, tRel: release, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
       jumpH: p.phys.vertical * 0.75, side: this.sideFor(p.team), reverse: false, euro: lstyle === 'euro' || p.intent.move === 'cross', lstyle,
       lsDir: cov.side || (this.rng.next() < 0.5 ? 1 : -1), // a Euro steps away from the defender
+      face0: Math.atan2(rim.x - p.x, rim.z - p.z), spinDir: this.rng.next() < 0.5 ? 1 : -1,
     });
     this.ball.mode = 'held'; p.dribble.used = true;
     if (this.isAI(p)) { const r = this.ai.layupTiming(p, a, rim); a.releaseAt = r.at; a.aiGrade = r.grade; }
@@ -782,8 +896,12 @@ export class Game {
 
   startPass(p, spec) {
     let type = spec.type || 'chest';
-    let target = spec.target != null ? this.players[spec.target] : this.ai.bestPassTarget(p, spec.dir);
-    if (!target || target.team !== p.team || target === p) target = this.ai.bestPassTarget(p, spec.dir);
+    // v0.4.7.5: your passes go to the teammate closest to the direction you're aiming (the left stick, or where
+    // you're looking without it): direction first, whoever is open or not. The AI still reads the floor.
+    const aimed = p.human && !this.assist;
+    const pick = () => (aimed ? this.passTargetByDir(p, spec.dir) : this.ai.bestPassTarget(p, spec.dir));
+    let target = spec.target != null ? this.players[spec.target] : pick();
+    if (!target || target.team !== p.team || target === p) target = pick();
     if (!target) return;
     // v0.4.5: an alley-oop needs a receiver who can actually get to the rim in time: run to a takeoff spot and
     // rise for the ball. Anyone further out gets a regular lob instead (no more flying in from half court).
@@ -797,10 +915,29 @@ export class Game {
     // v0.4.1: better passers get the ball out quicker (release up to ~25% faster)
     const quick = 1.1 - 0.32 * n(p.ratings.pass_accuracy);
     const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id, icon: p.icon === 'oprah' ? 'oprah' : null });
-    p.facing = Math.atan2(target.x - p.x, target.z - p.z) * 0.7 + p.facing * 0.3;
+    // turn to the receiver: part of it at once, the rest through the throw (the ball isn't let go until he's
+    // facing within 60 degrees of him, so it always leaves toward the man it's meant for)
+    const face = Math.atan2(target.x - p.x, target.z - p.z);
+    p.facing += wrap(face - p.facing) * 0.4;
+    a.face = face;
     this.ball.mode = 'held';
     if (type === 'alley') { target.oopCall = this.time; }
     this.emit({ type: 'passStart', player: p.id, to: target.id, ptype: type });
+  }
+
+  // v0.4.7.5: the teammate closest to a direction (the left stick, or where he's facing without it); distance only
+  // breaks near-ties
+  passTargetByDir(p, dir) {
+    const d = dir && Math.hypot(dir.x, dir.z) > 0.2 ? dir : { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+    const dl = Math.hypot(d.x, d.z) || 1;
+    let best = null, bv = Infinity;
+    for (const r of this.mates(p)) {
+      const dx = r.x - p.x, dz = r.z - p.z, rl = Math.hypot(dx, dz) || 1;
+      const ang = Math.acos(Math.max(-1, Math.min(1, (dx * d.x + dz * d.z) / (rl * dl))));
+      const v = ang + rl * 0.004;
+      if (v < bv) { bv = v; best = r; }
+    }
+    return best;
   }
 
   // the lob's aim point at the front of the rim along the receiver's approach, and where he takes off from
@@ -877,48 +1014,57 @@ export class Game {
 
   startMove(p, move) {
     if (p.cool.move > 0) return;
+    const M = MOVES[move]; if (!M) return;
     // v0.4.5 quick patch: an exhausted player still does the move you called (it used to be silently refused under
     // 4% stamina, which felt like the stick wasn't working); he's just slower and it bites less
     const gassed = p.stamina < 0.12 ? 1 - p.stamina / 0.12 : 0;
     const handle = n(p.ratings.ball_handle);
-    // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder
-    const handleK = 1 + 0.22 * Math.min(1.2, handle) + 0.1 * Math.min(1.2, n(p.ratings.speed_with_ball));
-    const dur = (MOVE_DUR[move] || 0.45) * MOVE_SNAP / (p.moveSpeed || 1) / handleK / posMoveK(p.position) * (1 + 0.25 * gassed);
-    // a different move straight out of the last one is a combo
-    const prev = p.lastMove, combo = !!prev && prev.move !== move && this.time <= prev.end + COMBO_GAP;
+    const sty = moveStyle(p), sig = sty.sig.includes(move);
+    // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder. v0.4.7.5: the handle
+    // counts for more (a 99 handle's moves are about a quarter shorter than a 60's), and every package plays each move its own way
+    const handleK = 1 + 0.4 * Math.min(1.25, handle) + 0.1 * Math.min(1.2, n(p.ratings.speed_with_ball));
+    const dur = M.dur * MOVE_SNAP * sty.durK * (sig ? 0.95 : 1) / (p.moveSpeed || 1) / handleK / posMoveK(p.position) * (1 + 0.25 * gassed);
+    // a different move straight out of the last one is a combo (a crossover straight back the other way counts once:
+    // the double crossover; a third in a row is spam again)
+    const prev = p.lastMove, quick = !!prev && this.time <= prev.end + COMBO_GAP;
+    const dbl = (move === 'cross' || move === 'btl') && prev?.move === move && prev.hand !== p.dribble.hand && (p.stam.moveRun || 0) === 1;
+    const combo = quick && (prev.move !== move || dbl);
+    const named = combo ? comboName(prev.move, move) : null;
     p.combo = combo ? (p.combo || 1) + 1 : 1;
-    p.lastMove = { move, end: this.time + dur };
+    p.lastMove = { move, end: this.time + dur, hand: p.dribble.hand };
     const fwdX = Math.sin(p.facing), fwdZ = Math.cos(p.facing), leftX = Math.cos(p.facing), leftZ = -Math.sin(p.facing);
     const hand = p.dribble.hand;
     const toward = hand === 'R' ? 1 : -1; // crossing from right hand moves ball to the left (+left)
-    let vx = 0, vz = 0;
     const it = p.intent, il = Math.hypot(it.mx, it.mz);
-    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5) * (1 - 0.25 * gassed);
+    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5) * (1 - 0.25 * gassed) * sty.burstK;
     const dirX = il > 0.2 ? it.mx / il : fwdX, dirZ = il > 0.2 ? it.mz / il : fwdZ;
-    switch (move) {
-      case 'cross': case 'btl': case 'btb':
-        vx = leftX * toward * burst * 0.75 + dirX * burst * 0.45; vz = leftZ * toward * burst * 0.75 + dirZ * burst * 0.45; break;
-      case 'inout': vx = fwdX * burst * 0.7 - leftX * toward * 1.2; vz = fwdZ * burst * 0.7 - leftZ * toward * 1.2; break;
-      case 'spin': vx = dirX * burst * 0.8; vz = dirZ * burst * 0.8; break;
-      case 'hesi': vx = dirX * burst * 0.9; vz = dirZ * burst * 0.9; break;
-      case 'stepback': {
-        const rim = this.rimFor(p.team); const rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz) || 1;
-        vx = rx / rl * 3.8; vz = rz / rl * 3.8; break;
-      }
-    }
     const rim = this.rimFor(p.team);
+    let vx = 0, vz = 0;
+    if (M.back) {
+      // escapes: straight away from the rim
+      const rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz) || 1;
+      vx = rx / rl * M.back * sty.burstK; vz = rz / rl * M.back * sty.burstK;
+    } else if (move === 'sidestep') {
+      // a hop to the ball's side (the stick's side), a little back off the defender
+      const s2 = -toward * sty.wide;
+      vx = leftX * s2 * burst * M.lat - fwdX * 0.9; vz = leftZ * s2 * burst * M.lat - fwdZ * 0.9;
+    } else {
+      const lat = (M.lat || 0) * sty.wide, fwd = M.fwd || 0;
+      // crossovers and wraps carry him toward the new hand; the in-and-out leans back toward the ball
+      vx = leftX * toward * burst * lat + dirX * burst * fwd; vz = leftZ * toward * burst * lat + dirZ * burst * fwd;
+    }
     p.dribble.xover = null;
-    const a = p.startAction('move', dur, { move, vx, vz, f0: p.facing, dir: toward, face: Math.atan2(rim.x - p.x, rim.z - p.z), handFrom: hand, switched: false, checked: false, lvl: p.sizeupLvl || 0 });
-    if (move === 'spin') { a.dir = hand === 'R' ? -1 : 1; }
+    const a = p.startAction('move', dur, { move, vx, vz, f0: p.facing, dir: toward, face: Math.atan2(rim.x - p.x, rim.z - p.z), handFrom: hand, switched: false, checked: false, lvl: p.sizeupLvl || 0, snap: moveSnapRate(p), sty: p.sizeupStyle || 'basic', named });
+    if (move === 'spin' || move === 'halfspin') { a.dir = hand === 'R' ? -1 : 1; }
     // v0.4.5: the same move more than 3 times in a row doubles stamina drain, +0.1x per repeat after that
     const st = p.stam;
     if (st.lastMove === move) st.moveRun++; else { st.lastMove = move; st.moveRun = 1; st.moveK = 1; }
     if (st.moveRun > 3) st.moveK = +(2 + 0.1 * (st.moveRun - 4)).toFixed(2);
     if (!combo) p.spend(COST.move * Math.max(0.35, 1 - 0.12 * bk(p.badges, 'handles_for_days'))); // combos are free
-    p.cool.move = dur * 0.55; // (below CHAIN_AT, so a move can chain into the next)
+    p.cool.move = dur * (chainAt(p) - 0.05); // (below the chain point, so a move can chain into the next)
     a.combo = p.combo;
     this.ball.mode = 'dribble';
-    this.emit({ type: 'move', player: p.id, move });
+    this.emit({ type: 'move', player: p.id, move, combo: named });
   }
 
   closestDef(p) { let best = -1, bd = 9; for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd) { bd = dd; best = d.id; } } return best; }
@@ -1021,16 +1167,21 @@ export class Game {
           const carry = Math.max(0, dl - 1.05) / (air * 0.5);
           p.vx = dx / dl * Math.min(4.5, carry); p.vz = dz / dl * Math.min(4.5, carry);
         }
-        // v0.4.5: a stronger finisher can push off a defender in his path on the way up (a bump, never a knockdown)
+        // v0.4.5: a stronger finisher can push off a defender in his path on the way up (a bump, never a knockdown).
+        // v0.4.7.5: Contact Finisher works like Posterizer's push-off on layups: with it even an equal or slightly
+        // weaker finisher creates the space, the shove is bigger with every tier, and the space it makes takes more
+        // off the contest at the release (cfPush, releaseLayup)
         if (a.jumped && !a.released && !a.pushed && p.airborne) {
+          const cf = bk(p.badges, 'contact_finisher');
           for (const d of this.opponents(p)) {
-            if (d.action?.type === 'stumble' || d.dist(p) > p.phys.radius + d.phys.radius + 0.06) continue;
-            if (p.phys.strength - d.phys.strength < 0.08) continue;
+            if (d.action?.type === 'stumble' || d.dist(p) > p.phys.radius + d.phys.radius + 0.06 + 0.04 * cf) continue;
+            if (p.phys.strength - d.phys.strength < 0.08 - 0.05 * cf) continue;
             a.pushed = true;
-            const ux = d.x - p.x, uz = d.z - p.z, ul = Math.hypot(ux, uz) || 1, f = 1.4 + 2 * (p.phys.strength - d.phys.strength);
+            const ux = d.x - p.x, uz = d.z - p.z, ul = Math.hypot(ux, uz) || 1, f = (1.4 + 2 * Math.max(0, p.phys.strength - d.phys.strength)) * (1 + 0.15 * cf);
             d.vx = ux / ul * f; d.vz = uz / ul * f;
-            if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.45, { fall: false, back: true, dir: 1 }); }
+            if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.45 + 0.05 * cf, { fall: false, back: true, dir: 1 }); }
             this.emit({ type: 'bump', player: p.id, defender: d.id, v: 2.5 });
+            if (cf) { a.cfPush = cf; this.badgeFx(p, 'contact_finisher'); }
             break;
           }
         }
@@ -1072,6 +1223,12 @@ export class Game {
               // through the contact and bumps the defender off the line (no knockdown)
               if (tier > 0) this.posterize(p, d, a, rim, true);
               else this.shoulderThrough(p, d, a, rim);
+            } else if (p.badges.contact_finisher) {
+              // v0.4.7.5: stopped short of the dunk, a Contact Finisher (not Posterizer) takes over: he pushes off
+              // the contact and finishes it as a layup at the rim instead
+              a.stopped = d.id; p.vx *= 0.6; p.vz *= 0.6;
+              this.cfPushOff(p, d, rim);
+              a.cfPush = bk(p.badges, 'contact_finisher');
             } else { a.stopped = d.id; p.vx *= 0.45; p.vz *= 0.45; this.emit({ type: 'bump', player: p.id, defender: d.id, v: 2 }); }
             break;
           }
@@ -1080,9 +1237,11 @@ export class Game {
           // you can only dunk with your hands at the rim: if the body never got there it's a flip at the rim
           const reachFront = a.style === 'reverse' ? 0.2 : 0.42;
           const hx = p.x + Math.sin(p.facing) * reachFront, hz = p.z + Math.cos(p.facing) * reachFront;
-          if (Math.hypot(hx - rim.x, hz - rim.z) > 0.62 && Math.hypot(p.x - rim.x, p.z - rim.z) > 0.75) {
+          if (a.cfPush || (Math.hypot(hx - rim.x, hz - rim.z) > 0.62 && Math.hypot(p.x - rim.x, p.z - rim.z) > 0.75)) {
             a.slammed = true; a.hang = 0; a.release = a.t;
-            this.emit({ type: 'feed', text: `${p.name} couldn't get to the rim` });
+            // (forced into a layup: a Contact Finisher finishes it through the contact)
+            if (!a.cfPush && p.badges.contact_finisher) { a.cfPush = bk(p.badges, 'contact_finisher'); this.badgeFx(p, 'contact_finisher'); }
+            this.emit({ type: 'feed', text: a.cfPush ? `${p.name} finishes through the contact` : `${p.name} couldn't get to the rim` });
             this.releaseLayup(p, a);
           } else this.slam(p, a, rim);
         }
@@ -1104,14 +1263,16 @@ export class Game {
       }
       case 'land': if (a.t >= a.dur && !p.airborne) p.action = null; break;
       case 'pass': {
-        if (!a.released && a.t >= a.rel) { a.released = true; if (b.holder === p.id) this.releasePass(p, a); }
+        const turned = a.face == null || Math.abs(wrap(a.face - p.facing)) < 1.05 || a.t >= a.rel + 0.22;
+        if (!a.released && a.t >= a.rel && turned) { a.released = true; if (b.holder === p.id) this.releasePass(p, a); }
+        if (!a.released && a.t >= a.dur) a.dur = a.t + 1 / 60; // (still turning: hold the action until the release)
         if (a.t >= a.dur) p.action = null;
         break;
       }
       case 'move': {
-        if (!a.switched && a.t >= a.dur * 0.5 && (a.move === 'cross' || a.move === 'btl' || a.move === 'btb')) { a.switched = true; p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R'; }
+        if (!a.switched && switchesHand(a.move) && a.t >= a.dur * MOVES[a.move].sw) { a.switched = true; p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R'; }
         if (!a.checked && a.t >= a.dur * 0.55) { a.checked = true; this.ankleCheck(p, a); }
-        if (a.t >= a.dur) { p.action = null; if (a.move === 'hesi') { p.vx *= 1.1; p.vz *= 1.1; } }
+        if (a.t >= a.dur) { p.action = null; if (a.move === 'hesi' || a.move === 'stutter') { p.vx *= 1.1; p.vz *= 1.1; } }
         break;
       }
       case 'steal': {
@@ -1209,7 +1370,8 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const P = this.holdPoint(p);
     const d = Math.hypot(rim.x - p.x, rim.z - p.z);
-    const contest = S.contestFor(p, this.opponents(p), rim, P.gy);
+    // (v0.4.7.5: the space a Contact Finisher push-off made takes 8% per tier off the contest)
+    const contest = S.contestFor(p, this.opponents(p), rim, P.gy) * (1 - 0.08 * (a.cfPush || 0));
     const blocker = this.checkBlockAtRelease(p, { x: P.x, y: P.gy, z: P.z }, 'layup');
     if (blocker) return;
     // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
@@ -1248,7 +1410,10 @@ export class Game {
     const traffic = S.trafficSkill(p, !!a.standing);
     let chance = S.finalChance({ type: 'dunk', d: 0.5, a: p.ratings, contest: contest * 0.8, stamina: p.stamina, badges: p.badges, traffic });
     if (a.posterOn != null) chance = Math.min(0.97, chance + 0.12);
-    const made = this.rng.next() < chance;
+    // v0.4.7.5: a wide-open dunk (10% guarded or less) by anyone over 70 in that dunk rating never misses
+    const sure = contest <= WIDE_OPEN && ((p.raw || p.ratings)[a.standing ? 'standing_dunk' : 'driving_dunk'] ?? 0) > 70;
+    if (sure) chance = 1;
+    const made = sure || this.rng.next() < chance;
     let poster = a.posterOn != null ? this.players[a.posterOn] : null;
     if (!poster && made) {
       // a contest in the air at the rim: the dunker goes through him -> knock him back as he comes down
@@ -1311,6 +1476,18 @@ export class Game {
     const lx = uz / ul * sx, lz = -ux / ul * sx;
     d.vx = lx * 2.6 + ux / ul * 0.9; d.vz = lz * 2.6 + uz / ul * 0.9; // v0.4.5: velocity only, no position jump
     if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.6, { fall: false, back: true, dir: sx }); }
+    this.emit({ type: 'bump', player: p.id, defender: d.id, v: 3 });
+  }
+
+  // v0.4.7.5 Contact Finisher push-off: Posterizer's shove without the knockdown, bigger with every tier. Used when a
+  // dunk attempt is forced into a layup, and when a drive is forced into a pull-up (the space to rise up)
+  cfPushOff(p, d, rim) {
+    const cf = bk(p.badges, 'contact_finisher');
+    const dx = d.x - p.x, dz = d.z - p.z, dl = Math.hypot(dx, dz) || 1;
+    const f = (1.8 + 1.4 * Math.max(0, p.phys.strength - d.phys.strength + 0.3)) * (1 + 0.15 * cf);
+    d.vx = dx / dl * f; d.vz = dz / dl * f;
+    if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.5 + 0.05 * cf, { fall: false, back: true, dir: 1 }); }
+    this.badgeFx(p, 'contact_finisher');
     this.emit({ type: 'bump', player: p.id, defender: d.id, v: 3 });
   }
 
@@ -1382,14 +1559,22 @@ export class Game {
       let pk = 0.002 + 0.03 * n(p.ratings.ball_handle) - 0.03 * n(d.ratings.perimeter_d) + bk(p.badges, 'ankle_breaker') * 0.015 + ((p.moveSpeed || 1) - 1) * 0.06;
       if (dv > 2.5 && moveDir < -0.4) pk += 0.05;
       if (d.action?.type === 'steal') pk += 0.12;
-      if (a.move === 'hesi' || a.move === 'stepback') pk *= 0.7;
+      // v0.4.7.5: every move bites its own amount (moves.js), a package's signature moves a touch more, and a named
+      // combo (a killer crossover, a hesi-cross...) harder still
+      pk *= MOVES[a.move]?.ankle ?? 1;
+      if (moveStyle(p).sig.includes(a.move)) pk *= 1.08;
+      if (a.named) pk *= 1.2;
       // v0.4.5 quick patch: moves are quicker now, so each one is a touch less likely to break ankles on its own (about
       // the same ankle-breakers per minute as before); combos bite a little harder
       pk *= 0.78;
       if ((a.combo || 1) > 1) pk += 0.008 * Math.min(4, a.combo - 1);
       if (this.rng.next() < Math.max(0, pk)) {
         d.action = null;
-        d.startAction('stumble', 1.35 + this.rng.range(0, 0.4), { fall: this.rng.next() < 0.55, dir: this.rng.next() < 0.5 ? 1 : -1 });
+        // v0.4.7.5: how he goes down depends on what got him: crossed up he slips, tangles or splits; spun out he gets
+        // turned all the way round; a stepback leaves him lunging onto his hands or a knee; a hesitation sends him
+        // staggering; and any of them can put him on the seat of his pants
+        const react = this.ankleReact(a.move);
+        d.startAction('stumble', ANKLE_REACT[react].dur + this.rng.range(0, 0.35), { fall: react === 'sit', react, dir: this.rng.next() < 0.5 ? 1 : -1, f0: d.facing });
         d.vx *= 0.3; d.vz *= 0.3;
         p.stats.ankles++;
         p.ankleT = this.time; // v0.4.5: the AI attacks right after an ankle-breaker (ai.js handler)
@@ -1397,6 +1582,15 @@ export class Game {
         return;
       }
     }
+  }
+
+  ankleReact(move) {
+    const fam = MOVES[move]?.fam || 'crossover';
+    const w = { crossover: { sit: 3, slip: 3, tangle: 2, split: 2, lean: 1, stagger: 1 }, behind: { sit: 2, slip: 2, tangle: 3, spun: 1, split: 1 },
+      spin: { spun: 5, sit: 2, stagger: 1 }, escape: { faceplant: 3, knee: 3, sit: 1, lean: 1 }, momentum: { stagger: 3, knee: 2, sit: 2, faceplant: 1 } }[fam];
+    let r = this.rng.next() * Object.values(w).reduce((x, y) => x + y, 0);
+    for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) return k; }
+    return 'sit';
   }
 
   resolveSteal(p) {
@@ -1482,10 +1676,10 @@ export class Game {
       // v0.4.5 stage 7: every jump-shot base carries the ball on its own path (where it starts, where it sets,
       // how long it sits there, where it's let go), so the bases differ in ball travel and not only in the legs
       const sp = SHOT_PATH[a.kind === 'close' ? 'standard' : p.shotPkg.style] || SHOT_PATH.standard;
-      const rel = [sh * 0.05, 0, 0.3 + p.shotPkg.push + (sp.rz || 0)];
+      const rel = [sh * 0.05, 0, 0.3 + p.shotPkg.push + (sp.rz || 0) - (a.hustle === 'runfade' ? 0.12 : 0)]; // (falling away: let go closer in)
       // the release point: as high as the base lets it go, but never out of the shooting hand's reach (so the top of
       // the ball's travel, the middle of the green window, is where it leaves his hand, whatever his build)
-      rel[1] = Math.min(p.phys.reach * (p.shotPkg.relK ?? 0.93), this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', rel[0], rel[2], a.fade ? Math.max(sp.back, 0.065) : sp.back));
+      rel[1] = Math.min(p.phys.reach * (p.shotPkg.relK ?? 0.93), this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', rel[0], rel[2], a.hustle === 'runfade' ? Math.max(sp.back, RUNFADE_BACK) : a.fade ? Math.max(sp.back, 0.065) : sp.back));
       const pocket = [sh * 0.06, sp.py * H, 0.32], set = [sh * sp.sx, Math.min(p.shotPkg.setH * H, rel[1] - 0.04 * H), sp.sz];
       // (gameplay still measures the contest at the height the build's reach gives the release, as it always has:
       // relU/setU, the uncapped points; the cap is the body model's, it doesn't move the defense)
@@ -1513,14 +1707,14 @@ export class Game {
       const cv = a.cov || 'open', cs = a.covSide || 1;
       // v0.4.5 quick patch: the top of each finish (where the ball leaves his hand, the middle of the green window) is
       // kept within the finishing hand's reach: work out where the ball ends up (package, then coverage) and cap it
-      const end = { scoop: [-0.12, 0.56], finger: [-0.06, 0.5], euro: [-0.05, 0.38] }[ls] || [-0.05, 0.38];
+      const end = { scoop: [-0.12, 0.56], finger: [-0.06, 0.5], euro: [-0.05, 0.38], reverse: [-0.3, 0.1], hop: [0, 0.42], floater: [-0.05, 0.42], spin: [-0.05, 0.38] }[ls] || [-0.05, 0.38];
       const body = (LAYUP_BODY[ls] || LAYUP_BODY.basic)[cv] || LAYUP_BODY.basic.open, hand = S.layupHand(a);
       // (and never so far out in front that a shorter arm can't get there: at most 80% of the arm out from the shoulder)
       const A = p.arm, zMax = A ? A.z - body[1] * H + 0.03 * H + 0.8 * A.len : Infinity;
       const ex = cv === 'side' ? cs * 0.28 : cv === 'rim' ? cs * 0.32 : end[0], ez = Math.min(zMax, end[1] + (cv === 'rim' ? -0.3 : cv === 'trail' ? 0.06 : 0));
       const cap = this.reachTop(p, hand, ex, ez, 0, body) - (cv === 'trail' ? 0.07 * H : 0);
       const top = k => Math.min(p.phys.reach * k, cap);
-      const ue = ls === 'scoop' ? e * e : ls === 'finger' ? Math.pow(e, 0.8) : e, uk = ls === 'scoop' ? 0.88 : ls === 'finger' ? 1.02 : 0.97;
+      const ue = ls === 'scoop' ? e * e : ls === 'finger' || ls === 'floater' ? Math.pow(e, 0.8) : e, uk = ls === 'scoop' ? 0.88 : ls === 'finger' ? 1.02 : ls === 'floater' ? 1.0 : ls === 'reverse' ? 0.95 : 0.97;
       gdy = (p.phys.reach * uk - top(uk)) * ue; // (the uncapped finish, for the contest and blocks, as before)
       if (ls === 'scoop') {
         // underhand: the ball dips to the hip, swings out to the side, then rolls up off the palm
@@ -1533,6 +1727,20 @@ export class Game {
         // swept across the body on the long second step, then up on the far side
         const sw = a.lsDir || 1, cross = Math.sin(Math.min(1, t / 0.7) * Math.PI);
         lx = sh * 0.1 * (1 - e) + sw * 0.26 * cross + sh * 0.05 * e; ly = 0.56 * H + (top(0.97) - 0.56 * H) * e; lz = 0.3 + e * 0.08;
+      } else if (ls === 'reverse') {
+        // under the rim and up behind on the right: the arm reaches back up over the shoulder
+        lx = sh * (0.1 * (1 - e) + 0.3 * e); ly = 0.6 * H + (top(0.95) - 0.6 * H) * e; lz = 0.3 - 0.2 * e * e;
+      } else if (ls === 'hop') {
+        // both hands on it at the chest through the two-foot hop, then pushed up two-handed
+        const k = Math.max(0, (t - 0.35) / 0.65), ek = k * k * (3 - 2 * k);
+        lx = 0; ly = 0.62 * H + (top(0.97) - 0.62 * H) * ek; lz = 0.3 + 0.12 * ek;
+      } else if (ls === 'floater') {
+        // up early and high out in front, a soft one-hand push
+        lx = sh * 0.05; ly = 0.66 * H + (top(1.0) - 0.66 * H) * Math.pow(e, 0.8); lz = 0.36 + e * 0.06;
+      } else if (ls === 'spin') {
+        // protected at the chest through the spin, then up like a regular finish
+        const k = Math.max(0, (t - 0.4) / 0.6), ek = k * k * (3 - 2 * k);
+        lx = sh * 0.05; ly = 0.6 * H + (top(0.97) - 0.6 * H) * ek; lz = 0.18 + 0.2 * ek;
       } else { lx = sh * 0.1 * (1 - e) + sh * 0.05; ly = 0.62 * H + (top(0.97) - 0.62 * H) * e; lz = 0.3 + e * 0.08; }
       // v0.4.5 coverage variants on top of the package's path
       if (cv === 'side') { const k = Math.sin(Math.min(1, t / 0.8) * Math.PI * 0.5); lx = lx * (1 - k) + cs * 0.28 * k; } // carried on the far side
@@ -1552,7 +1760,9 @@ export class Game {
         // full arm circle: front-low, down past the hip, back, up over the top, then down into the rim.
         // The cradle swings it out to the side, tucked against the forearm.
         const k = Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
-        const al = -0.35 * Math.PI - 1.32 * Math.PI * ek, R = 0.37 * H, cy = 0.9 * H;
+        // (v0.4.7.5: a true windmill: the arm goes all the way round from shoulder height in front, a full turn
+        // with the slam)
+        const al = (st === 'windmill' ? 0 : -0.35 * Math.PI) - (st === 'windmill' ? 1.67 : 1.32) * Math.PI * ek, R = 0.37 * H, cy = 0.9 * H;
         const cx = st === 'cradle' ? -0.18 - 0.16 * Math.sin(Math.PI * k) : -0.14;
         const cyy = cy + R * Math.sin(al), czz = (st === 'cradle' ? 0.08 : 0.02) + R * Math.cos(al) * (st === 'cradle' ? 0.8 : 1);
         const f = Math.max(0, (t - 0.82) / 0.18), ef = f * f * (3 - 2 * f);
@@ -1621,6 +1831,8 @@ export class Game {
         ly = cyy + (topY * 1.04 - cyy) * ef; lz = czz + (0.52 - czz) * ef;
       } else if (st === 'reverse') {
         ly = 0.65 * H + (topY * 0.99 - 0.65 * H) * e; lz = 0.3 + e * 0.05 - Math.sin(Math.PI * t) * 0.18; lx = 0;
+      } else if (DUNK_PATH2[st]) {
+        [lx, ly, lz] = DUNK_PATH2[st](t, e, H, topY);
       } else { ly = 0.65 * H + (topY - 0.65 * H) * e; lz = 0.3 + e * 0.25; lx = st === 'onehand' ? -0.1 : 0; }
       const spin = S.dunkSpin(a);
       if (spin) { const c = Math.cos(spin), s2 = Math.sin(spin), x0 = lx; lx = x0 * c + lz * s2; lz = -x0 * s2 + lz * c; }
@@ -1653,18 +1865,34 @@ export class Game {
       if (a && a.type === 'move') {
         const t = a.t / a.dur;
         const from = a.handFrom === 'R' ? -1 : 1;
-        if (a.move === 'cross' || a.move === 'btl' || a.move === 'btb') {
-          const e = t * t * (3 - 2 * t);
-          side = from * 0.28 * (1 - 2 * e);
-          if (a.move === 'btl') lz = 0.05 + Math.abs(0.5 - e) * 0.4;
-          if (a.move === 'btb') lz = -0.22 + Math.abs(0.5 - e) * 0.8;
-          ly = BALL_R + (hgt - BALL_R) * Math.abs(Math.cos(Math.PI * e)) * (a.move === 'btl' ? 0.8 : 1);
-        } else if (a.move === 'inout') {
-          side = from * (0.28 - Math.sin(t * Math.PI) * 0.26);
-        } else if (a.move === 'spin') {
+        const sty = moveStyle(p), mv = a.move;
+        if (mv === 'cross' || mv === 'btl' || mv === 'btb' || mv === 'hang' || mv === 'wrap') {
+          // (the hang dribble holds the ball up at the hip for a beat, then snaps it low and across)
+          const tt = mv === 'hang' ? Math.max(0, (t - 0.38) / 0.62) : t;
+          const e = tt * tt * (3 - 2 * tt);
+          side = from * 0.28 * sty.wide * (1 - 2 * e);
+          if (mv === 'btl') lz = 0.05 + Math.abs(0.5 - e) * 0.4;
+          if (mv === 'btb' || mv === 'wrap') lz = -0.22 + Math.abs(0.5 - e) * 0.8;
+          ly = BALL_R + (hgt * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * e)) * (mv === 'btl' ? 0.8 : 1);
+          if (mv === 'hang' && t < 0.38) ly = hgt * (1.04 + 0.06 * Math.sin(t / 0.38 * Math.PI));
+        } else if (mv === 'inout') {
+          side = from * (0.28 - Math.sin(t * Math.PI) * 0.26 * sty.wide);
+        } else if (mv === 'spin' || mv === 'halfspin') {
           side = from * 0.2; lz = 0.18; ly = 0.5 * H * (0.85 + Math.sin(t * Math.PI) * 0.15);
-        } else if (a.move === 'hesi') {
+        } else if (mv === 'hesi') {
           ly = BALL_R + (0.55 * H - BALL_R) * Math.abs(Math.cos(Math.PI * Math.min(1, t * 1.5)));
+        } else if (mv === 'stutter') {
+          // quick little pounds at the hip while the feet chop, then the long one on the go
+          ly = t < 0.62 ? BALL_R + (0.42 * H * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * t / 0.62 * 3)) : BALL_R + (hgt - BALL_R) * Math.abs(Math.cos(Math.PI * (t - 0.62) / 0.38));
+        } else if (mv === 'momentum') {
+          // pushed out ahead of him, one long dribble
+          lz = 0.34 + Math.sin(t * Math.PI) * 0.42; ly = BALL_R + (hgt * 1.1 - BALL_R) * Math.abs(Math.cos(Math.PI * t));
+        } else if (mv === 'sidestep') {
+          // gathered to the hip through the hop
+          side = from * 0.24; lz = 0.12; ly = 0.5 * H * (0.9 + 0.1 * Math.sin(t * Math.PI));
+        } else if (mv === 'retreat') {
+          // two hard, low dribbles on the way back
+          ly = BALL_R + (hgt * 0.78 * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * t * 2)); lz = 0.2;
         }
       } else if (p.dribble.xover) {
         // size-up combos in place: crossovers, between the legs, behind the back, the snake's slide across and
@@ -1943,6 +2171,9 @@ export class Game {
           }
         }
         score += seal;
+        // v0.4.7.5: an active box-out pays off at the glass; the man held behind it is late to the ball
+        if (p.boxOut) score += 0.3 * p.boxOut.s;
+        if (p.boxedOut) score -= 0.45 * p.boxedOut.s;
         cands.push({ p, score });
       }
       if (cands.length) {
@@ -1967,6 +2198,7 @@ export class Game {
 
   catchBall(p) {
     const b = this.ball;
+    if (p.action && p.action.type === 'rebound' && p.action.gotAt == null) p.action.gotAt = p.action.t - (p.action.jumpAt || 0); // (the animator rips it down)
     b.mode = 'held'; b.holder = p.id; b.kind = null;
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.dribble.live = true; p.dribble.used = false;
@@ -2007,6 +2239,52 @@ export class Game {
   // ---------- collisions ----------
   // v0.4.3: how hard a player is to move off his spot by opponent q. Boxing out (back to him, ball in the air)
   // scales with Interior D and rebounding plus the Interior D edge; defenders in the paint anchor with Interior D.
+  // v0.4.7.5 box-outs: with a shot (or a loose ball) up, a player who has an opponent sealed behind him (between that
+  // man and the rim, bodies touching) physically holds him there. The man's way to the rim is mostly shut (how much
+  // depends on Interior D, rebounding, strength and size, both ways) and he's eased back off the paint, his sideways
+  // slide to get round is slowed too, and the boxer wins the scramble for the board more often. Both are flagged
+  // (boxOut / boxedOut) so the animator can show it: the boxer low and wide with his arms out, the man held off.
+  boxOuts(dt) {
+    const b = this.ball;
+    for (const p of this.players) { if (p.boxOut) p.boxOutPrev = p.boxOut.on; else p.boxOutPrev = null; p.boxOut = null; p.boxedOut = null; }
+    const up = b.mode === 'flight' && ((b.kind === 'shot' && b.flightTime > 0.2) || b.kind === 'loose') && (b.y > 1.2 || b.vy > 0);
+    if (!up || this.phase === 'dead') return;
+    const shooterTeam = b.info?.team ?? this.possession;
+    const rim = rimOf(b.info?.side ?? this.sideFor(shooterTeam));
+    const busy = q => q.airborne || ['stumble', 'shoot', 'layup', 'dunk', 'hang', 'celebrate'].includes(q.action?.type);
+    for (const p of this.players) {
+      if (busy(p) || (b.info && b.info.shooter === p.id)) continue;
+      const rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz);
+      if (rl > 6.5 || rl < 0.5) continue;
+      const ux = rx / rl, uz = rz / rl;
+      let best = null, bs = 0;
+      for (const q of this.opponents(p)) {
+        if (busy(q) || q.boxedOut) continue;
+        const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
+        if (d > p.phys.radius + q.phys.radius + 0.28 || d < 1e-4) continue;
+        if ((dx * ux + dz * uz) / d < 0.5) continue; // he has to be behind, on the far side from the rim
+        const own = r => n(r.ratings[r.team === shooterTeam ? 'off_rebound' : 'def_rebound']);
+        const edge = 0.35 * (n(p.ratings.interior_d) - n(q.ratings.interior_d)) + 0.3 * (own(p) - own(q)) + 0.6 * (p.phys.strength - q.phys.strength)
+          + 0.4 * (p.phys.H - q.phys.H) + 0.06 * bk(p.badges, 'brick_wall') + 0.04 * bk(p.badges, 'rebound_chaser');
+        const sv = Math.max(0.2, Math.min(0.95, (0.62 + edge + (p.team !== shooterTeam ? 0.08 : 0)) * DEF_K));
+        if (sv > bs) { bs = sv; best = q; }
+      }
+      if (!best) continue;
+      const q = best;
+      p.boxOut = { on: q.id, s: bs }; q.boxedOut = { by: p.id, s: bs };
+      // his way to the rim (−u) is shut by s; the slide round him slowed; and he's eased back off the paint
+      const toward = -(q.vx * ux + q.vz * uz);
+      if (toward > 0) { q.vx += ux * toward * bs; q.vz += uz * toward * bs; q.x += ux * toward * bs * dt; q.z += uz * toward * bs * dt; }
+      const lat = q.vx * -uz + q.vz * ux;
+      q.vx -= -uz * lat * bs * 0.45; q.vz -= ux * lat * bs * 0.45;
+      const push = 0.45 * bs * dt;
+      q.x += ux * push; q.z += uz * push;
+      // the boxer sits into him: he holds his ground (no drifting under the rim or out)
+      p.vx *= 1 - Math.min(1, dt * 6); p.vz *= 1 - Math.min(1, dt * 6);
+      if (p.boxOutPrev !== q.id) this.emit({ type: 'boxout', player: p.id, victim: q.id, s: bs });
+    }
+  }
+
   anchorK(p, q) {
     const b = this.ball;
     const fx = Math.sin(p.facing), fz = Math.cos(p.facing);

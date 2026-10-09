@@ -161,7 +161,7 @@ const TORSO = [
   [0.864, 0.036, 0.031, 0.031, -0.001, 2.0],
   [0.888, 0.034, 0.030, 0.029, 0.004, 2.0],
 ];
-function torsoTable(yf) {
+export function torsoTable(yf) {
   const T = TORSO;
   if (yf <= T[0][0]) return T[0].slice(1);
   for (let i = 1; i < T.length; i++) if (yf <= T[i][0]) {
@@ -270,6 +270,8 @@ export class AthleteModel {
       neg += 0.0055 * def * bump(as, 0, 0.12) * back * bump(yf, 0.68, 0.15);
       pos += 0.0038 * m * bump(as, 0.2, 0.11) * back * bump(yf, 0.6, 0.08);
       pos += 0.006 * m * bump(yf, 0.828, 0.026) * bump(as, 0.5, 0.36) * (c < 0.3 ? 1 : 0.4);
+      // v0.4.7.5: the trapezius rises into the neck in a slope (the neck read as a post stuck on the shoulders)
+      pos += 0.0078 * m * bump(yf, 0.848, 0.024) * bump(as, 0.66, 0.3) * (c < 0.3 ? 1 : 0.45);
       // glutes with cleft
       pos += 0.012 * m * bump(yf, 0.497, 0.036) * bump(as, 0.42, 0.36) * back;
       neg += 0.0075 * bump(as, 0, 0.08) * back * bump(yf, 0.49, 0.045);
@@ -836,16 +838,29 @@ export class AthleteModel {
       y0: hem, y1: neckTop, hang, loose, keep: tank ? null : keep, topY,
       uv: (u, t, yf) => [u, (vTop - yf) / (vTop - vHem) * 0.75], col: () => null, cols: Math.round((tank ? 96 : 44) * this.detail) + (tank ? 16 : 8),
     });
+    this.strapGeo = null;
     if (tank) {
       // v0.4.5: a rolled binding along the neckline and armholes gives the edge real thickness (it read as a paper
       // cut-out before) and keeps the edge off the skin. uv points at the trim color in the texture.
+      // v0.4.7.5: the straps, the binding and a band of fabric along the whole top edge are their own mesh, drawn a
+      // touch toward the camera (view.js), so a shoulder or a trap moving under them never shows through: the straps
+      // always read as a jersey's straps.
       const cols = Math.round(160 * this.detail) + 24, hg = typeof hang === 'function' ? hang : () => hang;
+      const sb = new GB(), band = 0.024;
       const ring = [[-0.0075, 0.0026], [-0.0012, 0.0036], [0.0004, 0.0016], [-0.004, -0.0002]];
-      gb.grid(ring.length, cols, (r, c) => {
+      sb.grid(ring.length, cols, (r, c) => {
         const phi = c / cols * Math.PI * 2 - Math.PI / 2, y = topY(phi) + ring[r][0];
         const p = this.torsoPoint(y, phi, loose(y, phi) + ring[r][1], hg(y));
         return { p, uv: [c / cols, 0.744], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
       });
+      const rowsB = 5;
+      sb.grid(rowsB, cols, (r, c) => {
+        const phi = c / cols * Math.PI * 2 - Math.PI / 2, yt = topY(phi) - 0.0075, y = yt - band * (1 - r / (rowsB - 1));
+        const p = this.torsoPoint(y, phi, loose(y, phi) + 0.0009, hg(y));
+        const u = c / cols;
+        return { p, uv: [u, (vTop - y) / (vTop - vHem) * 0.75], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
+      });
+      this.strapGeo = sb.finish();
     }
     if (!tank) {
       const sleeveEnd = fam === 'tee' ? 0.48 : fam === 'compression' ? 0.92 : 1.0;
@@ -1097,6 +1112,7 @@ export class AthleteModel {
       eyes: this.buildEyes(),
       hair: this.buildHair(),
       top: this.buildTop(look.top || { family: 'jersey' }),
+      straps: this.strapGeo, // (built with the top)
       bottom: this.buildBottom(look.bottom || { family: 'shorts' }),
       gear: this.buildGear(look.gear || {}),
       shoes: this.shoeGeo,

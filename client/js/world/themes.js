@@ -137,16 +137,13 @@ export function courtPlayRect(c, pad = 0.6) {
 }
 const COURT_W = 15.24, COURT_L = 28.65;
 export function gotNextSpots(court) { return squadSpots(court)[0]; }
-// v0.4.5 squad spots (2K-style): three rows of circles by each court, in priority order (GOT NEXT, 2ND, 3RD).
-// Rows step out from the sideline; by the east edge of the park they stack along the sideline instead.
-export const SQUAD_ROWS = 3;
+// v0.4.7.5: two GOT NEXT spots per court, one each side of the GOT NEXT stencil on the ground, in a single line along
+// the sideline (no 2nd and 3rd rows any more). Whichever squad fills its spot first runs next; the other squad waits
+// for that game to be over. Slot 0 of each spot is the circle next to the stencil (where the squad's first man stands).
+export const SQUAD_ROWS = 2;
+export function gotNextMid(court) { const [ox, , oz] = court.origin; return { x: ox + 9.4, z: court.full ? oz : oz + 6.2 }; }
 export function squadSpots(court) {
-  const [ox, , oz] = court.origin, rows = [];
-  const outward = ox + 9.4 + (SQUAD_ROWS - 1) * 1.7 < 62;
-  for (let r = 0; r < SQUAD_ROWS; r++) {
-    const row = [];
-    for (let i = 0; i < court.format; i++) row.push(outward ? { x: ox + 9.4 + r * 1.7, z: oz + 2.5 + i * 2.2 } : { x: ox + 9.4, z: oz + 2.5 + (r * court.format + i) * 2.2 });
-    rows.push(row);
-  }
-  return rows;
+  const m = gotNextMid(court), gap = 1.8, step = 2.2, a = [], b = [];
+  for (let i = 0; i < court.format; i++) { a.push({ x: m.x, z: m.z - gap - i * step }); b.push({ x: m.x, z: m.z + gap + i * step }); }
+  return [a, b];
 }

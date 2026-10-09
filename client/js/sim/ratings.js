@@ -60,17 +60,19 @@ export function physical(build) {
   const W = (build.weight || 210) * 0.4536;
   const WS = (build.wingspan || build.height + 3) * INCH;
   const massK = Math.pow(95 / W, 0.22);
-  const sprint = 6.0 + n(a.speed) * 2.0;
+  // v0.4.7.5: Speed, Acceleration and Speed With Ball follow the same rating curve as every other stat (rk: the
+  // sub-70 drop-off and the 96-99 elite bump), so a fast player is properly faster than a slow one
+  const sprint = 6.0 + rk(a.speed) * 2.0;
   return {
     H, W, WS,
     radius: 0.25 + Math.min(0.08, Math.max(0, (W - 80) * 0.0016)) + (H - 1.9) * 0.08,
     sprint,
     jog: sprint * 0.62,
     walk: 1.6,
-    ballSpeedK: 0.84 + n(a.speed_with_ball) * 0.14,
+    ballSpeedK: 0.84 + rk(a.speed_with_ball) * 0.14,
     // v0.4.5: a touch less snap in starts and turns (fluid over twitchy)
-    accel: (11 + n(a.acceleration) * 6) * massK * 0.96,
-    brake: (17 + n(a.acceleration) * 6) * massK * 0.97,
+    accel: (11 + rk(a.acceleration) * 6) * massK * 0.96,
+    brake: (17 + rk(a.acceleration) * 6) * massK * 0.97,
     turn: 13 * massK * 0.93,
     vertical: 0.42 + n(a.vertical) * 0.4,
     reach: H * 1.315 * (WS / H / 1.04), // standing reach

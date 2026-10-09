@@ -46,6 +46,11 @@ export class AIWorld {
     this.friends = [...(data.friends || [])];
     this.squad = (data.squad || []).filter(id => this.friends.includes(id));
     this.met = { ...(data.met || {}) };
+    // v0.4.7.5: every AI hooper's games (g) and wins (w) since this world began: they get better as they play
+    this.prog = { ...(data.prog || {}) };
+    // v0.4.7.5: your squad from the last time you played (it breaks up when you close the game; the ones who choose
+    // to keep running together stay a group at the park for a few hours)
+    this.exSquad = data.exSquad && Array.isArray(data.exSquad.ids) ? { ids: data.exSquad.ids.slice(0, 4), at: +data.exSquad.at || 0 } : null;
     this.catalog = catalog || {};
     this.cache = new Map(); // id → account (cheap header)
     this.full = new Map(); // id → generated entry (build, look)
@@ -54,7 +59,7 @@ export class AIWorld {
     this.extra = new Map(); // id → {park, until}: regulars who hopped on early to keep a quiet park playable
   }
 
-  toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met }; }
+  toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met, prog: this.prog, ...(this.exSquad ? { exSquad: this.exSquad } : {}) }; }
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   changed() { this.dirty = true; for (const fn of this.listeners) fn(this); }
 
@@ -83,17 +88,57 @@ export class AIWorld {
     return a;
   }
 
-  // full player: build, gear and look (deterministic), plus the header fields
+  // v0.4.7.5: how much better he's got (level, 0..0.12): slowly with every game he plays (in front of you or not:
+  // the park's other courts count) and a little with time (he plays when you're not around), up to a bit past his
+  // tier's ceiling. About +1 OVR for every dozen games.
+  growth(id, t = Date.now()) {
+    const a = this.account(id), p = this.prog[id];
+    const days = Math.max(0, (t - this.born) / DAY), activity = a.habit.id === 'grinder' ? 1.6 : a.habit.id === 'weekend' || a.habit.id === 'lunch' ? 0.6 : 1;
+    const g = Math.min(0.1, (p?.g || 0) * 0.0022 + (p?.w || 0) * 0.0008) + Math.min(0.04, days * activity * 0.0006);
+    return Math.max(0, Math.min(0.12, g, Math.min(1, a.tier.hi + 0.08) - a.level));
+  }
+  // full player: build, gear and look (deterministic), plus the header fields. v0.4.7.5: his attributes, overall and
+  // badges grow with growth(); who he is (name, body, gear, look) never changes
   entry(id) {
+    const gk = Math.round(this.growth(id) * 400);
     let e = this.full.get(id);
-    if (e) return e;
+    if (e && e.gk === gk) return e;
     const a = this.account(id);
-    const r = this.rng(id, 'build');
-    const bot = makeBot(r, { catalog: this.catalog, position: a.position, level: a.level, rep: a.rep, flash: Math.min(1, a.level * 0.6 + a.rep / 40) });
-    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label };
+    const flash = Math.min(1, a.level * 0.6 + a.rep / 40);
+    const bot = makeBot(this.rng(id, 'build'), { catalog: this.catalog, position: a.position, level: a.level, rep: a.rep, flash });
+    if (gk > 0) {
+      const up = makeBot(this.rng(id, 'build'), { catalog: this.catalog, position: a.position, level: Math.min(1, a.level + gk / 400), rep: a.rep, flash });
+      bot.build.attributes = up.build.attributes; bot.build.overall = up.build.overall;
+      bot.badges = up.badges; bot.badgeUse = up.badgeUse; bot.level = up.level;
+    }
+    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, games: this.prog[id]?.g || 0 };
     e.build.rep = e.rep;
     this.full.set(id, e);
     return e;
+  }
+  // v0.4.7.5: a game they played (any court): ids played, winners won
+  playedGame(ids, winners = []) {
+    const won = new Set(winners);
+    for (const id of ids) {
+      if (!id || !/^ai-\d+$/.test(id)) continue;
+      const p = this.prog[id] || (this.prog[id] = { g: 0, w: 0 });
+      p.g = Math.min(99999, p.g + 1); if (won.has(id)) p.w = Math.min(99999, p.w + 1);
+    }
+    this.changed();
+  }
+  // v0.4.7.5: old squad mates of yours who chose to keep running together (and are online now)
+  aiParty(t = Date.now()) {
+    const x = this.exSquad;
+    if (!x || t - x.at > 6 * 3600000) return [];
+    return x.ids.filter(id => (hashString(id + '|party|' + x.at) % 100) < 60 && this.online(id, t));
+  }
+  // v0.4.7.5: closing the game leaves the squad. Called once when the game starts up: last time's squad breaks up.
+  leaveSquadOnStart(t = Date.now()) {
+    if (!this.squad.length) return false;
+    this.exSquad = { ids: this.squad.slice(0, 4), at: t };
+    this.squad = [];
+    this.changed();
+    return true;
   }
   // a fresh copy for a game (rosters get mutated: look, human flag)
   gameEntry(id) { const e = this.entry(id); return { ...e, build: { ...e.build }, badges: { ...e.badges } }; }
@@ -242,12 +287,19 @@ export class AIWorld {
     const bump = (id, k) => { const m = this.met[id] || (this.met[id] = { games: 0, with: 0, vs: 0, wins: 0, last: 0 }); m.games++; m[k]++; if (k === 'with' && won) m.wins++; m.last = t; };
     for (const id of withIds) bump(id, 'with');
     for (const id of vsIds) bump(id, 'vs');
+    // (v0.4.7.5: and they get a game better)
+    for (const id of [...withIds, ...vsIds]) { const p = this.prog[id] || (this.prog[id] = { g: 0, w: 0 }); p.g++; if (won ? withIds.includes(id) : vsIds.includes(id)) p.w++; }
     const ids = Object.keys(this.met);
     if (ids.length > 400) ids.sort((a, b) => this.met[a].last - this.met[b].last).slice(0, ids.length - 400).forEach(id => delete this.met[id]);
     this.changed();
   }
   recent(n = 40) { return Object.entries(this.met).sort((a, b) => b[1].last - a[1].last).slice(0, n).map(([id, m]) => ({ id, ...m })); }
 }
+
+// v0.4.7.5 court bounties: kings on a streak above 6 have a VC bounty on them for whoever breaks the streak (the same
+// numbers as server/progression.py bounty_for)
+export const BOUNTY_MIN = 7;
+export const bountyFor = streak => (streak >= BOUNTY_MIN ? Math.min(15000, 2500 + 750 * (streak - BOUNTY_MIN)) : 0);
 
 export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup' };
 
@@ -258,9 +310,12 @@ export const cupWindow = (t = Date.now()) => Math.floor((t - CUP_EPOCH) / CUP_WI
 export const cupEntrant = (id, w) => hashString(`${id}|cup|${w}`) % 100 < 22;
 
 // app-level helpers: one world per account, saved to the server (debounced) whenever it changes
+let squadLeft = false; // (once per launch of the game)
 export function initWorld(app) {
   const w = new AIWorld(app.profile?.ai_world, app.catalog);
   app.ai = w;
+  // v0.4.7.5: you left your squad when you closed the game (the AI who want to keep running together still do)
+  if (!squadLeft) { squadLeft = true; if (w.leaveSquadOnStart()) app.squadNote = w.exSquad; }
   let timer = 0;
   const save = () => {
     clearTimeout(timer);

@@ -5,6 +5,8 @@
   --font: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
   --display: "Bahnschrift", "Impact", "Arial Black", "Roboto Condensed", sans-serif;
   --r: 10px;
+  /* v0.4.7.5 Hall of Fame vibrance: one living gradient, used everywhere a HOF badge appears */
+  --hof-grad: linear-gradient(115deg, #ff2fb3, #a63bff, #3d7bff, #00e5ff, #38ff9c, #ff2fb3);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; user-select: none; }
@@ -104,8 +106,10 @@ input, select { font: inherit; }
 .badge-pop { display: flex; align-items: center; gap: 12px; padding: 7px 18px 7px 8px; border-radius: 40px; background: linear-gradient(180deg, rgba(16,19,24,.94), rgba(8,10,13,.94)); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.45); opacity: 0; transform: translateY(-14px) scale(.96); transition: opacity .28s, transform .28s; --tc: #c98b4f; }
 .badge-pop.on { opacity: 1; transform: none; } .badge-pop.off { opacity: 0; transform: translateY(-10px); }
 .badge-pop.tier2 { --tc: #c9d1d9; } .badge-pop.tier3 { --tc: #f2c14e; } .badge-pop.tier4 { --tc: #b48cff; }
-.bp-icon { width: 38px; height: 38px; display: grid; place-items: center; background: var(--tc); clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
-.bp-icon i { font-style: normal; font-size: 18px; color: #121418; font-weight: 900; }
+.bp-art { width: 42px; height: 42px; display: grid; place-items: center; flex: none; }
+.bp-art svg { display: block; }
+.badge-pop.tier4 { border: 1.5px solid transparent; background: linear-gradient(180deg, rgba(22,10,38,.96), rgba(10,6,20,.96)) padding-box, var(--hof-grad) border-box; background-size: 100% 100%, 300% 100%; animation: hofShift 5s linear infinite, hofGlow 2.4s ease-in-out infinite; }
+.badge-pop.tier4 .bp-text small { background: var(--hof-grad); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hofShift 5s linear infinite; font-weight: 700; }
 .bp-text { display: flex; flex-direction: column; line-height: 1.15; }
 .bp-text small { font-size: 10px; letter-spacing: .18em; color: var(--tc); }
 .bp-text b { font-size: 16px; letter-spacing: .02em; }
@@ -130,9 +134,19 @@ input, select { font: inherit; }
 .intro-who > b em { font-style: normal; font-size: 10px; letter-spacing: .15em; background: var(--accent); color: #111; padding: 1px 5px; border-radius: 4px; vertical-align: 2px; }
 .intro-who > small { font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 5px; }
 .intro-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.ib { font-size: 10.5px; letter-spacing: .03em; padding: 2px 7px; border-radius: 20px; background: #3a414b; color: #e9ecef; white-space: nowrap; }
+.ib { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; letter-spacing: .03em; padding: 2px 8px 2px 3px; border-radius: 20px; background: #3a414b; color: #e9ecef; white-space: nowrap; }
+.ib > svg { flex: none; display: block; } .ib.none { padding-left: 8px; }
 .ib.bronze { background: linear-gradient(160deg, #c98652, #7c4a24); } .ib.silver { background: linear-gradient(160deg, #d9e0e8, #8794a3); color: #14171b; }
-.ib.gold { background: linear-gradient(160deg, #f5d36a, #b8860b); color: #1d1606; } .ib.hof { background: linear-gradient(160deg, #d9a6ff, #6f3cd6); }
+.ib.gold { background: linear-gradient(160deg, #f5d36a, #b8860b); color: #1d1606; }
+.ib.hof, .tag.hof { background: var(--hof-grad); background-size: 300% 100%; color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(20,0,40,.55); animation: hofShift 6s linear infinite, hofGlow 2.4s ease-in-out infinite; }
+/* the same Hall of Fame vibrance wherever it shows: badge art glows and the gradients keep moving */
+@keyframes hofShift { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
+@keyframes hofGlow { 0%, 100% { box-shadow: 0 0 8px rgba(255,47,179,.55), 0 0 1px rgba(255,255,255,.4) inset; } 50% { box-shadow: 0 0 14px rgba(0,229,255,.55), 0 0 1px rgba(255,255,255,.4) inset; } }
+@keyframes hofArt { 0%, 100% { filter: drop-shadow(0 0 3px rgba(255,47,179,.75)) drop-shadow(0 0 6px rgba(166,59,255,.35)); } 50% { filter: drop-shadow(0 0 4px rgba(0,229,255,.8)) drop-shadow(0 0 8px rgba(56,255,156,.3)); } }
+svg.bart.hof-vibe { animation: hofArt 2.4s ease-in-out infinite; overflow: visible; }
+svg.icon-art { overflow: visible; filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+svg.icon-art.locked { filter: grayscale(.85) brightness(.75); opacity: .8; }
+@media (prefers-reduced-motion: reduce) { .ib.hof, .tag.hof, .badge-pop.tier4, svg.bart.hof-vibe { animation: none; } }
 .ib.none { background: rgba(255,255,255,.06); color: var(--muted); }
 @keyframes introIn { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
 @keyframes introP { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
@@ -163,3 +177,63 @@ input, select { font: inherit; }
 .hud-status .st-to i { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #f2c14e var(--p), rgba(255,255,255,.15) var(--p)); }
 .hud-status .st-to.on { color: #111; background: linear-gradient(90deg, #f2c14e, #ff8a3d); border-color: transparent; box-shadow: 0 0 18px rgba(255,170,60,.55); }
 
+
+/* ---------- v0.4.7.5 park: court overview, court bounty seals, the Got Next ticker ---------- */
+.court-tags { position: fixed; inset: 0; pointer-events: none !important; z-index: 3; }
+.court-tag { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+.ic-flame { width: 11px; height: 14px; color: #ff9a2e; vertical-align: -2px; margin-right: 3px; filter: drop-shadow(0 0 4px rgba(255,140,40,.6)); }
+.ic-bounty { width: 18px; height: 18px; color: #f5c542; flex: none; filter: drop-shadow(0 0 6px rgba(245,197,66,.55)); }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; margin-left: 6px; vertical-align: 1px; animation: liveDot 1.4s ease-in-out infinite; }
+@keyframes liveDot { 50% { opacity: .35; } }
+.court-tag.ov { min-width: 168px; padding: 9px 12px 10px; border-radius: 12px; background: linear-gradient(180deg, rgba(16,19,25,.9), rgba(9,11,14,.93)); border: 1px solid var(--line); box-shadow: 0 12px 34px rgba(0,0,0,.5); text-align: center; }
+.court-tag.ov::after { content: ''; position: absolute; left: 50%; bottom: -7px; width: 12px; height: 12px; transform: translateX(-50%) rotate(45deg); background: rgba(9,11,14,.93); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.court-tag.ov.has-bounty { border-color: rgba(245,197,66,.55); box-shadow: 0 0 0 1px rgba(245,197,66,.18), 0 12px 34px rgba(0,0,0,.5), 0 0 26px rgba(245,197,66,.18); }
+.court-tag.ov.mine { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.ct-name { font-family: var(--display); font-size: 12px; letter-spacing: .14em; color: var(--muted); }
+.ct-score { display: flex; align-items: baseline; justify-content: center; gap: 7px; margin-top: 3px; }
+.ct-score span { font-family: var(--display); font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+.ct-score b { font-family: var(--display); font-size: 28px; line-height: 1; color: #fff; }
+.ct-score i { font-style: normal; color: var(--dim); }
+.ct-open { font-family: var(--display); font-size: 15px; letter-spacing: .1em; color: var(--dim); margin-top: 4px; }
+.ct-meta { font-size: 11px; color: var(--muted); margin-top: 3px; letter-spacing: .04em; }
+.ct-streak { display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 99px; background: rgba(255,140,40,.12); color: #ffb366; font-family: var(--display); font-size: 12px; letter-spacing: .08em; }
+.ct-bounty { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; padding: 4px 8px; border-radius: 8px; background: linear-gradient(90deg, rgba(245,197,66,.18), rgba(245,197,66,.06)); color: #f8d26a; font-family: var(--display); font-size: 13px; letter-spacing: .06em; }
+.ct-you { margin-top: 6px; font-family: var(--display); font-size: 12px; letter-spacing: .12em; color: #111; background: var(--accent); border-radius: 6px; padding: 2px 6px; }
+.court-tag.roam .ct-seal { display: flex; align-items: center; gap: 8px; padding: 6px 11px 6px 8px; border-radius: 99px; background: rgba(12,10,4,.82); border: 1px solid rgba(245,197,66,.5); box-shadow: 0 0 22px rgba(245,197,66,.25); animation: sealBob 2.4s ease-in-out infinite; }
+.court-tag.roam .ct-seal .ic-bounty { width: 26px; height: 26px; }
+.court-tag.roam .ct-seal b { display: block; font-family: var(--display); font-size: 14px; letter-spacing: .06em; color: #f8d26a; white-space: nowrap; }
+.court-tag.roam .ct-seal small { display: block; font-size: 11px; color: #e9d9a8; white-space: nowrap; }
+@keyframes sealBob { 50% { transform: translateY(-5px); } }
+.ov-head { position: fixed; top: 22px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 9px 18px; border-radius: 12px; background: rgba(10,12,16,.86); border: 1px solid var(--line); z-index: 4; }
+.ov-head b { font-family: var(--display); font-size: 18px; letter-spacing: .16em; }
+.ov-head small { font-family: var(--display); font-size: 12px; letter-spacing: .14em; color: #ff6b6b; margin-left: 3px; }
+.ov-head em { font-style: normal; font-size: 12px; color: var(--muted); margin-left: 14px; }
+body.overview-on #prompt, body.overview-on .toast-wrap { opacity: 0; }
+.gn-ticker { position: fixed; right: 22px; bottom: 22px; width: 300px; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, rgba(15,18,24,.94), rgba(8,10,13,.96)); border: 1px solid var(--line); box-shadow: 0 12px 36px rgba(0,0,0,.5); z-index: 4; animation: tickIn .28s ease-out; }
+@keyframes tickIn { from { transform: translateY(14px); opacity: 0; } }
+.gt-head { display: flex; align-items: flex-end; gap: 8px; padding: 7px 12px 6px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03); }
+.gt-head span { display: block; font-size: 9px; letter-spacing: .18em; color: var(--dim); }
+.gt-head b { display: block; font-family: var(--display); font-size: 14px; letter-spacing: .08em; white-space: nowrap; }
+.gt-head em { font-style: normal; margin-left: auto; font-family: var(--display); font-size: 11px; letter-spacing: .1em; color: var(--muted); white-space: nowrap; }
+.gt-row { display: flex; align-items: center; gap: 9px; padding: 6px 12px; }
+.gt-row i { width: 4px; height: 18px; border-radius: 2px; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
+.gt-row span { flex: 1; font-family: var(--display); font-size: 14px; letter-spacing: .06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gt-row small { font-family: var(--display); font-size: 12px; color: #ffb366; }
+.gt-row b { font-family: var(--display); font-size: 22px; min-width: 28px; text-align: right; color: var(--muted); }
+.gt-row.lead span, .gt-row.lead b { color: #fff; }
+.gt-empty { padding: 10px 12px; font-size: 12px; color: var(--muted); }
+.gt-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 12px 7px; border-top: 1px solid var(--line); font-family: var(--display); font-size: 11px; letter-spacing: .1em; color: var(--muted); white-space: nowrap; }
+.gt-foot.go { color: var(--accent); }
+.gt-bounty { display: inline-flex; align-items: center; gap: 4px; color: #f8d26a; }
+.gt-bounty .ic-bounty { width: 14px; height: 14px; }
+.bounty-result { display: flex; align-items: center; gap: 12px; margin: 10px 0 4px; padding: 10px 14px; border-radius: 12px; background: linear-gradient(90deg, rgba(245,197,66,.2), rgba(245,197,66,.04)); border: 1px solid rgba(245,197,66,.45); }
+.bounty-result .ic-bounty { width: 34px; height: 34px; }
+.bounty-result b { display: block; font-family: var(--display); font-size: 20px; letter-spacing: .05em; color: #f8d26a; }
+.bounty-result small { color: #e9d9a8; }
+
+/* ---------- v0.4.7.5 HUD polish (same look, tighter): name tags on a soft plate, cleaner feed, sharper scoreboard ---------- */
+.ptag { padding: 2px 7px 2px 6px; border-radius: 6px; background: rgba(8,10,13,.42); text-shadow: 0 1px 3px rgba(0,0,0,.85); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.ptag.me { background: rgba(20,16,4,.55); box-shadow: inset 0 0 0 1px rgba(255,216,74,.35); }
+.feed-item { background: linear-gradient(90deg, rgba(12,14,19,.88), rgba(12,14,19,.66)); box-shadow: 0 6px 18px rgba(0,0,0,.28); letter-spacing: .01em; }
+.hud-score { box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 40px rgba(0,0,0,.5); }
+.hud-cam { border: 1px solid var(--line); background: rgba(10,12,16,.8); border-radius: 8px; }

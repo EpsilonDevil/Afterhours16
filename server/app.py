@@ -19,7 +19,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from . import builds, progression, cup, crew
+from . import builds, progression, cup, crew, bugs
 from .database import Database, encode
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +29,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 8
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.5"
+VERSION = "0.4.7.5"
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
@@ -53,6 +53,7 @@ class Service:
         self.last_ping = None  # set by game windows opened from the launcher (see --exit-when-idle)
         self.quit_allowed = False  # only when started by Afterhours16.exe (--exit-when-idle)
         self.quit_requested = False
+        self.bug_root = ROOT  # v0.4.7.5: bug reports go next to Afterhours16.exe
         self.upgrade_characters()
 
     def upgrade_characters(self):
@@ -314,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
                     "badges": progression.BADGES, "rep_thresholds": progression.REP_THRESHOLDS, "rep_tiers": progression.REP_TIERS,
                     "logos": progression.LOGOS, "woods": progression.WOODS, "dev_accounts": s.dev_accounts,
                     "wheel": {"segments": progression.WHEEL_SEGMENTS, "odds": progression.WHEEL_ODDS, "vc": progression.WHEEL_VC, "cooldown": progression.SPIN_COOLDOWN},
-                    "icon_badges": progression.ICON_BADGES, "badge_rules": {"hof_limit": builds.HOF_LIMIT, "cap_breakers_per_hof": builds.CAP_BREAKERS_PER_HOF, "cap_breaker_hof_limit": builds.CAP_BREAKER_HOF_LIMIT, "ovr_cap": builds.OVR_CAP},
+                    "icon_badges": progression.ICON_BADGES, "badge_rules": {"hof_limit": builds.HOF_LIMIT, "cap_breakers_per_hof": builds.CAP_BREAKERS_PER_HOF, "cap_breaker_hof_limit": builds.CAP_BREAKER_HOF_LIMIT, "ovr_cap": builds.OVR_CAP, "base_ovr_cap": builds.BASE_OVR_CAP, "prorun_games_per_ovr": builds.PRORUN_GAMES_PER_OVR},
                     "boosts": {"categories": {k: {"name": v["name"], "attrs": v["attrs"]} for k, v in progression.BOOSTS.items()}, "amount": progression.BOOST_AMOUNT, "packs": progression.BOOST_PACKS, "max_games": progression.BOOST_MAX_GAMES},
                     "signed_in": bool(s.db.authenticate(self.token())),
                 })
@@ -455,6 +456,16 @@ class Handler(BaseHTTPRequestHandler):
                 aid = db.create_account("localplayer", secrets.token_urlsafe(32), self.starter_items(), local=True)
                 self.ensure_starters(aid)
                 return self.respond(200, s.profile(aid), self.session_cookie(db.session(aid)))
+            if path == "/api/bug-report":
+                # v0.4.7.5: works signed in or not (a bug on the sign-in screen is still a bug)
+                builds.strict_keys(data, ("key", "category", "what", "expected", "steps", "context"))
+                s.rate_limit(self.client_address[0], "bug")
+                try:
+                    out = bugs.write_report(s.bug_root, data, VERSION)
+                except bugs.BadReport as e:
+                    raise builds.Invalid(str(e))
+                print(f"Bug report #{out['number']} saved to {out['path']}", flush=True)
+                return self.respond(200, out)
             aid = self.account()
             if path == "/api/logout":
                 builds.strict_keys(data, ())
@@ -772,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def start_match(self, aid, data):
         s, db = self.service, self.service.db
-        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante"))
+        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante", "bounty_streak"))
         mode = data.get("mode", "park")
         if mode not in ("park", "proam", "prorun"):
             raise builds.Invalid("Mode must be park, proam or prorun.")
@@ -790,6 +801,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise builds.Invalid("Park games go to 11, 15 or 21.")
             meta["target"] = target
             meta["streak"] = char.get("progression", {}).get("park", {}).get("streak", 0)
+            # v0.4.7.5: challenging kings on a streak above 6 puts their bounty on the line
+            bs = data.get("bounty_streak")
+            if bs is not None:
+                bs = builds.integer(bs, 0, 99, "Bounty streak")
+                if progression.bounty_for(bs):
+                    meta["bounty"] = progression.bounty_for(bs)
+                    meta["bounty_streak"] = bs
             if venue == cup.VENUE:
                 # v0.4.5 King Tut Cup: every game is an ante-up, and the Cup keeps its own streak
                 ante = data.get("ante")
@@ -952,9 +970,9 @@ class Handler(BaseHTTPRequestHandler):
                 after = crew.level_info(crew.total_xp(cr))
                 crew_info = {"xp": gain, "with_crew": with_crew, "level_before": before["level"], "level_after": after["level"], "total": after["xp"], "next": after["next"], "floor": after["floor"], "name": cr["name"], "tag": cr["tag"]}
             result = {"match_id": match_id, "mode": row["mode"], "won": rw["won"], "score": summary["score"], "vc": rw["vc"], "rep": rw["rep"], "cup": cup_info, "crew": crew_info,
-                      "streak": rw["streak"], "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
+                      "streak": rw["streak"], "bounty": rw.get("bounty", 0), "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
                       "badges_upgraded": prog["badges_upgraded"], "badge_progress": rw["badges"], "stats": summary["stats"],
-                      "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"],
+                      "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "max_ovr_unlocked": prog["max_ovr_unlocked"],
                       "character": s.describe(char), "proam_team": team}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result

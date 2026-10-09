@@ -75,11 +75,15 @@ export function padFamily(id = '') {
 //  push:  any push past FIRE that started in the middle, however slow (offense: every push is a move).
 //  spin:  SPIN radians of rotation while held out (sweeps excluded).
 // After a push the stick has to come back toward the middle (or sweep across) before it fires again.
-export const STICK = { REST: 0.3, ARM: 0.42, FIRE: 0.62, WINDOW: 0.08, SPIN: Math.PI * 0.95, HOLD: 0.55 };
+// v0.4.7.5: fires a little earlier in the throw (FIRE 0.62 -> 0.56) so moves come out the instant you snap the stick,
+// and reports diagonals (DIAG: within 22.5 degrees of one) and whether it was a slow push, for the stick combos
+export const STICK = { REST: 0.3, ARM: 0.4, FIRE: 0.56, WINDOW: 0.08, SPIN: Math.PI * 0.95, HOLD: 0.55, DIAG: Math.tan(Math.PI / 8) * 1.0 };
 export function newStickState() { return { armed: true, outT: 0, prev: [0, 0], rot: 0 }; }
 const stickDir = (x, y) => (Math.abs(x) > Math.abs(y) ? (x > 0 ? 'right' : 'left') : (y < 0 ? 'up' : 'down'));
+// the diagonal the stick points along, or null (within 22.5 degrees of one: the smaller axis over 41% of the larger)
+export const stickDiag = (x, y) => (Math.min(Math.abs(x), Math.abs(y)) > Math.max(Math.abs(x), Math.abs(y)) * STICK.DIAG ? `${y < 0 ? 'up' : 'down'}-${x > 0 ? 'right' : 'left'}` : null);
 export function stickGesture(s, rx, ry, dt) {
-  const out = { flick: null, push: null, spin: false };
+  const out = { flick: null, push: null, spin: false, diag: null, slow: false };
   const m = Math.hypot(rx, ry), [px, py] = s.prev, pm = Math.hypot(px, py);
   s.prev = [rx, ry];
   if (m < STICK.ARM) { s.armed = true; s.outT = 0; s.rot = 0; return out; }
@@ -91,7 +95,9 @@ export function stickGesture(s, rx, ry, dt) {
   if (m >= STICK.FIRE && (s.armed || sweep)) {
     const dir = stickDir(rx, ry);
     out.push = dir;
+    out.diag = stickDiag(rx, ry);
     if (sweep || s.outT <= STICK.WINDOW) out.flick = dir;
+    else out.slow = s.outT > STICK.WINDOW * 1.5; // a deliberate push (the hang dribble)
     s.armed = false; s.rot = 0;
     return out;
   }
@@ -217,6 +223,8 @@ export class Input {
     const gs = stickGesture(g.rs || (g.rs = newStickState()), rx, ry, dt);
     g.flick = gs.spin ? 'spin' : gs.flick; // fast flicks (defense reads only these, so a held hand isn't a reach)
     g.push = gs.spin ? null : gs.push;     // any deliberate push out of the middle (offense: every one is a move)
+    g.diag = gs.spin ? null : gs.diag;     // v0.4.7.5: diagonal stick combos (wraps, sidesteps, stutters)
+    g.slow = !gs.spin && gs.slow;
     // pro-stick shooting: keep the stick pushed (not a quick flick) to rise up, let go to release
     // v0.4.2: the right stick is for dribble moves and attacking the rim only (no stick shooting)
     g.rsShoot = false;
@@ -229,6 +237,7 @@ export class Input {
       g.dunkHeld = true;
       if (g.flick === 'down') g.flick = null;
       if (g.push === 'down') g.push = null;
+      g.diag = null;
       g.rsShoot = false;
     } else if (!downward) g.dunkHeld = false;
     g.stickPrev = [rx, ry];
@@ -255,6 +264,7 @@ export class Input {
       case 'shoot': return !def && B('shoot');
       case 'block': return def && B('block');
       case 'defense': return B('defense');
+      case 'camera': return B('camera'); // (v0.4.7.5: held in the park for the court overview)
       // v0.4.4: on defense the right stick is your hands: hold up = hands up (flicks/holds sideways reach, see defStick)
       case 'handsUp': return def && this.gp.axes[3] < -0.55 && Math.abs(this.gp.axes[3]) > Math.abs(this.gp.axes[2]);
       default: return false;
@@ -339,6 +349,25 @@ export class Input {
   }
 
   // pro stick for dribble moves: keyboard arrows / Q, or right-stick flicks
+  // v0.4.7.5: the right stick with its combination: { stick (a direction, a diagonal, or 'spin'), slow }. Keyboard:
+  // a stick key pressed while another is held is the diagonal (hold Down, press Left = down-left)
+  proStickInfo() {
+    if (this.capturing) return null;
+    const K = a => this.keymap[a].some(k => this.pressed.has(k)), D = a => this.keymap[a].some(k => this.down.has(k));
+    const kb = K('stickLeft') ? 'left' : K('stickRight') ? 'right' : K('stickUp') ? 'up' : K('stickDown') ? 'down' : null;
+    if (kb) {
+      const v = kb === 'left' || kb === 'right' ? (D('stickDown') ? 'down' : D('stickUp') ? 'up' : null) : (D('stickLeft') ? 'left' : D('stickRight') ? 'right' : null);
+      if (v) return { stick: kb === 'left' || kb === 'right' ? `${v}-${kb}` : `${kb}-${v}`, slow: false };
+      return { stick: kb, slow: false };
+    }
+    if (K('spin') && this.ctx === 'offense') return { stick: 'spin', slow: false };
+    const g = this.gp;
+    if (g.flick === 'spin') return { stick: 'spin', slow: false };
+    const dir = g.flick || (this.ctx === 'offense' ? g.push : null);
+    if (!dir) return null;
+    return { stick: (this.ctx === 'offense' && g.diag) || dir, slow: !g.flick && !!g.slow };
+  }
+
   proStick() {
     if (this.capturing) return null;
     const K = a => this.keymap[a].some(k => this.pressed.has(k));

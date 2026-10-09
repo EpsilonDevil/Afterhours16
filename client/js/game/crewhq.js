@@ -10,6 +10,7 @@ import { HQ, courtPlayRect } from '../world/themes.js';
 import { Player } from '../sim/player.js';
 import { resolveLook } from '../sim/bots.js';
 import { PlayerVisual, MatchSession } from './session.js';
+import { GAME_SPEED } from '../sim/game.js';
 import { VisualPool } from './vispool.js';
 import { badgeTiers } from './park.js';
 import { promptGlyph } from '../core/input.js';
@@ -80,7 +81,7 @@ class Member {
       if (this.look) it.face = Math.atan2(this.look.x - p.x, this.look.z - p.z);
       if (this.t <= 0) { const q = pickIn(this.hq.rng, this.hq.pickZone()); this.goTo(q.x, q.z); }
     }
-    p.move(dt, false, 0);
+    p.move(dt * GAME_SPEED, false, 0); // (v0.4.7.5: the same pace as in a game)
     for (const s of this.hq.venue.solids) pushOut(p, s);
     if (this.hq.session) pushOut(p, this.hq.mainRect);
     if (this.hq.practice) pushOut(p, this.hq.sideRect);
@@ -221,14 +222,14 @@ export class CrewHQ {
     const app = this.app, inp = app.input, me = this.me;
     inp.ctx = 'roam';
     const place = () => { this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); };
-    if (app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt, false, 0); place(); this.rig.updateRoam(dt, me, null, HQ.bounds, this.camSolids); return; }
+    if (app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt * GAME_SPEED, false, 0); place(); this.rig.updateRoam(dt, me, null, HQ.bounds, this.camSolids); return; }
     if (inp.wasPressed('pause')) { this.ui.pause(this); return; }
     const mv = inp.moveVector(), basis = this.rig.inputBasis();
     me.intent.mx = basis.rx * mv.x + basis.fx * mv.y;
     me.intent.mz = basis.rz * mv.x + basis.fz * mv.y;
     me.intent.sprint = inp.isDown('sprint');
     me.intent.face = null; me.intent.stickFace = true;
-    me.move(dt, false, 0);
+    me.move(dt * GAME_SPEED, false, 0);
     me.stamina = Math.min(1, me.stamina + dt * 0.2);
     const b = HQ.bounds;
     me.x = M.clamp(me.x, b.x0, b.x1); me.z = M.clamp(me.z, b.z0, b.z1);

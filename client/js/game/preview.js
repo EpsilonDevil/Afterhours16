@@ -5,6 +5,7 @@ import { Player } from '../sim/player.js';
 import { Game, MOVE_SNAP, posMoveK } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
 import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
+import { MOVES, MOVE_STYLE, switchesHand } from '../sim/moves.js';
 
 const holdPoint = Game.prototype.holdPoint;
 
@@ -47,7 +48,8 @@ export class PreviewSim {
       const h = holdPoint.call(this.fake, p, {});
       bp = { x: h.x, y: h.y + 0.12, z: h.z };
     }
-    return { ball: bp, hasBall: this.fake.ball.holder === 0 && !this.ballFree, ballMode: this.fake.ball.mode };
+    const release = !!this.greenNow; this.greenNow = false;
+    return { ball: bp, hasBall: this.fake.ball.holder === 0 && !this.ballFree, ballMode: this.fake.ball.mode, release };
   }
 
   run(dt) {
@@ -69,23 +71,26 @@ export class PreviewSim {
         this.prng = this.prng || 12345;
         advanceDribble(p, dt, () => (this.prng = (this.prng * 16807) % 2147483647) / 2147483647, true);
         const ct = this.pt % 4.8, ms = o.speed || p.moveSpeed || 1;
+        // v0.4.7.5: the package's signature moves first, then the rest of its repertoire (opts.moves picks a list)
+        const sty = MOVE_STYLE[p.sizeupStyle] || MOVE_STYLE.basic;
+        const list = o.moves || [...new Set([...sty.sig, 'cross', 'hang', 'btb', 'stutter', 'wrap', 'spin', 'inout', 'momentum'])];
         if (!p.action && ct > 2.9 && ct < 4.4 && this.pt > 0.6) {
           p.dribble.xover = null;
-          const mv = ['cross', 'btl', 'btb', 'hesi', 'cross', 'spin'][Math.floor(this.pt / 0.6) % 6];
-          const durs = { cross: 0.4, btl: 0.44, btb: 0.44, spin: 0.56, hesi: 0.5 };
-          p.startAction('move', durs[mv] * MOVE_SNAP / ms / posMoveK(p.position), { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1 });
+          const mv = list[(this.mvN = (this.mvN || 0) + 1) % list.length];
+          p.startAction('move', (MOVES[mv]?.dur || 0.45) * MOVE_SNAP * sty.durK / ms / posMoveK(p.position), { move: mv, handFrom: p.dribble.hand, vx: 0, vz: 0, f0: p.facing, dir: 1, sty: p.sizeupStyle, lvl: p.sizeupLvl || 0 });
         }
       }
       if (p.action && p.action.type === 'move' && p.action.t >= p.action.dur) {
-        if (['cross', 'btl', 'btb'].includes(p.action.move)) p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R';
+        if (switchesHand(p.action.move)) p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R';
         p.action = null;
       }
       p.stance = 'normal';
       return;
     }
-    if (kind === 'walk' || kind === 'jog' || kind === 'sprint') {
-      // treadmill locomotion preview (the gait is velocity-driven, so the athlete runs in place)
-      const v = { walk: 1.4, jog: 3.8, sprint: 6.8 }[kind];
+    if (kind === 'walk' || kind === 'jog' || kind === 'sprint' || kind === 'gait') {
+      // treadmill locomotion preview (the gait is velocity-driven, so the athlete runs in place). v0.4.7.5 'gait': a
+      // movement style's walk, jog and sprint in turn
+      const v = kind === 'gait' ? [1.4, 3.8, 6.8][Math.floor(this.pt / 2.2) % 3] : { walk: 1.4, jog: 3.8, sprint: 6.8 }[kind];
       p.vx = Math.sin(p.facing) * v; p.vz = Math.cos(p.facing) * v;
       fb.holder = -1; fb.mode = 'dead'; this.ballFree = null; p.action = null;
       return;
@@ -101,6 +106,7 @@ export class PreviewSim {
       if (a && !a.jumped && a.t >= tk) { a.jumped = true; p.jump(a.jumpH); }
       if (a && !a.released && a.t >= tRel) {
         a.released = true;
+        this.greenNow = true; // (v0.4.7.5: the showroom plays the green release here)
         const bp = holdPoint.call(this.fake, p, {});
         const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
         // v0.4.5 stage 7: the ball leaves at the release's own launch angle (a Dart is flat, a Rainbow sky high),

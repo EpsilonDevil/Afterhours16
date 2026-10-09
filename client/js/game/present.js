@@ -2,7 +2,8 @@
 // The intro lines each team up on the floor in turn, facing a sideline camera, while a lower-third card
 // shows every player's overall and build plus their badges (park: top 3; Pro-Am 5v5: the #1 most-used one).
 // The simulation doesn't run during the intro; positions are restored exactly when it ends.
-import { ARCHETYPES } from '../sim/builds.js';
+import { ARCHETYPES, badgeCaps } from '../sim/builds.js';
+import { badgeChip } from '../ui/badgeart.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const TIER_CLS = ['none', 'bronze', 'silver', 'gold', 'hof'];
@@ -14,9 +15,11 @@ export function rankedBadges(entry) {
   const charB = entry.build && entry.build.badges && typeof entry.build.badges === 'object' ? entry.build.badges : null;
   const tiers = entry.badges || {};
   const keys = new Set([...Object.keys(tiers), ...(charB ? Object.keys(charB) : [])]);
+  const cap = entry.build && (entry.build.archetype || entry.build.height) ? badgeCaps(entry.build) : null;
   for (const k of keys) {
     // (your own badges: the character's record is the truth, so a fresh upgrade always shows its new tier)
-    const tier = charB && charB[k] ? (charB[k].tier || 0) : (tiers[k] || 0);
+    // v0.4.7.5: shown at the tier it plays at on this build
+    const tier = Math.min(cap?.[k] ?? 4, charB && charB[k] ? (charB[k].tier || 0) : (tiers[k] || 0));
     const use = (charB && charB[k]?.progress) || (entry.badgeUse && entry.badgeUse[k]) || 0;
     if (tier > 0 || use > 0) out.push({ key: k, tier, use });
   }
@@ -53,7 +56,7 @@ export function introHTML(card, idx, total) {
       <div class="intro-p ${p.human ? 'me' : ''}" style="--d:${i * 0.12}s">
         <div class="intro-ovr"><b>${esc(p.ovr)}</b><small>OVR</small></div>
         <div class="intro-who"><b>${esc(p.name)}${p.human ? ' <em>YOU</em>' : p.tag ? ` <em class="${p.tag === 'SQUAD' ? 'sq' : 'fr'}">${p.tag}</em>` : ''}</b><small>${esc(p.pos)} · ${esc(p.height)} · ${esc(p.arch)}${p.rep ? ' · ' + esc(p.rep) : ''}</small>
-          <div class="intro-badges" title="${sub}">${p.badges.length ? p.badges.map(b => `<span class="ib ${TIER_CLS[b.tier] || 'none'}">${esc(b.name)}</span>`).join('') : '<span class="ib none">No badges yet</span>'}</div>
+          <div class="intro-badges" title="${sub}">${p.badges.length ? p.badges.map(b => badgeChip(b.key, b.tier, b.name)).join('') : '<span class="ib none">No badges yet</span>'}</div>
         </div>
       </div>`).join('')}</div>
   </div>`;

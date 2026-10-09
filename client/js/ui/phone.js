@@ -2,7 +2,8 @@
 // their overall and position, your friends and when they're on, your squad, and the people you've run with
 // lately. Add the ones you liked playing with and invite them to your squad whenever they're online.
 import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS, money } from './common.js';
-import { ARCHETYPES } from '../sim/builds.js';
+import { ARCHETYPES, capBadges } from '../sim/builds.js';
+import { badgeChip } from './badgeart.js';
 import { PARK_NAMES } from '../sim/world.js';
 import * as Crew from './crew.js';
 
@@ -75,7 +76,10 @@ export function openPhone(app, opts = {}) {
     const sq = w.activeSquad();
     const busy = sq.filter(id => /^Playing on/.test(where.get(id) || ''));
     const inv = w.friends.filter(id => !w.inSquad(id) && statusOf(id).online);
-    return `<p class="ph-note">Your squad follows you around the park, steps into your Got Next line first, and suits up with you in Pro-Am. Up to four friends; they have to be online.</p>
+    // v0.4.7.5: closing the game leaves your squad; some of the old squad keep running together
+    const party = w.aiParty ? w.aiParty() : [], ex = w.exSquad && Date.now() - w.exSquad.at < 6 * 3600000 ? w.exSquad.ids : [];
+    const exNote = !sq.length && ex.length ? `<p class="ph-note">Your squad broke up when you closed the game.${party.length > 1 ? ` ${party.map(id => esc(w.entry(id).name)).join(' and ')} are still running together at the park.` : ''} Invite them back any time they're online.</p>` : '';
+    return `${exNote}<p class="ph-note">Your squad follows you around the park, steps onto your Got Next spot first, and suits up with you in Pro-Am. Up to four friends; they have to be online. Closing the game leaves the squad.</p>
       <div class="ph-sec">Squad · ${sq.length}/4</div>${sq.length ? sq.map(id => row(id, statusOf(id).text)).join('') : '<p class="ph-empty">Just you for now.</p>'}
       ${busy.length ? `<p class="ph-note">${busy.map(id => esc(w.entry(id).name)).join(', ')} ${busy.length > 1 ? 'are' : 'is'} finishing a game and will come find you after it.</p>` : ''}
       <div class="ph-sec">Friends online to invite</div>${inv.length ? inv.map(id => row(id, statusOf(id).text)).join('') : '<p class="ph-empty">No friends online right now.</p>'}`;
@@ -105,7 +109,7 @@ export function openPhone(app, opts = {}) {
   }
   function profile(id) {
     const e = w.entry(id), a = w.account(id), s = statusOf(id), m = w.met[id];
-    const badges = Object.entries(e.badges || {}).sort((x, y) => y[1] - x[1]);
+    const badges = Object.entries(capBadges(e.badges || {}, e.build)).sort((x, y) => y[1] - x[1]);
     const cfg = app.config?.badges || {};
     return `<button class="ph-back" data-back>‹ Back</button>
       <div class="ph-prof">${circle(e, true)}<h3>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}</h3><div class="ph-tier t-${e.tier}">${esc(e.tierLabel)} · ${esc(e.rep.label)}</div>
@@ -116,8 +120,9 @@ export function openPhone(app, opts = {}) {
           <div><span>Home park</span><b>${esc(a.home ? PARK_NAMES[a.home] : 'Gets around')}</b></div>
           <div><span>With you</span><b>${m?.with ? `${m.with} game${m.with > 1 ? 's' : ''} (${m.wins}-${m.with - m.wins})` : '—'}</b></div>
           <div><span>Against you</span><b>${m?.vs ? `${m.vs} game${m.vs > 1 ? 's' : ''}` : '—'}</b></div>
+          <div><span>Overall</span><b>${e.build.overall ?? '—'} OVR${e.gk ? ` <span class="ok">↑ improving (${e.games || 0} games tracked)</span>` : ''}</b></div>
         </div>
-        <div class="ph-badges">${badges.length ? badges.map(([k, t]) => `<span class="ib ${TIER_CLS[t]}">${esc(cfg[k]?.name || title(k))}</span>`).join('') : '<span class="ib none">No badges</span>'}</div>
+        <div class="ph-badges">${badges.length ? badges.map(([k, t]) => badgeChip(k, t, cfg[k]?.name || title(k))).join('') : '<span class="ib none">No badges</span>'}</div>
         <div class="ph-acts">
           ${w.isFriend(id) ? `<button class="btn ghost" data-unfriend="${id}">Remove friend</button>` : `<button class="btn primary" data-add="${id}">Add friend</button>`}
           ${w.inSquad(id) ? `<button class="btn" data-kick="${id}">Remove from squad</button>` : w.isFriend(id) ? `<button class="btn ${s.online ? 'primary' : ''}" data-invite="${id}" ${s.online && w.squad.length < 4 && !busy(id) ? '' : 'disabled'}>${busy(id) ? 'In a game' : 'Invite to squad'}</button>` : ''}

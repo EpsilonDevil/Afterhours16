@@ -2,6 +2,7 @@
 import { B, BONES, PARENT, ARM_ANGLE } from './skeleton.js';
 import { P } from './pose.js';
 import * as M from '../core/math.js';
+import { torsoTable } from './athlete.js';
 
 const tmpQ = M.q4(), tmpQ2 = M.q4();
 const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
@@ -103,6 +104,7 @@ export class Rig {
     this.chainFK(B.neck, B.chest, neckQ);
     this.chainFK(B.head, B.neck, headQ);
     // arms
+    const chestInv = M.qinvert(M.q4(), this.rot[B.chest]);
     for (const side of ['L', 'R']) {
       const clav = B['clav' + side], up = B['upper' + side], fo = B['fore' + side], ha = B['hand' + side];
       this.chainFK(clav, B.chest, this.eulerQ(tmpQ, pose, P['clav' + side]));
@@ -111,8 +113,16 @@ export class Rig {
       S[0] = this.pos[clav][0] + o[0]; S[1] = this.pos[clav][1] + o[1]; S[2] = this.pos[clav][2] + o[2];
       const hi = P['hand' + side], ei = P['elbow' + side];
       const T = [pose[hi] * s, pose[hi + 1] * s, pose[hi + 2] * s];
-      const pole = [pose[ei], pose[ei + 1], pose[ei + 2]];
-      const { E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole);
+      // v0.4.7.5 limb collisions: the hand never goes inside the head
+      this.clearHead(T);
+      let pole = [pose[ei], pose[ei + 1], pose[ei + 2]];
+      let { E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole);
+      // ...and the elbow never goes inside the torso: swing it round the shoulder-wrist line to the nearest spot
+      // outside (the hand stays exactly where it was)
+      if (this.insideTorso(E, chestInv)) {
+        const alt = this.elbowOut(S, W, E, side, chestInv);
+        if (alt) ({ E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, alt));
+      }
       this.reach[side] = Math.hypot(T[0] - W[0], T[1] - W[1], T[2] - W[2]);
       const a0 = this.armA0[side], n0 = this.armN0[side];
       frameRot(this.rot[up], a0[0], n0, norm([E[0] - S[0], E[1] - S[1], E[2] - S[2]]), n);
@@ -132,14 +142,16 @@ export class Rig {
         M.qmul(this.rot[ha], this.rot[fo], this.eulerQ(tmpQ, pose, P['wrist' + side]));
       }
     }
-    // legs
+    // legs (v0.4.7.5: the feet are kept a shin's width apart, so the legs never pass through each other, and the
+    // knees swing out round the hip-ankle line when they'd knock)
+    const FT = this.footTargets(pose), KP = this.kneePoles(pose, hips, rH, FT);
     for (const side of ['L', 'R']) {
       const th = B['thigh' + side], sh = B['shin' + side], ft = B['foot' + side], toe = B['toe' + side];
       const hj = qrot(rH, this.off[th]);
       const Hj = [hips[0] + hj[0], hips[1] + hj[1], hips[2] + hj[2]];
-      const fi = P['foot' + side], ki = P['knee' + side];
-      const T = [pose[fi] * s, pose[fi + 1] * s, pose[fi + 2] * s];
-      const { E, W, n } = this.twoBone(Hj, T, this.len.thigh, this.len.shin, [pose[ki], pose[ki + 1], pose[ki + 2]]);
+      const ki = P['knee' + side];
+      const T = FT[side];
+      const { E, W, n } = this.twoBone(Hj, T, this.len.thigh, this.len.shin, KP[side] || [pose[ki], pose[ki + 1], pose[ki + 2]]);
       const a0 = this.legA0[side], n0 = this.legN0[side];
       frameRot(this.rot[th], a0[0], n0, norm([E[0] - Hj[0], E[1] - Hj[1], E[2] - Hj[2]]), n);
       this.pos[th][0] = Hj[0]; this.pos[th][1] = Hj[1]; this.pos[th][2] = Hj[2];
@@ -151,6 +163,80 @@ export class Rig {
       M.qeuler(this.rot[ft], pose[P['pitch' + side]], pose[P['yaw' + side]], 0);
       this.chainFK(toe, ft, M.qaxis(tmpQ, 1, 0, 0, pose[P['toe' + side]]));
     }
+  }
+
+  // ---- v0.4.7.5 limb collisions ----
+  // the torso as an elliptic column round the spine (chest frame), padded by an upper arm's thickness
+  // (the cross-section is the model's own at that height: narrow at the waist, broad at the chest)
+  torsoAt(E, chestInv) {
+    const H = this.d.H, g = this.d.girth || 1, c = this.pos[B.chest], hy = this.pos[B.hips][1], ny = this.pos[B.neck][1];
+    if (E[1] < hy - 0.02 * H || E[1] > ny - 0.01 * H) return null;
+    const v = qrot(chestInv, [E[0] - c[0], E[1] - c[1], E[2] - c[2]]);
+    const [rx, zf, zb, zc] = torsoTable((this.bind[B.chest][1] + v[1]) / H), pad = 0.024 * H;
+    return { x: v[0] / (rx * g * H + pad), z: (v[2] - zc * H) / ((v[2] - zc * H >= 0 ? zf : zb) * g * H + pad) };
+  }
+  insideTorso(E, chestInv) { const t = this.torsoAt(E, chestInv); return !!t && t.x * t.x + t.z * t.z < 1; }
+  // the pole that puts the elbow outside the torso with the least swing round the shoulder-wrist line
+  elbowOut(S, W, E, side, chestInv) {
+    const ax = norm([W[0] - S[0], W[1] - S[1], W[2] - S[2]]);
+    const c = [S[0] + ax[0] * dot([E[0] - S[0], E[1] - S[1], E[2] - S[2]], ax), 0, 0];
+    const t0 = dot([E[0] - S[0], E[1] - S[1], E[2] - S[2]], ax);
+    c[0] = S[0] + ax[0] * t0; c[1] = S[1] + ax[1] * t0; c[2] = S[2] + ax[2] * t0;
+    const r0 = [E[0] - c[0], E[1] - c[1], E[2] - c[2]], h = Math.hypot(...r0) || 1e-4;
+    const u = norm(r0), w = cross(ax, u);
+    let best = null, bv = Infinity;
+    for (let k = 1; k <= 12; k++) for (const sg of [1, -1]) {
+      const a = sg * k * Math.PI / 12, ca = Math.cos(a), sa = Math.sin(a);
+      const d = [u[0] * ca + w[0] * sa, u[1] * ca + w[1] * sa, u[2] * ca + w[2] * sa];
+      const P2 = [c[0] + d[0] * h, c[1] + d[1] * h, c[2] + d[2] * h];
+      if (!this.insideTorso(P2, chestInv)) return d;
+      const v = this.torsoDepth(P2, chestInv); if (v < bv) { bv = v; best = d; }
+    }
+    return best; // (nowhere fully clear: as far out of the body as it can get)
+  }
+  torsoDepth(E, chestInv) { const t = this.torsoAt(E, chestInv); return t ? -(t.x * t.x + t.z * t.z) : -9; }
+  // a hand target inside the head is pushed out to its surface
+  clearHead(T) {
+    const H = this.d.H, hd = this.pos[B.head], r = 0.07 * H;
+    const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
+    const dx = T[0] - cx, dy = T[1] - cy, dz = T[2] - cz, dd = Math.hypot(dx, dy, dz);
+    if (dd >= r || dd < 1e-5) return;
+    const k = r / dd; T[0] = cx + dx * k; T[1] = cy + dy * k; T[2] = cz + dz * k;
+  }
+  // knee poles that keep the knees at least a knee's width apart (null: the pose's own)
+  kneePoles(pose, hips, rH, FT) {
+    const H = this.d.H, min = 0.066 * H, out = { L: null, R: null }, J = {}, K = {};
+    for (const side of ['L', 'R']) {
+      const hj = qrot(rH, this.off[B['thigh' + side]]), ki = P['knee' + side];
+      J[side] = [hips[0] + hj[0], hips[1] + hj[1], hips[2] + hj[2]];
+      K[side] = this.twoBone(J[side], FT[side], this.len.thigh, this.len.shin, [pose[ki], pose[ki + 1], pose[ki + 2]]).E;
+    }
+    let d = Math.hypot(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
+    if (d >= min) return out;
+    // turn each knee outward (left knee to +x, right to -x) in steps until they clear
+    for (let k = 1; k <= 8 && d < min; k++) {
+      for (const side of ['L', 'R']) {
+        const ki = P['knee' + side], sx = side === 'L' ? 1 : -1;
+        const base = [pose[ki], pose[ki + 1], pose[ki + 2]], bl = Math.hypot(...base) || 1;
+        out[side] = [base[0] / bl + sx * 0.18 * k, base[1] / bl, base[2] / bl];
+        K[side] = this.twoBone(J[side], FT[side], this.len.thigh, this.len.shin, out[side]).E;
+      }
+      d = Math.hypot(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
+    }
+    return out;
+  }
+  // foot targets, nudged apart where they'd overlap
+  footTargets(pose) {
+    const s = this.s, H = this.d.H, L = P.footL, R = P.footR;
+    const a = [pose[L] * s, pose[L + 1] * s, pose[L + 2] * s], b = [pose[R] * s, pose[R + 1] * s, pose[R + 2] * s];
+    const min = 0.062 * H, dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2], dd = Math.hypot(dx, dy, dz);
+    if (dd < min) {
+      // apart sideways (left foot to the left), keeping their heights and how far forward each is
+      const push = (min - dd) / 2, sx = dx >= 0 ? 1 : -1;
+      const lat = Math.hypot(dx, dz) > 1e-4 ? [dx / Math.hypot(dx, dz), 0, dz / Math.hypot(dx, dz)] : [sx, 0, 0];
+      a[0] += lat[0] * push; a[2] += lat[2] * push; b[0] -= lat[0] * push; b[2] -= lat[2] * push;
+    }
+    return { L: a, R: b };
   }
 
   twoBone(A, T, l1, l2, pole) {

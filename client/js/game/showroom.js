@@ -7,6 +7,8 @@ import { BALL_R } from '../sim/constants.js';
 import { PlayerVisual } from './session.js';
 import { cachedTexture } from '../world/court.js';
 import { PreviewSim } from './preview.js';
+import { greenFxFor } from './greenfx.js';
+import { playGreenSound } from '../core/greensound.js';
 
 export class Showroom {
   constructor(app) {
@@ -116,6 +118,12 @@ export class Showroom {
       this.ball.visible = true;
     } else this.ball.visible = false;
     this.visual.anim.update(dt, { x: 0, y: p.y + 0.12, z: 0, facing: p.facing }, p, null, bp, { hasBall: out.hasBall, ballMode: out.ballMode, look: this.lookAt(), floorY: 0.12 });
+    // v0.4.7.5: a green release preview (VC Store): the effect over his head and the sound, on every release
+    const green = this.sim.previewOpts?.green;
+    if (out.release && green) {
+      greenFxFor(this.r, this.app.camera).play(green.fx, () => [0, p.y + 0.12 + p.phys.H + 0.1, 0], () => [0, 0.12, 0], 1);
+      playGreenSound(this.app.audio, green.sound, {});
+    }
     this.updateCamera(dt);
   }
 
@@ -140,6 +148,7 @@ export class Showroom {
       shoes: [[ox * 0.3 + 0.25, 0.55, 1.65], [ox * 0.3, 0.12, 0]],
       wide: [[ox * 1.2, H * 0.66, 7.2], [ox * 1.2, H * 0.55, 0]],
       left: [[ox, H * 0.56, 4.9 + H * 0.6], [ox, H * 0.5, 0]],
+      green: [[ox * 1.1, H * 2.2, 8.4], [ox * 1.1, H * 1.05, 0]], // (room over his head for the green release effects, seen from a little above like in a game)
     };
     const [pos, tgt] = presets[this.focus] || presets.full;
     const z = this.zoom;

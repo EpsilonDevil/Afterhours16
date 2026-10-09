@@ -3,7 +3,7 @@ import { Game } from '../sim/game.js';
 import { DT, COURT, BALL_R } from '../sim/constants.js';
 import { AthleteView } from '../char/view.js';
 import { Animator } from '../char/animator.js';
-import { resolveLook } from '../sim/bots.js';
+import { resolveLook, spreadGreens } from '../sim/bots.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
@@ -19,7 +19,11 @@ import { TAKEOVERS, TAKEOVER_NEED } from '../sim/badges.js';
 import { settings, saveSettings } from '../core/settings.js';
 import { GameIntro } from './present.js';
 import { visualKey } from './vispool.js';
+import { stickMove } from '../sim/moves.js';
 import { meterLegendHTML } from './hud.js';
+import { playGreenSound } from '../core/greensound.js';
+import { greenFxFor } from './greenfx.js';
+import { logGameEvent } from '../ui/bugreport.js';
 
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
 
@@ -131,6 +135,7 @@ export class MatchSession {
       greenBonus: !opts.background && settings.shotMeter === false ? 1.1 : 1,
     });
     this.game.teamsMeta = this.teams;
+    spreadGreens(this.game.players, this.catalog); // (v0.4.7.5: every AI player on the floor has his own green release)
     audio.surface = this.game.ball.surface;
     audio.setIndoor(this.venue.theme.kind !== 'park');
     this.visuals = this.game.players.map((p, i) => {
@@ -190,7 +195,10 @@ export class MatchSession {
     const inp = this.input, g = this.game, me = g.human;
     if (!me || g.assist) { inp.ctx = 'offball'; return; }
     const has = g.ball.holder === me.id;
-    const offense = g.possession === me.team;
+    // v0.4.7.5 fix: you're on defense whenever an opponent has the ball, whatever the possession flag says (it lags
+    // a change of possession, and X / Square then read as "shoot" = jump instead of steal)
+    const holder = g.holder ? g.holder() : null;
+    const offense = holder ? holder.team === me.team : g.possession === me.team;
     inp.ctx = has ? 'offense' : offense ? 'offball' : 'defense';
     const P = this.pend;
     const mv = inp.moveVector();
@@ -216,23 +224,23 @@ export class MatchSession {
       if (inp.wasPressed('alley')) pass = { ...(pass || { dir }), type: 'alley' };
       if (pass) { if (has) P.pass = { ...pass, ttl: 0.3 }; else if (inp.wasPressed('pass')) P.call = { ttl: 0.05 }; }
       if (has) {
-        const ps = inp.proStick();
+        const ps = inp.proStickInfo ? inp.proStickInfo() : (inp.proStick() ? { stick: inp.proStick(), slow: false } : null);
         const btb = inp.wasPressed('btb');
         if (ps || btb) {
           let move = null, mx = null, mz = null;
           if (btb) move = 'btb';
-          else if (ps === 'spin') move = 'spin';
-          else if (ps === 'down') move = (inp.gp.connected && mv.m > 0.5) ? 'btb' : 'stepback';
-          else if (ps === 'up') move = 'hesi';
           else {
-            // left/right relative to the screen: crossover to that side, or in-and-out if the ball is already there
-            const sx = ps === 'left' ? -1 : 1;
-            const dx = basis.rx * sx, dz = basis.rz * sx;
+            // v0.4.7.5 stick combinations (moves.js stickMove): the direction, sprint, the left stick and how the stick
+            // was thrown pick between crossovers, behind-the-backs, escapes, momentum dribbles and spins
+            const st = ps.stick, horiz = st.endsWith('left') ? -1 : st.endsWith('right') ? 1 : 0;
+            const dx = basis.rx * horiz, dz = basis.rz * horiz;
             const leftX = Math.cos(me.facing), leftZ = -Math.sin(me.facing);
-            const toLeft = dx * leftX + dz * leftZ > 0;
-            const hand = me.dribble.hand;
-            move = (toLeft && hand === 'R') || (!toLeft && hand === 'L') ? (inp.isDown('sprint') ? 'btl' : 'cross') : 'inout';
-            if (mv.m < 0.2) { mx = dx; mz = dz; }
+            const hand = me.dribble.hand, toLeft = dx * leftX + dz * leftZ > 0;
+            const toBallHand = horiz !== 0 && ((toLeft && hand === 'L') || (!toLeft && hand === 'R'));
+            const rim = g.rimFor(me.team), rl = Math.hypot(rim.x - me.x, rim.z - me.z) || 1;
+            const lw = Math.hypot(wx, wz), backward = lw > 0.5 && ((rim.x - me.x) * wx + (rim.z - me.z) * wz) / (rl * lw) < -0.5;
+            move = stickMove(st, { toBallHand, sprint: inp.isDown('sprint'), moving: st === 'down' ? inp.gp.connected && mv.m > 0.5 : mv.m > 0.2, backward, slow: ps.slow });
+            if ((st === 'left' || st === 'right') && mv.m < 0.2) { mx = dx; mz = dz; }
           }
           // v0.4.5 quick patch: a move called during another one waits for it to finish (it used to be dropped
           // after 0.22 s, so chaining needed frame-perfect timing); a spin replaces whatever was waiting
@@ -267,7 +275,8 @@ export class MatchSession {
     const inp = this.input, g = this.game, me = g.human;
     if (!me || g.assist) return null;
     const has = g.ball.holder === me.id;
-    const offense = g.possession === me.team;
+    const holder = g.holder ? g.holder() : null;
+    const offense = holder ? holder.team === me.team : g.possession === me.team; // (as in captureInput)
     const mv = inp.moveVector();
     const basis = this.basis || this.rig.inputBasis();
     const wx = basis.rx * mv.x + basis.fx * mv.y, wz = basis.rz * mv.x + basis.fz * mv.y;
@@ -355,7 +364,7 @@ export class MatchSession {
       if (intent) g.setInput(intent);
       g.step(DT);
       if (!this.background) this.ageInput(DT);
-      if (this.background) this.backgroundEvents(g.events); else this.handleEvents(g.events);
+      if (this.background) this.backgroundEvents(g.events); else { this.handleEvents(g.events); for (const e of g.events) logGameEvent(e, g); }
       for (const e of g.events) evs.push(e);
       if (this.grade) { for (const e of g.events) this.grade.onEvent(e); this.grade.tick(DT); g.lockIn = { id: this.grade.me, idx: this.grade.index }; }
       this.acc -= DT; steps++;
@@ -430,6 +439,20 @@ export class MatchSession {
     return this._proxy;
   }
 
+  // v0.4.7.5 green releases: the shooter's own sound (the AI at his own pitch and tempo) and effect over his head.
+  // A three, or a clutch shot, puts on a bigger show. far: a background game's volume (0..1).
+  greenRelease(P, e, mine, far = null) {
+    const mode = settings.greens || 'all';
+    if (mode === 'off' || (mode === 'mine' && !mine)) return;
+    const g = this.game, big = e.three || (g.isClutch && g.isClutch(P.team));
+    const power = big ? 1.22 : 1;
+    const o = this.origin, head = () => [P.x + o[0], P.y + P.phys.H + 0.1, P.z + o[2]], feet = () => [P.x + o[0], 0, P.z + o[2]];
+    greenFxFor(this.r, this.app.camera).play(P.greenFx || 'gfx_basic', head, feet, power);
+    const x = P.x + o[0], z = P.z + o[2];
+    const vol = far != null ? far * 0.5 : mine ? 1 : 0.62 * this.vol(x, z);
+    playGreenSound(audio, P.greenSound || 'gsnd_basic', { ...(P.greenVoice || {}), power, pan: this.pan(x), vol });
+  }
+
   pan(x) { return M.clamp((x - this.rig.pos[0]) / 14, -0.8, 0.8); }
   vol(x, z) { const d = Math.hypot(x - this.rig.pos[0], z - this.rig.pos[2]); return M.clamp(1.4 - d / 30, 0.25, 1); }
 
@@ -445,6 +468,7 @@ export class MatchSession {
       case 'steal': if (mine) inp.rumble(0.3, 0.6, 90); else if (e.victim === me.id) inp.rumble(0.65, 0.4, 150); break;
       case 'ankle': if (mine) inp.rumble(0.5, 0.85, 200); else if (e.victim === me.id) inp.rumble(1, 0.6, 420); break;
       case 'bump': if (mine || e.defender === me.id) inp.rumble(0.3, 0.2, 70); break;
+      case 'boxout': if (mine || e.victim === me.id) inp.rumble(0.35, 0.15, 90); break;
       case 'catch': if (mine) inp.rumble(0.05, 0.18, 40); break;
       case 'score': if (mine) inp.rumble(0.2, 0.45, 100); break;
       case 'gameOver': inp.rumble(0.6, 0.6, 400); break;
@@ -480,8 +504,9 @@ export class MatchSession {
             // graded with (who was where, facing which way, hands up or not, their length and their defensive
             // ratings, help defense), 100% being a full contest
             if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.contest));
-            if (e.grade === 'excellent') { audio.ui('green'); this.r.particles.burst(P.x + ox, 2.6 + P.y, P.z + oz, 26, { color: [0.3, 2.2, 0.8], speed: 2.4, life: 0.7, size: 0.035, gravity: -2 }); }
           }
+          // v0.4.7.5: a green that goes in plays the shooter's green release sound and effect (everyone's, the AI too)
+          if (e.grade === 'excellent' && e.made && P) this.greenRelease(P, e, mine);
           break;
         }
         case 'score': {
@@ -543,6 +568,14 @@ export class MatchSession {
         }
         case 'pumpfake': break;
         case 'bump': audio.board(0.4); break;
+        // v0.4.7.5: box-outs you're part of, and the named dribble combos you pull off
+        case 'boxout': {
+          const bx = g.players[e.player], vc = g.players[e.victim];
+          if (bx.human) { hud.pushFeed(`You box out ${vc.name}`, 'good'); audio.board(0.25); }
+          else if (vc.human) { hud.pushFeed(`${bx.name} boxes you out`, 'bad'); audio.board(0.25); }
+          break;
+        }
+        case 'move': if (e.combo && g.players[e.player].human) hud.pushFeed(`${e.combo}!`, 'good'); break;
         case 'turnover': case 'violation':
           if (e.type === 'violation' && e.what === 'Traveling') { if (P && P.team === myTeam) hud.callout('TRAVELING', 'bad'); break; } // the turnover event that follows whistles and posts it
           audio.whistle(); hud.pushFeed(e.why || e.what || 'Turnover', 'neutral'); break;
@@ -585,6 +618,7 @@ export class MatchSession {
       else if (e.type === 'hangRelease') { const h = this.hoopFor(e.side); if (h) { h.hang = 0; h.hit(1.2); } }
       else if (e.type === 'dribble' && near && Math.random() < 0.5) audio.bounce(0.3 * k, this.pan(e.x + ox));
       else if (e.type === 'score' && near) audio.cheer(0.15);
+      else if (e.type === 'release' && near && e.grade === 'excellent' && e.made && g.players[e.player]) this.greenRelease(g.players[e.player], e, false, k);
     }
   }
 

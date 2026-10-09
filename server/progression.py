@@ -6,7 +6,7 @@ anything. Rewards, Rep and badges are computed here, never trusted from the clie
 """
 import re
 import time
-from .builds import Invalid, strict_keys, integer, hof_count, hof_init, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K
+from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K
 
 VC_K = 1.35  # v0.4.5: every game pays 35% more VC
 
@@ -157,6 +157,10 @@ def rewards(summary, ticket, char):
         if ante and won:
             pot = ante + int(ante * mult)
             vc += pot
+        # v0.4.7.5: breaking a court's streak above 6 collects its bounty
+        bounty = int(ticket["meta"].get("bounty") or 0)
+        if bounty and won:
+            vc += bounty
     elif mode == "proam":
         streak = 0
         vc = min(int(3600 * VC_K), int((300 + (300 if won else 80) + max(0, statline)) * VC_K))
@@ -179,6 +183,7 @@ def rewards(summary, ticket, char):
     out = {"vc": int(vc), "rep": int(max(0, rep)), "won": won, "streak": streak, "badges": gains}
     if mode == "park":
         out["streak_mult"] = streak_multiplier(streak) if won else 1.0
+        out["bounty"] = int(ticket["meta"].get("bounty") or 0) if won else 0
         if ticket["meta"].get("venue") == "kingtut":
             out["cup"] = {"ante": int(ticket["meta"].get("ante") or 0), "pot": pot}
     return out
@@ -186,6 +191,11 @@ def rewards(summary, ticket, char):
 
 def apply_progress(char, summary, rw):
     prog = char.setdefault("progression", {})
+    # v0.4.7.5: every 3 Pro Run games played to the end raise the build's max OVR by 1 (80 -> 90)
+    ovr_before = max_ovr(char)
+    prog["prorun_completed"] = prorun_completed(char)
+    if summary["mode"] == "prorun" and not summary.get("forfeit"):
+        prog["prorun_completed"] += 1
     prog["games"] = prog.get("games", 0) + 1
     prog["wins"] = prog.get("wins", 0) + (1 if rw["won"] else 0)
     prog["xp"] = prog.get("xp", 0) + 100 + summary["stats"]["pts"] * 5 + summary["stats"]["ast"] * 5
@@ -219,11 +229,13 @@ def apply_progress(char, summary, rw):
     hof_init(char)
     cap_breakers_awarded = 0
     icon_unlocked = None
+    caps = badge_caps(char)
     for bid, inc in rw["badges"].items():
         b = badges.setdefault(bid, {"progress": 0, "tier": 0})
         b["progress"] += inc
         tiers = BADGES[bid]["tiers"]
-        new_tier = sum(1 for t in tiers if b["progress"] >= t)
+        # v0.4.7.5: a badge stops at the highest tier its build allows (archetype and height)
+        new_tier = min(caps.get(bid, 4), sum(1 for t in tiers if b["progress"] >= t))
         # v0.4.5: a build holds at most 7 Hall of Fame badges; others stop at Gold
         if new_tier >= 4 and b["tier"] < 4 and hof_count(char) >= HOF_LIMIT:
             new_tier = 3
@@ -239,17 +251,31 @@ def apply_progress(char, summary, rw):
                     cb["earned"] = cb.get("earned", 0) + CAP_BREAKERS_PER_HOF
                     cb["available"] = cb.get("available", 0) + CAP_BREAKERS_PER_HOF
                     cap_breakers_awarded += CAP_BREAKERS_PER_HOF
-                if n >= HOF_LIMIT and not char.get("icon_badge"):
+                if n >= icon_need(char) and not char.get("icon_badge"):
                     char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
                     icon_unlocked = char["icon_badge"]
+    ovr_after = max_ovr(char)
     return {"rep_before": before, "rep_after": after, "badges_upgraded": upgraded,
-            "cap_breakers_awarded": cap_breakers_awarded, "icon_unlocked": icon_unlocked}
+            "cap_breakers_awarded": cap_breakers_awarded, "icon_unlocked": icon_unlocked,
+            "max_ovr_unlocked": {"from": ovr_before, "to": ovr_after} if ovr_after > ovr_before else None}
 
 
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LOGOS = ("circle", "shield", "diamond", "hex", "star", "crown", "bolt")
 
 # ---------------- v0.4.2: park win-streak multiplier ----------------
+# v0.4.7.5 court bounties: a squad holding a court on a streak above 6 has a VC bounty on it, paid to whoever breaks
+# the streak (the same numbers as client/js/sim/world.js bountyFor)
+BOUNTY_MIN_STREAK = 7
+
+
+def bounty_for(streak):
+    """VC for breaking a streak of `streak` straight wins: 2,500 at 7, +750 a win after that, up to 15,000."""
+    if not isinstance(streak, int) or isinstance(streak, bool) or streak < BOUNTY_MIN_STREAK:
+        return 0
+    return min(15000, 2500 + 750 * (streak - BOUNTY_MIN_STREAK))
+
+
 def streak_multiplier(streak):
     """VC and Rep multiplier for a park win: 1.0 for the first win, +0.30 per extra straight win, up to 4x
     (v0.4.5 doubled the streak bonus; it was +0.15 up to 2.5x)."""
@@ -353,4 +379,20 @@ def ai_world(world):
                   "wins": count(v.get("wins")), "last": stamp(v)}
     born = world.get("born")
     born = float(born) if isinstance(born, (int, float)) and not isinstance(born, bool) and 0 < born < 1e13 else time.time() * 1000
-    return {"seed": seed, "born": born, "friends": friends, "squad": squad, "met": met}
+    # v0.4.7.5: games and wins per AI hooper (they get better as they play), and the squad that broke up when you
+    # last closed the game
+    prog = {}
+    raw = world.get("prog") if isinstance(world.get("prog"), dict) else {}
+    for k, v in list(raw.items())[:2000]:
+        if AI_ID.match(str(k)) and isinstance(v, dict):
+            g, w = count(v.get("g")), count(v.get("w"))
+            if g:
+                prog[k] = {"g": g, "w": min(w, g)}
+    out = {"seed": seed, "born": born, "friends": friends, "squad": squad, "met": met, "prog": prog}
+    ex = world.get("exSquad")
+    if isinstance(ex, dict):
+        at = ex.get("at")
+        ex_ids = list(dict.fromkeys(ids(ex.get("ids"), 4)))
+        if ex_ids and isinstance(at, (int, float)) and not isinstance(at, bool) and 0 < at < 1e13:
+            out["exSquad"] = {"ids": ex_ids, "at": float(at)}
+    return out

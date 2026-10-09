@@ -7,7 +7,7 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import { buildCourt, buildHoop, cachedTexture } from './court.js';
 import * as PR from './props.js';
 import { createParkLife } from './parklife.js';
-import { THEMES, PARK_COURTS, squadSpots, AFFILIATIONS, parkInfo, PARK_HQ, HQ } from './themes.js';
+import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, HQ } from './themes.js';
 import { COURT } from '../sim/constants.js';
 
 const lin = hex => M.hexLinear(hex);
@@ -129,30 +129,19 @@ function buildPark(r, scene, theme, opts) {
   // Got Next spot rings
   const ringTex = cachedTexture(ctx, 'ring', () => T.ringTexture(256), { wrap: 'clamp' });
   const gotNextMat = new Material({ color: lin(parkInfo(theme.id)?.color || '#ffffff'), map: ringTex, shading: 'unlit', emissive: [0, 0, 0], blend: 'add', depthWrite: false, fog: false });
-  // v0.4.5 squad spots: the GOT NEXT row glows, the 2ND and 3RD rows behind it are smaller and dimmer, and a
-  // stencil on the ground names each row
-  const ringParts = [], ringParts2 = [];
-  for (const c of courts) c.rows.forEach((row, r) => { for (const s of row) (r ? ringParts2 : ringParts).push({ geo: G.plane(r ? 1.05 : 1.3, r ? 1.05 : 1.3), matrix: M.m4translation(M.m4(), s.x, 0.02, s.z) }); });
+  // v0.4.7.5: two GOT NEXT spots per court (both glow the same: whichever squad fills first runs next), with the
+  // GOT NEXT stencil on the ground between them, reading toward the court
+  const ringParts = [];
+  for (const c of courts) c.rows.forEach(row => { for (const s of row) ringParts.push({ geo: G.plane(1.3, 1.3), matrix: M.m4translation(M.m4(), s.x, 0.02, s.z) }); });
   const gotNext = new Mesh(ctx.geometry(G.merge(ringParts, false)), gotNextMat, { castShadow: false, reflect: false });
   gotNext.order = 5;
   scene.add(gotNext);
-  const laterMat = new Material({ color: lin(parkInfo(theme.id)?.color || '#ffffff').map(v => v * 0.55), map: ringTex, shading: 'unlit', emissive: [0, 0, 0], blend: 'add', depthWrite: false, fog: false });
-  const later = new Mesh(ctx.geometry(G.merge(ringParts2, false)), laterMat, { castShadow: false, reflect: false });
-  later.order = 5;
-  scene.add(later);
-  ['GOT NEXT', '2ND', '3RD'].forEach((label, r) => {
-    const tex = cachedTexture(ctx, 'floorlabel-' + r, () => T.floorLabel(label), { wrap: 'clamp' });
-    const parts = [];
-    for (const c of courts) {
-      const row = c.rows[r]; if (!row) continue;
-      const a = row[0], b = row[row.length - 1], along = Math.abs(b.z - a.z) > 0.1 || row.length === 1;
-      // lying flat just before the row's first circle, reading toward the court
-      const m = M.m4mul(M.m4(), M.m4translation(M.m4(), a.x, 0.021, a.z - (along ? (r ? 0.55 : 0.95) + 0.8 : 1.1)), M.m4fromYaw(M.m4(), 0, 0, 0, along ? Math.PI / 2 : 0));
-      parts.push({ geo: G.plane(r ? 1.1 : 1.9, r ? 0.28 : 0.42), matrix: m });
-    }
-    const mesh = new Mesh(ctx.geometry(G.merge(parts, false)), new Material({ map: tex, color: [r ? 0.55 : 0.85, r ? 0.55 : 0.85, r ? 0.55 : 0.85], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false });
+  {
+    const tex = cachedTexture(ctx, 'floorlabel-0', () => T.floorLabel('GOT NEXT'), { wrap: 'clamp' });
+    const parts = courts.map(c => { const m = gotNextMid(c); return { geo: G.plane(1.9, 0.42), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), m.x, 0.021, m.z), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2)) }; });
+    const mesh = new Mesh(ctx.geometry(G.merge(parts, false)), new Material({ map: tex, color: [0.85, 0.85, 0.85], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false });
     mesh.order = 5; scene.add(mesh);
-  });
+  }
   // practice hoop slab (east annex, north of the 1v1 court)
   const prOrigin = [52, 0, 16];
   const practiceHoop = buildHoop(ctx, 1, 'park', { origin: [prOrigin[0], 0, prOrigin[2] - COURT.hoopZ + 4], rimColor: '#d8431c' });

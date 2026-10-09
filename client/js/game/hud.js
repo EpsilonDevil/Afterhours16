@@ -1,5 +1,6 @@
 // In-game DOM HUD: score bug, shot meter, release feedback, player tags, feed, big callouts.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { badgeSVG } from '../ui/badgeart.js';
 
 // the shot meter's track runs from the start of the shot (0) to 30% past the ideal release (1)
 export const METER_SCALE = 1.3;
@@ -151,10 +152,10 @@ export class HUD {
     const b = this.badgeQ.shift();
     if (!b) return;
     const TIER = ['', 'Bronze', 'Silver', 'Gold', 'Hall of Fame'];
-    const GLYPH = { Shooting: '◎', Finishing: '▲', Playmaking: '◆', Defense: '⛨', Rebounding: '⬈' };
+    // v0.4.7.5: the badge's own art (Hall of Fame keeps its full vibrance here too)
     const d = document.createElement('div');
     d.className = `badge-pop tier${b.tier}`;
-    d.innerHTML = `<span class="bp-icon"><i>${GLYPH[b.group] || '★'}</i></span><span class="bp-text"><small>BADGE ACTIVATED · ${esc(TIER[b.tier] || '')}</small><b>${esc(b.name)}</b></span>`;
+    d.innerHTML = `<span class="bp-art">${badgeSVG(b.key, b.tier, 42)}</span><span class="bp-text"><small>BADGE ACTIVATED · ${esc(TIER[b.tier] || '')}</small><b>${esc(b.name)}</b></span>`;
     this.badgeBox.appendChild(d);
     requestAnimationFrame(() => d.classList.add('on'));
     setTimeout(() => { d.classList.remove('on'); d.classList.add('off'); }, 1700);

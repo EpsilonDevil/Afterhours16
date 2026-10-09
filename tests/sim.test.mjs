@@ -388,8 +388,12 @@ test('v0.4.5 hot and cold, and position takeovers', () => {
   assert.equal(p.takeover.active, true);
   assert.ok(p.ratings.three_point > before);
   assert.ok(g.greenK(p) > 1);
-  for (let i = 0; i < 60 * 70 * g.speed && p.takeover.active; i++) g.step(1 / 60);
-  assert.equal(p.takeover.active, false, 'takeovers wear off');
+  // (v0.4.7.5: +6 for 90 seconds)
+  assert.equal(p.ratings.three_point - before, 6);
+  for (let i = 0; i < 60 * 85 * g.speed; i++) g.step(1 / 60);
+  assert.equal(p.takeover.active, true, 'still on at 85 s');
+  for (let i = 0; i < 60 * 10 * g.speed && p.takeover.active; i++) g.step(1 / 60);
+  assert.equal(p.takeover.active, false, 'takeovers wear off (90 s)');
   assert.equal(p.ratings.three_point, before);
 });
 

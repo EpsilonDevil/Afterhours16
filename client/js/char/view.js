@@ -94,6 +94,8 @@ export class AthleteView {
       add(geo.hair, hairMat, 'hair');
     }
     add(geo.top, topMat, 'top');
+    // v0.4.7.5: the straps and top edge always on top of the skin (a few centimetres toward the camera)
+    if (geo.straps) add(geo.straps, new Material({ ...topMat, viewBias: 0.018 }), 'straps'); // (same options as the top)
     add(geo.bottom, botMat, 'bottom');
     add(geo.gear, gearMat, 'gear');
     if (geo.shoes) {

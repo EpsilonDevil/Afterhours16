@@ -3,7 +3,7 @@ import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
 import { Ball, cloneBall, predictShot } from './ball.js';
 
 import { rk as n, rkRaw, proficient, SUB70_K } from './ratings.js';
-import { bk, tierTable } from './badges.js';
+import { bk, tierTable, STAT_BADGES } from './badges.js';
 // v0.4.5 badge tables: each tier step is 10% bigger than the one before
 const DEADEYE_WIN = tierTable([0, 0.15, 0.25, 0.35, 0.45]);
 const DEADEYE_CON = tierTable([0, 0.2, 0.35, 0.5, 0.6]);
@@ -31,6 +31,11 @@ export const BASE_FEEL = {
   scissor: { speed: 1.01, win: 1.02 }, tuck: { speed: 1.03, win: 1.03 }, sway: { speed: 0.97, win: 1.05 },
   // v0.4.5 stage 7: Silk has its own base now (it used to share the Skyline's), with the same feel it always had
   silk: { speed: 1.03, win: 0.97 },
+  // v0.4.7.5 bases
+  pogo: { speed: 1.01, win: 1.02 }, stork: { speed: 1.02, win: 0.98 }, frog: { speed: 1.0, win: 1.01 }, corkscrew: { speed: 1.03, win: 0.97 },
+  heel: { speed: 0.99, win: 1.0 }, turbo: { speed: 0.9, win: 0.95 }, onestep: { speed: 1.0, win: 1.03 }, tilt: { speed: 1.02, win: 0.96 },
+  catapult: { speed: 1.05, win: 0.98 }, statue: { speed: 1.04, win: 1.04 }, bounce: { speed: 0.97, win: 1.02 }, whip: { speed: 0.95, win: 0.97 },
+  dip: { speed: 1.06, win: 1.05 }, leaner: { speed: 0.98, win: 0.99 }, bicycle: { speed: 1.03, win: 1.0 },
 };
 export function jumpshotPackage(build, catalog) {
   const eq = build.equipment || {};
@@ -71,6 +76,12 @@ export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
 // v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
 // package bonus included; the AI's green rate follows the same windows); the quick patch takes another 6.5% off
 export const GREEN_K = 0.9 * (1 - 0.065);
+// v0.4.7.5: contests mean more without the badges for the shot. A shooter with none of the badges that work through
+// his shooting stat (Deadeye, Limitless, Catch & Shoot, ...) needs a good, open look and a high rating: the contest
+// takes a fifth more off his green window (0.66 instead of 0.55 per unit of contest) and off his make chance
+export const HOT_BOOST = 0.03;
+export const hasBadgeFor = (badges, stat) => (STAT_BADGES[stat] || []).some(k => ((badges || {})[k] || 0) > 0);
+export const contestBite = (badges, stat, withBadge, without) => (hasBadgeFor(badges, stat) ? withBadge : without);
 // v0.4.5 quick patch: the contest's bite on the green window is 5% bigger in every guarded tier (Open, Light contest,
 // Contested; Smothered has no window at all), each on its own; a wide-open look (10% guarded or less) is untouched
 export const CONTEST_TIER_BOOST = 0.05;
@@ -94,8 +105,10 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   const c = Math.min(1, ctx.contest || 0) * (1 - DEADEYE_WIN[b.deadeye || 0]);
   // v0.4.4: every contested state (light contest and up, not open looks) bites 3.75% harder
   const ck = 1 + 0.0375 * Math.max(0, Math.min(1, ((ctx.contest || 0) - 0.15) / 0.05));
-  w *= Math.max(0, 1 - 0.55 * ck * c * contestTierK(ctx.contest));
-  w *= 1 - 0.28 * Math.min(1, (ctx.moving || 0) / 5);
+  w *= Math.max(0, 1 - contestBite(b, ctx.three ? 'three_point' : 'mid_range', 0.55, 0.66) * ck * c * contestTierK(ctx.contest));
+  // (a pro hop is gathered: only half the moving penalty; every hustle shot has its own window on top)
+  w *= 1 - 0.28 * Math.min(1, (ctx.moving || 0) / 5) * (ctx.hustle === 'prohop' ? 0.5 : 1);
+  if (ctx.hustle) w *= HUSTLE_WIN[ctx.hustle] ?? 1;
   if (ctx.fade) w *= 0.82;
   if (ctx.three && (ctx.d || 0) > 7.9) w *= Math.max(0.3, 1 - ((ctx.d - 7.9) * 0.28) * (1 - Math.min(0.85, 0.18 * bk(b, 'limitless'))));
   if (ctx.catchShoot && b.catch_shoot) w *= 1 + 0.05 * bk(b, 'catch_shoot');
@@ -119,6 +132,11 @@ export const LAYUP_FEEL = {
   euro: { rel: 0.56, win: 0.95, gather: 0.06 },
   finger: { rel: 0.6, win: 0.92, gather: 0 },
   scoop: { rel: 0.4, win: 1.06, gather: 0.02 },
+  // v0.4.7.5 packages
+  reverse: { rel: 0.62, win: 0.94, gather: 0.03 },
+  hop: { rel: 0.5, win: 1.03, gather: 0.08 },
+  floater: { rel: 0.36, win: 0.96, gather: 0 },
+  spin: { rel: 0.52, win: 0.95, gather: 0.12 },
 };
 // v0.4.5: how the defense is covering a layup, read at the gather, changes the finish: its animation, the ball's
 // path and when it should come out (rel: extra share of the air time). side: +1 = away to the finisher's left.
@@ -158,16 +176,23 @@ export function layupWindowMs(attr, badges = {}, ctx = {}) {
   // (ctx.natural: the shot meter's "ratings only" part keeps a package's penalty but not its bonus)
   let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * (ctx.natural ? Math.min(1, f.win) : f.win) * (ctx.greenK || 1) * profK(attr);
   const c = Math.min(1.2, ctx.contest || 0) * (1 - FINISHER_CON[(badges || {}).contact_finisher || 0]);
-  w *= Math.max(0.5, 1 - 0.4 * c * contestTierK(ctx.contest));
+  // (v0.4.7.5: without a finishing badge the contest bites harder, and can take the window down to 45%)
+  const fin = hasBadgeFor(badges, 'layup');
+  w *= Math.max(fin ? 0.5 : 0.45, 1 - (fin ? 0.4 : 0.48) * c * contestTierK(ctx.contest));
   return Math.max(9, w) * GREEN_K;
 }
 
 // v0.4.5: jumpers don't all come out at the same speed. A running jumper is quicker (the momentum does some of
 // the work), a step-back and a fadeaway take a little longer (the gather back / the drift), and a three takes a
 // touch longer to load than a mid-range jumper. Multiplies the base's release time (tRel).
+// v0.4.7.5 hustle shots (pulling up at full speed): a running pull-up comes out quickest of all, a running fade
+// later, and a pro hop (a two-foot hop sideways into it) latest, but square and balanced (see HUSTLE_WIN)
+export const HUSTLE_TIMING = { pullup: 0.9, runfade: 1.1, prohop: 1.16 };
+export const HUSTLE_WIN = { pullup: 0.94, runfade: 0.9, prohop: 1.0 };
 export function jumperTimingK(o = {}) {
   let k = 1;
-  if ((o.moving || 0) > 2) k *= 0.95;
+  if (o.hustle) k *= HUSTLE_TIMING[o.hustle] ?? 1;
+  else if ((o.moving || 0) > 2) k *= 0.95;
   if (o.stepback) k *= 1.06;
   else if (o.fade) k *= 1.04;
   if (o.three) k *= 1.03;
@@ -237,7 +262,8 @@ export function finalChance(o) {
   let c = Math.min(1.2, o.contest || 0);
   if (o.type === 'jumper') c *= 1 - deadeye;
   if (o.type === 'layup' || o.type === 'close') c *= 1 - finisher;
-  const cw = o.type === 'jumper' ? 0.44 : o.type === 'dunk' ? 0.58 - 0.5 * (o.traffic ?? 0.5) : 0.36;
+  // (v0.4.7.5: a fifth more without the shot's badges)
+  const cw = o.type === 'jumper' ? contestBite(b, o.three ? 'three_point' : 'mid_range', 0.44, 0.53) : o.type === 'dunk' ? 0.58 - 0.5 * (o.traffic ?? 0.5) : contestBite(b, o.type === 'close' ? 'close_shot' : 'layup', 0.36, 0.43);
   if (o.type !== 'ft') p *= 1 - cw * Math.min(1, c);
   if (o.type === 'jumper') {
     p *= 1 - 0.12 * Math.min(1, (o.moving || 0) / 5);
@@ -254,7 +280,7 @@ export function finalChance(o) {
     else if (o.grade === 'vearly' || o.grade === 'vlate') p *= 0.62;
   }
   p *= 0.72 + 0.28 * Math.max(0, Math.min(1, o.stamina ?? 1));
-  if (o.hot) p *= 1.06; // v0.4.5: on fire
+  if (o.hot) p *= 1 + HOT_BOOST; // v0.4.5: on fire (v0.4.7.5: +3%, down from +6%)
   if (o.clutch && b.clutch) p *= 1 + 0.05 * bk(b, 'clutch');
   if (deep) {
     // past 35 ft: slide down to luck by the half-court line, and luck only beyond it (whatever the badges say)
@@ -284,6 +310,9 @@ export const DUNK_TIER = {
   dunk_basic: 0, dunk_rimrocker: 1, dunk_tomahawk: 1, dunk_windmill: 2, dunk_contact: 2, dunk_flight: 3, dunk_highflyer: 3, wheel_dunk_showtime: 3,
   // v0.4.5 packages
   dunk_hammer: 1, dunk_liberty: 1, dunk_scoop: 2, dunk_switch: 2, dunk_180: 3, dunk_eastbay: 4,
+  // v0.4.7.5 packages
+  dunk_cannonball: 1, dunk_kneeup: 1, dunk_pump: 1, dunk_hurdle: 2, dunk_crossleg: 2, dunk_jackknife: 2, dunk_sidemill: 2, dunk_twomill: 2,
+  dunk_splits: 3, dunk_backscratch: 3, dunk_behindhead: 3, dunk_helicopter: 3, dunk_rev360: 4, dunk_spinmill: 4,
 };
 export const STYLE_FLAIR = {
   power: 0, onehand: 0.3, tomahawk: 1, reverse: 1.5, double: 2, windmill: 2, cradle: 2.5, '360': 3,
@@ -291,6 +320,9 @@ export const STYLE_FLAIR = {
   hammer: 1.2, liberty: 1.3, scoop: 2.2, switch: 2.6, 180: 3, eastbay: 4, hashsling: 4,
   // v0.4.5 stage 7 signatures: Rim Rocker, Contact, Showtime, High Flyer
   rimrock: 1.1, bully: 0.8, aroundback: 3.1, superman: 3.3,
+  // v0.4.7.5 signatures
+  twomill: 2.4, sidemill: 2.3, backscratch: 2.8, rev360: 3.4, spinmill: 3.6, pump: 1.6, kneeup: 1.4, crossleg: 2.0, helicopter: 3.2,
+  behindhead: 3.0, cannonball: 1.2, splits: 2.6, hurdle: 1.8, jackknife: 2.2,
 };
 export const dunkTier = p => DUNK_TIER[p?.dunkPkg] ?? 0;
 
@@ -308,6 +340,17 @@ export const SIZEUP = {
   elite: { hgt: 0.82, side: 0.95, freq: 1.2, combos: ['cross', 'btl'], chance: 0.7 },
   ankle: { hgt: 0.74, side: 1.05, freq: 1.33, combos: ['btl', 'cross', 'btb'], chance: 0.78 },
   showtime: { hgt: 0.96, side: 1.12, freq: 1.12, combos: ['btb', 'btl', 'btb'], chance: 0.7 },
+  // v0.4.7.5 packages
+  yoyo: { hgt: 1.18, side: 0.95, freq: 0.8, combos: ['hesi'], chance: 0.35 },
+  rocker: { hgt: 0.95, side: 1.05, freq: 1.0, combos: ['half', 'hesi'], chance: 0.5 },
+  cradle: { hgt: 0.66, side: 1.35, freq: 1.25, combos: ['cross', 'half'], chance: 0.6 },
+  glide: { hgt: 0.88, side: 1.18, freq: 0.92, combos: ['btl'], chance: 0.4 },
+  jab: { hgt: 0.92, side: 1.0, freq: 1.05, combos: ['hesi', 'cross'], chance: 0.45 },
+  springs: { hgt: 1.0, side: 0.9, freq: 1.36, combos: ['cross', 'btl', 'cross'], chance: 0.5 },
+  lowrider: { hgt: 0.55, side: 1.1, freq: 1.5, combos: ['btl', 'btb'], chance: 0.75 },
+  swagger: { hgt: 1.08, side: 1.2, freq: 0.78, combos: ['btb'], chance: 0.3 },
+  blur: { hgt: 0.78, side: 0.85, freq: 1.55, combos: ['cross', 'cross', 'btl', 'btb'], chance: 0.85 },
+  pendulum: { hgt: 0.8, side: 1.4, freq: 1.18, combos: ['btl', 'btl', 'half'], chance: 0.7 },
 };
 export const sizeupOf = p => (p.speed < 1.2 ? SIZEUP[p.sizeupStyle] || SIZEUP.basic : null);
 // one dribble's worth of time; true when the ball hits the floor. The game and the store preview share it.
@@ -328,7 +371,7 @@ export function advanceDribble(p, dt, rnd, pressured) {
 export function dunkSpin(a) {
   // v0.4.5: the 180 turns half a revolution on the way up and stays backward through the slam
   if (!a || a.type !== 'dunk' || !(a.slam > 0)) return 0;
-  const turn = a.style === '360' ? Math.PI * 2 : a.style === '180' ? Math.PI : 0;
+  const turn = a.style === '360' || a.style === 'rev360' || a.style === 'spinmill' || a.style === 'helicopter' ? Math.PI * 2 : a.style === '180' ? Math.PI : 0;
   if (!turn) return 0;
   const t0 = (a.takeoff || 0) + 0.03, t1 = a.slam - (a.style === '180' ? 0.12 : 0.06);
   const k = Math.max(0, Math.min(1, (a.t - t0) / Math.max(0.1, t1 - t0)));

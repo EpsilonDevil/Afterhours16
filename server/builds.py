@@ -27,7 +27,7 @@ EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
                      "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic"}
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller
@@ -106,12 +106,69 @@ def spec(data):
 
 
 OVR_CAP = 90  # v0.4.5: every build tops out at exactly 90 OVR before cap breakers
+# v0.4.7.5: VC takes a new build to 80 OVR. Every 3 Pro Run games played after that raise the max by 1, up to 90;
+# cap breakers unlock at 90.
+BASE_OVR_CAP = 80
+PRORUN_GAMES_PER_OVR = 3
 CAP_BREAKERS_PER_HOF = 5
 CAP_BREAKER_HOF_LIMIT = 5  # cap breakers come with the first 5 Hall of Fame badges (25 max per build)
 HOF_LIMIT = 7  # Hall of Fame badges per build; the 7th unlocks the archetype's Icon badge
 ICON_FOR_ARCH = {"sharpshooter": "sharp_eye", "slasher": "hash_slinging", "playmaker": "oprah", "lockdown": "the_clamp",
                  "two_way": "the_general", "glass_cleaner": "big_brother", "stretch_big": "open_arms", "post_scorer": "sexy_red"}
 COST_K = 0.65  # v0.4.5: everything costs 35% less
+
+
+# v0.4.7.5 badge restrictions: the highest tier each badge can reach on a build. The archetype sets a base cap
+# (4 = Hall of Fame, 3 = Gold, 2 = Silver, 1 = Bronze), then height opens or closes a few doors: small guards
+# handle and finish better but can't anchor the paint, bigs protect the rim and the glass but can't break
+# ankles or bomb from deep. Mirrors client/js/sim/builds.js (tests cross-check them).
+BADGE_IDS = ("deadeye", "catch_shoot", "corner_specialist", "limitless", "green_machine", "clutch", "posterizer", "contact_finisher",
+             "acrobat", "ankle_breaker", "dimer", "handles_for_days", "pick_pocket", "interceptor", "rim_protector", "chasedown",
+             "brick_wall", "rebound_chaser")
+BADGE_ARCH_CAPS = {
+    "sharpshooter": (4, 4, 4, 4, 4, 4, 1, 2, 2, 2, 3, 4, 3, 3, 1, 2, 2, 2),
+    "slasher": (2, 2, 1, 1, 2, 3, 4, 4, 4, 4, 3, 4, 3, 4, 2, 4, 3, 3),
+    "playmaker": (3, 3, 2, 3, 3, 4, 1, 3, 4, 4, 4, 4, 4, 4, 1, 2, 1, 1),
+    "lockdown": (3, 4, 4, 1, 2, 3, 2, 3, 2, 2, 2, 4, 4, 4, 4, 4, 4, 3),
+    "two_way": (4, 4, 3, 2, 3, 4, 3, 4, 3, 3, 3, 3, 4, 4, 3, 4, 4, 3),
+    "glass_cleaner": (1, 1, 1, 1, 1, 2, 4, 4, 3, 1, 4, 2, 2, 3, 4, 4, 4, 4),
+    "stretch_big": (4, 4, 4, 3, 4, 4, 2, 3, 1, 1, 3, 2, 2, 3, 4, 3, 3, 4),
+    "post_scorer": (3, 2, 1, 1, 3, 4, 4, 4, 4, 2, 4, 2, 2, 2, 4, 2, 4, 4),
+}
+# height bands (inches): small ≤ 6'2", medium 6'3"-6'6", tall 6'7"-6'9", big 6'10"-7'0", giant 7'1"+
+HEIGHT_BANDS = (("small", 74), ("medium", 78), ("tall", 81), ("big", 84), ("giant", 99))
+BADGE_HEIGHT_UP = {"small": ("ankle_breaker", "handles_for_days", "acrobat", "pick_pocket"), "medium": (), "tall": (),
+                   "big": ("rim_protector", "rebound_chaser", "brick_wall"), "giant": ("rim_protector", "rebound_chaser", "brick_wall", "posterizer")}
+BADGE_HEIGHT_MAX = {"small": {"rim_protector": 2, "rebound_chaser": 3, "brick_wall": 3, "posterizer": 3, "chasedown": 3},
+                    "medium": {"rim_protector": 3}, "tall": {},
+                    "big": {"ankle_breaker": 3, "handles_for_days": 3, "limitless": 3},
+                    "giant": {"ankle_breaker": 2, "handles_for_days": 2, "limitless": 2, "acrobat": 3, "pick_pocket": 3}}
+
+
+def height_band(height):
+    for name, top in HEIGHT_BANDS:
+        if (height or 0) <= top:
+            return name
+    return "giant"
+
+
+def badge_caps(char):
+    """{badge id: highest tier this build can reach}."""
+    arch = char.get("archetype") or STYLE_TO_ARCH.get(char.get("style"), "two_way")
+    base = BADGE_ARCH_CAPS.get(arch, BADGE_ARCH_CAPS["two_way"])
+    band = height_band(char.get("height", 76))
+    up, top = BADGE_HEIGHT_UP[band], BADGE_HEIGHT_MAX[band]
+    return {b: max(1, min(4, base[i] + (1 if b in up else 0), top.get(b, 4))) for i, b in enumerate(BADGE_IDS)}
+
+
+def hof_capacity(char):
+    """How many badges can reach Hall of Fame on this build."""
+    return sum(1 for v in badge_caps(char).values() if v >= 4)
+
+
+def icon_need(char):
+    """Hall of Fame badges needed for the Icon badge: the 7th, or every one the build can reach if that's fewer."""
+    return max(1, min(HOF_LIMIT, hof_capacity(char)))
 
 
 def base_caps(b):
@@ -136,16 +193,35 @@ def _scaled(base, k):
     return {a: max(40, min(99, jround(40 + (v - 40) * k))) for a, v in base.items()}
 
 
-def caps(b):
+def prorun_completed(char):
+    """Pro Run games played to the end (v0.4.7.5 max-OVR unlocks). Older saves count the Pro Run games they have."""
+    prog = char.get("progression") or {}
+    return int(prog.get("prorun_completed", (prog.get("prorun") or {}).get("games", 0)) or 0)
+
+
+def max_ovr(char):
+    """The OVR this build can reach with VC right now: 80, +1 per 3 Pro Run games, up to 90. Builds that were
+    already past 80 before v0.4.7.5 keep what they had (ovr_floor)."""
+    earned = BASE_OVR_CAP + prorun_completed(char) // PRORUN_GAMES_PER_OVR
+    return max(BASE_OVR_CAP, min(OVR_CAP, max(earned, int(char.get("ovr_floor") or 0))))
+
+
+def cap_breakers_unlocked(char):
+    return max_ovr(char) >= OVR_CAP
+
+
+def caps(b, target=None):
     """v0.4.5: the build's shape (height, weight, wingspan, archetype) sets the relative caps, then they are
-    scaled around 40 so every build maxes out at exactly 90 OVR. Cap breakers add +1 per breaker on top."""
+    scaled around 40 so the build maxes out at exactly its max OVR (v0.4.7.5: 80 to 90, see max_ovr). Cap
+    breakers add +1 per breaker on top."""
     base = base_caps(b)
     pos = b.get("position", "SF")
+    goal = target if target is not None else max_ovr(b)
     out = None
     for i in range(1200):
         k = 0.5 + i * 0.0025
         out = _scaled(base, k)
-        if overall(out, pos) >= OVR_CAP:
+        if overall(out, pos) >= goal:
             break
     applied = (b.get("cap_breakers") or {}).get("applied") or {}
     for a, n in applied.items():
@@ -155,7 +231,7 @@ def caps(b):
 
 
 def starting_attributes(b):
-    return {k: max(35, jround(v * 0.72)) for k, v in caps(b).items()}
+    return {k: max(35, jround(v * 0.72)) for k, v in caps(b, OVR_CAP).items()}
 
 
 def overall(attributes, position="SF"):
@@ -216,7 +292,7 @@ def normalize(char):
             "speed": g("speed"), "acceleration": g("speed"), "vertical": (g("dunk") + g("speed")) // 2, "strength": (g("rebound") + 55) // 2, "stamina": g("stamina"),
         }
         start = starting_attributes(char)
-        cap = caps(char)
+        cap = caps(char, OVR_CAP)
         char["attributes"] = {k: max(start[k], min(cap[k], mapped[k])) for k in ATTRIBUTES}
     elif not all(k in old for k in ATTRIBUTES):
         start = starting_attributes(char)
@@ -239,7 +315,9 @@ def normalize(char):
 
 
 def hof_count(char):
-    return sum(1 for b in (char.get("badges") or {}).values() if b.get("tier", 0) >= 4)
+    """Hall of Fame badges that count on this build (a badge above its v0.4.7.5 cap plays, and counts, at the cap)."""
+    cap = badge_caps(char)
+    return sum(1 for k, b in (char.get("badges") or {}).items() if min(b.get("tier", 0), cap.get(k, 4)) >= 4)
 
 
 def hof_init(char):
@@ -248,8 +326,18 @@ def hof_init(char):
     if "cap_breakers" not in char:
         n = min(CAP_BREAKER_HOF_LIMIT, hof_count(char))
         char["cap_breakers"] = {"earned": n * CAP_BREAKERS_PER_HOF, "available": n * CAP_BREAKERS_PER_HOF, "applied": {}}
-    if hof_count(char) >= HOF_LIMIT and not char.get("icon_badge"):
+    if hof_count(char) >= icon_need(char) and not char.get("icon_badge"):
         char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
+    # v0.4.7.5 max OVR: builds made before the 80 OVR start keep the OVR they'd reached (and a build that had used
+    # cap breakers keeps the full 90). Counted once.
+    if "ovr_floor" not in char:
+        attrs = char.get("attributes") or {}
+        used = any(isinstance(n, int) and n > 0 for n in ((char.get("cap_breakers") or {}).get("applied") or {}).values())
+        cur = overall(attrs, char.get("position", "SF")) if attrs else 0
+        char["ovr_floor"] = OVR_CAP if used else (min(OVR_CAP, cur) if cur > BASE_OVR_CAP else 0)
+    prog = char.get("progression")
+    if isinstance(prog, dict) and "prorun_completed" not in prog:
+        prog["prorun_completed"] = prorun_completed(char)
     return char
 
 
@@ -258,6 +346,8 @@ def apply_cap_breakers(char, attribute, count):
     if attribute not in ATTRIBUTES:
         raise Invalid("Choose an attribute.")
     count = integer(count, 1, 25, "Cap breakers")
+    if not cap_breakers_unlocked(char):
+        raise Invalid(f"Cap breakers unlock at {OVR_CAP} max OVR. Play The Pro Run to raise your max OVR (+1 every {PRORUN_GAMES_PER_OVR} games).")
     cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
     if cb.get("available", 0) < count:
         raise Invalid("You don't have that many cap breakers.")
@@ -279,5 +369,9 @@ def describe(char):
     cb = char.get("cap_breakers") or {}
     return {"caps": cap, "overall": overall(char["attributes"], char["position"]),
             "hof_count": hof_count(char), "hof_limit": HOF_LIMIT, "cap_breakers_available": cb.get("available", 0),
+            "badge_caps": badge_caps(char), "hof_capacity": hof_capacity(char), "icon_need": icon_need(char),
+            "max_ovr": max_ovr(char), "base_ovr_cap": BASE_OVR_CAP, "ovr_cap": OVR_CAP, "prorun_completed": prorun_completed(char),
+            "prorun_to_next": 0 if max_ovr(char) >= OVR_CAP else PRORUN_GAMES_PER_OVR - prorun_completed(char) % PRORUN_GAMES_PER_OVR,
+            "cap_breakers_unlocked": cap_breakers_unlocked(char), "cap_breakers_earned": cb.get("earned", 0),
             "max_overall": overall(cap, char["position"]),
             "max_upgrade_cost": quote(char, max_targets(char))[0]}

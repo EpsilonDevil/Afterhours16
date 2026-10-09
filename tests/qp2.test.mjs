@@ -142,11 +142,14 @@ test('the contest bites 5% harder on the green window in every guarded tier, eac
   // what the penalty was: 0.55 × contest (× 1.0375 once contested), now ×1.05 for every tier past wide open
   for (const [c, tier] of [[0.15, 'Open'], [0.3, 'Light contest'], [0.6, 'Contested']]) {
     const ck = 1 + 0.0375 * Math.max(0, Math.min(1, (c - 0.15) / 0.05));
-    assert.ok(Math.abs(pen(85, c) - 0.55 * ck * c * 1.05) < 1e-9, `${tier}: penalty ${(pen(85, c) * 100).toFixed(1)}%`);
+    // (v0.4.7.5: 0.66 per unit of contest without a shooting badge, 0.55 with one; layups 0.48 / 0.4)
+    assert.ok(Math.abs(pen(85, c) - 0.66 * ck * c * 1.05) < 1e-9, `${tier}: penalty ${(pen(85, c) * 100).toFixed(1)}%`);
+    const pb = 1 - S.greenWindowMs(85, { deadeye: 1 }, { contest: c }) / S.greenWindowMs(85, { deadeye: 1 }, {});
+    assert.ok(pb < pen(85, c), `${tier}: smaller with a shooting badge`);
     const lay = 1 - S.layupWindowMs(85, {}, { contest: c }) / S.layupWindowMs(85, {}, {});
-    assert.ok(Math.abs(lay - 0.4 * c * 1.05) < 1e-9, `${tier}: layup penalty`);
+    assert.ok(Math.abs(lay - 0.48 * c * 1.05) < 1e-9, `${tier}: layup penalty`);
   }
-  assert.ok(Math.abs(pen(85, 0.08) - 0.55 * 0.08) < 1e-9, 'wide open: unchanged');
+  assert.ok(Math.abs(pen(85, 0.08) - 0.66 * 0.08) < 1e-9, 'wide open: no tier boost');
   assert.equal(S.greenWindowMs(85, {}, { contest: S.SMOTHER }), 0, 'smothered: still no window');
 });
 
@@ -165,6 +168,7 @@ test('bigs\' dribble moves are 10% slower, wings\' 5%, point guards\' as they we
   const pg = dur('PG');
   // a PG's crossover at 80/80 with a plain size-up: the snappy base, then 5% slower for everyone
   const n = v => (v - 25) / 74;
-  assert.ok(Math.abs(pg - 0.4 * MOVE_SNAP / (1 + 0.22 * n(80) + 0.1 * n(80)) / 0.95) < 0.02, `PG crossover ${(pg * 1000).toFixed(0)} ms`);
+  // (v0.4.7.5: the handle counts for more, 0.4 per unit instead of 0.22)
+  assert.ok(Math.abs(pg - 0.4 * MOVE_SNAP / (1 + 0.4 * n(80) + 0.1 * n(80)) / 0.95) < 0.02, `PG crossover ${(pg * 1000).toFixed(0)} ms`);
   for (const [pos, k] of [['SG', 0.95], ['SF', 0.95], ['PF', 0.9], ['C', 0.9]]) assert.ok(Math.abs(dur(pos) - pg / k) < 1e-9, `${pos}: a crossover takes ${(dur(pos) * 1000).toFixed(0)} ms vs ${(pg * 1000).toFixed(0)} ms for a PG`);
 });

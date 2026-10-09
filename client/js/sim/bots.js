@@ -1,6 +1,6 @@
 // Seeded AI hooper generation (legal builds, cosmetics from the catalog, tendencies).
 import { RNG } from '../core/rng.js';
-import { POSITIONS, ARCHETYPES, ARCH_BONUS, caps } from './builds.js';
+import { POSITIONS, ARCHETYPES, ARCH_BONUS, caps, capBadges, OVR_CAP } from './builds.js';
 import { ATTRS, overall } from './ratings.js';
 
 const FIRST = ['Milo', 'Jules', 'Rio', 'Dante', 'Ellis', 'Kai', 'Ari', 'Nico', 'Zion', 'Remy', 'Cole', 'Devon', 'Marcus', 'Theo', 'Andre', 'Isaiah', 'Quinn', 'Jalen', 'Omari', 'Tariq', 'Bryce', 'Malik', 'Reggie', 'Jace', 'Darius', 'Eli', 'Rashad', 'Kendrick', 'Luca', 'Mateo', 'Nate', 'Shawn', 'Tyrell', 'Victor', 'Wes', 'Xavier', 'Yusuf', 'Zeke', 'Caleb', 'Desmond'];
@@ -45,7 +45,7 @@ const BADGE_POOL = {
   stretch_big: ['catch_shoot', 'limitless', 'rim_protector', 'rebound_chaser', 'deadeye'],
   post_scorer: ['contact_finisher', 'brick_wall', 'rebound_chaser', 'posterizer', 'acrobat'],
 };
-export function botBadges(archetype, level, rng) {
+export function botBadges(archetype, level, rng, build = null) {
   const pool = [...(BADGE_POOL[archetype] || BADGE_POOL.two_way)];
   // v0.4.4: badge count and tiers follow skill much more closely: casual hoopers carry zero to two
   // low-tier badges, park legends carry a full set with Hall of Fame signatures
@@ -57,7 +57,8 @@ export function botBadges(archetype, level, rng) {
     const tier = Math.max(1, Math.min(4, Math.round(0.6 + level * 3.1 + rng.range(-0.75, 0.75) - i * 0.25 + (i === 0 ? 0.35 : 0))));
     badges[k] = tier; use[k] = Math.round((tier * 60 + rng.range(0, 80)) * (i === 0 ? 1.6 : 1) * (0.5 + level));
   }
-  return { badges, use };
+  // v0.4.7.5: the AI follows the same badge restrictions as you (archetype and height)
+  return { badges: capBadges(badges, build || { archetype }), use };
 }
 
 // v0.4.4: the attributes an archetype is built around (its two biggest bonuses)
@@ -82,7 +83,7 @@ export function makeBot(rng, opts = {}) {
   const wingspan = height + rng.int(0, 7);
   const archetype = opts.archetype || rng.pick(POS_ARCH[position]);
   const build = { position, height, weight, wingspan, archetype };
-  const c = caps(build);
+  const c = caps(build, OVR_CAP); // (AI builds span the whole 90 OVR range)
   const level = Math.max(0, Math.min(1, opts.level ?? 0.55));
   const sig = signatureAttrs(archetype);
   const attributes = {};
@@ -117,6 +118,8 @@ export function makeBot(rng, opts = {}) {
   // wheel exclusives: a few of the regulars have hit on the wheel
   const wheel = items.filter(i => i.exclusive === 'wheel' && ['jumpshot', 'release', 'dunk'].includes(i.slot));
   if (wheel.length && rng.next() < 0.04 + flash * 0.12) { const w = rng.pick(wheel); eq[w.slot] = w.id; }
+  // v0.4.7.5: every AI hooper has a movement style of his own
+  eq.movement = pick('movement', 'move_standard');
   if (rng.next() < 0.6) eq.socks = pick('socks', 'socks_white');
   if (rng.next() < 0.35) eq.headband = pick('headband', 'band_lime');
   if (rng.next() < 0.3) eq.sleeve = pick('sleeve', 'sleeve_ink');
@@ -137,9 +140,43 @@ export function makeBot(rng, opts = {}) {
   };
   build.name = name;
   build.appearance = appearance;
+  // v0.4.7.5: a green release sound and effect of his own (drawn from his own seed, so nothing else about him changes;
+  // the pitch and tempo he plays the sound at come from his name: core/greensound.js greenVoice)
+  {
+    let h = 2166136261; for (const ch of `${name}|${appearance.number}|${archetype}|${position}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    const gr = new RNG(h || 1), sel = (slot, skip) => {
+      const l = items.filter(i => i.slot === slot && !i.exclusive && i.id !== skip);
+      if (!l.length) return null;
+      const w = l.map(i => 1 + Math.pow((i.price || 0) / 8000, 0.8) * flash * 1.6);
+      let r = gr.next() * w.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < l.length; i++) { r -= w[i]; if (r <= 0) return l[i].id; }
+      return l[l.length - 1].id;
+    };
+    eq.greensound = sel('greensound', 'gsnd_basic') || 'gsnd_basic';
+    eq.greenfx = (gr.next() < 0.15 + 0.2 * (1 - flash) ? 'gfx_basic' : sel('greenfx', 'gfx_basic')) || 'gfx_basic';
+  }
   build.overall = ovr;
-  const bb = botBadges(archetype, level, rng);
+  const bb = botBadges(archetype, level, rng, build);
   return { build, name, number: appearance.number, appearance, badges: bb.badges, badgeUse: bb.use, level };
+}
+
+// v0.4.7.5: in one game no two AI players share a green release sound or effect (you keep yours; an AI player
+// who matches someone already on the floor plays the next free one, picked from his name so it's the same every time)
+export function spreadGreens(players, catalog = {}) {
+  const pool = slot => Object.values(catalog).filter(i => i.slot === slot && !i.exclusive).map(i => i.id).sort();
+  for (const [key, slot, def] of [['greenSound', 'greensound', 'gsnd_basic'], ['greenFx', 'greenfx', 'gfx_basic']]) {
+    const ids = pool(slot), used = new Set(players.filter(p => p.human).map(p => p[key] || def));
+    for (const p of players) {
+      if (p.human) continue;
+      const cur = p[key] || def;
+      if (!used.has(cur)) { used.add(cur); continue; }
+      const free = ids.filter(id => !used.has(id) && id !== def);
+      if (!free.length) continue;
+      let h = 7; for (const ch of p.name || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      p[key] = free[h % free.length]; used.add(p[key]);
+    }
+  }
+  return players;
 }
 
 export function makeTeam(rng, size, opts = {}) {

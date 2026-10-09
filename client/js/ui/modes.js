@@ -18,6 +18,8 @@ import * as Stats from './stats.js';
 import { boostedBuild } from '../sim/ratings.js';
 import { padGlyph } from '../core/input.js';
 import * as MyPlayer from './myplayer.js';
+import { badgeSVG, iconBadgeSVG } from './badgeart.js';
+import { reportBug } from './bugreport.js';
 import * as Crew from './crew.js';
 import { CrewHQ, RUN_MIN } from '../game/crewhq.js';
 
@@ -161,10 +163,64 @@ export function enterHQ(app, from) {
   });
 }
 
+// v0.4.7.5: a small flame for streaks and a bounty seal for streaks above 6 (court overview, court icons, ticker)
+const FLAME_SVG = '<svg viewBox="0 0 16 20" class="ic-flame" aria-hidden="true"><path d="M8 1c1 3.2 5 5.6 5 10.2A5 5 0 0 1 3 11.4C3 8.6 4.6 7 5.4 5.6 5.7 7.4 6.6 8.2 7.4 8.6 7 6 7.2 3.6 8 1Z" fill="currentColor"/><path d="M8 19a3 3 0 0 1-3-3c0-1.9 1.4-2.8 2-4.1.4 1.3 1.1 1.9 1.7 2.3.2-.9.6-1.6 1-2.1.9 1.1 1.3 2.3 1.3 3.9a3 3 0 0 1-3 3Z" fill="#fff6c9" opacity=".85"/></svg>';
+const BOUNTY_SVG = '<svg viewBox="0 0 24 24" class="ic-bounty" aria-hidden="true"><path d="M12 1.5 14.6 4l3.5-.6.9 3.4 3.2 1.6-1.2 3.3 1.2 3.3-3.2 1.6-.9 3.4-3.5-.6L12 22.5 9.4 20l-3.5.6-.9-3.4-3.2-1.6L3 12.3 1.8 9l3.2-1.6.9-3.4 3.5.6Z" fill="currentColor"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="#1a1204" stroke-width="1.4"/><path d="M12.9 8.4v-.9h-1.6v.9c-1.2.3-2 1.1-2 2.2 0 1.4 1.2 1.9 2.4 2.2 1 .2 1.4.4 1.4.9s-.5.8-1.2.8c-.8 0-1.4-.4-1.6-1l-1.3.5c.3 1 1.1 1.6 2.3 1.8v.9h1.6v-.9c1.3-.3 2.1-1.1 2.1-2.3 0-1.4-1.1-1.9-2.5-2.2-.9-.2-1.3-.4-1.3-.8s.4-.7 1-.7c.7 0 1.1.3 1.3.8l1.3-.5c-.3-.8-1-1.4-1.9-1.6Z" fill="#1a1204"/></svg>';
+
 class ParkUI {
-  constructor(app) { this.app = app; this.lastPrompt = null; }
+  constructor(app) { this.app = app; this.lastPrompt = null; this.tagEls = new Map(); this.tagKey = new Map(); this.tickKey = null; this.tmpP = {}; }
   mount() {
-    $('#ui').innerHTML = `<div class="park-top" id="park-top"></div>`;
+    $('#ui').innerHTML = `<div class="park-top" id="park-top"></div><div class="court-tags" id="court-tags"></div>
+      <div class="ov-head" id="ov-head" hidden><b>COURT OVERVIEW</b><span class="live-dot"></span><small>LIVE</small><em id="ov-hint"></em></div>
+      <div class="gn-ticker" id="gn-ticker" hidden></div>`;
+    this.tagEls = new Map(); this.tagKey = new Map(); this.tickKey = null;
+  }
+  // v0.4.7.5 the court overview (hold View / Share): the header, and every court's card (courtTags)
+  overview(hub, on) {
+    const h = $('#ov-head'); if (h) h.hidden = !on;
+    const inp = this.app.input, hint = $('#ov-hint');
+    if (hint) hint.textContent = `Release ${inp.usingPad ? padGlyph(inp.gp.family, 'VIEW') : 'V'} to go back`;
+    document.body.classList.toggle('overview-on', on);
+  }
+  // court cards in the overview; while roaming, just the bounty seal over a court whose kings are above 6 straight
+  courtTags(hub) {
+    const box = $('#court-tags'); if (!box || !hub.courtInfo) return;
+    const roam = hub.mode === 'roam', ov = roam && !!hub.overview, cam = this.app.camera, r = hub.r;
+    for (const c of hub.courts) {
+      let el = this.tagEls.get(c);
+      if (!el) { el = document.createElement('div'); el.className = 'court-tag'; el.hidden = true; box.appendChild(el); this.tagEls.set(c, el); }
+      const info = hub.courtInfo(c);
+      if (!roam || (!ov && !info.bounty)) { el.hidden = true; continue; }
+      const p = r.project(cam, [c.origin[0], ov ? 0.4 : 4.8, c.origin[2] + (c.full ? 0 : 6.5)], this.tmpP);
+      if (!p.visible || (!ov && p.depth > 95)) { el.hidden = true; continue; }
+      if (!ov) p.y = Math.max(96, p.y); // (a court in front of you keeps its seal on screen)
+      else { const W = r.canvas.clientWidth; p.x = Math.min(W - 96, Math.max(96, p.x)); p.y = Math.max(150, p.y); } // (cards stay on screen)
+      const key = (ov ? 'o' : 'r') + JSON.stringify(info);
+      if (this.tagKey.get(c) !== key) {
+        this.tagKey.set(c, key);
+        el.className = `court-tag ${ov ? 'ov' : 'roam'}${info.bounty ? ' has-bounty' : ''}${info.next ? ' mine' : ''}`;
+        el.innerHTML = ov ? overviewCard(info) : `<div class="ct-seal">${BOUNTY_SVG}<div><b>BOUNTY +${money(info.bounty)} VC</b><small>${FLAME_SVG}${info.streak} straight · break it to collect</small></div></div>`;
+      }
+      el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
+      el.hidden = false;
+    }
+  }
+  // v0.4.7.5: the score of the game on the court you've got next on, bottom right
+  ticker(hub) {
+    const t = $('#gn-ticker'); if (!t || !hub.courtInfo) return;
+    const my = hub.mode === 'roam' && !hub.overview ? hub.myLine() : null;
+    const info = my ? hub.courtInfo(my.c) : null;
+    if (!info) { if (!t.hidden) { t.hidden = true; this.tickKey = null; } return; }
+    const s = my.c.session, cols = s ? [s.teams?.[0]?.color || '#ffd84a', s.teams?.[1]?.color || '#ff5a36'] : ['#555', '#555'];
+    const key = JSON.stringify([info, cols]);
+    if (key === this.tickKey) return;
+    this.tickKey = key;
+    const names = s ? [s.teams?.[0]?.name || 'Kings', s.teams?.[1]?.name || 'Challengers'] : ['', ''];
+    const lead = info.score ? (info.score[0] > info.score[1] ? 0 : info.score[1] > info.score[0] ? 1 : -1) : -1;
+    t.innerHTML = `<div class="gt-head"><div><span>YOU'VE GOT NEXT ON</span><b>${esc(info.name.toUpperCase())}</b></div>${info.target ? `<em>GAME TO ${info.target}</em>` : ''}</div>
+      ${info.score ? [0, 1].map(i => `<div class="gt-row ${lead === i ? 'lead' : ''}"><i style="--c:${cols[i]}"></i><span>${esc(names[i])}</span>${i === 0 && info.streak ? `<small>${FLAME_SVG}${info.streak}</small>` : ''}<b>${info.score[i]}</b></div>`).join('') : '<div class="gt-empty">Court\'s open · you\'re on as soon as your squad is set</div>'}
+      <div class="gt-foot ${info.next === 'next' ? 'go' : ''}"><span>${info.next === 'next' ? 'YOU RUN NEXT' : info.next === 'after' ? 'UP AFTER THE OTHER SQUAD' : 'FILL UP FIRST TO RUN NEXT'}</span>${info.bounty ? `<span class="gt-bounty">${BOUNTY_SVG}+${money(info.bounty)} VC</span>` : ''}</div>`;
+    t.hidden = false;
   }
   // v0.4.5 the HQ building on the plaza: go in, or start a crew first
   openHQ(hub) {
@@ -193,17 +249,20 @@ class ParkUI {
       this.keysFor = pad;
       const k = $('#park-keys');
       if (k) k.innerHTML = pad
-        ? `${padGlyph(inp.gp.family, 'LS')} move · ${padGlyph(inp.gp.family, 'RT')} sprint · ${padGlyph(inp.gp.family, 'RS')} look · ${padGlyph(inp.gp.family, 'LB')}+${padGlyph(inp.gp.family, 'RB')} social · ${padGlyph(inp.gp.family, 'MENU')} menu`
-        : '<kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · right-drag look · <kbd>O</kbd> social · <kbd>Esc</kbd> menu';
+        ? `${padGlyph(inp.gp.family, 'LS')} move · ${padGlyph(inp.gp.family, 'RT')} sprint · ${padGlyph(inp.gp.family, 'RS')} look · hold ${padGlyph(inp.gp.family, 'VIEW')} courts · ${padGlyph(inp.gp.family, 'LB')}+${padGlyph(inp.gp.family, 'RB')} social · ${padGlyph(inp.gp.family, 'MENU')} menu`
+        : '<kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · right-drag look · hold <kbd>V</kbd> courts · <kbd>O</kbd> social · <kbd>Esc</kbd> menu';
     }
     const p = hub.mode === 'roam' ? hub.prompt : '';
     if (p !== this.lastPrompt) { this.lastPrompt = p; $('#prompt').innerHTML = p ? `<div class="prompt">${p}</div>` : ''; }
-    const top = $('#park-top'); if (top) top.hidden = hub.mode !== 'roam';
+    const top = $('#park-top'); if (top) top.hidden = hub.mode !== 'roam' || !!hub.overview;
+    this.courtTags(hub);
+    this.ticker(hub);
   }
   pause(hub) {
     const card = modal(`<h2>${esc(hub.venue.theme.name)}</h2><div class="col gap">
       <button class="btn primary" data-close>Resume</button>
       <button class="btn" data-store>VC Store</button>
+      <button class="btn" data-inv>Inventory</button>
       <button class="btn" data-boosts>Boosts</button>
       <button class="btn" data-mp>MyPlayer</button>
       ${hub.cup ? '<button class="btn" data-cupboard>Cup leaderboard</button>' : ''}
@@ -211,28 +270,32 @@ class ParkUI {
       <button class="btn" data-crew>Crew</button>
       <button class="btn" data-stats>Lifetime stats</button>
       <button class="btn" data-settings>Settings & controls</button>
+      <button class="btn" data-bug>Report a bug (F8)</button>
       <button class="btn ghost" data-leave>Leave the park</button>
       ${Screens.LAUNCHED ? '<button class="btn ghost" data-exit>Quit to desktop</button>' : ''}</div>`);
     card.querySelector('[data-leave]').onclick = () => { closeModal(); Screens.go(this.app, 'home'); };
     const ex = card.querySelector('[data-exit]'); if (ex) ex.onclick = () => { closeModal(); Screens.confirmQuit(); };
     card.querySelector('[data-store]').onclick = () => { closeModal(); this.openStore(hub); };
+    card.querySelector('[data-inv]').onclick = () => { closeModal(); Screens.go(this.app, 'inventory', { returnPark: hub.themeId }); };
     card.querySelector('[data-boosts]').onclick = () => { closeModal(); this.openBoosts(hub); };
     card.querySelector('[data-mp]').onclick = () => { closeModal(); Screens.go(this.app, 'myplayer'); };
     card.querySelector('[data-stats]').onclick = () => { closeModal(); Stats.openStatsModal(this.app); };
     card.querySelector('[data-phone]').onclick = () => { closeModal(); Phone.openPhone(this.app); };
     card.querySelector('[data-crew]').onclick = () => { closeModal(); Crew.openCrew(this.app); };
     card.querySelector('[data-settings]').onclick = () => { closeModal(); Screens.openSettings(this.app); };
+    card.querySelector('[data-bug]').onclick = () => { closeModal(); reportBug(this.app); };
     const cupB = card.querySelector('[data-cupboard]'); if (cupB) cupB.onclick = () => { closeModal(); openCupBoard(this.app); };
   }
   pauseGame(hub) {
     const s = hub.mySession; if (!s) return;
     s.paused = true;
-    const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-phone>Social</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn ghost" data-quit>Leave the game (forfeit)</button></div>`);
+    const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-phone>Social</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn" data-bug>Report a bug (F8)</button><button class="btn ghost" data-quit>Leave the game (forfeit)</button></div>`);
     closeModal.onClose = () => { s.paused = false; };
     card.querySelector('[data-stats]').onclick = () => { s.paused = true; Stats.openStatsModal(this.app); closeModal.onClose = () => { s.paused = false; }; };
     card.querySelector('[data-phone]').onclick = () => { closeModal.onClose = null; Phone.openPhone(this.app, { onClose: () => { s.paused = false; } }); };
     card.querySelector('[data-controls]').onclick = () => { s.paused = true; modal(`<h2>Controls</h2>${Screens.controlsTable(this.app)}`, { wide: true }); closeModal.onClose = () => { s.paused = false; }; };
     card.querySelector('[data-quit]').onclick = () => { closeModal.onClose = null; closeModal(); hub.forfeitMyGame(); };
+    card.querySelector('[data-bug]').onclick = () => { closeModal.onClose = null; closeModal(); s.paused = true; reportBug(this.app); closeModal.onClose = () => { s.paused = false; }; };
   }
   openStore(hub) { Screens.go(this.app, 'store', { returnPark: hub.themeId }); }
   openBoosts(hub) { Rewards.openBoosts(this.app); }
@@ -240,6 +303,15 @@ class ParkUI {
   matchStarted(hub) { $('#prompt').innerHTML = ''; this.app.hud.show(true); }
   backToRoam(hub) { audio.setCrowd(0.1); music.duck(false); }
   results(hub, summary, result, won, actions) { showResults(this.app, summary, result, won, { park: true, ...actions }); }
+}
+
+function overviewCard(i) {
+  const score = i.score ? `<div class="ct-score"><span>${esc(i.teams[0])}</span><b>${i.score[0]}</b><i>–</i><b>${i.score[1]}</b><span>${esc(i.teams[1])}</span></div>` : `<div class="ct-open">${i.waiting ? 'NEXT GAME SOON' : 'OPEN COURT'}</div>`;
+  const meta = [i.target ? `to ${i.target}` : '', i.over ? 'final' : '', i.waiting ? `${i.waiting} squad${i.waiting > 1 ? 's' : ''} on Got Next` : ''].filter(Boolean).join(' · ');
+  return `<div class="ct-name">${esc(i.name.toUpperCase())}${i.live ? '<span class="live-dot"></span>' : ''}</div>${score}${meta ? `<div class="ct-meta">${meta}</div>` : ''}
+    ${i.streak ? `<div class="ct-streak">${FLAME_SVG}${i.myStreak ? 'YOU: ' : ''}${i.streak} STRAIGHT</div>` : ''}
+    ${i.bounty ? `<div class="ct-bounty">${BOUNTY_SVG}BOUNTY +${money(i.bounty)} VC</div>` : ''}
+    ${i.next ? `<div class="ct-you">${i.next === 'next' ? 'YOU RUN NEXT' : i.next === 'after' ? 'YOU\'RE UP AFTER' : 'YOUR GOT NEXT SPOT'}</div>` : ''}`;
 }
 
 // v0.4.5 the Crew HQ's overlay: the park's prompt and top bar, its own pause menu and the crew-run results
@@ -293,7 +365,21 @@ class HQUI extends ParkUI {
 }
 
 // ---------------- Results ----------------
+// v0.4.7.5: every third Pro Run game played raises the build's max OVR by 1 (80 -> 90). A small card says so
+// right after the game, before the results.
+function maxOvrUnlocked(app, u, character, next) {
+  const per = app.config.badge_rules?.prorun_games_per_ovr ?? 3, top = app.config.badge_rules?.ovr_cap ?? 90;
+  const card = modal(`<div class="ovr-unlock"><div class="eyebrow">THE PRO RUN · ${character?.prorun_completed ?? per * (u.to - 80)} GAMES PLAYED</div>
+    <h2>+${u.to - u.from} MAX OVR Unlocked!</h2>
+    <div class="ou-nums"><span>${u.from}</span><i>→</i><b>${u.to}</b></div>
+    <p class="muted">You can now upgrade your player to ${u.to} OVR with VC. ${u.to >= top ? `That's the full ${top}: <b>cap breakers are unlocked</b>, and any you've banked are ready to place in MyPlayer → Attributes → Cap Breakers.` : `${per} more Pro Run games for the next +1 (up to ${top}).`}</p>
+    <div class="row gap"><button class="btn primary" data-ok>Continue</button></div></div>`, { close: false, cls: 'ovr-unlock-card' });
+  audio.ui('buy');
+  card.querySelector('[data-ok]').onclick = () => { closeModal(); next(); };
+}
+
 export function showResults(app, summary, result, won, opts = {}) {
+  if (result?.max_ovr_unlocked && !opts.ovrShown) return maxOvrUnlocked(app, result.max_ovr_unlocked, result.character, () => showResults(app, summary, result, won, { ...opts, ovrShown: true }));
   const me = summary.me.stats;
   const r = result;
   const pct = (a, b) => b ? `${a}/${b}` : '0/0';
@@ -308,20 +394,24 @@ export function showResults(app, summary, result, won, opts = {}) {
       ${lg ? `<div class="lg-final" data-tier="${lg.tier}"><small>LOCKED-IN GRADE</small><b>${esc(lg.letter)}</b><span class="muted small">${lg.good} smart plays · ${lg.bad} costly ones</span></div>` : ''}
       <div class="stat-strip">${[['PTS', me.pts], ['REB', me.reb], ['AST', me.ast], ['STL', me.stl], ['BLK', me.blk], ['FG', pct(me.fgm, me.fga)], ['3PT', pct(me.tpm, me.tpa)], ['TO', me.tov]].map(([k, v]) => `<div><b>${v}</b><small>${k}</small></div>`).join('')}</div>
       ${r?.cup ? `<div class="cup-result ${won ? 'win' : 'loss'}">${won ? `<b>POT +${money(r.cup.pot)} VC</b><small>your ${money(r.cup.ante)} stake back + theirs${r.streak_mult > 1 ? ` ×${r.streak_mult.toFixed(2)}` : ''}</small>` : `<b>ANTE LOST −${money(r.cup.ante)} VC</b><small>the stake goes to the other side</small>`}<span>King Tut Cup: <b>#${r.cup.rank}</b> of ${r.cup.field} · ${r.cup.net < 0 ? '−' : ''}${money(Math.abs(r.cup.net))} VC this Cup</span></div>` : ''}
+      ${r?.bounty ? `<div class="bounty-result">${BOUNTY_SVG}<div><b>BOUNTY CLAIMED +${money(r.bounty)} VC</b><small>You broke the kings' streak (included in VC earned)</small></div></div>` : ''}
       ${r ? `<div class="reward-row"><div class="reward"><b>+${money(r.vc)}</b><small>VC EARNED</small></div>${pro ? '<div class="reward"><b>×1.5</b><small>VC & BADGE PROGRESS</small></div>' : `<div class="reward"><b>+${money(r.rep)}</b><small>REP</small></div>`}${summary.mode === 'park' ? `<div class="reward"><b>${r.streak}</b><small>WIN STREAK</small></div>` : ''}${summary.mode === 'park' && r.streak_mult > 1 ? `<div class="reward"><b>×${r.streak_mult.toFixed(2)}</b><small>STREAK BONUS</small></div>` : ''}${r.proam_team ? `<div class="reward"><b>${r.proam_team.wins}-${r.proam_team.losses}</b><small>TEAM RECORD</small></div>` : ''}</div>
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}
         ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ffd84a' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
-        ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
+        ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag badge-up ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${badgeSVG(b.id, b.tier, 22)}${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
         ${Object.keys(r.badge_progress || {}).length ? `<div class="muted small">Badge progress: ${Object.entries(r.badge_progress).slice(0, 6).map(([k, v]) => `${esc(app.config.badges[k]?.name || k)} +${v}`).join(' · ')}</div>` : ''}` : '<p class="muted">This result was not recorded (see message).</p>'}
       ${peopleRow(app, opts.players)}
-      <div class="row gap end">${opts.park ? (won ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : `<button class="btn ghost" data-menu>${opts.menuLabel || 'Main menu'}</button>${opts.again ? '<button class="btn primary" data-again>Play again</button>' : ''}`}</div>
+      <div class="row gap end">${opts.park ? (won ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : `${r?.max_ovr_unlocked ? '<button class="btn ghost" data-upgrade>Upgrade attributes</button>' : ''}<button class="btn ghost" data-menu>${opts.menuLabel || 'Main menu'}</button>${opts.again ? '<button class="btn primary" data-again>Play again</button>' : ''}`}</div>
     </div>`, { close: false, cls: 'results-card' });
-  // v0.4.5: a new Hall of Fame badge opens the cap breaker menu before moving on
+  // v0.4.5: a new Hall of Fame badge opens the cap breaker menu before moving on (v0.4.7.5: only once cap breakers
+  // are unlocked at 90 max OVR; until then they're banked in MyPlayer → Attributes → Cap Breakers)
   const hof = r && (r.cap_breakers_awarded > 0 || r.icon_unlocked);
-  if (hof) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge` : ''}</div>`);
+  const cbOpen = !!(r?.character?.cap_breakers_unlocked);
+  if (hof) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b></div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}</div>`);
   let countdown = null;
   const stopCountdown = () => { if (countdown) { clearInterval(countdown); countdown = null; } };
-  const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => { stopCountdown(); closeModal(); if (hof && r.cap_breakers_awarded && MyPlayer.openCapBreakers) MyPlayer.openCapBreakers(app, f); else f(); }; };
+  const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => { stopCountdown(); closeModal(); if (hof && r.cap_breakers_awarded && cbOpen && MyPlayer.openCapBreakers) MyPlayer.openCapBreakers(app, f); else f(); }; };
+  on('[data-upgrade]', () => Screens.go(app, 'myplayer', { tab: 'attributes' }));
   on('[data-stay]', () => opts.stay && opts.stay());
   on('[data-leave]', () => opts.leave && opts.leave());
   on('[data-menu]', () => opts.menu ? opts.menu() : Screens.go(app, 'home'));

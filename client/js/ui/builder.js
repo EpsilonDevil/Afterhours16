@@ -1,6 +1,6 @@
 // MyPlayer builder (create) and appearance editor with live 3D preview and cap preview.
 import { $, $$, esc, toast, heightStr, title, bar, money } from './common.js';
-import { POSITIONS, ARCHETYPES, caps, startingAttributes, upgradeCost } from '../sim/builds.js';
+import { POSITIONS, ARCHETYPES, caps, startingAttributes, upgradeCost, OVR_CAP, PRORUN_GAMES_PER_OVR } from '../sim/builds.js';
 import { ATTR_GROUPS, ATTR_LABEL, overall } from '../sim/ratings.js';
 import { settings, saveSettings } from '../core/settings.js';
 import * as Screens from './screens.js';
@@ -37,8 +37,8 @@ export function create(app, root, params = {}) {
       <div class="row gap end sticky-actions">${app.profile.characters.length ? '<button class="btn ghost" data-cancel>Cancel</button>' : ''}<button class="btn primary" data-create>Create player</button></div>
     </section>
     <aside class="panel builder-side">
-      <div class="ovr-row"><div class="ovr"><b>${ovr0}</b><small>START</small></div><div class="ovr dim"><b>${ovr1}</b><small>MAX</small></div></div>
-      <div class="muted small">Max out every attribute for ${money(cost)} VC.</div>
+      <div class="ovr-row"><div class="ovr"><b>${ovr0}</b><small>START</small></div><div class="ovr dim"><b>${ovr1}</b><small>VC MAX</small></div><div class="ovr dim"><b>${OVR_CAP}</b><small>PRO RUN</small></div></div>
+      <div class="muted small">Upgrade to ${ovr1} OVR with VC (${money(cost)} VC for everything). Then every ${PRORUN_GAMES_PER_OVR} games you play in The Pro Run raise your max by 1, up to ${OVR_CAP}.</div>
       ${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => `<div class="attr-row"><span>${ATTR_LABEL[k]}</span>${bar(start[k], 99, c[k])}<b>${c[k]}</b></div>`).join('')}</div>`).join('')}
     </aside>`;
     bind();

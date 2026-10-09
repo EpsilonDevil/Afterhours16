@@ -1,4 +1,4 @@
-// Afterhours 16 v0.4.4 — app bootstrap, account/session, screen router and the render loop.
+// Afterhours 16 v0.4.7.5 — app bootstrap, account/session, screen router and the render loop.
 import { Renderer, Camera } from './gfx/renderer.js';
 import { Input, PAD } from './core/input.js';
 import { lockin } from './core/lockin.js';
@@ -15,12 +15,17 @@ import { initWorld } from './sim/world.js';
 import { $, toast, modal, closeModal, esc } from './ui/common.js';
 import * as Screens from './ui/screens.js';
 import { togglePhone, phoneOpen } from './ui/phone.js';
+import { installErrorCapture, reportBug } from './ui/bugreport.js';
+
+installErrorCapture(); // v0.4.7.5: errors go along with bug reports
 
 const app = {
   settings, api: new API(), audio,
   profile: null, config: null, catalog: {}, screen: 'home', controller: null, scene: null, fps: 0,
 };
 window.__app = app;
+// v0.4.7.5: F8 anywhere opens Report a bug
+window.addEventListener('keydown', e => { if (e.code === 'F8' && app.config) { e.preventDefault(); reportBug(app); } });
 window.__audio = audio; // debug handle (headless tests check the crowd bed)
 
 function bootMsg(t, p) { const b = $('#boot'); if (!b) return; $('.boot-msg', b).textContent = t; if (p != null) $('.boot-bar i', b).style.width = `${p * 100}%`; }

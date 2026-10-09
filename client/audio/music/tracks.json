@@ -1,5 +1,5 @@
 {
- "note": "Soundtrack shown in the now-playing ticker. Fill in 'artist' (and change 'album') to have them displayed.",
+ "note": "Soundtrack shown in the now-playing ticker. Fill in 'artist' (and change 'album') to have them displayed. v0.4.7.5: a long mix can be split into 'parts' that play back to back.",
  "tracks": [
   {
    "file": "another-life.mp3",
@@ -175,6 +175,152 @@
    "artist": "",
    "album": "Afterhours 16 Soundtrack",
    "duration": 135
+  },
+  {
+   "file": "again-jbl-speaker-distant.mp3",
+   "title": "Again (JBL Speaker, Distant)",
+   "artist": "Fetty Wap",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 313
+  },
+  {
+   "file": "do-i-wanna-know-instrumental.mp3",
+   "title": "Do I Wanna Know? (Instrumental)",
+   "artist": "Arctic Monkeys",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 272
+  },
+  {
+   "file": "athlete.mp3",
+   "title": "Athlete",
+   "artist": "Prod. Vince Mojica",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 172
+  },
+  {
+   "file": "back-home-freestyle.mp3",
+   "title": "Back Home Freestyle",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 96
+  },
+  {
+   "file": "back-in-black.mp3",
+   "title": "Back In Black",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 155
+  },
+  {
+   "file": "bad-bad-bad.mp3",
+   "title": "Bad Bad Bad",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 148
+  },
+  {
+   "file": "friends.mp3",
+   "title": "Friends",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 397
+  },
+  {
+   "file": "out-the-hood-instrumental.mp3",
+   "title": "Out The Hood (Instrumental)",
+   "artist": "Gunna",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 156
+  },
+  {
+   "file": "if-veeze-was-midnight-club-3.mp3",
+   "title": "if veeze was midnight club 3",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 92
+  },
+  {
+   "file": "kendrick-lamar-x-james-brown.mp3",
+   "title": "kendrick lamar x james brown",
+   "artist": "prod. by blaccmass",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 95
+  },
+  {
+   "file": "mac-miller-2009-instrumental.mp3",
+   "title": "2009 (Instrumental)",
+   "artist": "Mac Miller",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 348
+  },
+  {
+   "file": "melon-blow.mp3",
+   "title": "Melon Blow",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 196
+  },
+  {
+   "file": "how-to-bip-instrumental.mp3",
+   "title": "How To Bip (Instrumental)",
+   "artist": "Rockout Danny, G Herbo & VonOff1700 \u00b7 prod. by Krow",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 156
+  },
+  {
+   "file": "soda-city-funk.mp3",
+   "title": "Soda City Funk",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 174
+  },
+  {
+   "file": "stars-126-placerstar-juvy.mp3",
+   "title": "STARS 126",
+   "artist": "PLACERSTAR JUVY",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 171
+  },
+  {
+   "file": "tity-boi.mp3",
+   "title": "Tity Boi",
+   "artist": "",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 181
+  },
+  {
+   "file": "chill-carti-songs-part-2-1.mp3",
+   "title": "chill carti songs (part 2) \u00b7 slowed + reverb",
+   "artist": "adrian",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 1627,
+   "parts": [
+    "chill-carti-songs-part-2-1.mp3",
+    "chill-carti-songs-part-2-2.mp3"
+   ]
+  },
+  {
+   "file": "don-toliver-mixtape-1.mp3",
+   "title": "MIXTAPE (Unreleased)",
+   "artist": "Don Toliver",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 2037,
+   "parts": [
+    "don-toliver-mixtape-1.mp3",
+    "don-toliver-mixtape-2.mp3",
+    "don-toliver-mixtape-3.mp3"
+   ]
+  },
+  {
+   "file": "juice-wrld-on-and-on-1.mp3",
+   "title": "On & On (Full Freestyle, Unreleased)",
+   "artist": "Juice WRLD",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 1370,
+   "parts": [
+    "juice-wrld-on-and-on-1.mp3",
+    "juice-wrld-on-and-on-2.mp3"
+   ]
   }
  ]
 }

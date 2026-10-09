@@ -11,13 +11,23 @@ import { ARCHETYPES } from '../sim/builds.js';
 import * as Builder from './builder.js';
 import * as MyPlayer from './myplayer.js';
 import * as Store from './store.js';
+import * as Inventory from './inventory.js';
 import * as Modes from './modes.js';
 import * as Phone from './phone.js';
 import * as Stats from './stats.js';
 import * as Codes from './codes.js';
 import * as ProRun from './prorun.js';
+import { reportBug } from './bugreport.js';
 
-const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['park', 'The Park'], ['prorun', 'The Pro Run'], ['proam', 'Pro-Am'], ['practice', 'Practice'], ['stats', 'Stats'], ['codes', 'Locker Codes']];
+// v0.4.7.5: the modes and your player across the top; Stats and Locker Codes are icon buttons on the right (and tiles
+// on Home), so the bar never runs into itself
+const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['inventory', 'Inventory'], ['park', 'The Park'], ['prorun', 'The Pro Run'], ['proam', 'Pro-Am'], ['practice', 'Practice']];
+const ICON = {
+  stats: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9h3v8H3Zm5.5 0V3h3v14h-3ZM14 17v-5h3v5h-3Z" fill="currentColor"/></svg>',
+  codes: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V6Zm10 0v2h1.5V6H12Zm0 3.5v1h1.5v-1H12Zm0 2.5v2h1.5v-2H12Z" fill="currentColor"/></svg>',
+  settings: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.6 1.5h2.8l.4 2.3 1.6.7 1.9-1.4 2 2-1.4 1.9.7 1.6 2.3.4v2.8l-2.3.4-.7 1.6 1.4 1.9-2 2-1.9-1.4-1.6.7-.4 2.3H8.6l-.4-2.3-1.6-.7-1.9 1.4-2-2 1.4-1.9-.7-1.6-2.3-.4V8.6l2.3-.4.7-1.6-1.4-1.9 2-2 1.9 1.4 1.6-.7.4-2.3ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" fill="currentColor"/></svg>',
+  quit: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 2h2v8H9V2Zm-3.7 2.6 1.4 1.4A5.5 5.5 0 1 0 13.3 6l1.4-1.4A7.5 7.5 0 1 1 5.3 4.6Z" fill="currentColor"/></svg>',
+};
 
 export function go(app, name, params = {}) {
   app.screen = name;
@@ -42,6 +52,7 @@ export function go(app, name, params = {}) {
     case 'create': return Builder.create(app, root, params);
     case 'myplayer': return MyPlayer.render(app, root, params);
     case 'store': return Store.render(app, root, params);
+    case 'inventory': return Inventory.render(app, root, params);
     case 'park': return Modes.parkEntry(app, root, params);
     case 'proam': return Modes.proam(app, root, params);
     case 'prorun': return ProRun.render(app, root, params);
@@ -62,8 +73,9 @@ function topbar(app) {
       <span class="pill vc" id="vc-pill" title="Virtual Currency (fictional)"><i>VC</i>${money(app.profile?.balance)}</span>
       ${c ? `<button class="pill who" data-switch title="Switch player"><b>${c.overall}</b>${esc(c.name)}</button>` : ''}
       ${c && app.ai ? `<button class="pill social" data-phone title="Social phone (O, or LB + RB)"><i class="ph-dot on"></i>Social</button>` : ''}
-      <button class="icon-btn" data-settings title="Settings">⚙</button>
-      ${LAUNCHED ? '<button class="icon-btn quit" data-quit title="Quit to desktop">⏻</button>' : ''}
+      ${c ? `<button class="icon-btn ${app.screen === 'stats' ? 'on' : ''}" data-go="stats" title="Lifetime stats">${ICON.stats}</button><button class="icon-btn ${app.screen === 'codes' ? 'on' : ''}" data-go="codes" title="Locker codes">${ICON.codes}</button>` : ''}
+      <button class="icon-btn" data-settings title="Settings">${ICON.settings}</button>
+      ${LAUNCHED ? `<button class="icon-btn quit" data-quit title="Quit to desktop">${ICON.quit}</button>` : ''}
     </div>
   </header>`;
 }
@@ -166,7 +178,7 @@ function home(app, root) {
 
 export function openSettings(app) {
   const card = modal(`
-    <h2>Settings</h2>
+    <div class="row between"><h2>Settings</h2><button class="btn ghost small" data-bug title="F8 anywhere">Report a bug</button></div>
     <div class="settings-grid">
       <label>Graphics<select data-k="quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>
       <label>Default camera<select data-k="camera"><option value="2k" ${settings.camera === '2k' ? 'selected' : ''}>2K Cam</option><option value="broadcast" ${settings.camera === 'broadcast' ? 'selected' : ''}>Broadcast</option><option value="player" ${settings.camera === 'player' ? 'selected' : ''}>Player Lock</option></select></label>
@@ -187,11 +199,13 @@ export function openSettings(app) {
       <label>Fullscreen lock-in<select data-k="lockIn"><option value="1" ${settings.lockIn ? 'selected' : ''}>On (F11)</option><option value="0" ${!settings.lockIn ? 'selected' : ''}>Off</option></select></label>
       <label>Shot meter<select data-k="shotMeter"><option value="1" ${settings.shotMeter !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotMeter === false ? 'selected' : ''}>Off (+10% green window)</option></select></label>
       <label>Shot feedback<select data-k="shotFeedback"><option value="1" ${settings.shotFeedback !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotFeedback === false ? 'selected' : ''}>Off</option></select></label>
+      <label>Green releases<select data-k="greens">${[['all', 'Everyone'], ['mine', 'Mine only'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${(settings.greens || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Locked-In grade<select data-k="gradeHud"><option value="1" ${settings.gradeHud !== false ? 'selected' : ''}>Show</option><option value="0" ${settings.gradeHud === false ? 'selected' : ''}>Hide</option></select></label>
       <label>Pause on focus loss<select data-k="pauseOnBlur"><option value="1" ${settings.pauseOnBlur ? 'selected' : ''}>On</option><option value="0" ${!settings.pauseOnBlur ? 'selected' : ''}>Off</option></select></label>
     </div>
     <div class="row gap" style="align-items:center;justify-content:space-between"><h3>Controls</h3><button class="btn small" data-remap>Remap buttons…</button></div>${controlsTable(app)}
     <div class="row gap end"><button class="btn ghost" data-logout>Sign out</button><button class="btn primary" data-close>Done</button></div>`, { wide: true });
+  const bugB = card.querySelector('[data-bug]'); if (bugB) bugB.onclick = () => reportBug(app);
   card.querySelectorAll('[data-k]').forEach(el => el.onchange = el.oninput = () => {
     const k = el.dataset.k;
     let v = el.value;
@@ -242,6 +256,7 @@ export function controlsTable(app) {
     ['Celebrate · camera · controls', K('celebrate', 'camera', 'help'), `${P('celebrate')} · ${P('camera')} · ${G('RS')} click`],
     ['Pause · fullscreen lock-in', 'Esc · F11', `${G('MENU')} · —`],
     ['Social phone (park and menus)', K('social'), `${G('LB')} + ${G('RB')}`],
+    ['Court overview (park: scores, streaks, bounties)', `Hold ${K('camera')}`, `Hold ${P('camera')}`],
     ['Menus', 'Mouse', `${G('LS')}/D-pad move · ${G('A')} select · ${G('B')} back · ${G('LB')}/${G('RB')} tabs`],
   ];
   return `<table class="controls"><thead><tr><th>Action</th><th>Keyboard / mouse</th><th>Controller</th></tr></thead><tbody>${rows.map(r => r[1] == null ? `<tr class="sec"><td colspan="3">${r[0]}</td></tr>` : `<tr><td>${r[0]}</td><td><kbd>${esc(r[1])}</kbd></td><td>${r[2]}</td></tr>`).join('')}</tbody></table>`;

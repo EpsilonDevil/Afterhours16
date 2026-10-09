@@ -31,9 +31,11 @@ TIER_ANTE = ((0, 1), (0, 2), (1, 3), (2, 4), (3, 4))  # index range into ANTES
 
 # final-standings prizes: (best rank, label, VC, items)
 PRIZES = (
-    (1, "King of the Cup", 150000, ("cup_mocap_top", "cup_mocap_tights", "cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab")),
-    (3, "Top 3", 60000, ("cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab")),
-    (10, "Top 10", 25000, ("cup_celly_pharaoh", "cup_band_scarab")),
+    (1, "King of the Cup", 150000, ("cup_mocap_top", "cup_mocap_tights", "cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab",
+                                    "cup_gfx_ankh", "cup_gsnd_pharaoh")),
+    (3, "Top 3", 60000, ("cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab", "cup_gfx_ankh", "cup_gsnd_pharaoh")),
+    # v0.4.7.5: the green release exclusives (Pharaoh's Horn from the top 10, the Golden Ankh from the top 3)
+    (10, "Top 10", 25000, ("cup_celly_pharaoh", "cup_band_scarab", "cup_gsnd_pharaoh")),
     (25, "Top 25", 10000, ("cup_band_scarab",)),
 )
 TOP_HALF_VC = 3000

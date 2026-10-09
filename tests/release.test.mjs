@@ -71,7 +71,9 @@ test('jumpers and free throws: the green window is centred on the ball leaving t
 });
 
 test('layups: the same, for every package and every coverage', () => {
-  for (const build of builds) for (const ls of ['basic', 'euro', 'finger', 'scoop']) for (const [cov, cs] of [['open', 1], ['side', 1], ['side', -1], ['front', 1], ['rim', 1], ['rim', -1], ['trail', 1]]) {
+  const styles = list.filter(i => i.slot === 'layup').map(i => i.style); // (v0.4.7.5: every package in the store)
+  assert.ok(styles.length >= 8);
+  for (const build of builds) for (const ls of styles) for (const [cov, cs] of [['open', 1], ['side', 1], ['side', -1], ['front', 1], ['rim', 1], ['rim', -1], ['trail', 1]]) {
     const { g, p, view } = setup(build, { layup: 'layup_' + ls });
     const rim = g.rimFor(0), side = g.sideFor(0);
     p.setPos(rim.x, rim.z - side * 3.4, side > 0 ? 0 : Math.PI); p.vz = side * 4; g.giveBall(p, 'dribble');

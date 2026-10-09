@@ -41,3 +41,8 @@ data/launcher.json
 /tests/test_courtside.py
 /tests/test_live_ball.py
 /tests/test_services.py
+
+# Empty repo folder GitHub Desktop created by mistake (not part of the game)
+/Afterhours Project (TEST Pre-Alpha Build) v0.4.4/
+# v0.4.7.5 bug reports written by the game (send the file along; it stays out of the repo)
+/Afterhours16_Bug_Reports.txt

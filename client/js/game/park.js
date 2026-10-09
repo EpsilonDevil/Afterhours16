@@ -15,10 +15,13 @@ import { Player } from '../sim/player.js';
 import { COURT } from '../sim/constants.js';
 import { RNG } from '../core/rng.js';
 import { resolveLook, makeBot } from '../sim/bots.js';
+import { capBadges } from '../sim/builds.js';
 import { PlayerVisual, MatchSession } from './session.js';
+import { GAME_SPEED } from '../sim/game.js';
 import { VisualPool } from './vispool.js';
 import { audio } from '../core/audio.js';
 import * as M from '../core/math.js';
+import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
@@ -28,7 +31,6 @@ const ZONES = [
   { x0: 37.5, x1: 40.5, z0: -14, z1: 14, w: 1 }, // gap east court / 1v1 annex
   { x0: -40.5, x1: -37.5, z0: -14, z1: 14, w: 1 }, // gap west court / 2v2 annex
 ];
-const ROW_NAME = ['Got next', '2nd', '3rd'];
 const pickIn = (rng, z) => ({ x: rng.range(z.x0, z.x1), z: rng.range(z.z0, z.z1) });
 // v0.4.5: a box grown by a margin, and whether a point / a segment touches it
 const grow = (b, m) => ({ x0: b.x0 - m, x1: b.x1 + m, z0: b.z0 - m, z1: b.z1 + m });
@@ -109,7 +111,7 @@ class Walker {
     } else if (this.state === 'queued' && this.spot) {
       it.face = Math.atan2(this.spot.court.origin[0] - p.x, this.spot.court.origin[2] + 8 - p.z);
     }
-    p.move(dt, false, 0);
+    p.move(dt * GAME_SPEED, false, 0); // (v0.4.7.5: the same pace as in a game)
     for (const s of this.hub.venue.solids || []) pushOut(p, s);
     // v0.4.2: park-goers never wander onto a court while a game is on (walking off after a loss is fine)
     if (!(this.leaving > 0) && this.follow == null) for (const c of this.hub.courts) if (c.session || c.mine) pushOut(p, c.rect);
@@ -228,8 +230,8 @@ export class ParkHub {
     this.walkers = [];
     this.myMates = []; this.myOpp = [];
     // live courts first (a quiet park can leave courts empty), then whoever is left hangs around
-    // v0.4.5: every court has three rows of squad spots; c.lines[r] is the group standing in row r (row 0 has
-    // next), and a mine line is the user's
+    // v0.4.7.5: every court has two GOT NEXT spots; c.lines[r] is the group standing on spot r, and a mine line is
+    // the user's. The first line to fill up (l.fullAt) runs next; the other waits for that game to end.
     this.courts = this.venue.courts.map(c => ({ ...c, rect: courtPlayRect(c), session: null, lines: new Array(SQUAD_ROWS).fill(null), mine: false, kings: null, kingsStreak: 0 }));
     for (const c of this.courts) this.newBackgroundGame(c, null);
     for (const id of this.availableHere().slice(0, 9)) {
@@ -302,7 +304,35 @@ export class ParkHub {
   // v0.4.5: AI-only games run faster than real time. A game you can see plays at normal speed while the ball is
   // live, and fast-forwards through checks and dead balls; games you can't see run about 2.6x. Over a whole
   // game that works out to roughly twice as fast as before, without anything looking sped up on the live ball.
+  // ---------- v0.4.7.5 court overview ----------
+  setOverview(on) {
+    this.overview = on;
+    const f = this.scene.fog;
+    if (on) { this.fogKeep = f.density; f.density = Math.min(f.density, 0.004); } else if (this.fogKeep != null) { f.density = this.fogKeep; this.fogKeep = null; }
+    this.ui.overview?.(this, on);
+  }
+  overviewCam(dt) {
+    const b = this.venue.bounds, cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2 - 1;
+    const aspect = this.r.canvas.clientWidth / Math.max(1, this.r.canvas.clientHeight);
+    const h = Math.max(84, 100 * 1.78 / Math.max(1, aspect) + 8); // (narrow screens pull back to fit every court)
+    this.rig.apply(dt, [cx, h, cz + h * 0.27], [cx, 0, cz - 1], 50, 3.2);
+    this.scene.shadowFocus = { center: [cx, 0, cz], radius: 70 };
+  }
+  // what the overview and the ticker show for a court: {name, score, target, streak, bounty, mine, next, live}
+  courtInfo(c) {
+    const s = c === this.myCourt && this.mySession ? this.mySession : c.session, g = s?.game;
+    const streak = this.courtStreak(c), my = this.myLine(), mine = c === this.myCourt && !!this.mySession;
+    return {
+      name: c.name, live: !!g && !g.over, over: !!g?.over, score: g ? [g.score[0], g.score[1]] : null, target: g?.target || null,
+      teams: s ? [s.teams?.[0]?.abbr || 'KNG', s.teams?.[1]?.abbr || 'CHL'] : null,
+      streak, bounty: mine ? 0 : bountyFor(streak), myStreak: mine,
+      waiting: c.lines.filter(Boolean).length,
+      next: my && my.c === c ? (this.nextLine(c)?.l === my.l ? 'next' : this.nextLine(c) ? 'after' : 'filling') : null,
+    };
+  }
+
   courtWatched(c) {
+    if (this.overview) return true; // (the overview is live: every court at normal speed)
     const cam = this.rig.pos, tgt = this.rig.tgt;
     if (!cam || !tgt) return true;
     const dx = c.origin[0] - cam[0], dz = c.origin[2] - cam[2], d = Math.hypot(dx, dz);
@@ -410,7 +440,7 @@ export class ParkHub {
     for (const w of this.walkers) if (w.follow != null) add(w.entry, 'In your squad', { squad: true });
     for (const c of this.courts) {
       if (c.session) c.session.opts.rosters.forEach((r, ti) => r.forEach(e => add(e, `Playing on ${c.name}${ti === 0 && c.kingsStreak ? ` · ${c.kingsStreak}-game streak` : ''}`)));
-      c.lines.forEach((l, r) => { if (l) l.members.forEach(w => add(w.entry, l.mine ? `${r ? ROW_NAME[r] + ' in line' : 'Got next'} with you on ${c.name}` : `${r ? ROW_NAME[r] + ' in line' : 'Got next'} on ${c.name}`)); });
+      c.lines.forEach(l => { if (l) l.members.forEach(w => add(w.entry, l.mine ? `Got next with you on ${c.name}` : `Got next on ${c.name}`)); });
     }
     for (const w of this.walkers) if (!w.exit) add(w.entry, w.watch ? 'Watching the games' : 'Hanging out');
     for (const id of this.availableHere(t)) add(this.world.entry(id), 'On the sidelines');
@@ -431,8 +461,8 @@ export class ParkHub {
     // kings keep the court while they're all still on (and none of them left to run with you)
     let home = kings && kings.every(e => this.stays(e, t) && !this.world.inSquad(e.aiId)) ? kings : null;
     let away = null;
-    const l0 = c.lines[0];
-    if (l0 && !l0.mine && this.lineSet(c, l0)) { away = l0.members.map(w => w.entry); l0.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l0.members.includes(w)); this.shiftLines(c); }
+    const nx = this.upNext(c, false);
+    if (nx) { away = nx.l.members.map(w => w.entry); this.takeLine(c, nx.i); }
     if (!home) { c.kingsStreak = 0; home = this.takeEntries(fmt, { exclude: new Set((away || []).map(e => e.aiId)) }); }
     if (home && !away) away = this.takeEntries(fmt, { exclude: new Set(home.map(e => e.aiId)) });
     if (!home || !away) {
@@ -461,8 +491,8 @@ export class ParkHub {
         c.session.frame(dt);
         const g = c.session.game;
         // my squad is waiting: wrap the current game up
-        const l0 = c.lines[0];
-        if (l0 && l0.mine && l0.ready && !g.over && (performance.now() - l0.readyAt) > 25000) { const lead = g.score[0] >= g.score[1] ? 0 : 1; g.finish(lead); }
+        const nx = this.nextLine(c);
+        if (nx && nx.l.mine && nx.l.ready && !g.over && (performance.now() - nx.l.readyAt) > 25000) { const lead = g.score[0] >= g.score[1] ? 0 : 1; g.finish(lead); }
         if (g.over && c.session.ended && c.session.endT > 2.2) this.rotateCourt(c);
       }
     }
@@ -473,6 +503,7 @@ export class ParkHub {
     if (this.cup && (this.cupT -= dt) <= 0) { this.cupT = 60; this.refreshCup(); }
     this.popT -= dt;
     if (this.popT <= 0) { this.popT = 20; this.populationTick(); }
+    if (this.mode !== 'roam' && this.overview) this.setOverview(false);
     if (this.mode === 'roam') this.roam(dt);
     else if (this.mode === 'match' && this.mySession) {
       if (inp.wasPressed('pause') && !this.mySession.ended && !this.mySession.paused && !this.app.modalOpen()) this.ui.pauseGame(this);
@@ -488,15 +519,29 @@ export class ParkHub {
   roam(dt) {
     const app = this.app, inp = app.input, me = this.me;
     inp.ctx = 'roam';
-    if (this.app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt, false, 0); this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); this.rig.updateRoam(dt, me, null, this.venue.bounds, this.venue.solids); return; }
+    if (this.app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt * GAME_SPEED, false, 0); this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); this.rig.updateRoam(dt, me, null, this.venue.bounds, this.venue.solids); return; }
     if (inp.wasPressed('pause')) { this.ui.pause(this); return; }
+    // v0.4.7.5 court overview: hold View / Share (V on the keyboard) for a live bird's-eye view of the whole park,
+    // every court's score, streak and bounty on it
+    this.viewHeld = inp.isDown('camera') ? (this.viewHeld || 0) + dt : 0;
+    const over = this.viewHeld > 0.22;
+    if (over !== !!this.overview) this.setOverview(over);
+    if (over) {
+      me.intent.mx = me.intent.mz = 0; me.intent.sprint = false;
+      me.move(dt * GAME_SPEED, false, 0);
+      this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {});
+      this.meVisual.place(me.x, 0, me.z);
+      this.overviewCam(dt);
+      this.prompt = '';
+      return;
+    }
     const mv = inp.moveVector();
     const basis = this.rig.inputBasis();
     me.intent.mx = basis.rx * mv.x + basis.fx * mv.y;
     me.intent.mz = basis.rz * mv.x + basis.fz * mv.y;
     me.intent.sprint = inp.isDown('sprint');
     me.intent.face = null; me.intent.stickFace = true;
-    me.move(dt, false, 0);
+    me.move(dt * GAME_SPEED, false, 0);
     me.stamina = Math.min(1, me.stamina + dt * 0.2);
     // stay in the park
     const b = this.venue.bounds;
@@ -537,27 +582,45 @@ export class ParkHub {
     if (d < r && d > 1e-4) { const k = (r - d) / d; a.x += dx * k * (staticB ? 1 : 0.5); a.z += dz * k * (staticB ? 1 : 0.5); if (!staticB && b.x !== undefined) { b.x -= dx * k * 0.5; b.z -= dz * k * 0.5; } }
   }
 
-  // ---------- v0.4.5 squad spots: rows in priority order ----------
+  // ---------- v0.4.7.5 GOT NEXT spots: two per court, the first squad to fill up runs next ----------
   myLine() { for (const c of this.courts) for (let r = 0; r < c.lines.length; r++) if (c.lines[r]?.mine) return { c, r, l: c.lines[r] }; return null; }
   lineFull(c, l) { return l.members.length + (l.mine ? 1 : 0) >= c.format; }
   lineSet(c, l) { return this.lineFull(c, l) && l.members.every(w => w.state === 'queued'); }
-  // everyone in line r walks to his circle in that row
+  // stamp the moment a line fills up (it's what decides who runs next)
+  markFull(c, l) { if (l && !l.fullAt && this.lineFull(c, l)) l.fullAt = (this.fillSeq = (this.fillSeq || 0) + 1); }
+  // the line that runs next: the first one that filled up → {l, i} (null while neither spot is full)
+  nextLine(c) {
+    let out = null;
+    c.lines.forEach((l, i) => { if (l && l.fullAt && (!out || l.fullAt < out.l.fullAt)) out = { l, i }; });
+    return out;
+  }
+  // the AI line that can step on court now (mine = also yours): the first-filled one if it's standing ready; if
+  // that one is still walking up, the other spot's squad when it is
+  upNext(c, mine = false) {
+    const order = c.lines.map((l, i) => ({ l, i })).filter(x => x.l && x.l.fullAt).sort((a, b) => a.l.fullAt - b.l.fullAt);
+    for (const x of order) { if (x.l.mine && !mine) { if (x.l.ready) return null; continue; } if (this.lineSet(c, x.l)) return x; }
+    return null;
+  }
+  // a line steps on court (or walks off): its spot is free again; the other spot keeps its place
+  takeLine(c, i) {
+    const l = c.lines[i]; if (!l) return;
+    if (!l.mine) { l.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l.members.includes(w)); }
+    c.lines[i] = null;
+  }
+  // everyone in line r walks to his circle on that spot
   placeLine(c, r) {
     const l = c.lines[r]; if (!l) return;
     l.members.forEach((w, i) => { const slot = i + (l.mine ? 1 : 0), sp = c.rows[r][slot]; w.spot = { court: c, row: r, slot }; w.follow = null; w.goTo(sp.x, sp.z); });
   }
-  // row 0 went on court (or left): everyone behind moves up a row
-  shiftLines(c, from = 0) {
-    c.lines.splice(from, 1); c.lines.push(null);
-    for (let r = from; r < c.lines.length; r++) this.placeLine(c, r);
-  }
-  // a group of park-goers (free walkers first, then new arrivals from the plaza) takes the first open row
+  // a group of park-goers (free walkers first, then new arrivals from the plaza) takes an open spot. v0.4.7.5: old
+  // squad mates of yours who chose to keep running together line up as a group
   formAILine(c, group = null) {
     const r = c.lines.findIndex(l => !l);
     if (r < 0) return false;
     let members = group;
     if (!members) {
-      const free = this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.entry.aiId).sort((a, b) => Math.hypot(a.p.x - c.rows[r][0].x, a.p.z - c.rows[r][0].z) - Math.hypot(b.p.x - c.rows[r][0].x, b.p.z - c.rows[r][0].z)).slice(0, c.format);
+      const head = c.rows[r][0], party = new Set(this.world.aiParty ? this.world.aiParty() : []);
+      const free = this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.entry.aiId).sort((a, b) => (party.has(b.entry.aiId) - party.has(a.entry.aiId)) || (Math.hypot(a.p.x - head.x, a.p.z - head.z) - Math.hypot(b.p.x - head.x, b.p.z - head.z))).slice(0, c.format);
       if (free.length < c.format) {
         const more = this.takeEntries(c.format - free.length, { walkers: false });
         if (!more) return false;
@@ -566,6 +629,7 @@ export class ParkHub {
       members = free;
     }
     c.lines[r] = { members, mine: false, ready: false, readyAt: 0 };
+    this.markFull(c, c.lines[r]);
     this.placeLine(c, r);
     return true;
   }
@@ -577,12 +641,11 @@ export class ParkHub {
       let on = null;
       for (const c of this.courts) c.rows.forEach((row, r) => row.forEach((sp, i) => { if (Math.hypot(me.x - sp.x, me.z - sp.z) < 0.75) on = { c, r, i }; }));
       if (on) {
-        const { c, r } = on, first = c.lines.findIndex(l => !l);
-        if (c.lines[r]) { this.prompt = `${ROW_NAME[r] === 'Got next' ? 'GOT NEXT' : ROW_NAME[r].toUpperCase()} spot taken on ${c.name} · ${first < 0 ? 'every row is full' : `the ${ROW_NAME[first] === 'Got next' ? 'GOT NEXT' : ROW_NAME[first].toUpperCase()} row is open`}`; this.claimT = 0; return; }
-        if (first >= 0 && first < r) { this.prompt = `Move up: the ${first === 0 ? 'GOT NEXT' : ROW_NAME[first].toUpperCase()} row on ${c.name} is open`; this.claimT = 0; return; }
+        const { c, r } = on, other = c.lines[1 - r];
+        if (c.lines[r]) { this.prompt = `This GOT NEXT spot on ${c.name} is taken · ${other ? 'both spots are full' : 'the other spot is open'}`; this.claimT = 0; return; }
         if (this.anteDeclined === c) { this.prompt = `Step off and back on to claim the spot on ${c.name}`; return; }
         this.claimT += dt;
-        this.prompt = `Claiming the ${r === 0 ? 'GOT NEXT' : ROW_NAME[r].toUpperCase()} spot on ${c.name}… ${Math.max(0, 1.2 - this.claimT).toFixed(1)}s`;
+        this.prompt = `Claiming a GOT NEXT spot on ${c.name}… ${Math.max(0, 1.2 - this.claimT).toFixed(1)}s`;
         if (this.claimT > 1.2) {
           if (!this.cup) this.claim(c, r);
           else {
@@ -597,17 +660,21 @@ export class ParkHub {
     const { c, r, l } = mine;
     const n = l.members.length + 1;
     const head = c.rows[r][0];
-    if (Math.hypot(me.x - head.x, me.z - head.z) > 6) { this.unclaim(c); this.ui.toast('You left your spot in line.'); return; }
-    if (r > 0) this.prompt = `${ROW_NAME[r]} in line on ${c.name} · ${r} team${r > 1 ? 's' : ''} ahead of you${Math.hypot(me.x - head.x, me.z - head.z) > 2.2 ? ' · move up to your row' : ''}`;
-    else this.prompt = n < c.format ? `You've got next on ${c.name} · waiting for teammates (${n}/${c.format})` : `Squad ready on ${c.name} · next game starts after this one`;
+    if (Math.hypot(me.x - head.x, me.z - head.z) > 6) { this.unclaim(c); this.ui.toast('You left your spot.'); return; }
+    const nx = this.nextLine(c), other = c.lines[1 - r];
+    if (n < c.format) this.prompt = `GOT NEXT on ${c.name} · waiting for teammates (${n}/${c.format})${other && other.fullAt ? ' · the other squad filled first: they run next' : ' · fill up first to run next'}`;
+    else if (nx && nx.l === l) this.prompt = `Squad ready on ${c.name} · you run next${c.session ? ' · after this game' : ''}`;
+    else this.prompt = `Squad ready on ${c.name} · the other squad filled first: you're up after their game`;
     this.fillQueue(c, r, l, dt);
   }
 
   claim(c, r) {
     c.mine = true; this.claimT = 0;
     c.lines[r] = { members: [], mine: true, ready: false, readyAt: 0 };
+    this.markFull(c, c.lines[r]);
     audio.ui('buy');
-    this.ui.toast(r === 0 ? `Got next on ${c.name}! Teammates are on the way.` : `You're ${ROW_NAME[r]} in line on ${c.name}. Teammates are on the way.`);
+    const other = c.lines[1 - r];
+    this.ui.toast(other && other.fullAt ? `Got next on ${c.name}! The squad on the other spot filled first: you run after their game.` : `Got next on ${c.name}! Teammates are on the way. Fill up first and you run next.`);
     this.fillT = 1.5;
   }
   unclaim(c) {
@@ -615,19 +682,20 @@ export class ParkHub {
     const r = c.lines.findIndex(l => l?.mine);
     if (r >= 0) {
       for (const w of c.lines[r].members) { w.spot = null; w.state = 'idle'; w.t = 1; }
-      this.shiftLines(c, r);
+      c.lines[r] = null;
     }
     this.syncSquad(); // squad mates fall back in behind you
   }
   fillQueue(c, r, l, dt) {
     if (this.lineFull(c, l)) {
-      if (r === 0 && !l.ready && l.members.every(w => w.state === 'queued')) {
+      this.markFull(c, l);
+      if (!l.ready && this.nextLine(c)?.l === l && l.members.every(w => w.state === 'queued')) {
         l.ready = true; l.readyAt = performance.now(); this.ui.toast('Squad is ready. You run next!');
-        // v0.4.4: an empty court (quiet hours): the group in line behind you, or whoever's around, runs against you
+        // v0.4.4: an empty court (quiet hours): the squad on the other spot, or whoever's around, runs against you
         if (!c.session) {
-          const l1 = c.lines[1];
+          const o = c.lines.findIndex(x => x && !x.mine && this.lineSet(c, x));
           let opp = null;
-          if (l1 && this.lineSet(c, l1)) { opp = l1.members.map(w => w.entry); l1.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l1.members.includes(w)); this.shiftLines(c, 1); }
+          if (o >= 0) { opp = c.lines[o].members.map(w => w.entry); this.takeLine(c, o); }
           else { const streak = this.char.progression?.park?.streak || 0; opp = this.takeEntries(c.format, { topUp: true, level: Math.min(0.95, 0.5 + 0.05 * streak) }); }
           this.startMyGame(c, opp, 0);
         }
@@ -648,6 +716,7 @@ export class ParkHub {
       if (!w) return;
     }
     l.members.push(w);
+    this.markFull(c, l);
     this.placeLine(c, r);
   }
 
@@ -655,6 +724,8 @@ export class ParkHub {
     const s = c.session, g = s.game;
     const winners = s.opts.rosters[g.winner];
     const losers = s.opts.rosters[1 - g.winner];
+    // v0.4.7.5: everyone who played gets a game better (AI overalls grow slowly and are saved with the AI world)
+    this.world.playedGame?.([...winners, ...losers].map(e => e.aiId).filter(Boolean), winners.map(e => e.aiId).filter(Boolean));
     // v0.4.5 stage 7: the finished game hands its athletes back to the pool first, so the losers walking off and
     // the next game on this court pick up the same ones instead of building new people mid-frame
     s.dispose();
@@ -669,7 +740,7 @@ export class ParkHub {
       this.walkers.push(w);
     }
     c.kingsStreak = g.winner === 0 ? (c.kingsStreak || 0) + 1 : 1;
-    const l0 = c.lines[0];
+    const nx = this.nextLine(c), l0 = nx?.l;
     if (l0 && l0.mine && l0.ready) {
       s.dispose(); c.session = null;
       // kings who logged off (or left to join your squad) are replaced by whoever's around
@@ -732,20 +803,21 @@ export class ParkHub {
     this.mode = 'starting';
     let ticket;
     try {
-      ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: c.format, target: app.settings.parkTarget, difficulty: app.settings.difficulty, ante: this.anteFor() });
+      // (v0.4.7.5: kings on a streak above 6 bring their bounty: the server pays it if you break the streak)
+      ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: c.format, target: app.settings.parkTarget, difficulty: app.settings.difficulty, ante: this.anteFor(), ...(oppStreak >= BOUNTY_MIN ? { bounty_streak: Math.min(99, oppStreak) } : {}) });
       if (ticket.meta.ante) app.setBalance((app.profile.balance || 0) - ticket.meta.ante);
     } catch (e) {
       this.ui.toast(e.message, 'error'); this.mode = 'roam'; this.myCourt = null; this.unclaim(c); this.newBackgroundGame(c, opponents); return;
     }
     this.ticket = ticket;
     consumeBoostsLocal(app, ticket);
-    const l0 = c.lines[0]?.mine ? c.lines[0] : { members: [] };
+    const li = c.lines.findIndex(l => l?.mine), l0 = li >= 0 ? c.lines[li] : { members: [] };
     const mates = l0.members.map(w => w.entry);
     for (const w of l0.members) w.dispose();
     this.walkers = this.walkers.filter(w => !l0.members.includes(w));
     this.myMates = mates;
     this.myOpp = opponents;
-    if (c.lines[0]?.mine) this.shiftLines(c);
+    if (li >= 0) c.lines[li] = null;
     this.startSession(c, opponents, ticket);
   }
 
@@ -811,9 +883,9 @@ export class ParkHub {
     this.myOpp = [];
     for (const e of old) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     // v0.4.5: the group with next gets the shot at you; with nobody in line, whoever's around steps up
-    const l0 = c.lines[0];
+    const nx = this.upNext(c, false);
     let challengers;
-    if (l0 && !l0.mine && this.lineSet(c, l0)) { challengers = l0.members.map(w => w.entry); l0.members.forEach(w => w.dispose()); this.walkers = this.walkers.filter(w => !l0.members.includes(w)); this.shiftLines(c); }
+    if (nx) { challengers = nx.l.members.map(w => w.entry); this.takeLine(c, nx.i); }
     else challengers = this.takeEntries(c.format, { topUp: true, level: Math.min(0.97, 0.5 + 0.06 * (this.char.progression?.park?.streak || 0)) });
     for (const e of challengers) e.look = e.look || resolveLook(e.build, this.catalog);
     this.myOpp = challengers; this.myOppStreak = 0; // (challengers have no streak; you're the one holding the court)
@@ -927,4 +999,5 @@ export class ParkHub {
   }
 }
 
-export function badgeTiers(char) { const o = {}; for (const [k, v] of Object.entries(char.badges || {})) if (v.tier) o[k] = v.tier; return o; }
+// v0.4.7.5: tiers as they play on this build (a badge above the build's cap plays at the cap)
+export function badgeTiers(char) { const o = {}; for (const [k, v] of Object.entries(char.badges || {})) if (v.tier) o[k] = v.tier; return capBadges(o, char.archetype || char.height ? char : null); }

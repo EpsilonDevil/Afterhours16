@@ -2,19 +2,23 @@
 // and the "not in a game" squad rule. Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { squadSpots, gotNextSpots, SQUAD_ROWS, courtPlayRect } from '../client/js/world/themes.js';
+import { squadSpots, gotNextSpots, gotNextMid, SQUAD_ROWS, courtPlayRect } from '../client/js/world/themes.js';
 import { ParkHub } from '../client/js/game/park.js';
 
 const H = ParkHub.prototype;
 const box = { x0: 10, x1: 14.6, z0: -26, z1: -22.6 };
 
-test('three rows of squad spots per court, outside the court, row 0 is Got Next', () => {
-  for (const [origin, format] of [[[0, 0, 0], 3], [[26, 0, 0], 3], [[-52, 0, 0], 2], [[52, 0, 0], 1]]) {
-    const c = { origin, format, full: format === 3 };
+test('two GOT NEXT spots per court, one each side of the stencil, outside the court', () => {
+  for (const [origin, format, full] of [[[0, 0, 0], 3, true], [[26, 0, 0], 3, true], [[-52, 0, -15], 2, false], [[-52, 0, 5], 2, false], [[52, 0, -10], 1, false]]) {
+    const c = { origin, format, full };
     const rows = squadSpots(c);
     assert.equal(rows.length, SQUAD_ROWS);
+    assert.equal(SQUAD_ROWS, 2);
     assert.deepEqual(gotNextSpots(c), rows[0]);
     for (const row of rows) assert.equal(row.length, format);
+    // the stencil sits between the two spots, on the same line
+    const m = gotNextMid(c);
+    assert.ok(rows[0].every(p => p.z < m.z && p.x === m.x) && rows[1].every(p => p.z > m.z && p.x === m.x));
     const rect = courtPlayRect(c);
     const all = rows.flat();
     for (const p of all) assert.ok(!(p.x > rect.x0 && p.x < rect.x1 && p.z > rect.z0 && p.z < rect.z1), 'spot on the court');
@@ -41,15 +45,33 @@ test('walkers never aim inside a shop and route around it', () => {
   assert.deepEqual(path[path.length - 1], { x: 18, z: -24 });
 });
 
-test('the line moves up a row when Got Next goes on court', () => {
-  const c = { rows: squadSpots({ origin: [0, 0, 0], format: 3 }), lines: [] };
-  const mk = n => ({ mine: false, members: Array.from({ length: n }, (_, i) => ({ id: i, goTo(x, z) { this.to = { x, z }; } })) });
-  const a = mk(3), b = mk(3), d = mk(3);
-  c.lines = [a, b, d];
-  H.shiftLines.call(H, c);
-  assert.deepEqual(c.lines, [b, d, null]);
-  b.members.forEach((w, i) => { assert.equal(w.spot.row, 0); assert.deepEqual(w.to, c.rows[0][i]); });
-  d.members.forEach((w, i) => { assert.equal(w.spot.row, 1); assert.deepEqual(w.to, c.rows[1][i]); });
+test('whichever squad fills its spot first runs next; the other waits for that game', () => {
+  const c = { format: 3, rows: squadSpots({ origin: [0, 0, 0], format: 3, full: true }), lines: [null, null] };
+  const hub = Object.create(H); hub.walkers = []; hub.fillSeq = 0;
+  const mk = (n, queued = true) => ({ mine: false, members: Array.from({ length: n }, (_, i) => ({ id: i, state: queued ? 'queued' : 'walking', entry: { aiId: 'ai-' + i }, dispose() {}, goTo(x, z) { this.to = { x, z }; } })) });
+  // spot B fills first even though spot A had people standing on it earlier
+  const a = mk(2), b = mk(3);
+  c.lines = [a, b];
+  hub.markFull(c, a); hub.markFull(c, b);
+  assert.equal(hub.nextLine(c).l, b);
+  a.members.push({ id: 9, state: 'queued', entry: { aiId: 'ai-9' }, dispose() {}, goTo() {} });
+  hub.markFull(c, a);
+  assert.equal(hub.nextLine(c).l, b, 'filling second does not jump the line');
+  assert.equal(hub.upNext(c).i, 1);
+  // B goes on court: its spot is free, A keeps its place and is next
+  hub.takeLine(c, 1);
+  assert.deepEqual(c.lines, [a, null]);
+  assert.equal(hub.nextLine(c).l, a);
+  // your squad: not ready yet, so an AI squad behind you that is standing ready can step on (nobody waits on walkers)
+  const me = { mine: true, members: [], ready: false }, ai = mk(3);
+  c.lines = [me, ai];
+  me.members = mk(2, false).members; hub.markFull(c, me); hub.markFull(c, ai);
+  assert.equal(hub.nextLine(c).l, me);
+  assert.equal(hub.upNext(c).l, ai);
+  me.ready = true;
+  assert.equal(hub.upNext(c), null, 'once you are ready, you run next');
+  hub.placeLine(c, 1);
+  ai.members.forEach((w, i) => { assert.equal(w.spot.row, 1); assert.deepEqual(w.to, c.rows[1][i]); });
 });
 
 test('AI-only games: normal speed on a live ball you can see, fast otherwise', () => {
@@ -73,10 +95,11 @@ test('v0.4.5 animation packages: 32 new ones, every style is implemented and rea
   // every dunk style a package can roll has a flair value and a ball path; every base has a feel entry
   const animSrc = fs.readFileSync(new URL('../client/js/char/animator.js', import.meta.url), 'utf8');
   const gameSrc = fs.readFileSync(new URL('../client/js/sim/game.js', import.meta.url), 'utf8');
+  const G = await import('../client/js/sim/game.js');
   for (const i of anims.filter(x => x.slot === 'dunk')) {
     for (const st of i.styles) {
       assert.ok(S.STYLE_FLAIR[st] != null, `no flair for dunk style ${st}`);
-      assert.ok(gameSrc.includes(`'${st}'`), `no ball path for dunk style ${st}`);
+      assert.ok(gameSrc.includes(`'${st}'`) || G.DUNK_PATH2[st], `no ball path for dunk style ${st}`); // (v0.4.7.5: DUNK_PATH2)
     }
     assert.ok(S.DUNK_TIER[i.id] != null, `no tier for ${i.id}`);
   }
@@ -86,7 +109,7 @@ test('v0.4.5 animation packages: 32 new ones, every style is implemented and rea
     // (v0.4.5 stage 7: every release, Classic included, has its own row in the FOLLOW table)
     assert.ok(animSrc.includes(`  ${key}: { k:`), `no follow-through for release ${key}`);
   }
-  for (const i of anims.filter(x => x.slot === 'celebration')) assert.ok(animSrc.includes(`kind === '${i.anim}'`), `no pose for celebration ${i.anim}`);
+  for (const i of anims.filter(x => x.slot === 'celebration')) assert.ok(animSrc.includes(`kind === '${i.anim}'`) || animSrc.includes(`  ${i.anim}: (T, t, k`), `no pose for celebration ${i.anim}`);
   for (const i of anims.filter(x => x.slot === 'layup' && x.style !== 'basic')) assert.ok(animSrc.includes(`ls === '${i.style}'`), `no pose for layup ${i.style}`);
   for (const i of anims.filter(x => x.slot === 'sizeup' && x.style !== 'basic')) assert.ok(animSrc.includes(`su === '${i.style}'`), `no pose for size-up ${i.style}`);
   // the Icon badges all have an exclusive animation wired up
