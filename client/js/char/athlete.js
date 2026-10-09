@@ -175,6 +175,10 @@ export function torsoTable(yf) {
   return T[T.length - 1].slice(1);
 }
 const sePow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), 2 / e);
+// v0.4.7.5 quick patch, tank straps (buildStraps): where they leave the panels (aI .. aO, radians from the centre
+// line, the same as topCut's strap), how high they ride over the trapezius at the inner and outer edge (torso height
+// fractions), how round the rise is, and how far they run down over the panels (the seam: s past 0 or 1)
+const TANK_STRAP = { aI: 0.31, aO: 0.7, yIn: 0.842, yOut: 0.824, round: 0.55, ext: 0.06, drop: 0.026 };
 
 // limb radius profiles: t, radius (H units)
 const UPPER = [[-0.07, 0.027], [0.0, 0.033], [0.22, 0.031], [0.45, 0.0275], [0.68, 0.0275], [0.88, 0.0245], [1.02, 0.0225], [1.08, 0.021]];
@@ -799,7 +803,7 @@ export class AthleteModel {
     const topY = tank ? phi => {
       const a = Math.abs(Math.atan2(Math.sin(phi), Math.cos(phi))); // 0 front .. π back
       const back = a > Math.PI / 2, b = back ? Math.PI - a : a;      // mirrored: 0 = center line .. π/2 = side
-      const aI = 0.31, aO = 0.7, yT = neckTop, yN = back ? 0.808 : 0.783, yA = 0.744;
+      const aI = TANK_STRAP.aI, aO = TANK_STRAP.aO, yT = neckTop, yN = back ? 0.808 : 0.783, yA = 0.744;
       if (b < aI) return yN + (yT - yN) * Math.pow(b / aI, 2.3);                     // neckline
       if (b <= aO) return yT - 0.003 * Math.pow((b - aI) / (aO - aI), 2);             // strap (slight slope out)
       const q = (b - aO) / (Math.PI / 2 - aO);
@@ -813,6 +817,42 @@ export class AthleteModel {
       return true;
     };
     return { fam, tank, hem, neckTop, keep, topY };
+  }
+
+  // v0.4.7.5 quick patch: a tank's straps. They used to stop where the front and back panels did (a level edge across
+  // the upper chest), so a jersey read as a strapless top. Now each strap is a band of fabric that carries on from the
+  // top of the front panel, up over the trapezius (midway between the neck and the point of the shoulder) and down
+  // into the top of the back panel, with a rolled binding down both edges. It's laid on the torso surface itself
+  // (torsoPoint), so it's skinned like the skin under it (chest, clavicles) and moves with the shoulders, and it's
+  // drawn a touch toward the camera with the rest of the straps mesh (view.js), so a shrug never shows through it.
+  // In the torso's (height, angle) chart: e = 0 the inner (neck) edge .. 1 the outer (arm) edge; s = 0 front .. 1 back.
+  buildStraps(sb, topY, loose, hg) {
+    const S = TANK_STRAP, rows = Math.round(30 * this.detail) + 12, H = this.d.H;
+    const acrossE = [0, 0.035, 0.08, 0.5, 0.92, 0.965, 1];  // binding, binding, fabric ..., binding, binding
+    const lift = [0.0006, 0.0016, 0.0018, 0.0019, 0.0018, 0.0016, 0.0006]; // the binding rolls over the edge
+    const chart = (s, e) => {
+      const aF = lerp(S.aI, S.aO, e), yEnd = topY(aF);
+      if (s <= 0) return [yEnd + s / S.ext * S.drop, aF];                 // down over the front panel (the seam)
+      if (s >= 1) return [topY(Math.PI - aF) - (s - 1) / S.ext * S.drop, Math.PI - aF]; // and the back panel
+      const a = lerp(aF, Math.PI - aF, s), k = Math.pow(Math.sin(Math.PI * s), S.round);
+      const yTop = lerp(S.yIn, S.yOut, e), yBack = topY(Math.PI - aF);
+      return [lerp(lerp(yEnd, yBack, s), yTop, k), a];
+    };
+    // (the strap's fabric is mapped true to size onto the plain area under the torso in the jersey texture, u along
+    // the strap and v across it, so the mesh weave runs the same way and the same size as on the panels; the
+    // binding reads the trim colour)
+    const sv = Array.from({ length: rows }, (_, r) => lerp(-S.ext, 1 + S.ext, r / (rows - 1)));
+    for (const sg of [1, -1]) {
+      const cen = sv.map(s => { const [yf, a] = chart(s, 0.5); return this.torsoPoint(yf, sg * a, 0, 0); });
+      const arc = [0];
+      for (let r = 1; r < rows; r++) arc.push(arc[r - 1] + Math.hypot(cen[r][0] - cen[r - 1][0], cen[r][1] - cen[r - 1][1], cen[r][2] - cen[r - 1][2]));
+      sb.grid(rows, acrossE.length - 1, (r, c) => {
+        const e = acrossE[c], [yf, a] = chart(sv[r], e), phi = sg * a;
+        const p = this.torsoPoint(yf, phi, loose(yf, phi) + lift[c] + 0.0004, hg(yf));
+        const edge = c <= 1 || c >= acrossE.length - 2, u = 0.04 + arc[r] / (0.5 * H);
+        return { p, uv: edge ? [u, 0.744] : [u, 0.79 + e * 0.065], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
+      }, sg > 0 ? {} : { inward: true });
+    }
   }
 
   buildTop(top) {
@@ -847,19 +887,23 @@ export class AthleteModel {
       // always read as a jersey's straps.
       const cols = Math.round(160 * this.detail) + 24, hg = typeof hang === 'function' ? hang : () => hang;
       const sb = new GB(), band = 0.024;
+      // (v0.4.7.5 quick patch: under a strap the panel's top edge isn't an edge any more: the strap carries on from
+      // it, so the binding and the band stop at the strap and the strap brings its own)
+      const S = TANK_STRAP, underStrap = phi => { const a = Math.abs(Math.atan2(Math.sin(phi), Math.cos(phi))), b = a > Math.PI / 2 ? Math.PI - a : a; return b > S.aI + 0.012 && b < S.aO - 0.012; };
       const ring = [[-0.0075, 0.0026], [-0.0012, 0.0036], [0.0004, 0.0016], [-0.004, -0.0002]];
       sb.grid(ring.length, cols, (r, c) => {
         const phi = c / cols * Math.PI * 2 - Math.PI / 2, y = topY(phi) + ring[r][0];
         const p = this.torsoPoint(y, phi, loose(y, phi) + ring[r][1], hg(y));
-        return { p, uv: [c / cols, 0.744], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
+        return { p, uv: [c / cols, 0.744], w: this.torsoWeights(p[1], Math.sin(phi), p[0]), keep: !underStrap(phi) };
       });
       const rowsB = 5;
       sb.grid(rowsB, cols, (r, c) => {
         const phi = c / cols * Math.PI * 2 - Math.PI / 2, yt = topY(phi) - 0.0075, y = yt - band * (1 - r / (rowsB - 1));
         const p = this.torsoPoint(y, phi, loose(y, phi) + 0.0009, hg(y));
         const u = c / cols;
-        return { p, uv: [u, (vTop - y) / (vTop - vHem) * 0.75], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
+        return { p, uv: [u, (vTop - y) / (vTop - vHem) * 0.75], w: this.torsoWeights(p[1], Math.sin(phi), p[0]), keep: !underStrap(phi) };
       });
+      this.buildStraps(sb, topY, loose, hg);
       this.strapGeo = sb.finish();
     }
     if (!tank) {
@@ -1099,7 +1143,9 @@ export class AthleteModel {
     const look = this.look;
     out.body = this.buildBody(); yield;
     out.head = this.buildHead(); out.eyes = this.buildEyes(); out.hair = this.buildHair(); yield;
-    out.top = this.buildTop(look.top || { family: 'jersey' }); yield;
+    // (v0.4.7.5 quick patch: the straps come with the top. This staged build, which is how every player is built
+    // in the game and the menus, never passed them on, so the strap mesh added in v0.4.7.5 was never drawn)
+    out.top = this.buildTop(look.top || { family: 'jersey' }); out.straps = this.strapGeo; yield;
     out.bottom = this.buildBottom(look.bottom || { family: 'shorts' }); yield;
     out.gear = this.buildGear(look.gear || {}); out.shoes = this.shoeGeo; out.chain = this.chainGeo;
     return out;

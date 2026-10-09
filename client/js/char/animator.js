@@ -20,7 +20,8 @@ export { layupHand }; // (shots.js: the sim needs it too, to keep the ball where
 const CLAV_LIFT = Math.asin(0.025 / 0.072);
 export function dunkHand(a) {
   const q = a.t / Math.max(0.1, a.slam || 1);
-  return (a.style === 'switch' && q > 0.57) || (a.style === 'eastbay' && q > 0.6) || (a.style === 'aroundback' && q > 0.5) || (a.style === 'behindhead' && q > 0.55) ? 'L' : 'R';
+  const air = (a.t - (a.takeoff || 0)) / Math.max(0.1, (a.slam || 1) - (a.takeoff || 0)); // (the Eastbay is timed on the flight)
+  return (a.style === 'switch' && q > 0.57) || (a.style === 'eastbay' && air > 0.4) || (a.style === 'aroundback' && q > 0.5) || (a.style === 'behindhead' && q > 0.55) ? 'L' : 'R';
 }
 
 // v0.4.7.5 ankle-breaker victims (q: share of the stumble, dir: the side he's thrown to)
@@ -650,7 +651,7 @@ export class Animator {
       const hy = Math.max(top, pocket - 0.2);
       // (v0.4.7.5: during a between-the-legs or behind-the-back the hand lets the ball go across rather than chasing
       // it past the middle, so the arm never wraps through the body)
-      const mvA = p.action?.type === 'move' ? p.action.move : null, cross = mvA === 'btb' || mvA === 'wrap' || mvA === 'btl';
+      const mvA = p.action?.type === 'move' ? p.action.move : null, cross = mvA === 'btb' || mvA === 'wrap' || mvA === 'btl' || mvA === 'btlback';
       set3(T, 'hand' + hand, cross ? sgn(hand) * Math.max(sgn(hand) * b[0], 0.25) : b[0] - sgn(hand) * 0.0, hy, cross ? Math.max(b[2] - 0.06, -0.12) : b[2] - 0.06);
       set3(T, 'elbow' + hand, sgn(hand) * 0.6, -0.3, -0.8);
       palm[hand] = { normal: [0, -1, 0.15], fingers: [-sgn(hand) * 0.2, -0.25, 1], w: sm(pocket - 0.05, pocket - 0.25, hy) * 0.5 + 0.4 };
@@ -662,10 +663,10 @@ export class Animator {
       // crossover-type moves: both hands participate around the ball
       if (p.action?.type === 'move') {
         const mv = p.action.move;
-        if (mv === 'cross' || mv === 'btl' || mv === 'btb' || mv === 'inout' || mv === 'hang' || mv === 'wrap') {
+        if (mv === 'cross' || mv === 'btl' || mv === 'btb' || mv === 'inout' || mv === 'hang' || mv === 'wrap' || mv === 'pushcross' || mv === 'btlback') {
           const k = Math.sin(Math.min(1, p.action.t / p.action.dur) * Math.PI);
           // (the receiving hand meets the ball on its own side; v0.4.7.5: it never reaches across behind him for it)
-          const ox = mv === 'btb' || mv === 'wrap' || mv === 'btl' ? sgn(other) * Math.max(sgn(other) * (b[0] + sgn(other) * 0.06), 0.25) : b[0] + sgn(other) * 0.06;
+          const ox = mv === 'btb' || mv === 'wrap' || mv === 'btl' || mv === 'btlback' ? sgn(other) * Math.max(sgn(other) * (b[0] + sgn(other) * 0.06), 0.25) : b[0] + sgn(other) * 0.06;
           mix3(T, 'hand' + other, ox, Math.max(top, 0.7), mv === 'btb' || mv === 'wrap' ? Math.max(b[2] - 0.05, -0.12) : b[2] - 0.05, k * (b[0] * sgn(other) > -0.05 ? 1 : 0.5));
         }
       } else if (p.dribble.xover && p.dribble.xover !== 'half' && p.dribble.xover !== 'hesi') {
@@ -1266,6 +1267,25 @@ export class Animator {
         } else if (mv === 'spin' || mv === 'halfspin') {
           T[P.root + 1] = -0.12 * k * low; T[P.spine] = 0.25 * k;
           set3(T, 'handL', 0.45, 1.15, 0.0); set3(T, 'handR', -0.45, 1.15, 0.0);
+        } else if (mv === 'pushcross') {
+          // v0.4.7.5 quick patch, the push-pull: a lean in and a step ahead with the ball, then the plant and the
+          // wide step across as it comes back
+          if (q < 0.42) { const u = Math.sin(q / 0.42 * Math.PI / 2); T[P.spine] = 0.22 * u; T[P.root + 1] -= 0.05 * u * low; set3(T, side > 0 ? 'footL' : 'footR', side * 0.16, 0.08, 0.26 * u); }
+          else { const u = Math.sin((q - 0.42) / 0.58 * Math.PI); T[P.spine] = 0.16; T[P.root + 1] -= 0.09 * u * low; T[P.chest + 1] = side * 0.22 * u; T[P.spine + 2] = -side * 0.18 * u; set3(T, side > 0 ? 'footR' : 'footL', -side * 0.36 * sty.wide * u, 0.08, 0.12); }
+        } else if (mv === 'jab') {
+          // the jab: a hard step out to the ball's side, shoulders down, chest toward the man; then he goes
+          if (q < 0.45) { const j = Math.sin(q / 0.45 * Math.PI); set3(T, side > 0 ? 'footL' : 'footR', side * (0.17 + 0.2 * j * sty.wide), 0.08 + 0.05 * Math.max(0, Math.sin(q / 0.45 * Math.PI * 2)), 0.06 + 0.24 * j); T[P.spine] = 0.18 * j; T[P.root + 1] -= 0.1 * j * low; T[P.chest + 1] = -side * 0.14 * j; T[P.head + 1] = side * 0.1 * j; }
+          else { const g2 = Math.sin((q - 0.45) / 0.55 * Math.PI); T[P.spine] = 0.3 * g2; T[P.root + 1] -= 0.08 * g2 * low; }
+        } else if (mv === 'snatch') {
+          // the snatch-back: a hop back and to the side, chest up, the ball ripped to the hip
+          const hop = Math.sin(Math.min(1, q / 0.55) * Math.PI);
+          set3(T, 'footL', 0.18 + (side > 0 ? 0.08 * hop : 0), 0.08 + hop * 0.12, -0.06 - hop * 0.14); set3(T, 'footR', -0.18 - (side < 0 ? 0.08 * hop : 0), 0.08 + hop * 0.12, -0.12 - hop * 0.14);
+          T[P.root + 1] = -0.1 - 0.05 * k * low; T[P.spine] = -0.02; T[P.spine + 2] = side * 0.12 * k;
+        } else if (mv === 'btlback') {
+          // the pull-back: legs split front to back for the ball to go through, a hop back off it
+          const hop = Math.sin(Math.min(1, q / 0.6) * Math.PI);
+          set3(T, side > 0 ? 'footL' : 'footR', side * 0.16, 0.08 + hop * 0.06, 0.18 - 0.3 * q); set3(T, side > 0 ? 'footR' : 'footL', -side * 0.18, 0.08 + hop * 0.08, -0.16 - 0.12 * hop);
+          T[P.root + 1] = -0.12 * low - 0.04 * k; T[P.spine] = 0.12; T[P.chest + 1] = side * 0.16 * k;
         }
         break;
       }
@@ -1290,7 +1310,7 @@ export class Animator {
       mix3(T, 'handR', -0.12, 2.55, 0.3, k); T[P.head] = -0.4 * k;
     } else if (kind === 'chest') {
       const hit = Math.abs(Math.sin(t * 9));
-      mix3(T, 'handR', -0.05, 1.45, 0.12 + hit * 0.12, k); T[P.spine] = -0.1 * k;
+      mix3(T, 'handR', -0.06, 1.45, 0.19 + hit * 0.12, k); set3(T, 'elbowR', -1, -0.35, 0.1); T[P.spine] = -0.1 * k; // (v0.4.7.5 quick patch: the fist off the chest, elbow out: the forearm went through the chest)
     } else if (kind === 'shush') {
       mix3(T, 'handR', -0.02, 1.86, 0.18, k); this.palm.R = { normal: [1, 0, 0], fingers: [0, 1, 0], w: k };
     } else if (kind === 'too_small') {
@@ -1326,7 +1346,7 @@ export class Animator {
       mix3(T, 'handR', -0.06, 1.8, 0.2, k); set3(T, 'elbowR', -1, 0.15, 0.2);
       this.palm.R = { normal: [0, -0.4, -1], fingers: [0.6, 0.6, 0], w: k }; T[P.spine] = -0.06 * k; T[P.head] = -0.06 * k;
     } else if (kind === 'heart') {
-      if (t < 0.85) { const tap = Math.abs(Math.sin(t * 11)); mix3(T, 'handR', 0.05, 1.5, 0.12 + tap * 0.07, k); this.palm.R = { normal: [0, 0, -1], fingers: [1, 0.3, 0], w: k }; }
+      if (t < 0.85) { const tap = Math.abs(Math.sin(t * 11)); mix3(T, 'handR', 0.05, 1.5, 0.18 + tap * 0.07, k); set3(T, 'elbowR', -1, -0.4, 0.1); this.palm.R = { normal: [0, 0, -1], fingers: [1, 0.3, 0], w: k }; }
       else { const q = Math.min(1, (t - 0.85) / 0.3); mix3(T, 'handR', -0.12, 1.5 + 1.05 * q, 0.14 + 0.16 * q, k); T[P.head] = -0.42 * q * k; }
     } else if (kind === 'sit' || kind === 'sitcheer' || kind === 'sitclap') { // v0.4.5 park spectators on a bench
       T[P.root + 1] = -0.47 * k; T[P.root + 2] = -0.04 * k; T[P.spine] = 0.1 * k; T[P.pelvis] = 0.5 * k;
@@ -1360,8 +1380,12 @@ export class Animator {
     } else if (kind === 'dust') { // brushes the dirt off both shoulders
       const q = (t * 1.6) % 2, side = q < 1 ? 'R' : 'L', sg = side === 'L' ? 1 : -1, ph = q % 1;
       const sweep = Math.sin(ph * Math.PI);
-      mix3(T, 'hand' + side, -sg * (0.34 - sweep * 0.5), 1.62 + sweep * 0.1, 0.16, k);
-      set3(T, 'elbow' + side, -sg * 0.9, -0.3, -0.1);
+      // (v0.4.7.5 quick patch: the brushing hand stays off the chest as it crosses, elbow up and forward)
+      // (and as each hand comes across to start its stroke it comes round the front, not through the chest)
+      // (the brush goes one way, across and off, so the hand finishes on its own side rather than back across him)
+      const across = ph * ph * (3 - 2 * ph);
+      mix3(T, 'hand' + side, -sg * (0.34 - across * 0.62), 1.62 + sweep * 0.1, 0.17 + 0.17 * sweep + 0.24 * Math.max(0, 1 - ph / 0.3), k);
+      set3(T, 'elbow' + side, -sg * 0.7, 0.1, 0.7);
       this.palm[side] = { normal: [0, -0.3, -0.9], fingers: [-sg, 0.2, 0], w: k };
       T[P.chest + 1] = sg * 0.18 * k; T[P.head] = -0.1 * k;
     } else if (kind === 'airplane') { // arms out, banking side to side
@@ -1426,9 +1450,9 @@ const CELEB2 = {
   // taps the wrist: it's my time
   clock: (T, t, k) => { const tap = Math.abs(Math.sin(t * 8)) * 0.05; mix3(T, 'handL', 0.12, 1.3, 0.34, k); set3(T, 'elbowL', 1, -0.6, 0.2); mix3(T, 'handR', 0.06, 1.36 + tap, 0.36, k); T[P.head] = 0.25 * k; },
   // goodnight: hands together under a tilted head
-  sleep: (T, t, k) => { mix3(T, 'handL', 0.12, 1.72, 0.12, k); mix3(T, 'handR', 0.06, 1.7, 0.12, k); T[P.head + 2] = 0.4 * k; T[P.head] = 0.1 * k; T[P.spine + 2] = 0.08 * k; },
+  sleep: (T, t, k) => { mix3(T, 'handL', 0.13, 1.72, 0.16, k); mix3(T, 'handR', 0.06, 1.7, 0.17, k); set3(T, 'elbowR', -0.8, -0.4, 0.3); set3(T, 'elbowL', 0.8, -0.4, 0.3); T[P.head + 2] = 0.4 * k; T[P.head] = 0.1 * k; T[P.spine + 2] = 0.08 * k; },
   // stirring the pot
   stir: (T, t, k) => { const a = t * 7; mix3(T, 'handR', -0.1 + 0.2 * Math.cos(a), 1.05, 0.35 + 0.2 * Math.sin(a), k); mix3(T, 'handL', 0.3, 1.15, 0.25, k); T[P.chest + 1] = Math.cos(a) * 0.12 * k; T[P.root + 1] = -0.06 * k; },
   // the archer: draws the bow back and lets it fly at the crowd
-  archer: (T, t, k) => { const dr = Math.min(1, t / 0.6), rel = t > 0.9 ? Math.min(1, (t - 0.9) / 0.12) : 0; mix3(T, 'handL', 0.62, 1.6, 0.25, k); set3(T, 'elbowL', 1, 0, 0); mix3(T, 'handR', 0.5 - 0.55 * dr + 0.2 * rel, 1.62, 0.25 - 0.1 * dr - 0.15 * rel, k); T[P.chest + 1] = 0.5 * k; T[P.head + 1] = 0.5 * k; set3(T, 'footL', 0.26, 0.08, 0.1); set3(T, 'footR', -0.22, 0.08, -0.12); },
+  archer: (T, t, k) => { const dr = Math.min(1, t / 0.6), rel = t > 0.9 ? Math.min(1, (t - 0.9) / 0.12) : 0; mix3(T, 'handL', 0.62, 1.6, 0.25, k); set3(T, 'elbowL', 1, 0, 0); mix3(T, 'handR', 0.5 - 0.5 * dr + 0.2 * rel, 1.62, 0.27 - 0.04 * dr - 0.08 * rel, k); set3(T, 'elbowR', -1, 0.25, -0.3); T[P.chest + 1] = 0.5 * k; T[P.head + 1] = 0.5 * k; set3(T, 'footL', 0.26, 0.08, 0.1); set3(T, 'footR', -0.22, 0.08, -0.12); },
 };

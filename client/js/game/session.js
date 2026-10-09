@@ -21,7 +21,7 @@ import { GameIntro } from './present.js';
 import { visualKey } from './vispool.js';
 import { stickMove } from '../sim/moves.js';
 import { meterLegendHTML } from './hud.js';
-import { playGreenSound } from '../core/greensound.js';
+import { playGreenSound, playRecordScratch, warmGreenSounds } from '../core/greensound.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 
@@ -34,6 +34,10 @@ export function guardedText(contest) {
   const c = Math.max(0, contest || 0), pct = Math.round(Math.min(1, c) * 100);
   return `${pct}% guarded · ${c >= SMOTHER ? 'Smothered' : c > 0.45 ? 'Contested' : c > 0.2 ? 'Light contest' : c > 0.1 ? 'Open' : 'Wide open'}`;
 }
+// v0.4.7.5 quick patch, defensive assignment arrows (MatchSession.defArrows): shown past `on` m from your man, gone
+// inside `off` m (you're guarding him); `out`: how far from each player's feet the arrow sits (the edge of the ring);
+// size (m) plus `perM` per metre apart, up to `grow` more
+export const DEF_ARROW = { on: 2.6, off: 1.9, out: 1.0, size: 0.62, perM: 0.016, grow: 0.22 };
 export function startsOnAutoPlay(opts) { return opts.background ? !!opts.assist : (opts.assist ?? (opts.mode !== 'practice' && !!settings.autoPlay)); }
 export function toggleAutoPlay(g) { g.assist = !g.assist; if (g.mode !== 'practice') { settings.autoPlay = g.assist; saveSettings(); } return g.assist; }
 
@@ -136,6 +140,8 @@ export class MatchSession {
     });
     this.game.teamsMeta = this.teams;
     spreadGreens(this.game.players, this.catalog); // (v0.4.7.5: every AI player on the floor has his own green release)
+    // (v0.4.7.5 quick patch: their sounds get rendered now, in the background, so no green ever waits on its sound)
+    if (!opts.background && (settings.greens || 'all') !== 'off') warmGreenSounds(audio, this.game.players.filter(p => settings.greens !== 'mine' || p.human).map(p => ({ id: p.greenSound || 'gsnd_basic', ...(p.greenVoice || {}) })));
     audio.surface = this.game.ball.surface;
     audio.setIndoor(this.venue.theme.kind !== 'park');
     this.visuals = this.game.players.map((p, i) => {
@@ -259,7 +265,22 @@ export class MatchSession {
         this.defHands = { up: ds.up, side: ds.hold ? w(ds.hold) : null };
       }
     }
-    if (inp.wasPressed('celebrate') && !me.action && (g.phase === 'dead' || g.phase === 'check')) me.startAction('celebrate', 1.6, { kind: this.celebrationKind(me) });
+    // v0.4.7.5 quick patch: celebrations in games. It used to work only if you pressed it in the second and a half of
+    // dead ball after a basket while your player stood doing nothing, and the check then cut it off. Now a press waits
+    // up to 2.5 s for him to be free (the follow-through, the landing, the hang on the rim), and it plays in any dead
+    // ball, check or inbound (unless he's the one with the ball) and in play for 3 s after a basket by your team.
+    if (inp.wasPressed('celebrate')) this.celebrateReq = performance.now();
+    if (this.celebrateReq != null) {
+      if (performance.now() - this.celebrateReq > 2500) this.celebrateReq = null;
+      else if (this.canCelebrate(me)) { me.startAction('celebrate', 1.6, { kind: this.celebrationKind(me) }); this.celebrateReq = null; this.hud.setHint(''); }
+    }
+  }
+  canCelebrate(me) {
+    const g = this.game;
+    if ((me.action && me.action.type !== 'catch') || me.airborne || g.over) return false;
+    if (g.ball.holder === me.id || (g.phase === 'inbound' && g.inbounder === me)) return false;
+    if (g.phase === 'dead' || g.phase === 'check' || g.phase === 'inbound' || g.phase === 'tip') return true;
+    return g.phase === 'live' && this.myScoreAt != null && g.time - this.myScoreAt < 3;
   }
 
   // Controls follow the camera as it is on screen (v0.4.3: no latching). The 2K cam swings round on a change of
@@ -400,6 +421,7 @@ export class MatchSession {
       if (p.plantT > 0 && !this.lastPlant.get(p.id)) audio.squeak(this.pan(x));
       this.lastPlant.set(p.id, p.plantT > 0);
     }
+    if (!this.background) this.defArrows(dt, alpha);
     // hoops (rim shake + nets) — pass ball in world coords
     for (const h of this.court.hoops) h.update(dt * this.timeScale, ballW);
     if (this.venue.update && !this.opts.hub) this.venue.update(dt, { ball: ballW, phase: g.phase, over: g.over, events: this.frameEvents || [] });
@@ -439,6 +461,43 @@ export class MatchSession {
     return this._proxy;
   }
 
+  // v0.4.7.5 quick patch: defensive assignment arrows. On defense, an arrow at the edge of your ring points at the man
+  // you should be guarding (your matchup, the one the AI teammates leave to you), and one at his feet points back at
+  // you. They grow a little the further off him you are, and fade out once you're on him.
+  defArrows(dt, alpha) {
+    const g = this.game, me = g.human;
+    if (!this.arrows) {
+      if (!me) return;
+      const tex = cachedTexture(this.r.ctx, 'defArrow', () => T.arrowTexture(128), { wrap: 'clamp' });
+      const mk = col => { const m = new Mesh(PlayerVisual.blobGeo, new Material({ map: tex, color: M.hexLinear(col), shading: 'unlit', blend: 'alpha', depthWrite: false, fog: false, emissive: [0, 0, 0] }), { castShadow: false, reflect: false }); m.order = 6; m.visible = false; this.scene.add(m); return m; };
+      this.arrows = { mine: mk('#ffd84a'), his: mk('#ff7a45'), k: 0, base: { mine: M.hexLinear('#ffd84a'), his: M.hexLinear('#ff7a45') } };
+    }
+    const A = this.arrows;
+    const holder = g.holder ? g.holder() : null;
+    const onD = me && !g.assist && !g.over && !this.inIntro && settings.defArrows !== false && (holder ? holder.team !== me.team : g.possession !== me.team) && (g.phase === 'live' || g.phase === 'inbound' || g.phase === 'check');
+    const man = onD ? g.ai.manOf(me) : null;
+    const [ox, , oz] = this.origin;
+    const pos = q => [M.lerp(q.prevX, q.x, alpha) + ox, M.lerp(q.prevZ, q.z, alpha) + oz];
+    let want = 0, d = 0, P = null, Q = null;
+    if (man && man.team !== me.team) {
+      P = pos(me); Q = pos(man);
+      d = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
+      want = d > DEF_ARROW.on ? 1 : d < DEF_ARROW.off ? 0 : (d - DEF_ARROW.off) / (DEF_ARROW.on - DEF_ARROW.off);
+    }
+    A.k += (want - A.k) * Math.min(1, dt * 8);
+    const vis = A.k > 0.02 && P;
+    A.mine.visible = A.his.visible = !!vis;
+    if (!vis) return;
+    const ux = (Q[0] - P[0]) / (d || 1), uz = (Q[1] - P[1]) / (d || 1), yaw = Math.atan2(ux, uz);
+    const sc = (DEF_ARROW.size + Math.min(DEF_ARROW.grow, d * DEF_ARROW.perM)) * (0.6 + 0.4 * A.k);
+    M.m4fromYaw(A.mine.matrix, P[0] + ux * DEF_ARROW.out, 0.02, P[1] + uz * DEF_ARROW.out, yaw, sc);
+    M.m4fromYaw(A.his.matrix, Q[0] - ux * DEF_ARROW.out, 0.02, Q[1] - uz * DEF_ARROW.out, yaw + Math.PI, sc);
+    const pulse = 0.88 + 0.12 * Math.sin(performance.now() / 160);
+    A.mine.material.opacity = A.his.material.opacity = Math.min(1, A.k) * 0.95;
+    A.mine.material.color = A.base.mine.map(c => c * 1.4 * pulse);
+    A.his.material.color = A.base.his.map(c => c * 1.4 * pulse);
+  }
+
   // v0.4.7.5 green releases: the shooter's own sound (the AI at his own pitch and tempo) and effect over his head.
   // A three, or a clutch shot, puts on a bigger show. far: a background game's volume (0..1).
   greenRelease(P, e, mine, far = null) {
@@ -450,7 +509,29 @@ export class MatchSession {
     greenFxFor(this.r, this.app.camera).play(P.greenFx || 'gfx_basic', head, feet, power);
     const x = P.x + o[0], z = P.z + o[2];
     const vol = far != null ? far * 0.5 : mine ? 1 : 0.62 * this.vol(x, z);
-    playGreenSound(audio, P.greenSound || 'gsnd_basic', { ...(P.greenVoice || {}), power, pan: this.pan(x), vol });
+    const h = playGreenSound(audio, P.greenSound || 'gsnd_basic', { ...(P.greenVoice || {}), power, pan: this.pan(x), vol });
+    if (h) (this.greenNow || (this.greenNow = new Map())).set(P.id, { h, t: performance.now(), pan: this.pan(x), vol });
+  }
+  // v0.4.7.5 quick patch: the record scratch. A green blocked in flight cuts its sound off; a release timed for a green
+  // into a smothering contest starts the green sound and gets cut off the same way (no effect: it isn't going in).
+  cutGreen(id) {
+    const g = this.greenNow?.get(id);
+    if (!g) return;
+    this.greenNow.delete(id);
+    if (performance.now() - g.t > 1600) return;
+    g.h.stop(0.03);
+    playRecordScratch(audio, { pan: g.pan, vol: g.vol });
+  }
+  greenScratch(P, mine) {
+    const mode = settings.greens || 'all';
+    const x = P.x + this.origin[0], z = P.z + this.origin[2];
+    const vol = mine ? 1 : 0.62 * this.vol(x, z);
+    // (green sounds off: just the scratch, on your own shots)
+    if (mode === 'off' || (mode === 'mine' && !mine)) { if (mine) playRecordScratch(audio, { pan: this.pan(x), vol }); return; }
+    const h = playGreenSound(audio, P.greenSound || 'gsnd_basic', { ...(P.greenVoice || {}), pan: this.pan(x), vol });
+    if (!h) return;
+    (this.greenNow || (this.greenNow = new Map())).set(P.id, { h, t: performance.now(), pan: this.pan(x), vol });
+    setTimeout(() => this.cutGreen(P.id), 140);
   }
 
   pan(x) { return M.clamp((x - this.rig.pos[0]) / 14, -0.8, 0.8); }
@@ -498,19 +579,22 @@ export class MatchSession {
           if (mine && (e.kind !== 'layup' || e.grade !== 'none')) {
             const gr = GRADE[e.grade] || GRADE.none;
             this.meterHold = 0.7;
-            this.meterFreeze = e.win != null ? this.meterOf(e.win, e.nat, e.tRel, e.err, e.sure, e.kind !== 'layup' && e.kind !== 'ft' && e.contest >= SMOTHER, e.grade) : null;
+            this.meterFreeze = e.win != null ? this.meterOf(e.smothered ? 0 : e.win, e.smothered ? 0 : e.nat, e.tRel, e.err, e.sure, !!e.smothered, e.grade) : null;
             const pos = this.screenOf(P, 2.4);
             // v0.4.5 quick patch: the % is how guarded you were at the release: the exact contest the release was
             // graded with (who was where, facing which way, hands up or not, their length and their defensive
             // ratings, help defense), 100% being a full contest
-            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.contest));
+            if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.guard ?? e.contest));
           }
           // v0.4.7.5: a green that goes in plays the shooter's green release sound and effect (everyone's, the AI too)
           if (e.grade === 'excellent' && e.made && P) this.greenRelease(P, e, mine);
+          // v0.4.7.5 quick patch: timed right, but smothered: the green sound starts and a record scratch cuts it off
+          else if (e.scratch && P) this.greenScratch(P, mine);
           break;
         }
         case 'score': {
           const shooter = P;
+          if (e.team === myTeam) this.myScoreAt = g.time;
           const big = e.pts === 3 || e.kind === 'dunk' || e.andOne;
           audio.cheer(big ? 1 : 0.5);
           this.scene.hype = big ? 1 : 0.5;
@@ -545,6 +629,8 @@ export class MatchSession {
         case 'hang': { const h = this.hoopFor(e.side); if (h) h.hang = 1; break; }
         case 'hangRelease': { const h = this.hoopFor(e.side); if (h) { h.hang = 0; h.hit(1.5); } break; }
         case 'block': {
+          // v0.4.7.5 quick patch: a green blocked in flight: the record scratch cuts the green sound off
+          this.cutGreen(e.shooter);
           audio.board(1.2); audio.ooh(); this.rig.shake(0.1, 0.25);
           const blk = g.players[e.player];
           hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}`, blk.team === myTeam ? 'good' : 'bad');
@@ -601,7 +687,8 @@ export class MatchSession {
       }
     }
     // celebrations during dead balls
-    if (g.phase === 'dead') for (const p of g.players) if (p.pendingCelly && !p.action) { p.startAction('celebrate', 1.5, { kind: p.pendingCelly }); p.pendingCelly = null; }
+    if (g.phase === 'dead' || g.phase === 'check' || g.phase === 'inbound') for (const p of g.players) if (p.pendingCelly && !p.action && !p.airborne && g.ball.holder !== p.id && !(g.phase === 'inbound' && g.inbounder === p)) { p.startAction('celebrate', 1.5, { kind: p.pendingCelly }); p.pendingCelly = null; }
+    if (g.phase === 'live') for (const p of g.players) p.pendingCelly = null;
   }
 
   // distant courts: only positional sounds and hoop reactions
@@ -619,6 +706,7 @@ export class MatchSession {
       else if (e.type === 'dribble' && near && Math.random() < 0.5) audio.bounce(0.3 * k, this.pan(e.x + ox));
       else if (e.type === 'score' && near) audio.cheer(0.15);
       else if (e.type === 'release' && near && e.grade === 'excellent' && e.made && g.players[e.player]) this.greenRelease(g.players[e.player], e, false, k);
+      else if (e.type === 'block' && near) this.cutGreen(e.shooter);
     }
   }
 
@@ -641,7 +729,15 @@ export class MatchSession {
     import('../ui/screens.js').then(S => { d.innerHTML = `<h3>Controls</h3>${S.controlsTable(this.app)}${meterLegendHTML()}<p class="muted small">Tab / RS click to close</p>`; document.body.appendChild(d); });
   }
 
-  checkCelebrations() { for (const p of this.game.players) { p.pendingCelly = null; if (p.action?.type === 'celebrate') p.action = null; } }
+  // (a check or an inbound: whoever has the ball stops celebrating; everyone else gets to finish)
+  checkCelebrations() {
+    const g = this.game;
+    for (const p of g.players) {
+      const ball = g.ball.holder === p.id || (g.phase === 'inbound' && g.inbounder === p);
+      if (ball) p.pendingCelly = null;
+      if (ball && p.action?.type === 'celebrate') p.action = null;
+    }
+  }
 
   hoopFor(side) {
     const hs = this.court.hoops;
@@ -664,16 +760,15 @@ export class MatchSession {
   liveMeter(me, a) {
     const g = this.game;
     if (!a || g.assist || a.released || !a.tRel) return null;
-    let W, contest = 0;
+    let W;
     if (a.type === 'ftshot') W = g.ftWindow(me);
-    else if (a.type === 'shoot' && a.kind !== 'close') {
-      contest = g.contestIfReleased(me);
-      W = g.jumperWindow(me, a, contest);
-    } else if (a.type === 'layup' && !a.oop && !a.untimed && a.releaseAt == null && a.t > 0.04) {
-      contest = g.contestIfReleased(me);
-      W = g.layupWindow(me, a, contest);
+    else if (a.type === 'shoot' && a.kind !== 'close') W = g.jumperWindow(me, a, g.contestIfReleased(me));
+    else if (a.type === 'layup' && !a.oop && !a.untimed && a.releaseAt == null && a.t > 0.04) {
+      // (v0.4.7.5 quick patch: a finish can be smothered too: no window, measured the way the release measures it)
+      const c = g.layupContest(me, a, g.releaseYNext(me));
+      W = g.layupWindow(me, a, c.contest, c.guard);
     } else return null;
-    return this.meterOf(W.total, W.natural, a.tRel, (a.releaseAt ?? a.t) - a.tRel, W.sure, a.type === 'shoot' && contest >= SMOTHER, '');
+    return this.meterOf(W.total, W.natural, a.tRel, (a.releaseAt ?? a.t) - a.tRel, W.sure, !!W.smothered, '');
   }
   // windows (ms of action time, ± around the ideal) and the release error (s) → the meter's units (1 = ideal release)
   meterOf(total, natural, tRel, err, sure, smothered, grade) {
@@ -691,7 +786,7 @@ export class MatchSession {
     if (g.mode === 'park') { clock = `FIRST TO ${g.target}`; sub = g.needsClear[g.possession] ? 'CLEAR IT' : '2s & 3s'; }
     else if (g.mode === 'practice') { const s = me ? me.stats : null; clock = 'PRACTICE'; sub = s ? `${s.fgm}/${s.fga} FG · ${s.tpm}/${s.tpa} 3PT` : ''; }
     else { clock = fmtClock(g.gameClock); sub = g.quarter > g.quarters ? 'OT' : `Q${g.quarter}`; }
-    hud.setGrade(this.grade && settings.gradeHud !== false ? this.grade : null);
+    hud.setGrade(this.grade && settings.gradeHud !== false ? this.grade : null, me ? me.stats : null); // (v0.4.7.5 quick patch: with your line)
     if (g.mode !== 'practice') hud.setScore({ teams: this.teams, score: g.score, clock, sub, shot: g.phase === 'live' || g.phase === 'inbound' ? g.shotClock : null, poss: g.over ? -1 : g.possession });
     else {
       // shootaround: right side tracks green releases (or the 1-on-1 defender's points)
@@ -737,6 +832,7 @@ export class MatchSession {
     for (const v of this.visuals) v.dispose();
     this.scene.remove(this.ballMesh);
     this.scene.remove(this.ballBlob);
+    if (this.arrows) { this.scene.remove(this.arrows.mine); this.scene.remove(this.arrows.his); }
     this.r.ctx.disposeGeometry(this.ballMesh.geo);
     if (!this.background) { this.hud.clear(); const h = document.getElementById('help-overlay'); if (h) h.remove(); }
   }

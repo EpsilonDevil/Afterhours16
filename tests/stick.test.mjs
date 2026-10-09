@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stickGesture, newStickState, STICK, Input } from '../client/js/core/input.js';
 import { MatchSession } from '../client/js/game/session.js';
-import { Game } from '../client/js/sim/game.js';
+import { Game, DRIBBLE_MOVE_SPEED } from '../client/js/sim/game.js';
 import { makeTeam } from '../client/js/sim/bots.js';
 import { RNG } from '../client/js/core/rng.js';
 
@@ -85,7 +85,8 @@ test('moves come out quicker, more so with a better handle; they chain at 60%; c
     return p.action.dur;
   };
   const slow = durFor(55, 55), fast = durFor(99, 99);
-  assert.ok(slow < 0.4 * 0.85, `every move is quicker than v0.4.5's 0.4 s crossover (${slow.toFixed(3)} s)`);
+  // (v0.4.7.5 quick patch: every dribble move is 20% slower again, DRIBBLE_MOVE_SPEED, so the v0.4.5 bound scales by 1/0.8)
+  assert.ok(slow < 0.4 * 0.85 / DRIBBLE_MOVE_SPEED, `every move is quicker than v0.4.5's 0.4 s crossover (${slow.toFixed(3)} s)`);
   assert.ok(fast < slow * 0.8, `a 99 handle is quicker still (${fast.toFixed(3)} vs ${slow.toFixed(3)} s)`);
   // chain: a different move called 60% into the current one starts right away, and costs no stamina
   const { g, p } = handler();

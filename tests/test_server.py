@@ -821,6 +821,50 @@ class V045ProgressionTests(unittest.TestCase):
         self.assertTrue(builds.describe(char)["cap_breakers_unlocked"])
         self.assertEqual(builds.describe(char)["prorun_to_next"], 0)
 
+    def test_icon_legend_plus_one_ovr_every_two_pro_run_games_to_99(self):
+        # v0.4.7.5 quick patch: with the Icon badge, every 2 Pro Run games played to the end are +1 OVR, placed by the
+        # build system on the attributes the build leans on, up to 99; 99s stay put; the caps keep up
+        char = self._char()
+        char["ovr_floor"] = 90
+        char["attributes"] = builds.caps(char)
+        summ = {"mode": "prorun", "duration": 600, "forfeit": False, "stats": {k: 0 for k in progression.STAT_KEYS}}
+        rw = {"vc": 0, "rep": 0, "won": True, "streak": 0, "badges": {}}
+        # no Icon badge: nothing
+        self.assertIsNone(progression.apply_progress(char, summ, rw)["legend_ovr"])
+        self.assertFalse(builds.describe(char)["legend_info"]["active"])
+        char["icon_badge"] = "sharp_eye"
+        before = builds.overall(char["attributes"], char["position"])
+        # park games, simmed games (never reported) and forfeits don't count
+        progression.apply_progress(char, {**summ, "mode": "park"}, rw)
+        progression.apply_progress(char, {**summ, "forfeit": True}, rw)
+        self.assertEqual(char.get("legend", {}).get("games", 0), 0)
+        ups = [progression.apply_progress(char, summ, rw)["legend_ovr"] for _ in range(4)]
+        self.assertEqual([u is not None for u in ups], [False, True, False, True], "every second game")
+        self.assertEqual(ups[1]["from"], before)
+        self.assertEqual(ups[1]["to"], before + 1)
+        self.assertTrue(all(v > 0 for v in ups[1]["changes"].values()))
+        self.assertEqual(builds.overall(char["attributes"], char["position"]), before + 2)
+        caps = builds.caps(char)
+        self.assertTrue(all(caps[a] >= v for a, v in char["attributes"].items()), "the caps never sit under a Legend upgrade")
+        info = builds.describe(char)["legend_info"]
+        self.assertEqual((info["active"], info["games"], info["to_next"]), (True, 4, 2))
+        # all the way to 99, and no further; 99s are never touched
+        for _ in range(40):
+            nines = {a for a, v in char["attributes"].items() if v >= 99}
+            up = progression.apply_progress(char, summ, rw)["legend_ovr"]
+            if up:
+                self.assertFalse(nines & set(up["changes"]), "an attribute at 99 stays where it is")
+        self.assertEqual(builds.overall(char["attributes"], char["position"]), 99)
+        self.assertTrue(all(v <= 99 for v in char["attributes"].values()))
+        self.assertTrue(builds.describe(char)["legend_info"]["maxed"])
+        # the shooter's shooting is what went up first
+        sh = self._char()
+        sh["ovr_floor"] = 90
+        sh["attributes"] = builds.caps(sh)
+        sh["icon_badge"] = "sharp_eye"
+        first = builds.legend_raise(sh)["changes"]
+        self.assertIn("three_point", first)
+
     def test_older_builds_keep_the_ovr_they_reached(self):
         b = builds.spec({"position": "SG", "archetype": "sharpshooter", "height": 76})
         old = {**b, "attributes": builds.caps(b, 86), "schema": 3, "badges": {}, "cap_breakers": {"earned": 0, "available": 0, "applied": {}}}

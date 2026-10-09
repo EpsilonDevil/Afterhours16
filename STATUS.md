@@ -1,4 +1,4 @@
-# Status — v0.4.7.5 (complete)
+# Status — v0.4.7.5 (complete, with its quick patch)
 
 v0.4.7.5 was built in twelve stages (A–L), each committed with its own tests. The full player-facing list is in `PATCH_NOTES_v0.4.7.5.docx` (source: `PATCH_NOTES_v0.4.7.5.md`). Where things live:
 
@@ -17,6 +17,27 @@ v0.4.7.5 was built in twelve stages (A–L), each committed with its own tests. 
 | Soundtrack, bug reports | `client/audio/music/`, `core/music.js`, `ui/bugreport.js`, `server/bugs.py` | parts play back to back; reports in `Afterhours16_Bug_Reports.txt` |
 
 Tests: `node --test tests/*.test.mjs` (121) and `python -m unittest discover -s tests` (39).
+
+## v0.4.7.5 quick patch
+
+Player-facing list: the "Quick patch" part of `PATCH_NOTES_v0.4.7.5.md` / `.docx`. Where things live:
+
+| Area | Files | Notes |
+|---|---|---|
+| Non-shooters, green windows | `sim/shots.js` (SHOOTER_ARCH, NON_SHOOTER_WIN 0.9, GREEN_K ×0.9), `sim/game.js` jumperWindow | `sure` excludes a non-shooter's three |
+| Smothered = no make, finish scale, record scratch | `sim/shots.js` (LAYUP_SMOTHER 1.72, insideGuard, guardFor, contestRaw), `sim/game.js` releaseShot/releaseLayup/layupContest, `core/greensound.js` (playRecordScratch, stop handles), `game/session.js` (cutGreen, greenScratch) | release events carry guard, smothered, scratch |
+| Contests at the release | `sim/game.js` aiGradeAtRelease, `sim/ai.js` (timing returns the planned contest), `sim/shots.js` contestRaw (0.9/m release height, paint weight ±10%) | AI_TIMING_COMP {mid 1.55, three 1.15, three_non 1.8, layup 1.8, ft 1.05}: 72 park games → mid 34.9%, layup 51.5%, 3PT 28.1% (shooters 35.6%, others 24.3%) |
+| Repeat moves, diagonals, dribble/game speed | `sim/game.js` (repeatMoveK, REPEAT_GAP 3 s, DRIBBLE_MOVE_SPEED 0.8, MOVE_BURST_K √0.8, GAME_SPEED ×1.025), `sim/moves.js` (pushcross, jab, snatch, btlback; 17 combos), `char/animator.js`, `sim/ai.js` SITU | size-up combos in place ×0.8 too |
+| Passing, reach-ins, AI in bounds | `sim/game.js` (PASS_ACC_K 0.9, reachContact, REACH_FOUL), `sim/ai.js` (seek clamp + lineBrake, meetPass in bounds, no reaching through) | Pro-Am: ~3 reach fouls a game, all from contact |
+| Defense arrows, camera, volume | `game/session.js` defArrows (DEF_ARROW), `gfx/textures.js` arrowTexture, `game/camera.js` (FOLLOW_X, CAM_H), `ui/screens.js` volumeSliders/bindVolume, `ui/modes.js` pause menus | Settings → Defense arrows |
+| Icon Legend to 99 | `server/builds.py` (LEGEND_*, legend_raise, legend_info, caps floor), `server/progression.py`, `server/app.py`, `sim/builds.js` (caps floor), `ui/modes.js` legendUnlocked, `ui/myplayer.js`, `ui/prorun.js` | +1 per 2 completed Pro Run games after the Icon badge |
+| Straps, dunks, celebrations, Posterizer | `char/athlete.js` (buildStraps, TANK_STRAP; buildSteps now passes straps), `sim/game.js` (millCircle, EASTBAY_KEYS/keyPath, posterPending), `char/animator.js`, `game/session.js` (canCelebrate), `core/input.js` padDpad | the staged build never drew the v0.4.7.5 strap mesh |
+| Apparel ×2, dunk styles, dropdowns, chant | `server/catalog.json` (95 new items `v0475qp`, dunk `styles`), `sim/bots.js` (shoe `model`), `css/app.css`, `core/greensound.js` | wearables per slot exactly doubled; 12 Daily Spin wearables |
+| Green releases ×2, sounds remade | `core/sfx.js` (sample synth: Osc, Svf, Biquad, Formants, Noise, Drift, Env, modes, pluck, reverb, levelling + soft limiter), `core/greensound.js` (32 recipes, renderGreen, cache per sound and tempo, worker + warmGreenSounds), `core/greenworker.js`, `game/greenfx.js` (14 new effects), `server/catalog.json` (30 new items `v0475qp`) | AI pitch on playback, tempo rendered in; record scratch still on live nodes |
+| AI reactions | `sim/ai.js` (o.fresh catch read, moveGap/inMove, driveLane, closeouts on the pass, rotations to the pass target, recovery sprint, help on an open lane, transition from the change of hands, fast-break push + outlets, estimateContest look 0.5 s for shot decisions) | AI_TIMING_COMP mid 1.65, layup 1.98; 24 park games → mid 38.3%, layup 52.5%, 3PT 26.9% |
+| Stamina, HUD line | `sim/player.js` (non-sprint movement neutral, STAMINA_RECOVER_K 1.2), `game/hud.js` (LINE, setLine), `css/app.css` (.lg-stats 158 px = 1.2 × 132), `game/session.js` | the grade keeps its 132 px and moves left |
+
+Tests: `node --test tests/*.test.mjs` (148; new: `tests/v0475qp.test.mjs`, `v0475qp2.test.mjs`, `v0475qp3.test.mjs`) and `python -m unittest discover -s tests` (40).
 
 **Known limits:** the model is still the v0.4 low-poly athlete (faces and hands are next in the v0.5 overhaul); knees can still brush in some strides; the Juice WRLD freestyle has no pause to split at, so its part change is mid-verse (it plays straight through).
 

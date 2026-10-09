@@ -4,6 +4,10 @@ import { COURT } from '../sim/constants.js';
 
 export const CAM_MODES = ['2k', 'broadcast', 'player'];
 export const CAM_LABEL = { '2k': '2K Cam', broadcast: 'Broadcast', player: 'Player Lock' };
+// v0.4.7.5 quick patch (2K cam): how much of a sideways run the camera follows [position, aim] (was 0.32 / 0.55),
+// and how much higher it sits (m)
+export const FOLLOW_X = [0.58, 0.78];
+export const CAM_H = 0.9;
 
 export class CameraRig {
   constructor(cam) {
@@ -45,18 +49,24 @@ export class CameraRig {
       fov = 50;
     } else {
       // 2K cam: elevated, behind the play facing the basket being attacked
+      // v0.4.7.5 quick patch: running looked quicker sideways than up and down the floor (the speed is the same every
+      // way: the sim is measured equal in every direction). Two things made it look that way: the camera follows the
+      // play up and down the floor one for one but only a third of the way sideways, so a sideways run streaked
+      // across the screen while a run up the floor stayed put; and from a low angle a run toward the basket is
+      // foreshortened. The camera now follows sideways runs more closely (FOLLOW_X) and sits a little higher (CAM_H),
+      // so a sprint reads at the same pace every way you run.
       const rimZ = s * COURT.hoopZ;
       const fz = ctx.half ? M.clamp(f.z, 1, 13) : M.clamp(f.z, -13, 13);
       const back = ctx.half ? 16.5 : 15.5;
       if (ctx.half) {
-        pos = [ox + f.x * 0.32, 7.0, oz + Math.min(fz, 9) - s * back];
-        tgt = [ox + f.x * 0.55, 0.9, oz + fz + s * 2.2];
+        pos = [ox + f.x * FOLLOW_X[0], 7.0 + CAM_H, oz + Math.min(fz, 9) - s * back];
+        tgt = [ox + f.x * FOLLOW_X[1], 0.9, oz + fz + s * 2.2];
       } else {
         // on a change of possession swing around the sideline instead of passing overhead
         const th = Math.acos(M.clamp(s, -1, 1));
         const sx = -Math.sin(th), sz = -Math.cos(th);
-        pos = [ox + f.x * 0.32 + sx * back * 0.85, 7.6, oz + fz + sz * back];
-        tgt = [ox + f.x * 0.55 - sx * 1.5, 0.9, oz + fz - sz * 2.2];
+        pos = [ox + f.x * FOLLOW_X[0] + sx * back * 0.85, 7.6 + CAM_H, oz + fz + sz * back];
+        tgt = [ox + f.x * FOLLOW_X[1] - sx * 1.5, 0.9, oz + fz - sz * 2.2];
       }
       // keep the rim in frame on halfcourt
       if (ctx.half) tgt[2] = Math.min(tgt[2], oz + rimZ - 1.5);

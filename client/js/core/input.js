@@ -108,6 +108,24 @@ export function stickGesture(s, rx, ry, dt) {
   return out;
 }
 
+// a D-pad reported as axes: a hat switch on axis 9 (-1 up, going clockwise in 2/7 steps; past 1 = centred) or a
+// pair of axes (6/7 on most pads). Fills in buttons 12-15 (up, down, left, right) when they're missing.
+export function padDpad(p, buttons) {
+  const ax = p.axes || [];
+  let up = false, down = false, left = false, right = false;
+  const hat = ax.length > 9 ? ax[9] : null;
+  const step = hat == null ? -1 : Math.round((hat + 1) / (2 / 7));
+  // (only a value sitting on one of the hat's eight steps counts: an ordinary axis resting at 0 is not "down")
+  if (hat != null && Math.abs(hat) > 0.05 && step >= 0 && step <= 7 && Math.abs(hat - (-1 + step * 2 / 7)) < 0.04) {
+    const i = step % 8; // 0 up, 1 up-right, 2 right, ... 7 up-left
+    up = i === 7 || i === 0 || i === 1; right = i >= 1 && i <= 3; down = i >= 3 && i <= 5; left = i >= 5 && i <= 7;
+  } else if (ax.length >= 8 && (Math.abs(ax[6]) > 0.5 || Math.abs(ax[7]) > 0.5)) {
+    up = ax[7] < -0.5; down = ax[7] > 0.5; left = ax[6] < -0.5; right = ax[6] > 0.5;
+  }
+  buttons[12] = !!buttons[12] || up; buttons[13] = !!buttons[13] || down; buttons[14] = !!buttons[14] || left; buttons[15] = !!buttons[15] || right;
+  return buttons;
+}
+
 export class Input {
   constructor(target = window) {
     this.down = new Set();
@@ -215,6 +233,9 @@ export class Input {
     g.values = p.buttons.map(b => b.value);
     g.buttons = p.buttons.map((b, i) => (i === 6 || i === 7) ? b.value > 0.3 : (b.pressed || b.value > 0.5));
     g.axes = [p.axes[0] || 0, p.axes[1] || 0, p.axes[2] || 0, p.axes[3] || 0];
+    // v0.4.7.5 quick patch: pads the browser doesn't map to the standard layout (some PlayStation, Switch and
+    // third-party pads) report the D-pad as axes, not buttons 12-15, so D-pad up (celebrate) never fired on them
+    if (p.mapping !== 'standard') padDpad(p, g.buttons);
     const lsm = Math.hypot(g.axes[0], g.axes[1]), rsm = Math.hypot(g.axes[2], g.axes[3]);
     if (g.buttons.some((b, i) => b && !g.prev[i]) || lsm > 0.45 || rsm > 0.45) this.lastDevice = 'gamepad';
     // ---- right stick: flick / push (dribble moves, reaches) and rotation (spin), see stickGesture ----

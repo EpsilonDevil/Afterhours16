@@ -6,7 +6,7 @@ anything. Rewards, Rep and badges are computed here, never trusted from the clie
 """
 import re
 import time
-from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K
+from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K, LEGEND_GAMES_PER_OVR, legend_raise
 
 VC_K = 1.35  # v0.4.5: every game pays 35% more VC
 
@@ -193,6 +193,7 @@ def apply_progress(char, summary, rw):
     prog = char.setdefault("progression", {})
     # v0.4.7.5: every 3 Pro Run games played to the end raise the build's max OVR by 1 (80 -> 90)
     ovr_before = max_ovr(char)
+    icon_before = bool(char.get("icon_badge"))
     prog["prorun_completed"] = prorun_completed(char)
     if summary["mode"] == "prorun" and not summary.get("forfeit"):
         prog["prorun_completed"] += 1
@@ -255,9 +256,28 @@ def apply_progress(char, summary, rw):
                     char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
                     icon_unlocked = char["icon_badge"]
     ovr_after = max_ovr(char)
+    # v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games played to the end are +1 OVR
+    # (to 99), placed by the build system (builds.legend_raise). The game that unlocks the Icon doesn't count.
+    legend_up = None
+    if summary["mode"] == "prorun" and not summary.get("forfeit") and icon_before:
+        lg = char.setdefault("legend", {"games": 0, "upgrades": 0, "floor": {}})
+        lg["games"] = int(lg.get("games", 0) or 0) + 1
+        changes, first, last = {}, None, None
+        while lg["games"] // LEGEND_GAMES_PER_OVR > int(lg.get("upgrades", 0) or 0):
+            up = legend_raise(char)
+            if not up:
+                break
+            lg["upgrades"] = int(lg.get("upgrades", 0) or 0) + 1
+            first = up["from"] if first is None else first
+            last = up["to"]
+            for a, n in up["changes"].items():
+                changes[a] = changes.get(a, 0) + n
+        if changes:
+            legend_up = {"from": first, "to": last, "changes": changes, "games": lg["games"]}
     return {"rep_before": before, "rep_after": after, "badges_upgraded": upgraded,
             "cap_breakers_awarded": cap_breakers_awarded, "icon_unlocked": icon_unlocked,
-            "max_ovr_unlocked": {"from": ovr_before, "to": ovr_after} if ovr_after > ovr_before else None}
+            "max_ovr_unlocked": {"from": ovr_before, "to": ovr_after} if ovr_after > ovr_before else None,
+            "legend_ovr": legend_up}
 
 
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")

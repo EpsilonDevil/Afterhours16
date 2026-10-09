@@ -206,7 +206,7 @@ export function resolveLook(build, catalog, override = {}) {
   const top = override.top || item(eq.top) || { family: 'jersey', color: '#46aaa4', trim: '#ede4d3', pattern: 'panel', lettering: 'YARD' };
   const bottom = override.bottom || item(eq.bottom) || { family: 'shorts', color: '#26303a', trim: '#ede4d3' };
   const shoes = item(eq.shoes) || { color: '#f2f2f2', accent: '#3fb6a8', sole: '#f5f5f0', cut: 'mid' };
-  const g = { shoes: { color: shoes.color, accent: shoes.accent, sole: shoes.sole, cut: shoes.cut || 'mid', lace: shoes.lace, trim: shoes.trim, model: shoeModel(shoes.id || eq.shoes) } };
+  const g = { shoes: { color: shoes.color, accent: shoes.accent, sole: shoes.sole, cut: shoes.cut || 'mid', lace: shoes.lace, trim: shoes.trim, model: shoes.model || shoeModel(shoes.id || eq.shoes) } };
   if (item(eq.socks)) g.socks = { color: item(eq.socks).color, style: item(eq.socks).style };
   if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null };
   if (item(eq.sleeve)) g.sleeve = { color: item(eq.sleeve).color, side: build.hand === 'L' ? 'L' : 'R' };

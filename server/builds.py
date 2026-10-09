@@ -116,6 +116,13 @@ HOF_LIMIT = 7  # Hall of Fame badges per build; the 7th unlocks the archetype's 
 ICON_FOR_ARCH = {"sharpshooter": "sharp_eye", "slasher": "hash_slinging", "playmaker": "oprah", "lockdown": "the_clamp",
                  "two_way": "the_general", "glass_cleaner": "big_brother", "stretch_big": "open_arms", "post_scorer": "sexy_red"}
 COST_K = 0.65  # v0.4.5: everything costs 35% less
+# v0.4.7.5 quick patch, Icon Legend: once a build has its Icon badge, every 2 Pro Run games played to the end (simmed
+# games don't count) raise its overall by 1, up to 99. There's no stat picking: each +1 is placed by the build system
+# itself, along the build's own shape (the curve its caps come from: what its archetype, size and position lean on
+# most), raising the attributes that fit the build until the overall goes up by one. Attributes at 99 stay where
+# they are. The caps never drop below what Legend upgrades have placed (legend floor).
+LEGEND_GAMES_PER_OVR = 2
+LEGEND_OVR_CAP = 99
 
 
 # v0.4.7.5 badge restrictions: the highest tier each badge can reach on a build. The archetype sets a base cap
@@ -227,7 +234,56 @@ def caps(b, target=None):
     for a, n in applied.items():
         if a in out and isinstance(n, int) and n > 0:
             out[a] = min(99, out[a] + n)
+    floor = (b.get("legend") or {}).get("floor") or {}
+    for a, v in floor.items():
+        if a in out and isinstance(v, int):
+            out[a] = max(out[a], min(99, v))
     return out
+
+
+def legend_info(char):
+    lg = char.get("legend") or {}
+    games, ups = int(lg.get("games", 0) or 0), int(lg.get("upgrades", 0) or 0)
+    ovr = overall(char.get("attributes") or {}, char.get("position", "SF")) if char.get("attributes") else 0
+    done = ovr >= LEGEND_OVR_CAP
+    return {"active": bool(char.get("icon_badge")), "games": games, "upgrades": ups, "per": LEGEND_GAMES_PER_OVR,
+            "cap": LEGEND_OVR_CAP, "maxed": done, "to_next": 0 if done else LEGEND_GAMES_PER_OVR - games % LEGEND_GAMES_PER_OVR}
+
+
+def legend_raise(char):
+    """One Icon Legend upgrade: +1 overall, placed by the build system. The attributes that fit the build best come
+    first: its own shape (the curve its caps come from, what its archetype, size and weight lean on) and what its
+    position's overall counts most. They go up a point at a time, round the top half of the list, until the overall
+    is up by one; an attribute at 99 drops out and the next one in line takes its place. Returns {from, to,
+    changes} (None at 99)."""
+    attrs = dict(char.get("attributes") or {})
+    pos = char.get("position", "SF")
+    cur = overall(attrs, pos)
+    if cur >= LEGEND_OVR_CAP:
+        return None
+    base = base_caps(char)
+    w = OVERALL_WEIGHTS.get(pos, OVERALL_WEIGHTS["SF"])
+    fit = sorted(ATTRIBUTES, key=lambda a: -(base[a] + 6 * w.get(a, 0.45)))
+    cand = {a: attrs.get(a, 40) for a in ATTRIBUTES}
+    target = cur + 1
+    group = len(ATTRIBUTES) // 2
+    while overall(cand, pos) < target:
+        open_ = [a for a in fit if cand[a] < 99]
+        if not open_:
+            break
+        for a in open_[:group]:
+            cand[a] += 1
+            if overall(cand, pos) >= target:
+                break
+    changes = {a: cand[a] - attrs.get(a, 0) for a in ATTRIBUTES if cand[a] > attrs.get(a, 0)}
+    if not changes:
+        return None
+    char["attributes"] = cand
+    lg = char.setdefault("legend", {"games": 0, "upgrades": 0, "floor": {}})
+    floor = lg.setdefault("floor", {})
+    for a in changes:
+        floor[a] = max(int(floor.get(a, 0) or 0), cand[a])
+    return {"from": cur, "to": overall(cand, pos), "changes": changes}
 
 
 def starting_attributes(b):
@@ -373,5 +429,6 @@ def describe(char):
             "max_ovr": max_ovr(char), "base_ovr_cap": BASE_OVR_CAP, "ovr_cap": OVR_CAP, "prorun_completed": prorun_completed(char),
             "prorun_to_next": 0 if max_ovr(char) >= OVR_CAP else PRORUN_GAMES_PER_OVR - prorun_completed(char) % PRORUN_GAMES_PER_OVR,
             "cap_breakers_unlocked": cap_breakers_unlocked(char), "cap_breakers_earned": cb.get("earned", 0),
+            "legend_info": legend_info(char),
             "max_overall": overall(cap, char["position"]),
             "max_upgrade_cost": quote(char, max_targets(char))[0]}

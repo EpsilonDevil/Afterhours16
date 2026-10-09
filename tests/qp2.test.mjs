@@ -30,8 +30,8 @@ test('a release outside the green window very rarely goes in: 3% at most slightl
 });
 
 test('windows 6.5% smaller, the game 3.75% slower, everyone 7.45% slower with the ball', () => {
-  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935) < 1e-12);
-  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375)) < 1e-12);
+  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935 * 0.9) < 1e-12); // (v0.4.7.5 quick patch: 10% more off, and the game 2.5% quicker)
+  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375) * 1.025) < 1e-12);
   assert.ok(Math.abs(DRIBBLE_SPEED_K - (1 - 0.0745)) < 1e-12);
   // a handler and the same player without the ball, running flat out for two seconds
   const top = hasBall => {
@@ -92,7 +92,7 @@ test('shot feedback shows how guarded you were: the exact contest the release wa
   assert.equal(guardedText(S.SMOTHER), '75% guarded · Smothered');
   assert.equal(guardedText(1.2), '100% guarded · Smothered', 'capped at a full contest');
   const src = fs.readFileSync(new URL('../client/js/game/session.js', import.meta.url), 'utf8');
-  assert.ok(src.includes("e.kind === 'ft' ? 'Free throw' : guardedText(e.contest)"), 'the release event\'s own contest');
+  assert.ok(src.includes("e.kind === 'ft' ? 'Free throw' : guardedText(e.guard ?? e.contest)"), 'the release event\'s own contest (v0.4.7.5 quick patch: a finish on its own scale)');
 });
 
 test('dunks: no slow motion, thrown down hard out of his hand through the rim', () => {

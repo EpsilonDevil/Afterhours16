@@ -15,7 +15,7 @@ import * as Rewards from './rewards.js';
 import { playOutro } from './outro.js';
 import * as Phone from './phone.js';
 import * as Stats from './stats.js';
-import { boostedBuild } from '../sim/ratings.js';
+import { boostedBuild, ATTR_LABEL } from '../sim/ratings.js';
 import { padGlyph } from '../core/input.js';
 import * as MyPlayer from './myplayer.js';
 import { badgeSVG, iconBadgeSVG } from './badgeart.js';
@@ -272,7 +272,8 @@ class ParkUI {
       <button class="btn" data-settings>Settings & controls</button>
       <button class="btn" data-bug>Report a bug (F8)</button>
       <button class="btn ghost" data-leave>Leave the park</button>
-      ${Screens.LAUNCHED ? '<button class="btn ghost" data-exit>Quit to desktop</button>' : ''}</div>`);
+      ${Screens.LAUNCHED ? '<button class="btn ghost" data-exit>Quit to desktop</button>' : ''}</div>${Screens.volumeSliders()}`);
+    Screens.bindVolume(card);
     card.querySelector('[data-leave]').onclick = () => { closeModal(); Screens.go(this.app, 'home'); };
     const ex = card.querySelector('[data-exit]'); if (ex) ex.onclick = () => { closeModal(); Screens.confirmQuit(); };
     card.querySelector('[data-store]').onclick = () => { closeModal(); this.openStore(hub); };
@@ -289,7 +290,8 @@ class ParkUI {
   pauseGame(hub) {
     const s = hub.mySession; if (!s) return;
     s.paused = true;
-    const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-phone>Social</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn" data-bug>Report a bug (F8)</button><button class="btn ghost" data-quit>Leave the game (forfeit)</button></div>`);
+    const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-phone>Social</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn" data-bug>Report a bug (F8)</button><button class="btn ghost" data-quit>Leave the game (forfeit)</button></div>${Screens.volumeSliders()}`);
+    Screens.bindVolume(card);
     closeModal.onClose = () => { s.paused = false; };
     card.querySelector('[data-stats]').onclick = () => { s.paused = true; Stats.openStatsModal(this.app); closeModal.onClose = () => { s.paused = false; }; };
     card.querySelector('[data-phone]').onclick = () => { closeModal.onClose = null; Phone.openPhone(this.app, { onClose: () => { s.paused = false; } }); };
@@ -332,7 +334,8 @@ class HQUI extends ParkUI {
       <button class="btn" data-settings>Settings & controls</button>
       <button class="btn" data-park>Back to the park</button>
       <button class="btn ghost" data-leave>Main menu</button>
-      ${Screens.LAUNCHED ? '<button class="btn ghost" data-exit>Quit to desktop</button>' : ''}</div>`);
+      ${Screens.LAUNCHED ? '<button class="btn ghost" data-exit>Quit to desktop</button>' : ''}</div>${Screens.volumeSliders()}`);
+    Screens.bindVolume(card);
     card.querySelector('[data-crew]').onclick = () => { closeModal(); this.openCrewMenu(hq); };
     card.querySelector('[data-phone]').onclick = () => { closeModal(); Phone.openPhone(this.app); };
     card.querySelector('[data-stats]').onclick = () => { closeModal(); Stats.openStatsModal(this.app); };
@@ -378,8 +381,23 @@ function maxOvrUnlocked(app, u, character, next) {
   card.querySelector('[data-ok]').onclick = () => { closeModal(); next(); };
 }
 
+// v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games are +1 OVR (to 99), placed for you
+function legendUnlocked(app, u, character, next) {
+  const per = app.config.badge_rules?.legend_games_per_ovr ?? 2, cap = app.config.badge_rules?.legend_ovr_cap ?? 99;
+  const rows = Object.entries(u.changes || {}).sort((a, b) => b[1] - a[1]);
+  const card = modal(`<div class="ovr-unlock legend"><div class="eyebrow">ICON LEGEND · ${u.games} PRO RUN GAME${u.games === 1 ? '' : 'S'} SINCE YOUR ICON BADGE</div>
+    <h2>+${u.to - u.from} OVR!</h2>
+    <div class="ou-nums"><span>${u.from}</span><i>→</i><b>${u.to}</b></div>
+    <div class="lu-attrs">${rows.map(([k, n]) => `<span><b>+${n}</b> ${esc(ATTR_LABEL[k] || k)} <small>${character?.attributes?.[k] ?? ''}</small></span>`).join('')}</div>
+    <p class="muted">Placed by your build on what it leans on${u.to >= cap ? `. That's ${cap}: <b>fully grinded</b>.` : `. ${per} more Pro Run games for the next +1 (up to ${cap}).`}</p>
+    <div class="row gap"><button class="btn primary" data-ok>Continue</button></div></div>`, { close: false, cls: 'ovr-unlock-card' });
+  audio.ui('buy');
+  card.querySelector('[data-ok]').onclick = () => { closeModal(); next(); };
+}
+
 export function showResults(app, summary, result, won, opts = {}) {
   if (result?.max_ovr_unlocked && !opts.ovrShown) return maxOvrUnlocked(app, result.max_ovr_unlocked, result.character, () => showResults(app, summary, result, won, { ...opts, ovrShown: true }));
+  if (result?.legend_ovr && !opts.legendShown) return legendUnlocked(app, result.legend_ovr, result.character, () => showResults(app, summary, result, won, { ...opts, legendShown: true }));
   const me = summary.me.stats;
   const r = result;
   const pct = (a, b) => b ? `${a}/${b}` : '0/0';
@@ -565,7 +583,8 @@ export async function playProAm(app) {
 
 export function pauseMatch(app, world) {
   world.session.paused = true;
-  const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn ghost" data-quit>Forfeit & leave</button></div>`);
+  const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn ghost" data-quit>Forfeit & leave</button></div>${Screens.volumeSliders()}`);
+  Screens.bindVolume(card);
   closeModal.onClose = () => { world.session.paused = false; };
   card.querySelector('[data-stats]').onclick = () => { world.session.paused = true; Stats.openStatsModal(app); closeModal.onClose = () => { world.session.paused = false; }; };
   card.querySelector('[data-controls]').onclick = () => { world.session.paused = true; modal(`<h2>Controls</h2>${Screens.controlsTable(app)}`, { wide: true }); closeModal.onClose = () => { world.session.paused = false; }; };

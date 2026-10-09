@@ -176,6 +176,23 @@ function home(app, root) {
   app.showroom.setPreview('dribble');
 }
 
+// v0.4.7.5 quick patch: the volume sliders in the pause menus (the park, a park game, Pro-Am and the Pro Run, the
+// Crew HQ). They work as you drag and are saved with the rest of the settings.
+export function volumeSliders() {
+  const row = (k, l) => `<label class="pv-row"><span>${l}</span><input type="range" min="0" max="1" step="0.05" data-vol="${k}" value="${settings[k]}"><b data-volv="${k}">${Math.round(settings[k] * 100)}</b></label>`;
+  return `<div class="pause-vol"><div class="eyebrow">VOLUME</div>${row('musicVol', 'Music')}${row('sfx', 'Effects')}${row('crowd', 'Crowd')}</div>`;
+}
+export function bindVolume(root) {
+  root.querySelectorAll('[data-vol]').forEach(el => el.oninput = el.onchange = () => {
+    const k = el.dataset.vol, v = +el.value;
+    settings[k] = v; saveSettings();
+    if (k === 'sfx') audio.volume.sfx = v;
+    if (k === 'crowd') audio.volume.crowd = v;
+    if (k === 'musicVol') { audio.volume.music = v; if (audio.musicBus) audio.musicBus.gain.value = v; music.setVolume(v); }
+    const out = root.querySelector(`[data-volv="${k}"]`); if (out) out.textContent = Math.round(v * 100);
+  });
+}
+
 export function openSettings(app) {
   const card = modal(`
     <div class="row between"><h2>Settings</h2><button class="btn ghost small" data-bug title="F8 anywhere">Report a bug</button></div>
@@ -200,6 +217,7 @@ export function openSettings(app) {
       <label>Shot meter<select data-k="shotMeter"><option value="1" ${settings.shotMeter !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotMeter === false ? 'selected' : ''}>Off (+10% green window)</option></select></label>
       <label>Shot feedback<select data-k="shotFeedback"><option value="1" ${settings.shotFeedback !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotFeedback === false ? 'selected' : ''}>Off</option></select></label>
       <label>Green releases<select data-k="greens">${[['all', 'Everyone'], ['mine', 'Mine only'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${(settings.greens || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Defense arrows<select data-k="defArrows"><option value="1" ${settings.defArrows !== false ? 'selected' : ''}>Show</option><option value="0" ${settings.defArrows === false ? 'selected' : ''}>Hide</option></select></label>
       <label>Locked-In grade<select data-k="gradeHud"><option value="1" ${settings.gradeHud !== false ? 'selected' : ''}>Show</option><option value="0" ${settings.gradeHud === false ? 'selected' : ''}>Hide</option></select></label>
       <label>Pause on focus loss<select data-k="pauseOnBlur"><option value="1" ${settings.pauseOnBlur ? 'selected' : ''}>On</option><option value="0" ${!settings.pauseOnBlur ? 'selected' : ''}>Off</option></select></label>
     </div>
@@ -210,7 +228,7 @@ export function openSettings(app) {
     const k = el.dataset.k;
     let v = el.value;
     if (['sfx', 'crowd', 'musicVol', 'difficulty', 'deadzone'].includes(k)) v = +v;
-    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback'].includes(k)) v = v === '1';
+    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'defArrows'].includes(k)) v = v === '1';
     settings[k] = v; saveSettings();
     if (k === 'quality') app.renderer.setQuality(v);
     if (k === 'camera') app.cameraRig.mode = v;

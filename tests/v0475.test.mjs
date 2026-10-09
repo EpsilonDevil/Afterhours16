@@ -211,8 +211,9 @@ test('stick combinations call crossovers, behind-the-backs, escapes, momentum dr
   const c = (stick, ctx = {}) => stickMove(stick, ctx);
   assert.equal(c('left'), 'cross'); assert.equal(c('left', { slow: true }), 'hang'); assert.equal(c('left', { sprint: true }), 'btl'); assert.equal(c('left', { toBallHand: true }), 'inout');
   assert.equal(c('down'), 'stepback'); assert.equal(c('down', { moving: true }), 'btb'); assert.equal(c('down', { backward: true }), 'retreat');
-  assert.equal(c('down-left'), 'wrap'); assert.equal(c('down-right', { toBallHand: true }), 'sidestep');
-  assert.equal(c('up'), 'hesi'); assert.equal(c('up', { sprint: true }), 'momentum'); assert.equal(c('up-left'), 'stutter');
+  // (v0.4.7.5 quick patch: every diagonal does two things, by whether he's moving; see v0475qp.test.mjs)
+  assert.equal(c('down-left', { moving: true }), 'wrap'); assert.equal(c('down-right', { toBallHand: true }), 'sidestep');
+  assert.equal(c('up'), 'hesi'); assert.equal(c('up', { sprint: true }), 'momentum'); assert.equal(c('up-left', { toBallHand: true }), 'stutter');
   assert.equal(c('spin', { moving: true }), 'spin'); assert.equal(c('spin'), 'halfspin');
   // every family has at least two moves
   for (const f of Object.keys(FAMILIES)) assert.ok(Object.values(MOVES).filter(m => m.fam === f).length >= 2, f);
@@ -438,7 +439,7 @@ test('cherry-picking gets read: a safety stays home, and the man who leaked out 
 
 // ---------------- stage F: animations ----------------
 import { HUSTLE_TIMING, dunkSpin as dunkSpin2 } from '../client/js/sim/shots.js';
-import { ANKLE_REACT } from '../client/js/sim/game.js';
+import { ANKLE_REACT, millCircle } from '../client/js/sim/game.js';
 
 test('animations doubled in every category, a dozen movement styles, and the AI wears them', () => {
   const n = slot => list.filter(i => i.category === 'animation' && i.slot === slot).length;
@@ -471,8 +472,10 @@ test('360s turn all the way round, windmills go all the way round, and ankle-bre
   // the windmill's ball (and the hand on it) sweeps through a full turn
   const { g, p } = handler2(); const a = { type: 'dunk', style: 'windmill', slam: 1, t: 0, takeoff: 0.2 }; p.action = a;
   let prev = null, turn = 0;
-  for (let i = 0; i <= 100; i++) { a.t = i / 100 * 0.9; const w = g.holdPoint(p); const H = p.phys.H; const loc = { y: w.y - 0.9 * H, z: (w.x - p.x) * Math.sin(p.facing) + (w.z - p.z) * Math.cos(p.facing) }; const ang = Math.atan2(loc.y, loc.z); if (prev != null) { let d = ang - prev; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turn += d; } prev = ang; }
-  assert.ok(Math.abs(turn) > Math.PI * 1.6, `the arm turns ${(Math.abs(turn) * 180 / Math.PI).toFixed(0)} degrees before the slam`);
+  // (v0.4.7.5 quick patch: the circle is centred on the shoulder (millCircle) and goes round in the air, to the slam)
+  const C = millCircle(p, p.phys.H);
+  for (let i = 0; i <= 100; i++) { a.t = i / 100; const w = g.holdPoint(p); const loc = { y: w.y - C.cy, z: (w.x - p.x) * Math.sin(p.facing) + (w.z - p.z) * Math.cos(p.facing) - C.cz }; const ang = Math.atan2(loc.y, loc.z); if (prev != null) { let d = ang - prev; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turn += d; } prev = ang; }
+  assert.ok(Math.abs(turn) > Math.PI * 1.5, `the arm turns ${(Math.abs(turn) * 180 / Math.PI).toFixed(0)} degrees before the slam`);
   // reactions by move family
   const seen = {};
   for (const mv of ['cross', 'spin', 'stepback', 'hesi', 'btb']) { seen[mv] = new Set(); for (let i = 0; i < 200; i++) seen[mv].add(g.ankleReact(mv)); }
@@ -566,14 +569,20 @@ function mockAudio() {
     createBiquadFilter: () => (nodes.n++, node({ type: 'lowpass', frequency: param(1000), Q: param(1) })),
     createWaveShaper: () => (nodes.n++, node({ curve: null })),
     createBufferSource: () => (nodes.n++, node({ buffer: null, loop: false })),
+    createDelay: () => (nodes.n++, node({ delayTime: param(0) })), // (v0.4.7.5 quick patch: the chant's stands)
+    // (v0.4.7.5 quick patch: green sounds are rendered into a buffer and played from it)
+    sampleRate: 48000,
+    createBuffer: (ch, n, sr) => { const b = { numberOfChannels: ch, length: n, sampleRate: sr, data: new Float32Array(n), getChannelData() { return this.data; }, copyToChannel(x) { this.data.set(x); } }; buffers.push(b); return b; },
   };
-  return { nodes, audio: { ctx, ensure: () => true, out: () => node({}), noise: () => ctx.createBufferSource(), cheer() {} } };
+  const buffers = [];
+  ctx.createBufferSource = () => (nodes.n++, node({ buffer: null, loop: false, playbackRate: param(1) }));
+  return { nodes, buffers, audio: { ctx, ensure: () => true, out: () => node({}), noise: () => ctx.createBufferSource(), cheer() {} } };
 }
 
-test('green release sounds: a dozen and more to buy, a Cup exclusive, every one plays, and every AI player has his own', () => {
+test('green release sounds: thirty to buy, a Cup exclusive, every one plays, and every AI player has his own', () => {
   const shop = Object.values(catG).filter(i => i.slot === 'greensound' && !i.exclusive && i.price > 0);
   const cup = Object.values(catG).filter(i => i.slot === 'greensound' && i.exclusive === 'cup');
-  assert.ok(shop.length >= 12, `shop sounds ${shop.length}`);
+  assert.ok(shop.length >= 30, `shop sounds ${shop.length}`); // (v0.4.7.5 quick patch: twice as many)
   assert.ok(cup.length >= 1);
   for (const i of Object.values(catG).filter(x => x.slot === 'greensound')) {
     assert.ok(GREEN_SOUNDS[i.id] && greenRecipe(i.id), `recipe for ${i.id}`);
@@ -581,8 +590,15 @@ test('green release sounds: a dozen and more to buy, a Cup exclusive, every one 
   }
   for (const id of GREEN_SOUND_IDS) {
     const m = mockAudio();
-    assert.equal(playGreenSound(m.audio, id, { pitch: 0.9, rate: 1.1, power: 1.22, pan: 0.3, vol: 0.6 }), true, id);
-    assert.ok(m.nodes.n > 3, `${id} builds a sound (${m.nodes.n} nodes)`);
+    const h = playGreenSound(m.audio, id, { pitch: 0.9, rate: 1.1, power: 1.22, pan: 0.3, vol: 0.6 });
+    assert.ok(h && typeof h.stop === 'function', id); // (v0.4.7.5 quick patch: a handle that can cut it off)
+    assert.equal(m.buffers.length, 1, `${id} is rendered once`);
+    const x = m.buffers[0].data;
+    let pk = 0; for (const v of x) { assert.ok(Number.isFinite(v)); pk = Math.max(pk, Math.abs(v)); }
+    assert.ok(pk > 0.1 && pk <= 0.96, `${id} peak ${pk}`);
+    assert.ok(x.length > 0.4 * 44100 && x.length <= 4.25 * 44100, `${id} runs ${(x.length / 44100).toFixed(2)} s`);
+    // and the second play comes straight from the cache
+    playGreenSound(m.audio, id, { pitch: 0.9, rate: 1.1 }); assert.equal(m.buffers.length, 1);
   }
   // the AI: everyone has a sound of his own (not the starter chime), and his own pitch and tempo on it
   const rng = new RNG(5), bots = Array.from({ length: 40 }, () => makeBot(rng, { catalog: catG, level: 0.6 }));
@@ -600,9 +616,9 @@ test('green release sounds: a dozen and more to buy, a Cup exclusive, every one 
   assert.equal(team[0].greenSound, bots[0].build.equipment.greensound);
 });
 
-test('green release effects: a dozen and more to buy, a Cup exclusive, each puts on its show and cleans up after', () => {
+test('green release effects: twenty-six to buy, a Cup exclusive, each puts on its show and cleans up after', () => {
   const shop = Object.values(catG).filter(i => i.slot === 'greenfx' && !i.exclusive && i.price > 0);
-  assert.ok(shop.length >= 12, `shop effects ${shop.length}`);
+  assert.ok(shop.length >= 26, `shop effects ${shop.length}`); // (v0.4.7.5 quick patch: twice as many)
   assert.ok(Object.values(catG).some(i => i.slot === 'greenfx' && i.exclusive === 'cup'));
   for (const i of Object.values(catG).filter(x => x.slot === 'greenfx')) assert.ok(GREEN_FX[i.id], i.id);
   for (const id of GREEN_FX_IDS) {

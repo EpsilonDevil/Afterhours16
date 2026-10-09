@@ -109,7 +109,7 @@ test('running jumpers come out quicker, step-backs and fadeaways slower, threes 
 });
 
 test('every green window in the game is 10% smaller, then 6.5% more in the quick patch (jumpers, free throws, layups)', () => {
-  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935) < 1e-12);
+  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935 * 0.9) < 1e-12); // (v0.4.7.5 quick patch: 10% more off)
   for (const v of [55, 75, 90]) {
     const sub = v < 70 ? 0.9 : 1; // (and a stat under 70 isn't proficient: another 10%)
     assert.ok(Math.abs(S.greenWindowMs(v) - Math.max(9, S.timingWindowMs(v) * sub) * S.GREEN_K) < 1e-9);
@@ -168,7 +168,7 @@ test('AI +10% in every tier, game speed −0.75%, stamina drain ×2 from every s
     assert.equal(ai.iq({ iq, human: true }), iq, 'your own player is untouched');
   }
   assert.equal(ai.iq({ iq: 0.98 }), 1, 'capped at 1');
-  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * 0.9925 * 0.9625) < 1e-12, 'and 3.75% slower in the quick patch');
+  assert.ok(Math.abs(GAME_SPEED - 1.15 * 1.0375 * (1 - 0.0185) * 0.9925 * 0.9625 * 1.025) < 1e-12, 'and 3.75% slower in the quick patch (and 2.5% quicker in the v0.4.7.5 one)');
   assert.equal(g.speed, GAME_SPEED);
   assert.equal(STAMINA_K, 2); assert.equal(SPRINT_DRAIN_K, 2);
   assert.ok(Math.abs(COST.shot - 0.018) < 1e-12 && Math.abs(COST.layup - 0.024) < 1e-12 && Math.abs(COST.dunk - 0.036) < 1e-12);
@@ -204,5 +204,5 @@ test('past 35 ft it is luck: a slide down to half court, then 1% at most (a 99 t
   }
   // in a game a green past 35 ft is not a sure make
   const src = fs.readFileSync(new URL('../client/js/sim/game.js', import.meta.url), 'utf8');
-  assert.ok(src.includes("const sure = grade === 'excellent' && d <= S.DEEP_D;"));
+  assert.ok(src.includes("const sure = grade === 'excellent' && W.sure;") && src.includes('sure: d <= S.DEEP_D && !smothered'));
 });

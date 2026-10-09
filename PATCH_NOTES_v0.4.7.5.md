@@ -230,3 +230,274 @@ v0.4.7.5 is the clean-up before the v0.5 graphics and physics overhaul. Limbs co
 
 - **Version 0.4.7.5.** Your save, players, VC and AI world carry over; nothing in `data/` is touched.
 - **Tests:** 121 game tests and 39 service tests pass (new ones cover collisions, straps, badge caps, the OVR path, moves, passing, box-outs, AI, green releases, Got Next priority, bounties, AI growth, the Inventory, the soundtrack and bug reports).
+
+---
+
+# Quick patch
+
+Everything below came after the first v0.4.7.5 build. Your save, players, VC and AI world carry over; nothing in `data/` is touched.
+
+## Shooting
+
+### Shooters and non-shooters
+- **Only shooters get a sure green from three.** That means Sharpshooters and Stretch Bigs. For everyone else, a green from 3PT range and beyond is a big boost, not a guaranteed make. The meter draws that window outlined, not solid.
+  - From mid-range, a green still goes in for everyone.
+  - A non-shooter's green from three goes in about 50–70% of the time, depending on his 3PT rating and the contest.
+- **Non-shooters' jumper windows are 10% smaller**, on top of everything else.
+
+### Green windows
+- **Every green window in the game is 10% smaller again.** That covers jumpers, layups and free throws, badge and animation bonuses included.
+
+### Smothered means no make
+- **A smothered shot never goes in.**
+  - It shows no green window, and nothing can add one back: not a badge, an Icon badge, a takeover or a jumpshot base.
+  - It used to keep up to 3% from slightly early or late timing.
+- **Layups and close shots are measured on their own scale.**
+  - Around the rim the old contest number topped out on nearly every finish, because somebody is always there. Four in five layups were labelled "Smothered" and still went in about half the time.
+  - Now Smothered on a finish means a real wall-up: a defender squarely in front with his hands at the ball. That's about one finish in six in AI games, and those never go in.
+  - A Contact Finisher's push-off can take you out of it.
+- **The record scratch:**
+  - If a green is blocked in flight, a record scratch cuts its green sound off.
+  - If you time a release perfectly into a smothering contest, the green sound starts and the scratch cuts it off. That tells you the timing was right but the defense won.
+  - The AI's green sounds get the same treatment.
+
+### Contests count at the release
+- **The AI's shots now answer to the defense at the release, not just at the start of the shot.**
+  - The AI picks its timing when it rises, from the contest it expects then.
+  - A closeout that arrives in time now shrinks the window it was aiming at, and its green slips to a near miss as often as the window shrank.
+  - A defender who backs off can turn a near miss into a green.
+  - Your own shots were already graded on the contest at the release; the meter shows it live.
+- **Release height against reach counts for more out on the floor.** A high release over a shorter (or later) contest is less of a penalty; a long defender who gets a hand up at the release is more of one.
+- **In the paint, weight matters:** a heavier defender walls off a little more of a finish (up to ±10%).
+- **AI percentages were re-measured afterwards** over 72 AI park games:
+
+  | Shot | v0.4.7.5 | Quick patch |
+  |---|---|---|
+  | Mid-range | 34.6% | 34.9% |
+  | Layups | 53.0% | 51.5% |
+  | Threes, all | 31.9% | 28.1% |
+  | Threes, shooters | n/a | 35.6% |
+  | Threes, non-shooters | n/a | 24.3% |
+
+## Dribbling, passing and defense
+
+### Repeated moves
+- **Spamming a move costs more stamina.**
+  - More than 3 of the same move in a row still doubles your stamina drain (+0.1× per repeat after that).
+  - **More than 6 in a row doubles that penalty again:** 4.6× at the 7th, up to 6×.
+  - A repeat is the same move again within 3 seconds while you still have the ball. Passing, shooting, picking it up or losing it ends the run.
+  - Before, a run could carry over after a steal and keep draining you on defense.
+
+### The stick's diagonals
+**Every diagonal now does two things**, depending on whether you're moving with the left stick:
+
+| Diagonal | Standing | On the move |
+|---|---|---|
+| Up, to the ball's side | Stutter-step | **Jab step** (new) |
+| Up, to the other hand | **Push-pull crossover** (new); a slow push is a stutter | **Push-pull crossover** |
+| Down, to the ball's side | Sidestep | **Snatch-back** (new) |
+| Down, to the other hand | **Pull-back** (new: between the legs, stepping back) | Wrap |
+
+- **17 new named combos**, for example: Jab crossover, Push-pull stepback, Snatch-back crossover, Pull-back and go and Hesi push-pull.
+- A few size-up packages count the new moves as signatures: Jab, Rocker, Elite, Blur, Pound, Crab and Pendulum.
+- The AI uses the new moves too.
+
+### Dribble speed and game speed
+- **Every dribble move is 20% slower**, in every package and at every rating. That covers stick moves and size-up combos in place.
+  - Better packages and handles are still quicker, in the same proportions as before.
+  - The burst eases off less than the timing slows, so moves still cover about the same ground. A stepback still makes its space.
+- **The game as a whole runs 2.5% quicker** to meet it halfway.
+
+### Passing
+- **Every pass is 10% more accurate:** 10% less aim error, and the ball steers onto the receiver 10% better in flight.
+
+### Reach-in fouls
+- **Reach-ins are called on contact, not on chance.**
+  - Where the reaching hand ends up decides the call.
+  - Into the ball handler's body, or the arm he's dribbling with, without getting the ball first: a foul nearly every time (80%), more so reaching across his body.
+  - Hand on the ball first: all ball. There's a rare call on the follow-through.
+  - A reach that touches nothing is never a foul. Before, roughly 1 failed reach in 10 drew a foul, contact or not.
+- **Smart AI defenders don't reach through you to a ball you're shielding.** The less smart ones still do, and get called for it.
+- In AI Pro-Am games the number of reach-in fouls stayed about the same (about 3 a game), but every one of them now comes from real contact.
+
+### The AI stays in bounds
+- **Chasing a pass:** an AI player only chases the part of a pass that's in bounds. A pass heading out is met at the line.
+- **No running through the lines:** AI players never run at a spot out of bounds, and they ease off near a sideline or baseline in time to stop.
+- In AI park games, time spent standing out of bounds dropped from 1.4 to 0.1 seconds a game, and passes caught out of bounds went to zero.
+
+### Defensive assignment arrows
+- **On defense, an arrow at the edge of your ring points at the man you should be guarding.** That's your matchup, the one your AI teammates leave to you. A matching arrow at his feet points back at you.
+  - They grow a little the further off him you are.
+  - They fade out once you're on him (inside about 2 metres).
+- You can turn them off in Settings (**Defense arrows**).
+
+### Sprinting looked faster sideways
+- **The speed was always the same in every direction.** I measured it in the game: 5.86 m/s up, down, sideways and diagonal alike.
+- **Two things in the 2K Cam made it look different:**
+  - The camera followed a run up the floor one-for-one, so you stayed put on screen. It followed only a third of a sideways run, so you streaked across the screen.
+  - From a low angle, a run toward the basket is foreshortened.
+- **The fix:** the 2K Cam now follows sideways runs much more closely and sits a little higher, so a sprint reads at the same pace whichever way you run.
+
+### The AI reacts faster
+**AI players (teammates, opponents and auto-play) now react quickly in the moments that decide a possession.**
+
+- **Off the pass, on offense:** an AI player reads the floor the moment he catches it: the open shot, the drive or the next pass. Before, he held it for most of a second first.
+- **Off the pass, on defense:** the man the ball is thrown to gets closed out while the pass is in the air, and the defender's hands come up as he gets there. Everyone else rotates to where the ball is going, not where it was.
+- **Dribble moves that make space:**
+  - When an AI handler's move leaves his man a step behind (or stumbling), he uses it right away.
+  - AI defenders read a handler's dribble move sooner. One who is left a step behind runs to recover instead of sliding after him.
+- **Open lanes:**
+  - A lane that opens while an AI handler is probing gets attacked straight away, not at his next read.
+  - Help comes earlier: as soon as the lane to the rim is open, from about 6.5 m out.
+- **Fast breaks:**
+  - Defenders sprint back the moment the ball changes hands, outlet passes and loose balls included.
+  - With the numbers, the handler goes straight at the rim.
+  - A big who pulls the rebound outlets it to a guard, and a man open up the floor gets the ball sooner.
+- **Shot choices look ahead at closeouts.** They look 0.5 s ahead, the time a jumper takes to get off, so the quicker closeouts don't bait the AI into bad threes.
+- **Measured in AI games** (24 park games, 8–10 Pro-Am games):
+
+  | | Before | Now |
+  |---|---|---|
+  | Catch to the first real play (shot, pass, drive or move), park | 0.85 s | 0.32 s |
+  | Same, Pro-Am | 0.97 s | 0.54 s |
+  | Nearest defender when a pass is caught | 2.8 m | 2.2 m |
+  | On-ball defender left 2 m behind, back on his man | 0.57 s | 0.48 s |
+  | Help reaching a drive inside 6 m | 0.31 s | 0.26 s |
+  | All five back after a turnover or long rebound (Pro-Am) | 2.4 s | 1.6 s |
+  | Ball over half court after the change of possession (Pro-Am) | 3.6 s | 3.2 s |
+  | Points in the first 7 s of a possession (Pro-Am) | 0.12 | 0.17 |
+
+- **What it does to the scoring:**
+  - The faster defense took a little off the AI's percentages, so its timing compensation was raised a touch: mid-range 1.55 → 1.65, layups 1.8 → 1.98.
+  - Park rates: mid-range 38.3%, layups 52.5%, threes 26.9%. On the same test before, they were 35.6%, 52.2% and 24.5%.
+  - Games move quicker. A park game to 21 takes about 4.5 minutes of game time instead of 6.2.
+  - Pro-Am scores are about 15% higher, because there are more possessions.
+
+### Stamina
+- **Moving without the sprint button is stamina-neutral.** It used to cost a little at full jog.
+  - Sprinting, sliding in a defensive stance and hands-up defense still cost.
+  - Standing still and drifting recover.
+- **Recovery is 1.2× faster** for everyone. That's on top of the Lock-In grade, hot-streak and good-play bonuses.
+
+## Progression: Icon Legend, up to 99
+
+- **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
+  - Simmed games, forfeits and other modes don't count.
+  - The game that unlocks the Icon doesn't count either.
+- **No stat picking:** the build system places each +1 itself.
+  - It raises the attributes your build leans on most: the shape its caps come from (archetype, size and weight) and what your position's overall counts most.
+  - It goes a point at a time across the top half of that list until the overall is up by one.
+  - Attributes at 99 are never touched, and your caps rise with the upgrades.
+  - Example: a Sharpshooter's shooting reaches 99 first, and a Glass Cleaner's rebounding and interior defense do.
+- **After a game that earns one, a card shows the new overall and every attribute that went up.**
+- **Where to see it:**
+  - MyPlayer → Attributes, under the max OVR track, shows your progress to the next +1.
+  - The Pro Run screen shows it too.
+
+## The look
+
+### Jersey straps (fixed properly this time)
+- **Why they never showed:** the strap mesh added in v0.4.7.5 was built, but never drawn. Players in the game and the menus are built in stages, and the staged build never passed the straps on. That's why jerseys still looked strapless.
+- **What a strap is now:** a real band of fabric. It carries on from the top of the front panel, goes up over the trapezius (midway between the neck and the point of the shoulder) and comes down into the top of the back panel.
+  - It has a rolled binding down both edges.
+  - It moves with the shoulders.
+  - It's drawn just over the skin, so a shrug never shows through it.
+  - The fabric's mesh weave runs true to size along it.
+
+### Dunks
+- **Less repetition across packages.** Every package now has its signature finish plus one other (High Flyer has two).
+  - No generic finish is shared by more than 4 packages. Before, reverse slams showed up in 15 packages and double clutches in 14.
+  - Every signature belongs to one package only. The Spin Mill no longer borrows the Eastbay.
+- **Windmills:** the arm now goes round straight from the shoulder, at full length, through the jump.
+  - Before, the circle sat above the shoulder, so the elbow folded at the bottom, the arm over-stretched at the top and most of the circle happened during the gather.
+  - It comes over the top and down at the rim with the ball still in the hand.
+- **The Eastbay really goes between the legs, in the air.**
+  - The right hand takes the ball down in front and through the gap under the pelvis between the split legs.
+  - The left hand takes it on the far side and carries it up to the rim.
+  - Before, it was timed from the gather, so most of it happened on the floor, and the ball dipped in front of the right thigh instead of going through.
+
+### Celebrations
+- **They work in games now.**
+  - Before, they only worked if you pressed G / D-pad up during the second and a half of dead ball after a basket while your player was doing nothing, and the check then cut them off.
+  - Now a press waits up to 2.5 seconds for your player to be free (follow-through, landing, hanging on the rim).
+  - They play in any dead ball, check or inbound (unless you have the ball) and for 3 seconds after your team scores.
+  - Whoever has the ball stops for the check; everyone else finishes.
+- **Controllers:** pads the browser doesn't map to the standard layout send the D-pad as axes. The game now reads those too, so D-pad up works on them.
+- **No more arms through the body:** Chest Thump, Heart, Dust Off, Archer and Sleep put a hand or forearm through the chest. Each was fixed and every celebration was re-checked on three builds: none clip now.
+
+### Posterizer and Contact Finisher
+- **Posterizer only fires on a dunk that gets to the rim.**
+  - Winning the contact on the way up now waits for the slam.
+  - The knockdown happens if he throws it down. If he rims it out, it's a bump.
+  - If he never gets to the rim and has to flip it up, it's a layup, and a Contact Finisher's push-off (or a plain bump) takes over instead of a poster.
+  - Before, the poster fired at the contact, even when the dunk then turned into a layup.
+
+## Store, menus and HUD
+- **Twice the apparel**, Daily Spin exclusives included. 95 new items, all original:
+
+  | Item | Before | Now |
+  |---|---|---|
+  | Tops | 31 | 62 |
+  | Bottoms | 18 | 36 |
+  | Shoes | 18 | 36 |
+  | Headbands | 8 | 16 |
+  | Sleeves | 6 | 12 |
+  | Socks | 5 | 10 |
+  | Wristbands | 4 | 8 |
+  | Leg sleeves | 2 | 4 |
+  | Knee pads | 1 | 2 |
+  | Chains | 2 | 4 |
+  | Daily Spin wearables | 6 | 12 |
+
+  The new Daily Spin wearables are the Solstice Jersey and Shorts, Aurora Glow Headband, Rose Ice Chain, Frostbite Shooting Sleeve and Kinetic Hi / Aurora.
+- **The bug report's "Kind of bug" list is readable.** An open dropdown is drawn by the system (light on Windows), and its options had inherited the menus' light text. Every dropdown in the game now opens dark with light text.
+- **Your line beside the Locked-In grade:** PTS, REB, AST on top and STL, BLK, TO underneath, in a panel attached to the right of the grade.
+  - The panel is 1.2× the grade's width, at the same height.
+  - The grade itself keeps its size and moves left to make room.
+  - A number that goes up pulses once.
+  - It shows whenever the grade does (Settings → Lock-In grade).
+- **Volume in the pause menu:** Music, Effects and Crowd sliders. They're in the park's pause menu, your park game's, Pro-Am / Pro Run and the Crew HQ. They apply as you drag and are saved.
+- **The Greeen Chant is a real crowd now.**
+  - About a third higher in pitch.
+  - 25 voices in 9 different throats (men, women and a couple of kids), each with its own vowel, pitch, rise, wobble, timing and length.
+  - A breath in each throat, and the stands throwing it back.
+
+## Green releases: doubled and remade
+- **Twice as many:** 32 sounds and 28 effects. That's 16 new sounds and 14 new effects, all original, in the VC Store under Green Sounds and Green FX.
+  - **New sounds** (3,500–9,500 VC): Night Owl, Wolf Howl, Steam Whistle, Victory Bells, Knockout Bell, Shattered Glass, Strike!, Rimshot, Bass Drop, Sonar Ping, Standing Ovation, Five-Alarm, Boing, Cuckoo, Royal Fanfare and Case Closed.
+  - **New effects** (6,000–12,000 VC): Phoenix, Make It Rain, Shockwave, Atomic, Galaxy, Ice Cold, Fire Circle, Angel Wings, Jade Dragon, Meteor Shower, Laser Show, Lucky Clover, Diamond and Supernova.
+  - The AI picks from all of them, still with no two alike on a floor.
+- **Every sound remade to sound like its name.**
+  - **Why they didn't before:** each sound was a few plain synth tones, which is why the Eagle Screech sounded like a whistle rather than a bird.
+  - **What changed:** each sound is now built sample by sample, the way the real thing makes its sound.
+  - **Eagle Screech:** a raptor's scream.
+    - A quick rise into a long, high "kee-eeee-arrr" around 2.5 kHz.
+    - Harsh, the way a real one is: the pitch jitters from cycle to cycle, every other cycle is louder, and there's breath riding on each one.
+    - It tears downward at the end, then rings off the canyon walls.
+  - **Bells, gongs, glass, coins and wood** ring with their own partials. A church bell has its hum an octave under, its minor-third tierce and its nominal. The gong blooms up into its shimmer after the strike.
+  - **Voices:**
+    - The choir is four sections, each with its own vowel, singing in a cathedral with a harp under it.
+    - The kazoo is a hummed voice with the paper buzzing on it.
+    - The roar after the Greeen Chant is now crowd voices, not noise.
+  - **Squeaks, water and weather:**
+    - The rubber duck is a squeaker reed, wheezing in between squeezes.
+    - The cannonball is a slap, a kerplunk and hundreds of bubbles and drops.
+    - Thunder tears the air open before the boom and the roll.
+- **Every sound comes out equally loud** (it's measured automatically), and none runs past 4.2 seconds.
+- **No hitches.** When a game starts, the sounds everyone on the floor will need are made in the background, so a green never waits on its sound. In the store, the first "Hear it" on a sound takes a split second.
+- **How they were checked:**
+  - Every sound was tuned against its spectrogram.
+  - Tests check what each is made of: the eagle's pitch, band, rasp and fall, the owl's low hoots, the cuckoo's two notes, the siren winding up, the air horn's short-short-long and more.
+  - Every new effect was captured frozen in time over a player in the studio.
+
+## Under the hood (quick patch)
+- **Tests:** 148 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Judgment calls I made without asking:**
+  - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
+  - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.
+  - The smothered rule applies to every shot that can be labelled Smothered: jumpers, close shots and layups. Dunks are left to Posterizer and Contact Finisher.
+  - The record scratch also plays for the AI's green sounds near you.
+  - "Double apparel" covers clothing, shoes and accessories (everything you wear); King Tut Cup prizes weren't doubled.
+  - "Double the green animations and sounds" means twice as many of each, counting the King Tut Cup's (16 → 32 sounds, 14 → 28 effects). The Cup prizes themselves weren't doubled.
+  - "Walking without sprint" means any movement without the sprint button. Defensive slides and hands-up defense still cost a little.
+  - The faster AI reactions apply to every AI player: teammates, opponents and your own player on auto-play.

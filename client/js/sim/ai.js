@@ -27,15 +27,15 @@ const aiIQ = x => Math.min(1, x + AI_IQ_BONUS[0] + AI_IQ_BONUS[1] * Math.min(1, 
 const MOVES = MOVE_IDS;
 export const SITU = {
   // a defender squarely in the way of the drive
-  block: { cross: 0.5, hang: 0.3, spin: 0.45, halfspin: 0.15, btb: 0.25, wrap: 0.2, inout: 0.25, momentum: 0.12, btl: 0.2 },
+  block: { cross: 0.5, hang: 0.3, spin: 0.45, halfspin: 0.15, btb: 0.25, wrap: 0.2, inout: 0.25, momentum: 0.12, btl: 0.2, pushcross: 0.18, jab: 0.1 },
   // the lane's shut and he's leaning on you
-  shut: { spin: 0.4, cross: 0.4, halfspin: 0.2, btb: 0.2, retreat: 0.25, hang: 0.15 },
+  shut: { spin: 0.4, cross: 0.4, halfspin: 0.2, btb: 0.2, retreat: 0.25, hang: 0.15, snatch: 0.15, btlback: 0.12 },
   // sizing up: working the man to create something
-  probe: { cross: 0.3, hang: 0.15, btb: 0.15, btl: 0.15, inout: 0.15, hesi: 0.12, stutter: 0.1, spin: 0.14, wrap: 0.1, momentum: 0.08, stepback: 0.08, sidestep: 0.06 },
+  probe: { cross: 0.3, hang: 0.15, btb: 0.15, btl: 0.15, inout: 0.15, hesi: 0.12, stutter: 0.1, spin: 0.14, wrap: 0.1, momentum: 0.08, stepback: 0.08, sidestep: 0.06, pushcross: 0.1, jab: 0.1, btlback: 0.06 },
   // too tight to shoot: make space
-  escape: { stepback: 0.4, sidestep: 0.3, retreat: 0.25, hang: 0.08 },
+  escape: { stepback: 0.4, sidestep: 0.3, retreat: 0.25, hang: 0.08, snatch: 0.22, btlback: 0.16 },
   // the man's on his heels or the lane is there: go
-  attack: { momentum: 0.35, hesi: 0.25, stutter: 0.2, inout: 0.2, cross: 0.15 },
+  attack: { momentum: 0.35, hesi: 0.25, stutter: 0.2, inout: 0.2, cross: 0.15, jab: 0.2, pushcross: 0.12 },
 };
 const FAM_TEND = {
   sharpshooter: { escape: 1.5, momentum: 1.2, crossover: 0.9, behind: 0.7, spin: 0.5 },
@@ -47,7 +47,7 @@ const FAM_TEND = {
   stretch_big: { escape: 1.4, momentum: 0.9, spin: 0.8, crossover: 0.6, behind: 0.4 },
   post_scorer: { spin: 1.5, crossover: 0.6, behind: 0.3, escape: 0.6, momentum: 0.7 },
 };
-const FANCY = new Set(['btb', 'wrap', 'btl', 'halfspin', 'hang']);
+const FANCY = new Set(['btb', 'wrap', 'btl', 'halfspin', 'hang', 'pushcross', 'btlback']);
 export function moveTend(p) {
   if (p._mt) return p._mt;
   if (!p.ratings) return {}; // (no player behind it: every move as it comes)
@@ -93,7 +93,7 @@ const offK = attr => (attr ?? 0) >= 99 ? 0.97 : (attr ?? 0) > 95 ? 0.9 : 0.85;
 // it on the rest, so its percentages by shot type stay where they were (measured in 24 AI park games each).
 // v0.4.7.5: re-measured after the harsher no-badge contests and the new AI shot selection (36 AI park games at level
 // 0.6): mid-range 34.6%, threes 31.9%, layups 53.0%, about 35 points a game to 21.
-export const AI_TIMING_COMP = { mid: 1.3, three: 1.08, layup: 1.32, ft: 1 };
+export const AI_TIMING_COMP = { mid: 1.65, three: 1.15, three_non: 1.8, layup: 1.98, ft: 1.05 }; // (v0.4.7.5 quick patch: mid 1.55 -> 1.65, layup 1.8 -> 1.98: the faster closeouts, recoveries and help took a little off)
 function keepMakeRate(pGreen, good, pEx, pNone, nearK, veryK, fc) {
   const old = pGreen * pEx + (1 - pGreen) * (good * nearK + (1 - good) * veryK) * pNone;
   const eps = good * S.finalChance({ ...fc, grade: 'early' }) + (1 - good) * S.finalChance({ ...fc, grade: 'vearly' });
@@ -162,7 +162,7 @@ export class AI {
     const g = this.g;
     for (const p of g.players) { const h = p._hist || (p._hist = []); h.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz }); if (h.length > 40) h.shift(); }
     // v0.4.7.5: how long each handler has had the ball (dead-dribble check); a new touch resets a screen call
-    for (const p of g.players) { const o = this.m(p); if (g.ball.holder === p.id) o.ballT = (o.ballT || 0) + dt; else { o.ballT = 0; o.screenAsk = false; } }
+    for (const p of g.players) { const o = this.m(p); if (g.ball.holder === p.id) { if (!o.ballT) o.fresh = true; o.ballT = (o.ballT || 0) + dt; } else { o.ballT = 0; o.screenAsk = false; o.fresh = false; o.inMove = false; } }
     if (g.possession !== this.lastPossession) { this.lastPossession = g.possession; this.matchups(g.possession); this.variant[g.possession] = g.rng.int(0, 2); for (const p of g.players) { const o = this.m(p); o.plan = null; o.cutT = 0; } }
     for (const p of g.players) {
       if (!g.isAI(p)) { this.humanAssistHints(p, dt); continue; }
@@ -183,13 +183,32 @@ export class AI {
 
   // ---------- movement helpers ----------
   seek(p, x, z, opts = {}) {
+    // v0.4.7.5 quick patch: in play, nobody runs at a spot out of bounds, and nobody runs through a line (see lineBrake)
+    const live = this.g.phase === 'live' && !opts.allowOut;
+    if (live) [x, z] = this.clampCourt(x, z, this.g.half);
     const dx = x - p.x, dz = z - p.z, d = hyp(dx, dz);
     const slow = opts.arrive ?? 1.2;
     const k = d < 0.15 ? 0 : Math.min(1, d / slow);
     p.intent.mx = d > 0.01 ? dx / d * k : 0;
     p.intent.mz = d > 0.01 ? dz / d * k : 0;
     p.intent.sprint = opts.sprint ?? (d > 5.5);
+    if (live && this.g.ball.holder !== p.id) this.lineBrake(p); // (the man with the ball is kept in bounds by the sim itself)
     return d;
+  }
+  // v0.4.7.5 quick patch: the AI used to carry its speed straight over a sideline or the baseline (cuts, closeouts,
+  // chasing a pass). Near a line, the run toward it is eased off in time for him to stop on the right side of it,
+  // given how hard he can brake.
+  lineBrake(p) {
+    const g = this.g, it = p.intent, brake = Math.max(6, (p.phys.brake || 17) * 0.55);
+    const ease = (pos, vel, lo, hi, key) => {
+      const dir = Math.sign(it[key]);
+      if (!dir) return;
+      const room = dir > 0 ? hi - pos : pos - lo, v = Math.max(0, vel * dir), stop = v * v / (2 * brake);
+      if (room <= stop + 0.15) it[key] = -dir * Math.min(1, (stop + 0.15 - room) * 2 + 0.2); // brake now
+      else if (room < 1.2) it[key] *= Math.max(0, (room - stop) / 1.2);                     // ease in
+    };
+    ease(p.x, p.vx, -COURT.width / 2 + 0.35, COURT.width / 2 - 0.35, 'mx');
+    ease(p.z, p.vz, g.half ? 0.2 : -COURT.length / 2 + 0.35, COURT.length / 2 - 0.35, 'mz');
   }
   face(p, x, z) { p.intent.face = Math.atan2(x - p.x, z - p.z); }
   clampCourt(x, z, half) {
@@ -218,7 +237,9 @@ export class AI {
   }
 
   // contest the shooter would face if defenders put a hand up now
-  estimateContest(p, defs, rim) {
+  // look: how far ahead (s) a closing defender is projected (v0.4.7.5 quick patch: shot decisions look 0.5 s ahead,
+  // the time a jumper takes to get off, now that closeouts come on the pass)
+  estimateContest(p, defs, rim, look = 0.3) {
     const cs = [];
     const fx = rim.x - p.x, fz = rim.z - p.z, fl = hyp(fx, fz) || 1;
     const relH = p.phys.reach * 0.93 + p.phys.vertical * p.shotPkg.jumpK * 0.5;
@@ -226,7 +247,7 @@ export class AI {
       const dx = d.x - p.x, dz = d.z - p.z, d0 = hyp(dx, dz);
       // closeouts arrive while the shooter gathers: shrink distance by the relative closing speed
       const closing = d0 > 0.01 ? -(dx * ((d.vx || 0) - (p.vx || 0)) + dz * ((d.vz || 0) - (p.vz || 0))) / d0 : 0;
-      const dist = Math.max(0.3, d0 - Math.max(0, closing) * 0.3);
+      const dist = Math.max(0.3, d0 - Math.max(0, closing) * look);
       if (dist > 2.6 || d.action?.type === 'stumble') continue;
       const front = (dx * fx + dz * fz) / (fl * (dist || 1));
       const ang = front > 0.35 ? 1 : front > -0.1 ? 0.55 : 0.18;
@@ -325,7 +346,7 @@ export class AI {
     const err = grade === 'excellent' ? g.rng.range(-w, w) * 0.8
       : grade === 'early' ? -g.rng.range(w * 1.1, w * 2.2) : grade === 'late' ? g.rng.range(w * 1.1, w * 2.2)
       : grade === 'vearly' ? -g.rng.range(w * 2.8, w * 3.4) : g.rng.range(w * 2.8, w * 3.4);
-    return { at: Math.max(a.takeoff + 0.02, a.release + err), grade };
+    return { at: Math.max(a.takeoff + 0.02, a.release + err), grade, contest };
   }
 
   // AI shooters don't press a button: pick the release quality from skill, difficulty and how tough the
@@ -338,7 +359,8 @@ export class AI {
     const d = hyp(rim.x - p.x, rim.z - p.z);
     const contest = ft ? 0 : this.estimateContest(p, g.opponents(p), rim);
     const act = p.action?.type === 'shoot' ? p.action : null;
-    const win = S.greenWindowMs(attr, p.badges, { ft, contest, moving: act ? act.moving : p.speed, fade: !!st?.fade || !!act?.fade, d, three, pkg: p.shotPkg, hustle: act?.hustle });
+    const nonShooter = !S.isShooterArch(p.archetype);
+    const win = S.greenWindowMs(attr, p.badges, { ft, contest, moving: act ? act.moving : p.speed, fade: !!st?.fade || !!act?.fade, d, three, pkg: p.shotPkg, hustle: act?.hustle, nonShooter });
     const base = S.timingWindowMs(attr, p.badges);
     let pGreen = Math.max(0.02, Math.min(attr >= 99 ? 0.88 : attr > 95 ? 0.72 : 0.65, (ft ? 0.26 : 0.13) + 0.3 * n(attr) + (this.iq(p) - 0.6) * 0.24)) * Math.pow(win / base, 0.8) * (three ? 1.0 : 1);
     let good = 0.86;
@@ -352,7 +374,7 @@ export class AI {
     }
     {
       const fc = { type: ft ? 'ft' : 'jumper', d, a: p.ratings, three, contest, moving: p.speed, fade: !!st?.fade, stamina: p.stamina, badges: p.badges };
-      pGreen = Math.min(0.97, AI_TIMING_COMP[ft ? 'ft' : three ? 'three' : 'mid'] * keepMakeRate(pGreen, good, ft || d <= S.DEEP_D ? 1 : S.finalChance({ ...fc, grade: 'excellent' }), S.finalChance({ ...fc, grade: 'none' }), offK(attr), 0.38, fc));
+      pGreen = Math.min(0.97, AI_TIMING_COMP[ft ? 'ft' : three ? (nonShooter ? 'three_non' : 'three') : 'mid'] * keepMakeRate(pGreen, good, ft || (d <= S.DEEP_D && !(nonShooter && three)) ? 1 : S.finalChance({ ...fc, grade: 'excellent' }), S.finalChance({ ...fc, grade: 'none' }), offK(attr), 0.38, fc));
     }
     const r = g.rng.next();
     const grade = r < pGreen ? 'excellent' : r < pGreen + (1 - pGreen) * good ? (g.rng.next() < 0.5 ? 'early' : 'late') : (g.rng.next() < 0.5 ? 'vearly' : 'vlate');
@@ -360,7 +382,19 @@ export class AI {
     const err = grade === 'excellent' ? g.rng.range(-w, w) * 0.8
       : grade === 'early' ? -g.rng.range(w * 1.1, w * 2.4) : grade === 'late' ? g.rng.range(w * 1.1, w * 2.4)
       : grade === 'vearly' ? -g.rng.range(w * 2.8, w * 3.6) : g.rng.range(w * 2.8, w * 3.6);
-    return { at: Math.max(0.05, tRel + err), grade };
+    return { at: Math.max(0.05, tRel + err), grade, contest };
+  }
+
+  // the drive is there: my man beaten (not squarely between me and the rim, off balance, or a step behind) and
+  // nobody else in the lane
+  driveLane(p, myDef, defs, rim, d, defDist) {
+    if (!myDef) return false;
+    const rx = rim.x - p.x, rz = rim.z - p.z, rl = Math.hypot(rx, rz) || 1;
+    const qx = myDef.x - p.x, qz = myDef.z - p.z;
+    const along = (qx * rx + qz * rz) / rl, lat = Math.abs(qx * rz - qz * rx) / rl;
+    const offBalance = myDef.action?.type === 'stumble' || myDef.action?.type === 'steal' || myDef.airborne || myDef.bumpT > 0 || myDef.plantT > 0;
+    if (!(along < 0.25 || lat > 0.75 || offBalance || defDist > 2.6)) return false;
+    return defs.every(q => { if (q === myDef) return true; const hx = q.x - p.x, hz = q.z - p.z; const al = (hx * rx + hz * rz) / rl; const la = Math.abs(hx * rz - hz * rx) / rl; return al < 1 || al > rl + 0.5 || la > 1.3; });
   }
 
   handler(p, dt) {
@@ -373,12 +407,25 @@ export class AI {
     // backcourt / transition (pro-am): bring it up
     const inFront = (p.z - 0) * side > 0;
     if (!g.half && !inFront) {
-      const tz = side * 5, tx = p.x * 0.6;
-      this.seek(p, tx, tz, { sprint: defDist > 3 });
+      // v0.4.7.5 quick patch: push it. With the numbers (no more of them back than of us ahead) he goes straight at
+      // the rim, flat out; otherwise he sprints it up unless someone's right on him. A big who pulled the rebound
+      // outlets it to a guard, and a man open up the floor gets it quickly
+      const IQb = this.iq(p), back = defs.filter(q => (q.z - p.z) * side > 0.5).length, ahead = g.mates(p).filter(m => (m.z - p.z) * side > 1).length;
+      const brk = back === 0 || back < ahead || (back === ahead && back <= 1);
+      const tz = brk ? rim.z - side * 2.2 : side * 5, tx = brk ? p.x * 0.4 : p.x * 0.6;
+      this.seek(p, tx, tz, { sprint: brk || defDist > 1.5 });
       it.face = Math.atan2(rim.x - p.x, rim.z - p.z);
-      if (p.speed > 1 || hyp(it.mx, it.mz) > 0.3) {/* dribble */}
+      if (brk) o.fastBreak = g.time;
       o.next -= dt;
-      if (o.next <= 0) { o.next = 0.4; const r = this.bestPassTarget(p); if (r && (r.z * side > p.z * side + 4) && this.openness(r) > 3 && this.passRisk(p, r) < 0.4 && g.rng.next() < 0.35) it.pass = { target: r.id, type: 'chest' }; }
+      if (o.next <= 0) {
+        o.next = 0.2;
+        const r = this.bestPassTarget(p);
+        if (r && (r.z * side > p.z * side + 4) && this.openness(r) > 2.6 && this.passRisk(p, r) < 0.4 && g.rng.next() < 0.5 + 0.35 * IQb) it.pass = { target: r.id, type: 'chest' };
+        else if ((p.position === 'C' || p.position === 'PF') && o.ballT < 1.5) {
+          const gd = g.mates(p).filter(m => (m.position === 'PG' || m.position === 'SG') && this.openness(m) > 2.4 && this.passRisk(p, m) < 0.35).sort((a, b) => (b.z - a.z) * side)[0];
+          if (gd && g.rng.next() < 0.4 + 0.4 * IQb) { it.pass = { target: gd.id, type: 'chest' }; this.stats.outlet = (this.stats.outlet || 0) + 1; }
+        }
+      }
       return;
     }
     if (g.needsClear[p.team]) {
@@ -387,8 +434,17 @@ export class AI {
       it.face = Math.atan2(rim.x - p.x, rim.z - p.z);
       return;
     }
-    if (p.action && p.action.type !== 'catch') return;
+    if (p.action && p.action.type !== 'catch') { if (p.action.type === 'move' && !o.inMove) { o.inMove = true; o.moveGap = defDist; } return; }
     const IQ = this.iq(p);
+    // v0.4.7.5 quick patch: quicker reads. Off the catch he reads the floor right away (not after a beat of holding
+    // it), and when his own move has just made space (his man stumbling, planted, or left a step behind) he uses
+    // it now: the shot, the drive or the pass
+    if (o.fresh) { o.fresh = false; o.next = Math.min(o.next, 0.02 + (1 - IQ) * 0.1); o.target = null; }
+    if (o.inMove) {
+      o.inMove = false;
+      const off = myDef && (myDef.action?.type === 'stumble' || myDef.plantT > 0 || myDef.bumpT > 0 || myDef.airborne);
+      if (off || (defDist > 1.75 && defDist > (o.moveGap ?? 9) + 0.45)) { o.next = Math.min(o.next, 0.02); o.target = null; this.stats.moveSpace = (this.stats.moveSpace || 0) + 1; }
+    }
     // v0.4.5: right after an ankle-breaker, make the defender pay. Slashers, playmakers and bigs take it to
     // the rim for a dunk or layup; shooters (sharpshooters, stretch bigs, lockdowns) rise up right there.
     if (p.ankleT != null && g.time - p.ankleT < 1.4 && o.ankleFor !== p.ankleT && !g.practice) {
@@ -500,11 +556,13 @@ export class AI {
     const T = this.tend(p);
     // v0.4.7.5: a wide-open look gets taken. Off the catch (or any time the closest man is nowhere near), a shooter
     // in his range lets it fly instead of putting it on the floor
-    const estC0 = this.estimateContest(p, defs, rim);
+    const estC0 = this.estimateContest(p, defs, rim, 0.5);
     const shotAttr = sv.three ? p.ratings.three_point : p.ratings.mid_range;
-    if (estC0 < 0.16 && shotAttr >= 70 && sv.val > 1.0 - 0.08 * IQ && d > 1.9 && d < 8.2 && o.ballT > 0.3 && g.rng.next() < 0.5 + 0.4 * IQ) {
+    if (estC0 < 0.16 && shotAttr >= 70 && sv.val > 1.0 - 0.08 * IQ && d > 1.9 && d < 8.2 && o.ballT > 0.12 && g.rng.next() < 0.5 + 0.4 * IQ) {
       it.shoot = 'press'; it.forceJumper = d > 2.4; o.plan = null; this.stats.openShot = (this.stats.openShot || 0) + 1; return;
     }
+    // v0.4.7.5 quick patch: a lane that opens while he's probing gets attacked now, not at his next read
+    if (o.next > 0 && d > 2 && d < 8.6 && this.driveLane(p, myDef, defs, rim, d, defDist)) { o.next = 0; o.target = null; this.stats.laneRead = (this.stats.laneRead || 0) + 1; }
     if (o.next > 0) {
       // keep probing toward the chosen spot (v0.4.7.5: a spot with space, away from the man, not a random one)
       if (o.target) {
@@ -516,7 +574,7 @@ export class AI {
       if (p.ai_screen && p.ai_screen.until > g.time) { const s = g.players[p.ai_screen.by]; const away = Math.atan2(rim.x - s.x, rim.z - s.z); this.seek(p, s.x + Math.cos(away) * 1.2 * (p.x > s.x ? 1 : -1), s.z + side * 0.6, { sprint: true, arrive: 0.4 }); }
       return;
     }
-    o.next = reactBase + g.rng.range(0, 0.25);
+    o.next = reactBase + g.rng.range(0, 0.18); // (v0.4.7.5 quick patch: 0.25 -> 0.18, a little less dead time between reads)
     // options
     const passTarget = this.bestPassTarget(p);
     let passVal = -1;
@@ -537,16 +595,9 @@ export class AI {
     // blow-by: my defender is not squarely between me and the rim, or is off balance
     let laneOpen = false;
     if (myDef && d > 2) {
-      const rx = rim.x - p.x, rz = rim.z - p.z, rl = Math.hypot(rx, rz) || 1;
-      const qx = myDef.x - p.x, qz = myDef.z - p.z;
-      const along = (qx * rx + qz * rz) / rl, lat = Math.abs(qx * rz - qz * rx) / rl;
+      laneOpen = this.driveLane(p, myDef, defs, rim, d, defDist);
       const offBalance = myDef.action?.type === 'stumble' || myDef.action?.type === 'steal' || myDef.airborne || myDef.bumpT > 0 || myDef.plantT > 0;
-      const beaten = along < 0.25 || lat > 0.75 || offBalance || defDist > 2.6;
-      if (beaten) {
-        const helpers = defs.filter(q => q !== myDef);
-        laneOpen = helpers.every(q => { const hx = q.x - p.x, hz = q.z - p.z; const al = (hx * rx + hz * rz) / rl; const la = Math.abs(hx * rz - hz * rx) / rl; return al < 1 || al > rl + 0.5 || la > 1.3; });
-        if (!laneOpen && offBalance) laneOpen = g.rng.next() < 0.5;
-      }
+      if (!laneOpen && offBalance) laneOpen = g.rng.next() < 0.5;
     }
     const finisher = n(p.ratings.layup) * 0.5 + n(p.ratings.driving_dunk) * 0.4;
     // a rim protector waiting in the lane makes drives less attractive
@@ -625,7 +676,7 @@ export class AI {
       // a defender on his heels (backpedalling, off balance): attack moves
       const heels = myDef && (myDef.plantT > 0 || myDef.bumpT > 0 || ((myDef.vx * (p.x - myDef.x) + myDef.vz * (p.z - myDef.z)) < -1));
       it.move = pickMove(p, g.rng, IQ, heels ? SITU.attack : w);
-      if (['cross', 'btb', 'btl', 'hang', 'wrap'].includes(it.move)) {
+      if (['cross', 'btb', 'btl', 'hang', 'wrap', 'pushcross'].includes(it.move)) {
         // cross toward open side
         const lx = Math.cos(p.facing), lz = -Math.sin(p.facing);
         const dir = p.dribble.hand === 'R' ? 1 : -1;
@@ -818,18 +869,24 @@ export class AI {
 
   meetPass(p, b) {
     // move to the closest point of the ball's path we can reach in time
+    // (v0.4.7.5 quick patch: never by running out of bounds: a catch on or over a line is a turnover, so only the
+    // part of the path that's in bounds is chased, and a pass heading out is met at the line, reaching for it)
+    const g = this.g, inX = COURT.width / 2 - 0.45, inZ = COURT.length / 2 - 0.45;
+    const inside = (x, z) => Math.abs(x) < inX && (g.half ? z > 0.3 && z < inZ : Math.abs(z) < inZ);
     let x = b.x, y = b.y, z = b.z, vx = b.vx, vy = b.vy, vz = b.vz, best = null, bd = 1e9;
     const sp = p.phys.jog;
     for (let t = 0; t < 1.6; t += 1 / 30) {
       vy -= GRAVITY / 30; x += vx / 30; y += vy / 30; z += vz / 30;
       if (y < 0.2) { vy = -vy * 0.75; y = 0.2; }
       if (y > p.phys.reach + 0.1) continue;
+      if (!inside(x, z)) continue;
       const need = Math.hypot(x - p.x, z - p.z) - 0.5;
       const slack = sp * t - need;
       if (slack >= 0) { best = { x, z }; break; }
       if (-slack < bd) { bd = -slack; best = { x, z }; }
     }
-    if (best) this.seek(p, best.x, best.z, { sprint: Math.hypot(best.x - p.x, best.z - p.z) > 2, arrive: 0.3 });
+    if (!best) { const [cx, cz] = this.clampCourt(b.x + b.vx * 0.3, b.z + b.vz * 0.3, g.half); best = { x: cx, z: cz }; }
+    this.seek(p, best.x, best.z, { sprint: Math.hypot(best.x - p.x, best.z - p.z) > 2, arrive: 0.45 });
     this.face(p, b.x, b.z);
   }
 
@@ -853,15 +910,33 @@ export class AI {
       this.face(p, b.x, b.z);
       return;
     }
-    // transition defense: sprint back
-    if (!g.half && (p.z - rim.z) * side < -COURT.hoopZ - 2 + 14 && h && (h.z * side) < 3 && (p.z * side) < (h.z * side) - 1) {
+    // transition defense: sprint back (v0.4.7.5 quick patch: the moment the ball changes hands, the outlet pass and a
+    // loose ball included, not only once somebody's dribbling it up)
+    const bz0 = h ? h.z : g.ball.z, theirs = h ? h.team !== p.team : g.possession !== p.team;
+    if (!g.half && theirs && (p.z - rim.z) * side < -COURT.hoopZ - 2 + 14 && (bz0 * side) < 3 && (p.z * side) < (bz0 * side) - 1) {
       this.seek(p, rim.x * 0.5 + man.x * 0.3, rim.z - side * 4, { sprint: true });
+      return;
+    }
+    // v0.4.7.5 quick patch: react to the pass, not the catch. When the ball is thrown to my man I close out on him
+    // while it's in the air (the smarter, the sooner I read it), hands up as I get there; everyone else rotates to
+    // where the ball is going rather than where it was
+    const b = g.ball, passTo = b.mode === 'flight' && b.kind === 'pass' && b.info ? g.players[b.info.to] : null;
+    const IQd0 = this.iq(p);
+    if (passTo && passTo === man && passTo.team !== p.team && g.time - (g.lastPass?.time ?? -9) > 0.13 - 0.11 * IQd0) {
+      const rx = rim.x - man.x, rz = rim.z - man.z, rl = hyp(rx, rz) || 1;
+      const gap = rl > 9.5 ? 1.9 : 1.05 + (1 - n(man.ratings.three_point)) * 0.45;
+      const tx = man.x + rx / rl * gap, tz = man.z + rz / rl * gap, far = hyp(tx - p.x, tz - p.z);
+      this.seek(p, tx, tz, { sprint: far > 1.2, arrive: 0.5 });
+      this.face(p, man.x, man.z);
+      if (far < 2.2) it.handsUp = true;
+      this.stats.closeout = (this.stats.closeout || 0) + dt;
       return;
     }
     const ballHandlerIsMan = h === man;
     let tx, tz;
     if (ballHandlerIsMan) {
-      const seenM = this.seen(man, 0.26 - skill * 0.16);
+      // (v0.4.7.5 quick patch: reads the handler a touch sooner, and sooner again on a dribble move)
+      const seenM = this.seen(man, (0.22 - skill * 0.14) * (man.action?.type === 'move' ? 0.7 : 1));
       const dx = rim.x - seenM.x, dz = rim.z - seenM.z, dl = hyp(dx, dz) || 1;
       const threat = n(man.ratings.three_point);
       const T = this.tend(p);
@@ -879,6 +954,9 @@ export class AI {
       tx += seenM.vx * (0.08 + skill * 0.14); tz += seenM.vz * (0.08 + skill * 0.14);
       it.defense = true;
       this.face(p, man.x, man.z);
+      // v0.4.7.5 quick patch: left a step behind (a move that made space, a blow-by): out of the stance and run to
+      // recover instead of sliding after him
+      if (hyp(tx - p.x, tz - p.z) > 1.5) { it.defense = false; o.recover = true; } else o.recover = false;
       // steal attempts
       o.next -= dt;
       if (o.next <= 0) {
@@ -887,7 +965,15 @@ export class AI {
         // ones reach at random, often with the wrong hand (more fouls, fewer steals)
         const IQd = this.iq(p), moving = man.action?.type === 'move';
         const agg = (0.025 * (1.45 - IQd * 0.9) + n(p.ratings.steal) * 0.07 + (moving ? 0.02 + 0.05 * IQd : 0)) * (0.6 + 0.5 * T.press);
-        if (p.dist(man) < 1.3 && p.cool.steal <= 0 && g.rng.next() < agg) {
+        // v0.4.7.5 quick patch: reach-ins are called on contact now, so a smart defender doesn't reach through the
+        // handler's body or arm to a ball he's shielding (the dumber ones still do, and get called for it)
+        let through = false;
+        if (g.reachContact) {
+          const f = Math.atan2(man.x - p.x, man.z - p.z), lx = Math.cos(f), lz = -Math.sin(f), b = g.ball;
+          const pre = g.reachContact({ x: p.x, z: p.z, facing: f, phys: p.phys, action: { hand: (b.x - p.x) * lx + (b.z - p.z) * lz >= 0 ? 'L' : 'R' } }, man);
+          through = pre.body && !pre.ballFirst;
+        }
+        if (p.dist(man) < 1.3 && p.cool.steal <= 0 && g.rng.next() < agg * (through ? 1 : 1.3) && !(through && g.rng.next() < 0.45 + 0.5 * IQd)) {
           it.steal = true;
           if (g.rng.next() < (1 - IQd) * 0.5) { const a = p.facing + (g.rng.next() < 0.5 ? 1 : -1) * Math.PI / 2; it.stealDir = { x: Math.sin(a), z: Math.cos(a) }; }
           it.stealLow = g.ball.mode === 'dribble' && g.ball.y < 0.7 && g.rng.next() < 0.3 + IQd * 0.5;
@@ -898,7 +984,9 @@ export class AI {
       if (h && h.team !== p.team) {
         const hd = g.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null);
         const hToRim = hyp(h.x - rim.x, h.z - rim.z);
-        const beaten = hd && hd !== p && hyp(hd.x - rim.x, hd.z - rim.z) > hToRim + 0.4 && hToRim < 6;
+        // (v0.4.7.5 quick patch: help comes earlier, and as soon as the lane to the rim is open, not only once his man
+        // is behind him)
+        const beaten = hd && hd !== p && hToRim < 7.2 && (hyp(hd.x - rim.x, hd.z - rim.z) > hToRim + 0.4 || (hToRim < 6.5 && this.laneOpen(h, rim.x, rim.z, 0.85)));
         const isHelper = beaten && this.closestHelper(h, rim) === p;
         const T = this.tend(p);
         if (isHelper && g.rng.next() < (0.6 + skill * 0.4) * (0.55 + 0.45 * T.help)) {
@@ -915,7 +1003,7 @@ export class AI {
       }
       // off-ball: between man and rim, shaded to ball. Paint anchors (glass cleaners, post bigs, stretch
       // bigs filling gaps) sag off non-shooters into the lane; everyone sags more off poor shooters.
-      const bx = g.ball.x, bz = g.ball.z;
+      const bx = passTo ? passTo.x : g.ball.x, bz = passTo ? passTo.z : g.ball.z;
       const T = this.tend(p);
       const shooterThreat = n(man.ratings.three_point);
       let sag = 0.3 + (1 - shooterThreat) * 0.25 + T.help * 0.12 * (1 - shooterThreat);
@@ -926,7 +1014,7 @@ export class AI {
       this.face(p, (man.x + bx) / 2, (man.z + bz) / 2);
     }
     [tx, tz] = this.clampCourt(tx, tz, g.half);
-    const urgent = hyp(tx - p.x, tz - p.z) > 2.2;
+    const urgent = hyp(tx - p.x, tz - p.z) > (ballHandlerIsMan && o.recover ? 1.5 : 2.2);
     this.seek(p, tx, tz, { sprint: urgent && !it.defense, arrive: 0.6 });
     if (it.defense && urgent) it.defense = false;
     if (h && h.team !== p.team) this.maybeContest(p, h, rim);

@@ -92,7 +92,12 @@ function maxOvrStrip(app, root) {
   const c = app.char(); if (!c) return;
   const max = maxOvr(c), left = c.prorun_to_next ?? 0, per = PRORUN_GAMES_PER_OVR;
   const el = root.querySelector('.pr > .eyebrow'); if (!el || root.querySelector('.pr-maxovr')) return;
-  el.insertAdjacentHTML('afterend', `<div class="pr-maxovr"><b>MAX OVR ${max}</b>${max >= OVR_CAP ? '<span>fully unlocked · cap breakers open</span>' : `<span>${left} game${left === 1 ? '' : 's'} played here to +1</span>${[0, 1, 2].map(k => `<i class="${k < per - left ? 'on' : ''}"></i>`).join('')}`}</div>`);
+  // (v0.4.7.5 quick patch: with the Icon badge, the Icon Legend climb: +1 OVR every 2 games played here, to 99)
+  const L = c.legend_info;
+  const chip = L?.active && max >= OVR_CAP
+    ? `<div class="pr-maxovr legend"><b>ICON LEGEND ${c.overall}</b>${L.maxed ? `<span>fully grinded · ${L.cap} OVR</span>` : `<span>${L.to_next} game${L.to_next === 1 ? '' : 's'} played here to +1 OVR</span>${Array.from({ length: L.per }, (_, k) => `<i class="${k < L.per - L.to_next ? 'on' : ''}"></i>`).join('')}`}</div>`
+    : `<div class="pr-maxovr"><b>MAX OVR ${max}</b>${max >= OVR_CAP ? '<span>fully unlocked · cap breakers open</span>' : `<span>${left} game${left === 1 ? '' : 's'} played here to +1</span>${[0, 1, 2].map(k => `<i class="${k < per - left ? 'on' : ''}"></i>`).join('')}`}</div>`;
+  el.insertAdjacentHTML('afterend', chip);
 }
 
 function drawNew(app, root, done) {

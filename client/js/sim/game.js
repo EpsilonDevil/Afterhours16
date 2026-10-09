@@ -21,7 +21,14 @@ import { MOVES, moveProfile, switchesHand, comboName, moveStyle } from './moves.
 // Ball make it quicker still (up to about a third quicker on top). The next move can start once the current one is
 // 60% through (CHAIN_AT), and a different move started within COMBO_GAP of the last one is a combo: it costs no
 // stamina and is a little more likely to break ankles. Spamming the same move still drains you harder.
-export const MOVE_SNAP = 0.8, CHAIN_AT = 0.6, COMBO_GAP = 0.4;
+// v0.4.7.5 quick patch: every dribble move 20% slower, for every package and rating (DRIBBLE_MOVE_SPEED: the move
+// takes 1/0.8 as long and its burst is 0.8 as fast, so he covers the same ground in it, just less frantically);
+// packages, the handle and the position still make some players quicker than others, in the same proportions
+export const DRIBBLE_MOVE_SPEED = 0.8;
+// (the burst eases off less than the timing slows, so a move still covers the ground it did: a stepback still makes
+// its space. The velocity takes a moment to build in every move, so a straight 0.8 lost about a tenth of the ground)
+export const MOVE_BURST_K = Math.sqrt(DRIBBLE_MOVE_SPEED);
+export const MOVE_SNAP = 0.8 / DRIBBLE_MOVE_SPEED, CHAIN_AT = 0.6, COMBO_GAP = 0.4;
 // v0.4.5 quick patch: how fast each position's dribble moves come out (bigs are 10% slower, wings 5%; PGs as they were),
 // and then every move for everyone 5% slower on top (MOVE_SPEED_ALL)
 export const POS_MOVE_SPEED = { PG: 1, SG: 0.95, SF: 0.95, PF: 0.9, C: 0.9 };
@@ -40,8 +47,21 @@ const PASS = { chest: { dur: 0.3, rel: 0.13, speed: 12.5 * PASS_K }, bounce: { d
 // v0.4.5 final: every stamina-draining action costs STAMINA_K times what it did: jumpers, layups, dunks, passes,
 // reaching (steals), jumping, dribble moves and screens (sprinting follows it in player.js)
 export const STAMINA_K = 2;
+// v0.4.5 / v0.4.7.5 quick patch: repeating the same dribble move. More than 3 in a row: stamina drains twice as fast
+// (+0.1x per repeat after the 4th); more than 6 in a row: that penalty doubles (4.6x at the 7th, up to 6x)
+export const REPEAT_GAP = 3;
+export function repeatMoveK(run) {
+  if (run <= 3) return 1;
+  const k = 2 + 0.1 * (run - 4);
+  return +Math.min(6, run > 6 ? 2 * k : k).toFixed(2);
+}
+// v0.4.7.5 quick patch, reach-in fouls by contact (Game.reachContact): how far the hand goes (m), how close counts as
+// touching (m), and how often a reach into the handler's body or arm (not the ball first) is called
+export const REACH_FOUL = { len: 0.68, touch: 0.07, body: 0.8 };
+// v0.4.7.5 quick patch: passing 10% more accurate across the board (aim error x0.9, in-flight accuracy x1.1)
+export const PASS_ACC_K = 0.9, PASS_ACC_BOOST = 1.1;
 export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
-export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375); // (v0.4.5 quick patch: −3.75%)
+export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375) * 1.025; // (v0.4.5 quick patch: −3.75%; v0.4.7.5 quick patch: +2.5%)
 // v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
 export const DEF_ASSIST_K = 1.0375;
 
@@ -90,9 +110,28 @@ export const ANKLE_REACT = { sit: { dur: 1.4 }, slip: { dur: 1.3 }, tangle: { du
 // way to the slam, e: its smoothstep, H: height, topY: where the slam happens. The hands follow the ball.
 const sstep = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 const toTop = (x, y, z, f, topY) => { const ef = sstep(f); return [x * (1 - ef) - 0.04 * ef, y + (topY - y) * ef, z + (0.5 - z) * ef]; };
+// v0.4.7.5 quick patch: the Eastbay's ball path, as keys [k (share of the way to the rim), x (m, + = his left), y (×H,
+// up from his feet), z (m, + = in front)], eased between keys
+export const EASTBAY_KEYS = [[0, -0.18, 0.7, 0.3], [0.22, -0.1, 0.5, 0.24], [0.35, -0.03, 0.39, 0.08], [0.43, 0.01, 0.36, 0.0], [0.51, 0.09, 0.38, -0.04], [0.6, 0.2, 0.47, 0.0], [0.8, 0.22, 0.86, 0.14], [1, 0.12, 1.1, 0.3]];
+export function keyPath(keys, k, H) {
+  let i = 1;
+  while (i < keys.length - 1 && k > keys[i][0]) i++;
+  const a = keys[i - 1], b = keys[i], u = Math.max(0, Math.min(1, (k - a[0]) / Math.max(1e-6, b[0] - a[0]))), e = u * u * (3 - 2 * u);
+  return [a[1] + (b[1] - a[1]) * e, (a[2] + (b[2] - a[2]) * e) * H, a[3] + (b[3] - a[3]) * e];
+}
+// v0.4.7.5 quick patch: a windmill is the arm going round straight from the shoulder, so the ball's circle is centred
+// on the shoulder joint (just outside it, so the arm swings past the hip and the head) with the arm's length plus the
+// hand to the ball's centre as its radius, a touch short of locked out. (It used to circle a point above the
+// shoulder, so the elbow folded at the bottom and the arm stretched past its length at the top.) p.arm: Player.arm.
+export function millCircle(p, H, two = false) {
+  const arm = p?.arm || { shoulderY: 0.806 * H, shoulderX: 0.1 * H, z: -0.012 * H, len: 0.33 * H };
+  const reach = (arm.len + 0.055 * H) * 0.97;
+  if (two) return { cx: 0, cy: arm.shoulderY + 0.01 * H, cz: arm.z + 0.03 * H, R: Math.sqrt(Math.max(0.01, reach * reach - arm.shoulderX * arm.shoulderX)) * 0.97 };
+  return { cx: -(arm.shoulderX + 0.03 * H), cy: arm.shoulderY + ARM_LIFT * H * 0.5, cz: arm.z, R: reach };
+}
 export const DUNK_PATH2 = {
   // two hands go all the way round together in front of the body, then down through
-  twomill: (t, e, H, topY) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, R = 0.34 * H; return toTop(0, 0.88 * H + R * Math.sin(al), 0.06 + R * Math.cos(al), (t - 0.82) / 0.18, topY); },
+  twomill: (t, e, H, topY, p) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, C = millCircle(p, H, true); return toTop(0, C.cy + C.R * Math.sin(al), C.cz + C.R * Math.cos(al), (t - 0.82) / 0.18, topY); },
   // a big circle out to the side: in at the shoulder, down past the hip, out wide, up over the top
   sidemill: (t, e, H, topY) => { const k = sstep(t / 0.88), al = Math.PI + 1.5 * Math.PI * k, R = 0.36 * H; return toTop(-0.26 - R * Math.cos(al) * 0.9, 0.92 * H + R * Math.sin(al) * -1, 0.16, (t - 0.8) / 0.2, topY); },
   // up over the head and dropped down the back between the shoulder blades, then whipped over the top
@@ -100,7 +139,7 @@ export const DUNK_PATH2 = {
   // held high over the head with both hands right through a reverse full turn
   rev360: (t, e, H, topY) => { const k = sstep(t / 0.3); return toTop(0, 0.62 * H + (1.0 * H - 0.62 * H) * k, 0.3 - 0.24 * k, (t - 0.8) / 0.2, topY); },
   // a full spin with the arm windmilling round through it
-  spinmill: (t, e, H, topY) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, R = 0.36 * H; return toTop(-0.16, 0.9 * H + R * Math.sin(al), 0.02 + R * Math.cos(al), (t - 0.84) / 0.16, topY); },
+  spinmill: (t, e, H, topY, p) => { const k = sstep(t / 0.9), al = -1.67 * Math.PI * k, C = millCircle(p, H); return toTop(C.cx, C.cy + C.R * Math.sin(al), C.cz + C.R * Math.cos(al), (t - 0.84) / 0.16, topY); },
   // thrust out at eye level at arm's length, back, out again, then up and in
   pump: (t, e, H, topY) => { const k = Math.min(1, t / 0.74), z = 0.26 + 0.38 * Math.abs(Math.sin(2 * Math.PI * k)); return toTop(0, 0.84 * H, z, (t - 0.74) / 0.26, topY); },
   // carried low at the hip with the knee driving up, then thrown up at the last moment
@@ -305,31 +344,44 @@ export class Game {
   // same functions, so the green on screen is exactly the green that's graded. sure: an Excellent there is an
   // automatic make (jumpers inside 35 ft and free throws; a green layup or a green from deep is a boost).
   natural(p) { return p.raw || p.ratings; }
-  jumperWindow(p, a, contest) {
+  jumperWindow(p, a, contest, ghost = false) {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const three = !this.practiceFT && isThree(a.startX, a.startZ, side);
     const d = Math.hypot(rim.x - a.startX, rim.z - a.startZ);
     const corner = three && Math.abs(a.startX) > 6.2, key = three ? 'three_point' : 'mid_range';
-    const ctx = { contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p), hustle: a.hustle };
+    // v0.4.7.5 quick patch: a non-shooter (anyone but a Sharpshooter or a Stretch Big) has a 10% smaller window, and
+    // his green from three isn't a sure make (outlined on the meter). smothered: no window at all, whatever adds to it.
+    // ghost: ignore the smother (the window he'd have had a hair less guarded: a release in it gets a record scratch).
+    const nonShooter = !S.isShooterArch(p.archetype), smothered = !ghost && S.isSmothered(contest);
+    const ctx = { contest: ghost ? Math.min(contest, S.SMOTHER - 1e-3) : contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p), hustle: a.hustle, nonShooter };
     const k = this.speed * (p.human ? this.greenBonus : 1);
-    const total = S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
-    const natural = S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
-    return { total, natural: Math.min(total, natural), sure: d <= S.DEEP_D && contest < S.SMOTHER, three, d, corner };
+    const total = smothered ? 0 : S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
+    const natural = smothered ? 0 : S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
+    return { total, natural: Math.min(total, natural), sure: d <= S.DEEP_D && !smothered && !(nonShooter && three), three, d, corner, smothered, nonShooter };
   }
-  layupWindow(p, a, contest) {
-    const k = this.speed * (p.human ? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p) };
+  // guard: how guarded the finish is on the jumper scale (shots.js insideGuard); smothered at the rim = no window
+  layupWindow(p, a, contest, guard = S.insideGuard(contest), ghost = false) {
+    const smothered = !ghost && S.isSmothered(guard);
+    const k = this.speed * (p.human ? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p), smothered };
     const total = S.layupWindowMs(p.ratings.layup, p.badges, ctx) * k;
     const natural = S.layupWindowMs(this.natural(p).layup, {}, { ...ctx, greenK: 1, natural: true }) * k;
-    return { total, natural: Math.min(total, natural), sure: false };
+    return { total, natural: Math.min(total, natural), sure: false, smothered };
+  }
+  // v0.4.7.5 quick patch: a finish's contest (as the make chance uses it) and how guarded it is (the HUD's %, and
+  // Smothered), with the space a Contact Finisher push-off made taking 8% per tier off both
+  layupContest(p, a, y) {
+    const raw = S.contestRaw(p, this.opponents(p), this.rimFor(p.team), y), cf = 1 - 0.08 * (a.cfPush || 0);
+    return { contest: Math.min(1.25, raw) * cf, guard: S.insideGuard(raw * cf) };
   }
   // the contest a release on the next step would be graded with: releaseShot / releaseLayup measure it at the ball
   // after that step's action tick, so the meter looks one tick ahead and matches the grade frame for frame
-  contestIfReleased(p) {
+  contestIfReleased(p) { return S.contestFor(p, this.opponents(p), this.rimFor(p.team), this.releaseYNext(p)); }
+  releaseYNext(p) {
     const a = p.action, t0 = a.t;
     a.t = t0 + DT;
     const y = this.holdPoint(p).gy;
     a.t = t0;
-    return S.contestFor(p, this.opponents(p), this.rimFor(p.team), y);
+    return y;
   }
   ftWindow(p) {
     const k = this.speed * (p.human ? this.greenBonus : 1);
@@ -511,6 +563,8 @@ export class Game {
       // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds. v0.4.7.5: every AI
       // player keeps a Lock-In grade of his own too (aiGrades), so good and bad play move their stamina as well
       p.stam.grade = this.lockIn && this.lockIn.id === p.id ? this.lockIn.idx : (this.aiGrades.get(p.id)?.index ?? null);
+      // (v0.4.7.5 quick patch: a run of the same move ends when he loses the ball or stops repeating it)
+      if (p.stam.moveRun && (this.ball.holder !== p.id || this.time - (p.stam.moveT ?? -99) > REPEAT_GAP)) this.endMoveChain(p);
       const t = p.takeover;
       if (t.active) { t.left -= dt / this.speed; if (t.left <= 0) { t.active = false; t.left = 0; p.refreshRatings(); this.emit({ type: 'takeover', player: p.id, kind: t.kind, on: false }); } }
     }
@@ -813,7 +867,7 @@ export class Game {
     p.facing += wrap(a.faceRim - p.facing) * 0.35;
     this.ball.mode = 'held';
     p.dribble.used = true;
-    if (this.isAI(p)) { const r = this.ai.releaseTiming(p, tRel, false, st); a.releaseAt = r.at; a.aiGrade = r.grade; }
+    if (this.isAI(p)) { const r = this.ai.releaseTiming(p, tRel, false, st); a.releaseAt = r.at; a.aiGrade = r.grade; a.aiContest = r.contest; }
     this.emit({ type: 'shotStart', player: p.id, tRel, kind: a.kind });
   }
 
@@ -841,7 +895,7 @@ export class Game {
       face0: Math.atan2(rim.x - p.x, rim.z - p.z), spinDir: this.rng.next() < 0.5 ? 1 : -1,
     });
     this.ball.mode = 'held'; p.dribble.used = true;
-    if (this.isAI(p)) { const r = this.ai.layupTiming(p, a, rim); a.releaseAt = r.at; a.aiGrade = r.grade; }
+    if (this.isAI(p)) { const r = this.ai.layupTiming(p, a, rim); a.releaseAt = r.at; a.aiGrade = r.grade; a.aiContest = r.contest; }
     this.emit({ type: 'gather', player: p.id, kind: 'layup' });
     return a;
   }
@@ -965,9 +1019,11 @@ export class Game {
     const b = this.ball;
     const type = a.ptype;
     const from = this.holdPoint(p);
-    const acc = n(p.ratings.pass_accuracy);
-    let err = (1 - acc) * 0.26 + Math.min(1, p.speed / 6) * 0.08;
-    if (a.bailout) err += a.air ? 0.14 : 0.06; // passing out of a shot is less precise, more so from the air
+    // (v0.4.7.5 quick patch: every pass is 10% more accurate: PASS_ACC_K takes 10% off the aim error, and the
+    // accuracy the ball steers onto the receiver with in flight is 10% better)
+    const acc = Math.min(1.15, n(p.ratings.pass_accuracy) * PASS_ACC_BOOST);
+    let err = ((1 - n(p.ratings.pass_accuracy)) * 0.26 + Math.min(1, p.speed / 6) * 0.08) * PASS_ACC_K;
+    if (a.bailout) err += (a.air ? 0.14 : 0.06) * PASS_ACC_K; // passing out of a shot is less precise, more so from the air
     let eta = 0.5;
     let T, vx, vy, vz;
     if (type === 'alley') {
@@ -1036,18 +1092,21 @@ export class Game {
     const hand = p.dribble.hand;
     const toward = hand === 'R' ? 1 : -1; // crossing from right hand moves ball to the left (+left)
     const it = p.intent, il = Math.hypot(it.mx, it.mz);
-    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5) * (1 - 0.25 * gassed) * sty.burstK;
+    const burst = (3.2 + handle * 1.6 + n(p.ratings.speed_with_ball) * 0.8) * (1 + ((p.moveSpeed || 1) - 1) * 0.5) * (1 - 0.25 * gassed) * sty.burstK * MOVE_BURST_K;
     const dirX = il > 0.2 ? it.mx / il : fwdX, dirZ = il > 0.2 ? it.mz / il : fwdZ;
     const rim = this.rimFor(p.team);
     let vx = 0, vz = 0;
     if (M.back) {
-      // escapes: straight away from the rim
+      // escapes: straight away from the rim (v0.4.7.5 quick patch: the diagonal ones angle off to a side too: the
+      // snatch-back to the ball's side, the pull-back toward the new hand)
       const rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz) || 1;
-      vx = rx / rl * M.back * sty.burstK; vz = rz / rl * M.back * sty.burstK;
+      const bk2 = M.back * sty.burstK * MOVE_BURST_K;
+      vx = rx / rl * bk2; vz = rz / rl * bk2;
+      if (M.lat) { const s2 = (M.latSide === 'ball' ? -toward : toward) * M.lat * sty.wide * bk2; vx += leftX * s2; vz += leftZ * s2; }
     } else if (move === 'sidestep') {
       // a hop to the ball's side (the stick's side), a little back off the defender
       const s2 = -toward * sty.wide;
-      vx = leftX * s2 * burst * M.lat - fwdX * 0.9; vz = leftZ * s2 * burst * M.lat - fwdZ * 0.9;
+      vx = leftX * s2 * burst * M.lat - fwdX * 0.9 * MOVE_BURST_K; vz = leftZ * s2 * burst * M.lat - fwdZ * 0.9 * MOVE_BURST_K;
     } else {
       const lat = (M.lat || 0) * sty.wide, fwd = M.fwd || 0;
       // crossovers and wraps carry him toward the new hand; the in-and-out leans back toward the ball
@@ -1056,10 +1115,13 @@ export class Game {
     p.dribble.xover = null;
     const a = p.startAction('move', dur, { move, vx, vz, f0: p.facing, dir: toward, face: Math.atan2(rim.x - p.x, rim.z - p.z), handFrom: hand, switched: false, checked: false, lvl: p.sizeupLvl || 0, snap: moveSnapRate(p), sty: p.sizeupStyle || 'basic', named });
     if (move === 'spin' || move === 'halfspin') { a.dir = hand === 'R' ? -1 : 1; }
-    // v0.4.5: the same move more than 3 times in a row doubles stamina drain, +0.1x per repeat after that
+    // v0.4.5: the same move more than 3 times in a row doubles stamina drain, +0.1x per repeat after that.
+    // v0.4.7.5 quick patch: more than 6 in a row doubles that again (repeatMoveK); a repeat is the same move again
+    // within REPEAT_GAP seconds, with the ball still in his hands (a pass, a shot, a pickup or losing it ends the run)
     const st = p.stam;
-    if (st.lastMove === move) st.moveRun++; else { st.lastMove = move; st.moveRun = 1; st.moveK = 1; }
-    if (st.moveRun > 3) st.moveK = +(2 + 0.1 * (st.moveRun - 4)).toFixed(2);
+    if (st.lastMove === move && this.time - (st.moveT ?? -99) <= REPEAT_GAP) st.moveRun++; else { st.lastMove = move; st.moveRun = 1; }
+    st.moveT = this.time;
+    st.moveK = repeatMoveK(st.moveRun);
     if (!combo) p.spend(COST.move * Math.max(0.35, 1 - 0.12 * bk(p.badges, 'handles_for_days'))); // combos are free
     p.cool.move = dur * (chainAt(p) - 0.05); // (below the chain point, so a move can chain into the next)
     a.combo = p.combo;
@@ -1070,7 +1132,7 @@ export class Game {
   closestDef(p) { let best = -1, bd = 9; for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd) { bd = dd; best = d.id; } } return best; }
 
   // a different action (shot, pass, pickup) breaks a chain of the same dribble move
-  endMoveChain(p) { const st = p.stam; st.lastMove = null; st.moveRun = 0; st.moveK = 1; }
+  endMoveChain(p) { const st = p.stam; st.lastMove = null; st.moveRun = 0; st.moveK = 1; st.moveT = null; }
 
   // v0.4.4: a reach can be aimed. dir (world) picks the hand: the one on that side of the body; low = a swipe
   // down at the dribble. Without a direction the defender reaches with the hand on the ball's side.
@@ -1207,8 +1269,12 @@ export class Game {
           if (a.style === 'reverse') a.revFacing = Math.atan2(-dx, -dz);
         }
         if (a.style === 'reverse' && a.jumped && !a.slammed) p.facing += wrap(a.revFacing - p.facing) * Math.min(1, dt * 6);
-        // v0.4.2: contact on the way up -> posterizer (shove / knock down) or the dunker is stopped
-        if (a.jumped && !a.slammed && a.posterOn == null && !a.stopped) {
+        // v0.4.2: contact on the way up -> posterizer (shove / knock down) or the dunker is stopped.
+        // v0.4.7.5 quick patch: Posterizer is for dunks only. Winning the contact on the way up now waits for the
+        // slam (posterPending): the knockdown happens if he gets his hands to the rim and throws it down; if he
+        // never gets there and has to flip it up instead, it's a layup, and a Contact Finisher's push-off (or a plain
+        // bump) instead of a poster
+        if (a.jumped && !a.slammed && a.posterOn == null && a.posterPending == null && !a.stopped) {
           const ux = rim.x - p.x, uz = rim.z - p.z, ul = Math.hypot(ux, uz) || 1;
           for (const d of this.opponents(p)) {
             const dx = d.x - p.x, dz = d.z - p.z, dd = Math.hypot(dx, dz);
@@ -1221,7 +1287,7 @@ export class Game {
             if (this.rng.next() < pc) {
               // v0.4.5: the shove-and-knockdown is the Posterizer badge's alone; without it the dunker finishes
               // through the contact and bumps the defender off the line (no knockdown)
-              if (tier > 0) this.posterize(p, d, a, rim, true);
+              if (tier > 0) { a.posterPending = d.id; a.through = d.id; }
               else this.shoulderThrough(p, d, a, rim);
             } else if (p.badges.contact_finisher) {
               // v0.4.7.5: stopped short of the dunk, a Contact Finisher (not Posterizer) takes over: he pushes off
@@ -1239,7 +1305,12 @@ export class Game {
           const hx = p.x + Math.sin(p.facing) * reachFront, hz = p.z + Math.cos(p.facing) * reachFront;
           if (a.cfPush || (Math.hypot(hx - rim.x, hz - rim.z) > 0.62 && Math.hypot(p.x - rim.x, p.z - rim.z) > 0.75)) {
             a.slammed = true; a.hang = 0; a.release = a.t;
-            // (forced into a layup: a Contact Finisher finishes it through the contact)
+            // (forced into a layup: a Contact Finisher finishes it through the contact; the poster he'd won on the
+            // way up is gone, since he never got to the rim: it's a push-off with the badge, a bump without)
+            const pend = a.posterPending != null ? this.players[a.posterPending] : null;
+            a.posterPending = null;
+            if (pend && p.badges.contact_finisher && !a.cfPush) { this.cfPushOff(p, pend, rim); a.cfPush = bk(p.badges, 'contact_finisher'); }
+            else if (pend && pend.action?.type !== 'stumble') this.shoulderThrough(p, pend, a, rim);
             if (!a.cfPush && p.badges.contact_finisher) { a.cfPush = bk(p.badges, 'contact_finisher'); this.badgeFx(p, 'contact_finisher'); }
             this.emit({ type: 'feed', text: a.cfPush ? `${p.name} finishes through the contact` : `${p.name} couldn't get to the rim` });
             this.releaseLayup(p, a);
@@ -1339,18 +1410,26 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const err = a.releaseAt - a.tRel;
     const P = this.holdPoint(p);
-    const contest = S.contestFor(p, this.opponents(p), rim, P.gy);
+    const raw = S.contestRaw(p, this.opponents(p), rim, P.gy), contest = Math.min(1.25, raw);
+    // (v0.4.7.5 quick patch: guard is how guarded it was on the HUD's scale; a close shot is measured like a finish)
+    const guard = S.guardFor(a.kind, raw), smothered = S.isSmothered(guard);
     // (a close shot isn't timed: no window, no Excellent)
     const W = this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
-    let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(err, win));
-    if (grade === 'excellent' && contest >= S.SMOTHER) grade = err < 0 ? 'early' : 'late'; // no greens while smothered
+    let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? this.aiGradeAtRelease(p, a, a.aiGrade, win, a.aiContest != null ? this.jumperWindow(p, a, a.aiContest).total : win) : S.gradeFromWindow(err, win));
+    // no greens while smothered, and no makes: a release that would have been green gets a record scratch
+    let scratch = false;
+    if (smothered && a.kind !== 'close') {
+      scratch = grade === 'excellent' || Math.abs(err) <= this.jumperWindow(p, a, contest, true).total / 1000;
+      if (grade === 'excellent') grade = err < 0 ? 'early' : 'late';
+    }
     const clutch = this.isClutch(p.team);
-    let chance = S.finalChance({ type: a.kind === 'close' ? 'close' : 'jumper', d, a: p.ratings, three, grade, contest, moving: a.moving, fade: a.fade, stamina: p.stamina, badges: p.badges, catchShoot: a.catchShoot, corner, hot: p.hot, clutch });
-    // greens always go in (unless blocked in flight), except past 35 ft, where it's mostly luck (shots.js DEEP_D)
-    const sure = grade === 'excellent' && d <= S.DEEP_D;
+    let chance = S.finalChance({ type: a.kind === 'close' ? 'close' : 'jumper', d, a: p.ratings, three, grade, contest, moving: a.moving, fade: a.fade, stamina: p.stamina, badges: p.badges, catchShoot: a.catchShoot, corner, hot: p.hot, clutch, smothered });
+    // greens always go in (unless blocked in flight), except past 35 ft, where it's mostly luck (shots.js DEEP_D),
+    // and (v0.4.7.5 quick patch) a non-shooter's green from three, which is a boost
+    const sure = grade === 'excellent' && W.sure;
     if (sure) chance = 1;
     const foul = this.checkShootingFoul(p, contest, 'jumper');
-    const made = sure || this.rng.next() < chance;
+    const made = !smothered && (sure || this.rng.next() < chance);
     const plan = S.planShot(this.rng, P, rim, side, made, a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: sure, guarantee: sure, bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three, type: a.kind, made: plan.made, grade, chance, side, contest, foul, released: this.time, d, putback: false, catchShoot: !!a.catchShoot, corner, clutch: clutch && !!p.badges.clutch });
     b.wx = plan.wx; b.wy = plan.wy; b.wz = plan.wz;
@@ -1360,8 +1439,23 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three };
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, three, made: plan.made, kind: a.kind, closest: this.closestDef(p), ...(a.kind === 'close' ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three, made: plan.made, kind: a.kind, closest: this.closestDef(p), ...(a.kind === 'close' ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
     if (foul) this.pendingFoul = foul;
+  }
+
+  // v0.4.7.5 quick patch: the defense at the release, for the AI too. The AI picks its timing when the shot starts,
+  // from the contest it expects then; what it actually gets is graded against the window at the release. A closeout
+  // that arrives in time shrinks the window it was aiming at, and the green slips to a near miss as often as the
+  // window shrank (and a defender who backs off can turn a near miss into a green). plan / now: the window (ms) it
+  // planned for and the one at the release.
+  aiGradeAtRelease(p, a, grade, now, plan) {
+    if (!(plan > 0)) return grade;
+    if (grade === 'excellent' && now < plan) {
+      if (this.rng.next() > Math.pow(Math.max(0, now / plan), 0.8)) return this.rng.next() < 0.5 ? 'early' : 'late';
+    } else if ((grade === 'early' || grade === 'late') && now > plan) {
+      if (this.rng.next() < 0.5 * (1 - plan / now)) return 'excellent';
+    }
+    return grade;
   }
 
   releaseLayup(p, a) {
@@ -1371,22 +1465,27 @@ export class Game {
     const P = this.holdPoint(p);
     const d = Math.hypot(rim.x - p.x, rim.z - p.z);
     // (v0.4.7.5: the space a Contact Finisher push-off made takes 8% per tier off the contest)
-    const contest = S.contestFor(p, this.opponents(p), rim, P.gy) * (1 - 0.08 * (a.cfPush || 0));
+    const { contest, guard } = this.layupContest(p, a, P.gy), smothered = S.isSmothered(guard);
     const blocker = this.checkBlockAtRelease(p, { x: P.x, y: P.gy, z: P.z }, 'layup');
     if (blocker) return;
     // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
-    // boost that contact can still beat
-    let grade = 'none', W = null;
+    // boost that contact can still beat. v0.4.7.5 quick patch: a smothered finish has no window and doesn't go in.
+    let grade = 'none', W = null, scratch = false;
+    const err = a.releaseAt != null && a.tRel != null ? a.releaseAt - a.tRel : 0;
     if (a.type === 'layup' && !a.oop) {
-      if (this.isAI(p) && a.aiGrade) grade = a.aiGrade;
+      if (this.isAI(p) && a.aiGrade) grade = this.aiGradeAtRelease(p, a, a.aiGrade, this.layupWindow(p, a, contest, guard).total, a.aiContest != null ? this.layupWindow(p, a, Math.min(1.25, a.aiContest), S.insideGuard(a.aiContest)).total : null);
       else if (a.timed) {
-        W = this.layupWindow(p, a, contest);
-        grade = S.gradeFromWindow(a.releaseAt - a.tRel, W.total);
+        W = this.layupWindow(p, a, contest, guard);
+        grade = S.gradeFromWindow(err, W.total);
+      }
+      if (smothered && (a.timed || a.aiGrade)) {
+        scratch = grade === 'excellent' || Math.abs(err) <= this.layupWindow(p, a, contest, guard, true).total / 1000;
+        if (grade === 'excellent') grade = err < 0 ? 'early' : 'late';
       }
     }
-    const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade });
+    const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade, smothered });
     const foul = this.checkShootingFoul(p, contest, 'layup');
-    const made = this.rng.next() < chance;
+    const made = !smothered && this.rng.next() < chance;
     const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8 });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three: false, type: 'layup', made: plan.made, chance, side, contest, foul, released: this.time, d, oop: !!a.oop });
     b.wx = plan.wx * 0.5; b.wz = plan.wz * 0.5;
@@ -1395,7 +1494,7 @@ export class Game {
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     if (grade === 'excellent') p.stats.greens++;
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p), ...(W ? { err: a.releaseAt - a.tRel, tRel: a.tRel, win: W.total, nat: W.natural, sure: W.sure } : {}) });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p), ...(W ? { err, tRel: a.tRel, win: W.total, nat: W.natural, sure: W.sure } : {}) });
     if (foul) this.pendingFoul = foul;
   }
 
@@ -1409,12 +1508,19 @@ export class Game {
     const contest = S.contestFor(p, this.opponents(p), rim, COURT.rimY + 0.3);
     const traffic = S.trafficSkill(p, !!a.standing);
     let chance = S.finalChance({ type: 'dunk', d: 0.5, a: p.ratings, contest: contest * 0.8, stamina: p.stamina, badges: p.badges, traffic });
-    if (a.posterOn != null) chance = Math.min(0.97, chance + 0.12);
+    const pend = a.posterPending != null ? this.players[a.posterPending] : null;
+    a.posterPending = null;
+    if (a.posterOn != null || pend) chance = Math.min(0.97, chance + 0.12);
     // v0.4.7.5: a wide-open dunk (10% guarded or less) by anyone over 70 in that dunk rating never misses
     const sure = contest <= WIDE_OPEN && ((p.raw || p.ratings)[a.standing ? 'standing_dunk' : 'driving_dunk'] ?? 0) > 70;
     if (sure) chance = 1;
     const made = sure || this.rng.next() < chance;
     let poster = a.posterOn != null ? this.players[a.posterOn] : null;
+    // (v0.4.7.5 quick patch: the contact he won on the way up: thrown down = a poster; rimmed out = just a bump)
+    if (pend && !poster) {
+      if (made && pend.dist(p) < 1.6 && pend.action?.type !== 'stumble') { this.posterize(p, pend, a, rim, false); poster = pend; }
+      else if (pend.action?.type !== 'stumble') this.shoulderThrough(p, pend, a, rim);
+    }
     if (!poster && made) {
       // a contest in the air at the rim: the dunker goes through him -> knock him back as he comes down
       poster = this.opponents(p).find(d => d.dist(p) < 1.1 && (d.airborne || d.action?.type === 'block')) || null;
@@ -1628,8 +1734,35 @@ export class Game {
       this.emit({ type: 'steal', player: p.id, victim: h.id, clean });
     } else {
       p.plantT = 0.25;
-      if (this.mode === 'proam' && this.rng.next() < (0.1 + (dist < 0.8 ? 0.08 : 0)) * foulK) this.callFoul(p, h, false);
+      // v0.4.7.5 quick patch: a reach-in foul is called on contact, not on chance. Where the reaching hand ends up
+      // decides it: into the ball handler's body or arm without getting the ball first is a foul nearly every time
+      // (more so reaching across his body), a hand that gets the ball first is all ball (a rare call on the follow
+      // through), and a reach that touches nothing is never a foul.
+      const c = this.reachContact(p, h);
+      const pf = c.body ? (c.ballFirst ? 0.06 : REACH_FOUL.body * Math.min(1.5, foulK)) : 0;
+      if (this.mode === 'proam' && pf > 0 && this.rng.next() < pf) this.callFoul(p, h, false);
     }
+  }
+  // v0.4.7.5 quick patch: where a reach lands. The hand goes out along the defender's facing on the side of the hand
+  // he reached with; body: it ends up inside the ball handler (his torso, or the arm that's dribbling); ballFirst: it
+  // got to the ball before it got to him.
+  reachContact(d, h) {
+    const a = d.action || {}, b = this.ball;
+    const fx = Math.sin(d.facing), fz = Math.cos(d.facing), lx = Math.cos(d.facing), lz = -Math.sin(d.facing);
+    const sd = a.hand === 'R' ? -1 : 1, reach = Math.min(REACH_FOUL.len, d.phys.WS ? d.phys.WS * 0.36 : 0.66);
+    const hx = d.x + fx * reach + lx * sd * 0.17, hz = d.z + fz * reach + lz * sd * 0.17;
+    const toBody = Math.hypot(hx - h.x, hz - h.z) - (h.phys.radius || 0.27) * 0.62; // (the torso, not the space round him)
+    // the dribbling arm: from his shoulder on the ball's side out to the ball
+    const hl = Math.cos(h.facing), hlz = -Math.sin(h.facing), bs = (b.x - h.x) * hl + (b.z - h.z) * hlz >= 0 ? 1 : -1;
+    const sx = h.x + hl * bs * 0.2, sz = h.z + hlz * bs * 0.2;
+    const ex = b.x - sx, ez = b.z - sz, el = ex * ex + ez * ez || 1e-6;
+    const t = Math.max(0, Math.min(1, ((hx - sx) * ex + (hz - sz) * ez) / el));
+    const toArm = Math.hypot(hx - (sx + ex * t), hz - (sz + ez * t)) - 0.06;
+    const toBall = Math.hypot(hx - b.x, hz - b.z) - BALL_R;
+    const body = Math.min(toBody, toArm) < REACH_FOUL.touch;
+    // the ball first: it's nearer the hand than he is (the hand's path goes through it before his body or arm)
+    const ballFirst = toBall < REACH_FOUL.touch + 0.06 && toBall <= Math.min(toBody, toArm) + 0.04;
+    return { body, ballFirst, toBody, toArm, toBall };
   }
 
   // v0.4.2 poke-out: the ball is knocked away from the dribbler (sideways/behind him, low and skipping),
@@ -1759,13 +1892,17 @@ export class Game {
       } else if (st === 'windmill' || st === 'cradle') {
         // full arm circle: front-low, down past the hip, back, up over the top, then down into the rim.
         // The cradle swings it out to the side, tucked against the forearm.
-        const k = Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
         // (v0.4.7.5: a true windmill: the arm goes all the way round from shoulder height in front, a full turn
-        // with the slam)
-        const al = (st === 'windmill' ? 0 : -0.35 * Math.PI) - (st === 'windmill' ? 1.67 : 1.32) * Math.PI * ek, R = 0.37 * H, cy = 0.9 * H;
-        const cx = st === 'cradle' ? -0.18 - 0.16 * Math.sin(Math.PI * k) : -0.14;
-        const cyy = cy + R * Math.sin(al), czz = (st === 'cradle' ? 0.08 : 0.02) + R * Math.cos(al) * (st === 'cradle' ? 0.8 : 1);
-        const f = Math.max(0, (t - 0.82) / 0.18), ef = f * f * (3 - 2 * f);
+        // with the slam. Quick patch: the windmill's circle starts just before the takeoff and goes round in the
+        // air, instead of most of the way round during the gather on the floor)
+        const mill = st === 'windmill', C = mill ? millCircle(p, H) : null;
+        const t0 = mill ? Math.max(0, (a.takeoff || 0) - 0.12) : 0, k = mill ? Math.max(0, Math.min(1, (a.t - t0) / Math.max(0.1, a.slam - t0))) : Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
+        // (the windmill stays on its circle right to the slam, coming over the top and down in front at the rim, so the
+        // arm is straight the whole way: it used to leave the circle for a point no arm could reach)
+        const al = (mill ? 0 : -0.35 * Math.PI) - (mill ? 1.6 : 1.32) * Math.PI * ek, R = mill ? C.R : 0.37 * H, cy = mill ? C.cy : 0.9 * H;
+        const cx = mill ? C.cx : -0.18 - 0.16 * Math.sin(Math.PI * k);
+        const cyy = cy + R * Math.sin(al), czz = (mill ? C.cz : 0.08) + R * Math.cos(al) * (mill ? 1 : 0.8);
+        const f = mill ? 0 : Math.max(0, (t - 0.82) / 0.18), ef = f * f * (3 - 2 * f);
         lx = cx * (1 - ef) - 0.08 * ef; ly = cyy + (topY - cyy) * ef; lz = czz + (0.5 - czz) * ef;
       } else if (st === 'double') {
         // double clutch: up, back down to the waist, then up and in
@@ -1815,12 +1952,15 @@ export class Game {
         const k = Math.min(1, t / 0.8), ek = k * k * (3 - 2 * k);
         ly = 0.62 * H + (topY * 0.99 - 0.62 * H) * ek; lz = 0.3 - 0.3 * Math.sin(Math.PI * k) - 0.06 * ek; lx = -0.22 + 0.14 * ek;
       } else if (st === 'eastbay') {
-        // between the legs in the air: down past the hip, through, then up and over on the other side
-        const k = Math.min(1, t / 0.88), ek = k * k * (3 - 2 * k);
-        const thr = Math.sin(Math.min(1, k / 0.62) * Math.PI);
-        ly = 0.72 * H - 0.3 * H * thr + (topY * 1.02 - 0.72 * H) * Math.pow(ek, 2.2);
-        lz = 0.3 - 0.34 * thr + 0.3 * Math.pow(ek, 2);
-        lx = -0.2 * (1 - ek) + 0.26 * ek;
+        // between the legs in the air. v0.4.7.5 quick patch: it really goes through now (it used to dip in front of
+        // the right thigh and come back up). The right hand takes it down in front, through the gap under the
+        // pelvis between the split legs (the right knee driven up in front, the left leg back), the left hand takes
+        // it on the far side, and carries it up the left side to the rim (EASTBAY_KEYS: [k, x, y×H, z])
+        // (timed on the flight, takeoff to slam: it used to be timed from the gather, so most of it happened on the floor)
+        const air = Math.max(0, Math.min(1, (a.t - (a.takeoff || 0)) / Math.max(0.1, a.slam - (a.takeoff || 0))));
+        [lx, ly, lz] = keyPath(EASTBAY_KEYS, Math.min(1, air / 0.9), H);
+        const f = Math.max(0, (air - 0.9) / 0.1), ef = f * f * (3 - 2 * f);
+        if (ef > 0) { lx += (0.08 - lx) * ef; ly += (topY * 1.02 - ly) * ef; lz += (0.5 - lz) * ef; }
       } else if (st === 'hashsling') {
         // Hash-Slinging (Icon badge only): a full wind-up behind the back, around the body, then slung over the top
         const k = Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
@@ -1832,7 +1972,7 @@ export class Game {
       } else if (st === 'reverse') {
         ly = 0.65 * H + (topY * 0.99 - 0.65 * H) * e; lz = 0.3 + e * 0.05 - Math.sin(Math.PI * t) * 0.18; lx = 0;
       } else if (DUNK_PATH2[st]) {
-        [lx, ly, lz] = DUNK_PATH2[st](t, e, H, topY);
+        [lx, ly, lz] = DUNK_PATH2[st](t, e, H, topY, p);
       } else { ly = 0.65 * H + (topY - 0.65 * H) * e; lz = 0.3 + e * 0.25; lx = st === 'onehand' ? -0.1 : 0; }
       const spin = S.dunkSpin(a);
       if (spin) { const c = Math.cos(spin), s2 = Math.sin(spin), x0 = lx; lx = x0 * c + lz * s2; lz = -x0 * s2 + lz * c; }
@@ -1893,6 +2033,24 @@ export class Game {
         } else if (mv === 'retreat') {
           // two hard, low dribbles on the way back
           ly = BALL_R + (hgt * 0.78 * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * t * 2)); lz = 0.2;
+        } else if (mv === 'pushcross') {
+          // v0.4.7.5 quick patch, the push-pull: one long dribble pushed out ahead on the ball's side, then pulled
+          // back in and across, low
+          if (t < 0.42) { const u = t / 0.42; side = from * 0.27; lz = 0.24 + 0.36 * Math.sin(u * Math.PI / 2); ly = BALL_R + (hgt * 1.04 - BALL_R) * Math.abs(Math.cos(Math.PI * u)); }
+          else { const u = (t - 0.42) / 0.58, e = u * u * (3 - 2 * u); side = from * 0.27 * sty.wide * (1 - 2 * e); lz = 0.6 - 0.36 * e; ly = BALL_R + (hgt * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * e)); }
+        } else if (mv === 'jab') {
+          // held at the hip on the ball's side through the jab, then one long dribble on the go
+          if (t < 0.45) { side = from * 0.3; lz = 0.16; ly = 0.47 * H * (1 + 0.03 * Math.sin(t / 0.45 * Math.PI)); }
+          else { const u = (t - 0.45) / 0.55; side = from * 0.27; lz = 0.18 + 0.3 * u; ly = BALL_R + (0.47 * H - BALL_R) * Math.abs(Math.cos(Math.PI * u)); }
+        } else if (mv === 'snatch') {
+          // one hard dribble, yanked back to the hip as he hops back
+          side = from * 0.3; lz = 0.24 - 0.14 * Math.sin(Math.min(1, t * 1.6) * Math.PI / 2);
+          ly = t < 0.6 ? BALL_R + (hgt * 0.85 * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * t / 0.6)) : 0.46 * H * (0.96 + 0.04 * Math.sin((t - 0.6) / 0.4 * Math.PI));
+        } else if (mv === 'btlback') {
+          // between the legs while stepping back: low, from the front of one leg to behind the other
+          const e = t * t * (3 - 2 * t);
+          side = from * 0.27 * sty.wide * (1 - 2 * e); lz = 0.02 + Math.abs(0.5 - e) * 0.36;
+          ly = BALL_R + (hgt * 0.78 * sty.low - BALL_R) * Math.abs(Math.cos(Math.PI * e));
         }
       } else if (p.dribble.xover) {
         // size-up combos in place: crossovers, between the legs, behind the back, the snake's slide across and

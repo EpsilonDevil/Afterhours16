@@ -117,7 +117,7 @@ test('every green window is 10% smaller (and 6.5% more since the quick patch)', 
     assert.ok(Math.abs(S.greenWindowMs(v, {}, {}) - Math.max(9, S.timingWindowMs(v) * sub) * S.GREEN_K) < 1e-9, `jumper ${v}`);
     assert.ok(Math.abs(S.greenWindowMs(v, {}, { ft: true }) - S.timingWindowMs(v) * sub * 1.15 * S.GREEN_K) < 1e-9, `free throw ${v}`);
   }
-  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935) < 1e-12);
+  assert.ok(Math.abs(S.GREEN_K - 0.9 * 0.935 * 0.9) < 1e-12); // (v0.4.7.5 quick patch: 10% more off)
   assert.equal(S.greenWindowMs(90, {}, { contest: S.SMOTHER }), 0, 'smothered is still no window at all');
 });
 

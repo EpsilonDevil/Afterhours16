@@ -66,8 +66,14 @@ export function caps(b, target = null) {
   }
   const applied = b.cap_breakers?.applied || {};
   for (const [a, n] of Object.entries(applied)) if (out[a] != null && n > 0) out[a] = Math.min(99, out[a] + n);
+  // (v0.4.7.5 quick patch: Icon Legend upgrades raise the caps with the attributes, server/builds.py legend_raise)
+  for (const [a, v] of Object.entries(b.legend?.floor || {})) if (out[a] != null && v > 0) out[a] = Math.max(out[a], Math.min(99, v));
   return out;
 }
+// v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games played to the end are +1 OVR, up to 99,
+// placed by the build system (mirrors server/builds.py LEGEND_*)
+export const LEGEND_GAMES_PER_OVR = 2;
+export const LEGEND_OVR_CAP = 99;
 export function startingAttributes(b) {
   const c = caps(b, OVR_CAP), out = {};
   for (const k of ATTRS) out[k] = Math.max(35, Math.round(c[k] * 0.72));

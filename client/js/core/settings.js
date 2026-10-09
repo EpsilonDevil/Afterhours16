@@ -12,6 +12,8 @@ const DEFAULTS = {
   autoPlay: false,
   // v0.4.7.5: green release sounds and effects: 'all' players, 'mine' only, or 'off'
   greens: 'all',
+  // v0.4.7.5 quick patch: the defensive assignment arrows (you and the man you should be guarding)
+  defArrows: true,
 };
 export const settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* private mode */ }

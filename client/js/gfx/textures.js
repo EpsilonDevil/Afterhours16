@@ -403,6 +403,19 @@ export function ringTexture(size = 256) {
   return c;
 }
 
+// v0.4.7.5 quick patch: the defensive assignment arrow (a floor decal): a bold arrow with a dark rim,
+// pointing down the canvas (+v, the plane's +z: the direction it's yawed to)
+export function arrowTexture(size = 128) {
+  const c = canvas(size, size), g = ctx2d(c), S = size;
+  g.clearRect(0, 0, S, S);
+  const path = () => { g.beginPath(); g.moveTo(S * 0.5, S * 0.9); g.lineTo(S * 0.88, S * 0.42); g.lineTo(S * 0.66, S * 0.42); g.lineTo(S * 0.66, S * 0.12); g.lineTo(S * 0.34, S * 0.12); g.lineTo(S * 0.34, S * 0.42); g.lineTo(S * 0.12, S * 0.42); g.closePath(); };
+  // (drawn over the floor with alpha blending: a dark rim so it reads on light wood and on dark asphalt alike; the
+  // material's colour tints the white fill)
+  g.lineJoin = 'round'; g.lineWidth = S * 0.09; g.strokeStyle = 'rgba(0,0,0,0.75)'; path(); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,1)'; path(); g.fill();
+  return c;
+}
+
 // v0.4.5 Hot / Cold floor icons under a player (additive decals): a flame and an ice crystal
 export function flameTexture(size = 256) {
   const c = canvas(size, size), g = ctx2d(c), r = size / 2;

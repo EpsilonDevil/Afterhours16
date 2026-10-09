@@ -6,6 +6,8 @@ import { badgeSVG } from '../ui/badgeart.js';
 export const METER_SCALE = 1.3;
 export const METER_COLORS = { core: '#1fe07a', boost: '#7fe25e', edge: '#ffc23a', line: 'rgba(4, 26, 12, .6)' };
 const METER_PX = 128; // .hud-meter height in app.css
+// v0.4.7.5 quick patch: the box score line shown beside the Locked-In grade
+const LINE = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK'], ['tov', 'TO']];
 // The window's fill, bottom to top: yellow at the outer edges of the boosts, through lime, to the solid green core
 // (the natural window), with a hairline at the core's edges when there's room for it.
 export function meterGradient(lo, span, nat, half) {
@@ -42,7 +44,7 @@ export class HUD {
       <div class="hud-hint" id="hud-hint"></div>
       <div class="hud-badges" id="hud-badges"></div>
       <div class="hud-intro" id="hud-intro" hidden></div>
-      <div class="hud-grade" id="hud-grade" hidden><div class="lg-k">LOCKED-IN</div><div class="lg-letter"></div><div class="lg-bar"><i></i></div><div class="lg-pop"></div></div>`;
+      <div class="hud-grade" id="hud-grade" hidden><div class="lg-k">LOCKED-IN</div><div class="lg-letter"></div><div class="lg-bar"><i></i></div><div class="lg-pop"></div><div class="lg-stats" hidden>${LINE.map(([k, l]) => `<div class="lg-st" data-k="${k}"><b></b><span>${l}</span></div>`).join('')}</div></div>`;
     this.el = id => root.querySelector('#' + id);
     this.score = this.el('hud-score');
     this.meter = this.el('hud-meter');
@@ -164,9 +166,11 @@ export class HUD {
   }
 
   // v0.4.1 Locked-In grade (null hides it)
-  setGrade(gr) {
+  // v0.4.7.5 quick patch: line: your box score so far ({pts, reb, ast, stl, blk, tov}), shown attached to the right
+  setGrade(gr, line = null) {
     if (!gr) { this.grade.hidden = true; this.gradeVer = -1; return; }
     this.grade.hidden = false;
+    this.setLine(line);
     if (gr.version === this.gradeVer) return;
     this.gradeVer = gr.version;
     const L = this.grade.querySelector('.lg-letter');
@@ -176,6 +180,23 @@ export class HUD {
     const pop = this.grade.querySelector('.lg-pop');
     if (gr.pop) { pop.textContent = gr.pop.text; pop.className = 'lg-pop on ' + (gr.pop.good ? 'good' : 'bad'); }
     else pop.className = 'lg-pop';
+  }
+
+  // your line on the grade: PTS REB AST / STL BLK TO (a number that just went up pulses once)
+  setLine(line) {
+    const box = this.lineBox || (this.lineBox = this.grade.querySelector('.lg-stats'));
+    if (box.hidden === !!line) { box.hidden = !line; this.grade.classList.toggle('with-stats', !!line); this.lineKey = null; }
+    if (!line) return;
+    const key = LINE.map(([k]) => line[k] || 0).join('|');
+    if (key === this.lineKey) return;
+    const first = this.lineKey == null;
+    this.lineKey = key;
+    for (const el of box.children) {
+      const b = el.firstChild, v = String(line[el.dataset.k] || 0);
+      if (b.textContent === v) continue;
+      b.textContent = v;
+      if (!first) { el.classList.remove('up'); void el.offsetWidth; el.classList.add('up'); }
+    }
   }
 
   showCam(label) { this.camLabel.textContent = label; this.camLabel.classList.add('on'); this.camT = 1.4; }

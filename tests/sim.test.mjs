@@ -149,7 +149,7 @@ test('the green peak is the moment the ball leaves the hands, for every jump-sho
     // ...and the jump peaks just after it (release just before the apex)
     assert.ok(a.takeoff + Math.sqrt(2 * a.jumpH / 9.81) >= a.tRel - 1e-6, `${base.id}/${rel.id}: release before the apex`);
     // the window is centred on tRel: release a hair inside the (bonus-widened) window and it's green
-    const win = S.greenWindowMs(p.ratings[a.kind === 'close' ? 'close_shot' : 'mid_range'], p.badges, { contest: 0, moving: a.moving, fade: a.fade, d: a.dRim, three: false, pkg: p.shotPkg }) * g.speed * bonus / 1000;
+    const win = S.greenWindowMs(p.ratings[a.kind === 'close' ? 'close_shot' : 'mid_range'], p.badges, { contest: 0, moving: a.moving, fade: a.fade, d: a.dRim, three: false, pkg: p.shotPkg, nonShooter: !S.isShooterArch(p.archetype) }) * g.speed * bonus / 1000; // (v0.4.7.5 quick patch: a non-shooter's window is 10% smaller)
     // with the meter off (bonus 1.1) a release 5% outside the normal window is still green
     const off = bonus > 1 ? win / 1.1 * 1.05 : win * 0.95;
     a.releaseAt = a.tRel + off;
@@ -360,10 +360,11 @@ test('v0.4.5 stamina: repeated moves and repeated mistakes drain faster, good pl
   p.hot = 1; assert.equal(p.recK, 2.25);
   p.hot = 0; p.stam.grade = 2; p.cold = true;
   assert.equal(+p.drainK.toFixed(4), 1.875);
-  // jogging now costs a little; standing still recovers
-  const q = g.players[1]; q.stamina = 0.8; q.stam.grade = null;
-  q.intent = { ...q.intent, mx: 1, mz: 0, sprint: false }; for (let i = 0; i < 120; i++) q.move(1 / 60, false, 0);
-  assert.ok(q.stamina < 0.8, 'jogging drains');
+  // moving without sprint is neutral (v0.4.7.5 quick patch; it used to cost a little); standing still recovers
+  const q = g.players[1]; q.stam.grade = null;
+  q.intent = { ...q.intent, mx: 1, mz: 0, sprint: false }; for (let i = 0; i < 60; i++) q.move(1 / 60, false, 0); // (up to speed)
+  q.stamina = 0.8; for (let i = 0; i < 120; i++) q.move(1 / 60, false, 0);
+  assert.ok(Math.abs(q.stamina - 0.8) < 0.004, `moving without sprint holds steady (${q.stamina})`);
   const s1 = q.stamina; q.intent = { ...q.intent, mx: 0, mz: 0 }; for (let i = 0; i < 240; i++) q.move(1 / 60, false, 0);
   assert.ok(q.stamina > s1, 'standing recovers');
 });

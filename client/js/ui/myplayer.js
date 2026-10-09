@@ -37,10 +37,20 @@ function maxOvrLine(app, c) {
     <div class="mo-next">${max >= OVR_CAP ? '<b>Fully unlocked</b><small>Cap breakers are open</small>' : `<b>${left} Pro Run game${left === 1 ? '' : 's'}</b><small>to +1 max OVR · ${[0, 1, 2].map(k => `<i class="dot ${k < per - left ? 'on' : ''}"></i>`).join('')}</small>`}</div></div>`;
 }
 
+// v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games played (not simmed) are +1 OVR up to
+// 99, placed by the build system. Shown under the max OVR line once the build has its Icon badge (a teaser before).
+function legendLine(app, c) {
+  const L = c.legend_info || {}, per = L.per ?? app.config.badge_rules?.legend_games_per_ovr ?? 2, cap = L.cap ?? app.config.badge_rules?.legend_ovr_cap ?? 99;
+  if (!L.active) return `<div class="legend-line off"><div class="ll-num"><small>ICON LEGEND</small><b>🔒</b></div><div class="ll-text"><b>Earn your Icon badge to keep climbing</b><small>After it, every ${per} Pro Run games you play take your overall up by 1, all the way to ${cap}.</small></div></div>`;
+  const left = L.to_next ?? per, done = per - left;
+  return `<div class="legend-line"><div class="ll-num"><small>ICON LEGEND</small><b>${c.overall}</b><span>/ ${cap}</span></div>
+    <div class="ll-text">${L.maxed ? `<b>Fully grinded: ${cap} OVR</b><small>${L.upgrades || 0} Legend upgrades placed</small>` : `<b>${left} Pro Run game${left === 1 ? '' : 's'} to +1 OVR</b><small>${Array.from({ length: per }, (_, k) => `<i class="dot ${k < done ? 'on' : ''}"></i>`).join('')} Placed for you, on the attributes your build leans on · simmed games don't count</small>`}</div></div>`;
+}
+
 function attributes(app, root, c, view = 'upgrades') {
   const cbN = c.cap_breakers_available || 0;
   root.innerHTML = `<div class="seg attr-seg"><button class="${view === 'upgrades' ? 'on' : ''}" data-view="upgrades">Upgrades</button><button class="${view === 'capbreakers' ? 'on' : ''}" data-view="capbreakers">Cap Breakers${cbN ? ` <span class="seg-n">${cbN}</span>` : ''}</button></div>
-    ${maxOvrLine(app, c)}<div id="attr-view"></div>`;
+    ${maxOvrLine(app, c)}${maxOvr(c) >= OVR_CAP ? legendLine(app, c) : ''}<div id="attr-view"></div>`;
   $$('[data-view]', root).forEach(b => b.onclick = () => attributes(app, root, app.char(), b.dataset.view));
   const box = $('#attr-view', root);
   if (view === 'capbreakers') return capBreakerPanel(app, box, c, { inline: true, done: () => Screens.go(app, 'myplayer', { tab: 'attributes', view: 'capbreakers' }) });

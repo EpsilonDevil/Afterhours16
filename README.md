@@ -15,10 +15,44 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
 - **The stick:** 14 dribble moves in crossover, behind-the-back, escape, momentum and spin families, each on its own stick combination, 21 named combos, and quicker chaining with a better handle. Aimed passes, physical box-outs, X/Square is a steal on defense.
 - **Animations doubled** (30 bases, 32 releases, 28 dunk packages, 20 size-ups, 8 layup packages, 34 celebrations) and **12 movement styles**.
 - **Smarter AI:** its own dribble habits, open shots taken, escape dribbles, screens, cuts and relocations, less dead dribbling, cherry-pickers read, Lock-In grades, and overalls that grow (slowly) as they play.
-- **Green releases:** 14 sounds and 12 effects in the store (plus a Cup exclusive of each); every AI player has his own.
+- **Green releases:** 14 sounds and 12 effects in the store (plus a Cup exclusive of each); every AI player has his own. (The quick patch doubles them.)
 - **The park:** two GOT NEXT spots per court (first full squad runs next), a live **court overview** on View/Share (V), **bounties** on streaks above 6, a Got Next score ticker, and squads that break up when you close the game.
 - **Inventory:** equip what you own away from the store; jump-shot bases and releases are separate categories. Menus and HUD polished.
 - **19 new soundtrack tracks** (44 in all) and **Report a bug** (F8): reports go to `Afterhours16_Bug_Reports.txt` next to `Afterhours16.exe`.
+
+**v0.4.7.5 quick patch** (the "Quick patch" part of the patch notes):
+
+- **Shooting:**
+  - Only Sharpshooters and Stretch Bigs get sure greens from three.
+  - Non-shooters' windows are 10% smaller, and every window is 10% smaller again.
+  - A smothered shot has no window and never goes in. Finishes are measured on their own scale.
+  - A record scratch cuts off a green that's blocked, or timed right into a smother.
+  - Contests count at the release, for the AI too.
+- **Dribbling:**
+  - Moves repeated more than 6 times cost double the stamina penalty.
+  - Every stick diagonal does two things (4 new moves, 17 new combos).
+  - Dribble moves are 20% slower, and the game is 2.5% quicker.
+- **Passing and defense:**
+  - Passes are 10% more accurate.
+  - Reach-ins are called on contact only.
+  - The AI stays in bounds.
+  - Defensive assignment arrows show you who to guard.
+  - The 2K Cam reads sprint speed evenly in every direction.
+- **Icon Legend:** after the Icon badge, every 2 Pro Run games are +1 OVR, up to 99, placed by your build.
+- **The look:**
+  - Real jersey straps over the shoulders.
+  - Fewer repeated dunks across packages, a true windmill, and an Eastbay that really goes between the legs.
+  - Celebrations work in games and none clip.
+  - Posterizer only fires on a dunk that gets to the rim.
+- **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
+- **Stamina:** moving without sprint is neutral, and recovery is 1.2× faster.
+- **Green releases doubled and remade:** 32 sounds and 28 effects. Every sound is rebuilt to sound like its name, the Eagle Screech now a real raptor's scream, and they're made in the background so a green never waits.
+- **Store, menus and HUD:**
+  - Twice the apparel, Daily Spin exclusives included.
+  - Readable dropdowns.
+  - A crowd-sized Greeen Chant.
+  - Volume sliders in the pause menus.
+  - Your line (PTS REB AST / STL BLK TO) attached to the right of the Locked-In grade.
 
 ## Run it
 
@@ -77,7 +111,7 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
 
 **Pro-Am.** The arena has announcers at the scorer's table who follow the ball and react to big plays, baseline photographers with flashes, a camera operator, subs on both benches and a courtside row. The crowd stands and throws its arms up on big plays, claps through dead balls and free throws, starts a wave now and then, and gives a standing ovation at the final buzzer. Your squad suits up with you, and open spots go to regulars from your AI world who fit the position. You build a team identity: name, abbreviation, colors, logo shape and floor wood. That branding is painted on the arena court, the LED boards, the jumbotron and your uniforms. You then play organized 5v5 with a tip-off, quarters of 2, 3 or 5 minutes, a shot clock, inbounds, fouls and free throws, and overtime if it's tied. Your team's record is saved.
 
-**VC Store.** The store has 273 original items (plus 10 Daily Spin exclusives and 7 King Tut Cup prizes): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, releases, dunk packages, layup packages, size-up packages, celebrations and movement styles, plus green release sounds and effects. Since v0.4.7.5 you equip what you own in the **Inventory**, a separate screen. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
+**VC Store.** The store has 362 original items (plus 16 Daily Spin exclusives and 7 King Tut Cup prizes): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, releases, dunk packages, layup packages, size-up packages, celebrations and movement styles, plus green release sounds and effects. Since v0.4.7.5 you equip what you own in the **Inventory**, a separate screen. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
 
 v0.4.4 adds 16 animation packages.
 - **No requirements:** Kick Out and Wide Stance jumpshot bases, Feather, Dart and Rainbow releases, the Rim Rocker dunk package, the Rhythm size-up package, and Too Easy, Salute and Hand on Heart celebrations.

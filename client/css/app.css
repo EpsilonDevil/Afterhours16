@@ -13,6 +13,10 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 canvas#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 input, select { font: inherit; }
+/* v0.4.7.5 quick patch: an open dropdown's list is drawn by the system (light by default on Windows), and the options
+   inherited the menus' light text, so they were invisible on it (the bug report's bug type most of all) */
+select { color-scheme: dark; }
+select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 [hidden] { display: none !important; }
 .layer { position: fixed; inset: 0; pointer-events: none; }
 .layer > * { pointer-events: auto; }
@@ -92,6 +96,16 @@ input, select { font: inherit; }
 .lg-pop.good { color: #3ddc84; } .lg-pop.bad { color: #ff6b57; }
 .hud-grade.bump .lg-letter { animation: lgbump .45s ease-out; }
 @keyframes lgbump { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+/* v0.4.7.5 quick patch: your line (PTS REB AST / STL BLK TO) attached to the right of the grade. The panel is 1.2x the
+   grade's width (132px -> 158px) at the same height; the grade keeps its size and moves left to make room. */
+.hud-grade.with-stats { right: calc(22px + 158px); border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lg-stats { position: absolute; left: 100%; top: -1px; height: calc(100% + 2px); width: 158px; display: grid; grid-template-columns: repeat(3, 1fr); align-content: center; row-gap: 7px; padding: 8px 8px; background: linear-gradient(180deg, rgba(14,17,22,.9), rgba(8,10,13,.92)); border: 1px solid var(--line); border-radius: 0 12px 12px 0; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+.lg-stats[hidden] { display: none; }
+.lg-st { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.lg-st b { font-family: var(--display); font-size: 21px; line-height: 1; font-weight: 600; color: #f2f4f7; font-variant-numeric: tabular-nums; }
+.lg-st span { font-size: 9px; letter-spacing: .16em; color: var(--muted); }
+.lg-st.up b { animation: lgstat .6s ease-out; }
+@keyframes lgstat { 0% { transform: scale(1.4); color: var(--gc); } 100% { transform: scale(1); } }
 /* the shot meter legend (Tab overlay) */
 .meter-legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin-bottom: 8px; }
 .meter-legend i { display: inline-block; width: 18px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }

@@ -10,6 +10,8 @@ import { capBadges } from './builds.js';
 import { greenVoice } from '../core/greensound.js';
 // v0.4.5 final: sprinting drains stamina twice as fast
 export const SPRINT_DRAIN_K = 2;
+// v0.4.7.5 quick patch: everyone gets their breath back 1.2x faster
+export const STAMINA_RECOVER_K = 1.2;
 
 // v0.4.5 Lock-In grade -> stamina: A- 1.1x / A 1.25x / A+ 1.5x recovery, D+ 1.1x / D 1.25x / D- and F 1.5x drain
 const GRADE_REC = { 10: 1.1, 11: 1.25, 12: 1.5 };
@@ -25,6 +27,8 @@ export class Player {
     this.name = entry.name || 'Player';
     this.number = entry.number ?? 0;
     this.position = entry.build.position || 'SF';
+    // (v0.4.7.5 quick patch: shooters and non-shooters have different green windows, shots.js isShooterArch)
+    this.archetype = entry.build.archetype || ({ outside: 'sharpshooter', inside: 'slasher', balanced: 'two_way' }[entry.build.style]) || null;
     this.human = !!entry.human;
     // v0.4.5: `raw` is the build as shown in menus; `ratings` is what the sim plays with (the no-badge
     // penalty, Icon badge and takeover boosts applied). Gating checks (can he dunk at all) use raw.
@@ -164,12 +168,16 @@ export class Player {
     }
     // stamina (v0.4.5): sprinting drains the most; jogging, sliding on defense and hands-up defense drain a
     // little; standing and walking recover. v0.4.7.5: posting up is neutral, for the post player and the man
-    // guarding him: it neither drains nor recovers
+    // guarding him: it neither drains nor recovers.
+    // v0.4.7.5 quick patch: getting around without the sprint button is neutral too (it used to cost a little at
+    // full jog); sliding in a defensive stance and hands-up defense still cost a little, standing still and drifting
+    // recover, and recovery is 1.2x what it was (STAMINA_RECOVER_K)
     const posting = this.posting > 0 || this.postD > 0;
     if (this.sprinting && spd > 3) this.stamina -= ph.staminaRate * SPRINT_DRAIN_K * dt * this.drainK; // v0.4.5 final: ×2
     else if (posting) { /* neutral */ }
-    else if (!this.airborne && (spd > 2.1 || (defense && spd > 0.8) || this.handsUp)) this.stamina -= ph.staminaRate * 0.2 * dt * this.drainK;
-    else this.stamina += ph.recover * dt * (spd < 1 ? 1.4 : 0.6) * this.recK;
+    else if (!this.airborne && ((defense && spd > 0.8) || this.handsUp)) this.stamina -= ph.staminaRate * 0.2 * dt * this.drainK;
+    else if (!this.airborne && spd > 2.1) { /* moving without sprint: neutral */ }
+    else this.stamina += ph.recover * STAMINA_RECOVER_K * dt * (spd < 1 ? 1.4 : 0.6) * this.recK;
     if (this.posting > 0) this.posting -= dt;
     if (this.postD > 0) this.postD -= dt;
     this.stamina = Math.max(0, Math.min(1, this.stamina));

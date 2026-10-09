@@ -23,6 +23,7 @@ function jumperGame(seed, spot, defAt) {
   const me = team[0]; me.human = true;
   const g = new Game({ mode: 'practice', seed, rosters: defAt ? [[me], [team[1]]] : [[me], []], catalog });
   const p = g.players[0], rim = g.rimFor(0), side = g.sideFor(0);
+  p.archetype = 'sharpshooter'; // (v0.4.7.5 quick patch: a shooter, whose greens from three are sure makes; see v0475qp)
   p.setPos(rim.x, rim.z - side * spot, side > 0 ? 0 : Math.PI);
   if (defAt) { const d = g.players[1]; d.setPos(rim.x + 0.3, rim.z - side * (spot - defAt), side > 0 ? Math.PI : 0); }
   g.giveBall(p, 'held');

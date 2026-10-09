@@ -72,10 +72,27 @@ const profK = attr => (proficient(attr) ? 1 : SUB70_K);
 // ctx: {contest 0..1.25, moving m/s, fade, d (m to rim), three, ft}
 // v0.4.2: a smothered jumper (contest at or above SMOTHER, the HUD's "Smothered") has no green window at all
 export const SMOTHER = 0.75;
+// v0.4.7.5 quick patch: smothered means no make, on every shot. A smothered shot has no green window (whatever
+// badges, an Icon badge, a takeover or a jumpshot base would add) and can't go in; a release that would have been a
+// green gets a record scratch instead of the green sound. Around the rim the contest runs past its cap on nearly
+// every finish (somebody is always there), so layups and close shots are measured on their own scale: guarded 75%
+// (Smothered) there is a real wall-up, a defender squarely in front with his hands at the ball (about one finish in
+// eight in AI games), not just a crowd.
+export const LAYUP_SMOTHER = 1.72;
+export const insideGuard = raw => Math.min(1.25, (raw || 0) * SMOTHER / LAYUP_SMOTHER);
+export const guardFor = (kind, raw) => (kind === 'layup' || kind === 'close' ? insideGuard(raw) : Math.min(1.25, raw || 0));
+export const isSmothered = guard => (guard || 0) >= SMOTHER;
+// v0.4.7.5 quick patch: shooters and everyone else. Only the shooting archetypes (Sharpshooter, Stretch Big) get a
+// sure green from three: anybody else's green from 3PT range and beyond is a big boost, not a guaranteed make (the
+// meter draws it outlined), and every non-shooter's jumper window is 10% smaller on top of everything else.
+export const SHOOTER_ARCH = new Set(['sharpshooter', 'stretch_big']);
+export const NON_SHOOTER_WIN = 0.9;
+export const isShooterArch = arch => !arch || SHOOTER_ARCH.has(arch);
 export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
 // v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
 // package bonus included; the AI's green rate follows the same windows); the quick patch takes another 6.5% off
-export const GREEN_K = 0.9 * (1 - 0.065);
+// v0.4.7.5 quick patch: and every green window 10% smaller again, across the board
+export const GREEN_K = 0.9 * (1 - 0.065) * 0.9;
 // v0.4.7.5: contests mean more without the badges for the shot. A shooter with none of the badges that work through
 // his shooting stat (Deadeye, Limitless, Catch & Shoot, ...) needs a good, open look and a high rating: the contest
 // takes a fifth more off his green window (0.66 instead of 0.55 per unit of contest) and off his make chance
@@ -100,7 +117,8 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   let w = timingWindowMs(attr, badges) * (ctx.greenK || 1) * profK(attr); // v0.4.5: Sharp Eye / shooting takeover
   if (ctx.ft) return w * 1.15 * GREEN_K;
   if (ctx.pkg?.winK) w *= ctx.pkg.winK;
-  if ((ctx.contest || 0) >= SMOTHER) return 0;
+  if ((ctx.contest || 0) >= SMOTHER || ctx.smothered) return 0;
+  if (ctx.nonShooter) w *= NON_SHOOTER_WIN;
   const b = badges || {};
   const c = Math.min(1, ctx.contest || 0) * (1 - DEADEYE_WIN[b.deadeye || 0]);
   // v0.4.4: every contested state (light contest and up, not open looks) bites 3.75% harder
@@ -172,6 +190,7 @@ export const LAYUP_WIN_K = 1.2; // layups are a touch more forgiving than jumper
 // is a big boost, not a guaranteed make, since contact can still beat it (see finalChance).
 // ctx: {contest, lstyle, greenK}
 export function layupWindowMs(attr, badges = {}, ctx = {}) {
+  if (ctx.smothered) return 0; // (v0.4.7.5 quick patch: a wall-up at the rim, see LAYUP_SMOTHER)
   const f = LAYUP_FEEL[ctx.lstyle] || LAYUP_FEEL.basic;
   // (ctx.natural: the shot meter's "ratings only" part keeps a package's penalty but not its bonus)
   let w = timingWindowMs(attr, badges) * LAYUP_WIN_K * (ctx.natural ? Math.min(1, f.win) : f.win) * (ctx.greenK || 1) * profK(attr);
@@ -242,7 +261,8 @@ export function trafficSkill(p, standing = false) {
 }
 
 export function finalChance(o) {
-  // o: {type, d, a, three, grade, contest, moving, fade, stamina, badges, hot}
+  // o: {type, d, a, three, grade, contest, moving, fade, stamina, badges, hot, smothered}
+  if (o.smothered) return 0; // v0.4.7.5 quick patch: a smothered shot never goes in
   let p = baseChance(o.type, o.d, o.a, o.three);
   const attr = attrFor(o.type, o.three, o.a);
   const b = o.badges || {};
@@ -356,7 +376,8 @@ export const sizeupOf = p => (p.speed < 1.2 ? SIZEUP[p.sizeupStyle] || SIZEUP.ba
 // one dribble's worth of time; true when the ball hits the floor. The game and the store preview share it.
 export function advanceDribble(p, dt, rnd, pressured) {
   const su = sizeupOf(p);
-  const freq = (1.55 + Math.min(1.1, p.speed * 0.2) + (p.action?.type === 'move' ? 0.6 : 0)) * (p.dribble.xover ? 1 + 0.12 * (p.sizeupLvl || 0) : 1) * (p.dribbleStyle?.freqK || 1) * (su ? su.freq : 1);
+  // (v0.4.7.5 quick patch: a size-up combo in place is a dribble move too: 20% slower, like the rest)
+  const freq = (1.55 + Math.min(1.1, p.speed * 0.2) + (p.action?.type === 'move' ? 0.6 : 0)) * (p.dribble.xover ? (1 + 0.12 * (p.sizeupLvl || 0)) * 0.8 : 1) * (p.dribbleStyle?.freqK || 1) * (su ? su.freq : 1);
   const prev = p.dribble.phase;
   p.dribble.phase = (p.dribble.phase + freq * dt) % 1;
   if (p.dribble.phase < prev) {
@@ -378,8 +399,12 @@ export function dunkSpin(a) {
   return (a.spinDir || 1) * turn * k * k * k * (k * (k * 6 - 15) + 10);
 }
 
-// Contest from defenders: returns 0 (open) .. 1.2 (smothered)
+// Contest from defenders: returns 0 (open) .. 1.25 (smothered)
 export function contestFor(shooter, defenders, rim, releaseH) {
+  return Math.min(1.25, contestRaw(shooter, defenders, rim, releaseH));
+}
+// (the same, uncapped: around the rim it runs well past the cap, which is how a wall-up is told from a crowd)
+export function contestRaw(shooter, defenders, rim, releaseH) {
   const cs = [];
   const fx = rim.x - shooter.x, fz = rim.z - shooter.z, fl = Math.hypot(fx, fz) || 1;
   const pw = paintWeight(fl);
@@ -394,13 +419,17 @@ export function contestFor(shooter, defenders, rim, releaseH) {
     // v0.4.5: hands up on a shot puts 3.75% more pressure on it
     const up = d.handsUp || d.action?.type === 'contest' || d.action?.type === 'block';
     const reach = d.phys.reach + (d.y || 0) + (up ? 0.12 * DEF_K : -0.35);
-    // height and length count for more around the rim
-    const hk = Math.max(0.35, Math.min(1.25 + 0.08 * pw, 0.75 + (reach - releaseH) * (0.7 + 0.3 * pw)));
+    // height and length count for more around the rim. v0.4.7.5 quick patch: and a release up over the defender's
+    // reach counts for more out on the floor too (0.9 per metre, was 0.7): a high release over a shorter or later
+    // contest is less of a penalty; a long defender getting a hand up at the release, more of one
+    const hk = Math.max(0.35, Math.min(1.25 + 0.08 * pw, 0.75 + (reach - releaseH) * (0.9 + 0.1 * pw)));
     const timing = d.airborne && d.action && d.action.type === 'block' ? (1.1 + 0.15 * n(d.ratings.block)) * DEF_K : 1;
-    cs.push(prox * ang * hk * timing * defSkill(d, pw) * (up ? DEF_K : 1));
+    // (v0.4.7.5 quick patch: in the paint the bigger body walls off more of the finish: the weight difference, ±10%)
+    const wk = 1 + pw * 0.1 * Math.max(-1, Math.min(1, ((d.phys.W || 95) - (shooter.phys?.W || 95)) / 30));
+    cs.push(prox * ang * hk * timing * wk * defSkill(d, pw) * (up ? DEF_K : 1));
   }
   cs.sort((a, b) => b - a);
-  return Math.min(1.25, (cs[0] || 0) + (cs[1] || 0) * 0.3);
+  return (cs[0] || 0) + (cs[1] || 0) * 0.3;
 }
 
 // Solve launch velocity from P to aim point T with launch angle (deg), accounting for drag by iteration.
