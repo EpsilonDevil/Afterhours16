@@ -412,6 +412,18 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 - **The record scratch** now cuts off *every* green that isn't going in — a green layup that misses, a green from past 35 ft — not only a smothered or blocked jumper, and **every blocked dunk** gets a record scratch, green or not.
 - **The court overview doesn't flicker.** From a hundred metres up, the depth buffer couldn't tell the court floor from the ground (5 mm apart) or from the King Tut Cup's neon lines (6 mm), so they flickered against each other while you held View/Share. The camera's near plane now moves out for the overview (thirty times the depth precision) and back when you let go.
 
+### Thirty block animations (Oct 10)
+- **Every block now has a style, in five tiers by Block rating and height** — nothing to buy, like the way the size-up and jump-shot packages scale with your ratings. Tier 1 up to 54 Block, tier 2 from 55, tier 3 from 70, tier 4 from 85, tier 5 from 95; 6'11" and taller bump a tier, 6'1" and under drop one. Each block picks a style from your tier (three to one over the tier below) that fits the moment: a rim protection, a chase-down from behind, a perimeter closeout, or any.
+- **The higher the tier, the more emphatic:** the arm cocks further back before it fires, the swat is bigger, the body leans, twists and arches more, the legs do more in the air, and the top tiers finish with a gesture after a block that got the ball — a finger wag, a stare, a flex, a point, a roar, a shoulder brush — which ends the instant you want to move or jump, so it never costs a play.
+- **The thirty, by tier:**
+  - *Tier 1:* Reach, Straight Up, Late Hand, Two-Hand Wall, Side Reach, Stand Tall.
+  - *Tier 2:* Volleyball, Chest Swat, Cross Arm, Hook, Shield, Lean In.
+  - *Tier 3:* Windshield Wiper, Spike, Double Clutch, Pin, Chase Swat, Twist.
+  - *Tier 4:* Hammer, Spike Pro, Palm Snatch, Scissor, Superman, Backboard Pin.
+  - *Tier 5:* Hammer Fist, Sky Pin, Finger Wag, Eraser, Thunder Clap, Launch.
+- **Each one is its own body:** which hand or hands go for the ball (one, two, the off hand crossing over, the far hand hooking past), how far the arm cocks, the swat (down, across, a wipe, a pin, a snatch, a clap, a hammer, a volleyball spike), what the off hand does, the lean, twist and arch, the legs (straight, tucked, split, a kick, a pike, scissored) and the gesture. A pairwise check over the whole motion keeps every pair apart, and every style gets a hand well over the head on the real rig with the feet never under the floor.
+- **The swat fires from the contact**, so the big swing happens on the ball, not before it; a block that doesn't get there is a half-size swing at the top. The feed names the style, and your own tier-4 and tier-5 blocks get their name as the callout (HAMMER!, THUNDER CLAP!…). Big Brother's Icon block is unchanged.
+
 ### Reach follows the arms (Oct 10)
 - **Contests, blocks, rebounds and finishes now measure against the model's own standing reach:** the shoulder's height plus the overhead lift plus the arm to the fingertips, the arm being sized exactly to the build's wingspan. The old figure (1.315 × height, scaled by the wingspan) ran 4–8% longer than the arms on screen, most of all for long-wingspan builds. Reach is now 1.22–1.29 × height depending on the wingspan (a 6'6" with a 6'9" wingspan: 8'2" instead of 8'6").
 - What that does, measured over 48 AI games: blocks about the same (3.75 → 3.85 a game), FG 40 → 41%, threes 31 → 35% (perimeter contests reach a little less), layups 55 → 52%, and **dunks halved** (1.8 → 0.85 a game): with the shorter reach a build needs more Vertical to get a hand to the rim, so the attack bind picks a layup more often. Verticals and contest strengths were left as they were; say the word if you'd like either re-tuned around the new reach.
@@ -531,7 +543,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 165 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 170 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.

@@ -22,6 +22,7 @@ import { visualKey } from './vispool.js';
 import { stickMove } from '../sim/moves.js';
 import { meterLegendHTML } from './hud.js';
 import { playGreenSound, playRecordScratch, warmGreenSounds } from '../core/greensound.js';
+import { BLOCK_BY_ID, blockCallout } from '../sim/blocks.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 
@@ -647,8 +648,9 @@ export class MatchSession {
           if (!wasGreen && e.kind === 'dunk') { const S0 = g.players[e.shooter], sx = S0.x + ox; playRecordScratch(audio, { pan: this.pan(sx), vol: S0.human ? 1 : 0.7 * this.vol(sx, S0.z + oz) }); }
           audio.board(1.2); audio.ooh(); this.rig.shake(0.1, 0.25);
           const blk = g.players[e.player];
-          hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}`, blk.team === myTeam ? 'good' : 'bad');
-          if (blk.human || g.players[e.shooter].human) { hud.callout(e.chase ? 'CHASE-DOWN!' : 'REJECTED!', blk.human ? 'good' : 'bad'); this.slow(0.5); }
+          const bst = e.style ? BLOCK_BY_ID[e.style] : null;
+          hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}${bst ? ' · ' + bst.name : ''}`, blk.team === myTeam ? 'good' : 'bad');
+          if (blk.human || g.players[e.shooter].human) { hud.callout(e.chase ? 'CHASE-DOWN!' : (blk.human && blockCallout(e.style)) || 'REJECTED!', blk.human ? 'good' : 'bad'); this.slow(0.5); }
           break;
         }
         case 'steal': {

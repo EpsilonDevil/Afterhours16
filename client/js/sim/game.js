@@ -3,6 +3,7 @@
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
 import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
+import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
 import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
@@ -689,6 +690,8 @@ export class Game {
     if (it.call) { p.calling = 1.2; }
     if (p.calling > 0) p.calling -= dt;
     if (p.screening > 0) p.screening -= dt; // (v0.4.7.5 qp3: a called screen is "set" for a moment, see screenHit)
+    // (qp3) the gesture after a block is for show: the moment he wants to move or jump, it's over
+    { const a = p.action; if (a && a.type === 'block' && a.hit && !p.airborne && a.t > (a.jumpAt || 0) + (a.air || 0.6) && (it.jump || it.steal || Math.hypot(it.mx || 0, it.mz || 0) > 0.6)) p.action = null; }
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
     // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
     if (has && p.speed < 2.2) {
@@ -1184,6 +1187,15 @@ export class Game {
     // v0.4.5 Icon badges: Big Brother blocks and Open Arms rebound snags have their own animations
     const iconAnim = (type === 'block' && p.icon === 'big_brother') ? 'bigbro' : (type === 'rebound' && p.icon === 'open_arms') ? 'openarms' : null;
     const act = p.startAction(type, air + 0.2, { jumpAt: 0.06, jumpH: hgt, jumped: false, triedBlock: false, air, icon: iconAnim });
+    // v0.4.7.5 qp3: the block's style (sim/blocks.js): by his tier (Block rating and height) and the moment
+    if (type === 'block' && !iconAnim) {
+      const rim = h ? this.rimFor(h.team) : null;
+      const dRim = h && rim ? Math.hypot(h.x - rim.x, h.z - rim.z) : 9;
+      const behind = h ? ((p.x - h.x) * Math.sin(h.facing) + (p.z - h.z) * Math.cos(h.facing)) < -0.2 : false;
+      const situ = dRim < 2.6 ? 'rim' : behind ? 'chase' : dRim > 5.5 ? 'perim' : 'any';
+      act.bstyle = pickBlockStyle(p, this.rng, situ);
+      act.lead = h ? (((h.x - p.x) * Math.cos(p.facing) - (h.z - p.z) * Math.sin(p.facing)) >= 0 ? 'L' : 'R') : 'R';
+    }
     p.spend(COST.jump);
     if (type === 'block' && h) p.facing = Math.atan2(h.x - p.x, h.z - p.z);
     // v0.4.3: go *at* the ball. Shot blockers and rebounders travel toward it while airborne; how far they
@@ -1667,9 +1679,11 @@ export class Game {
     b.lastTouch = d.id; b.lastTeam = d.team;
     d.stats.blk++;
     if (chase) d.stats.chasedowns++;
+    // (qp3) the swat fires from the contact, and a style with a landing gesture gets the time for it
+    if (d.action?.type === 'block') { d.action.hit = true; d.action.hitAt = d.action.t; const st = BLOCK_BY_ID[d.action.bstyle]; if (st && st.land !== 'none') d.action.dur += 0.8; }
     if (shooter.action && (shooter.action.type === 'layup' || shooter.action.type === 'dunk')) { shooter.action.released = true; shooter.action.slammed = true; shooter.action.hang = 0; }
     if (countFga) shooter.stats.fga++;
-    this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase, kind });
+    this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase, kind, style: d.action?.bstyle || null });
   }
 
   checkShootingFoul(p, contest, kind) {

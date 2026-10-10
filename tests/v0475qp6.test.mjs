@@ -116,7 +116,7 @@ test('shot feedback for everyone, scratches on missed greens and blocked dunks: 
   // any green that isn't going in (a layup, a deep one) scratches; a blocked dunk always does
   assert.ok(sess.includes("(e.scratch || (e.grade === 'excellent' && !e.made)) && P) this.greenScratch(P, mine)"));
   assert.ok(sess.includes("if (!wasGreen && e.kind === 'dunk')") && sess.includes('const wasGreen = this.cutGreen(e.shooter);'));
-  assert.ok(gm.includes("this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase, kind });"));
+  assert.ok(gm.includes("this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase, kind, style: d.action?.bstyle || null });"));
   // the block event says what was blocked
   const g = game(23, { full: false });
   const h = g.players[0], d = g.players[3];

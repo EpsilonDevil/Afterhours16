@@ -4,6 +4,7 @@ import { P, GROUP_SIZE, neutral, newPose } from './pose.js';
 import { COURT, BALL_R } from '../sim/constants.js';
 import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
+import { BLOCK_BY_ID } from '../sim/blocks.js';
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -600,6 +601,87 @@ export class Animator {
     T[P['clav' + side] + 2] += sg * CLAV_LIFT * k;
   }
 
+  // v0.4.7.5 qp3: a block in one of the thirty styles (sim/blocks.js). c: u (air time), air, up / up2 (rise phases),
+  // tx ty tz (the ball, reference units), ld / tr (lead and trailing hand), ls (lead side sign), t (action time).
+  // Phases: the reach (up), a cock before it (the arm back and out), the swat after contact (a.hitAt; at the peak,
+  // half-size, if he never got it), then the landing gesture (blockLanding).
+  blockPose(T, a, c) {
+    const S = BLOCK_BY_ID[a.bstyle];
+    const { air, up, up2, tx, ty, tz, ld, tr, ls, t } = c;
+    a.ldUsed = ld; // (the landing gesture uses the same hand)
+    const E = S.emph, pre = Math.min(1, up);
+    const hitT = a.hitAt ?? ((a.jumpAt || 0) + air * 0.5);
+    const sw = sm(0, 0.16, t - hitT) * (a.hit ? 1 : 0.55);
+    const two = S.lead === 'two' || S.off === 'mirror', sp = S.spread ?? 0.45;
+    const rx = tx + ls * (two ? sp / 2 : 0.03 * E), ry = ty + 0.04 * (E - 1), rz = Math.max(tz, 0.1) + (S.reachZ || 0);
+    const cockK = S.cock * sm(0.12, 0.5, pre) * (1 - sm(0.55, 0.92, pre));
+    let hx = lerp(ls * 0.42, rx, pre) + ls * 0.32 * cockK, hy = lerp(1.05, ry, pre) - 0.18 * cockK, hz = lerp(0.12, rz, pre) - 0.5 * cockK;
+    switch (S.swat) {
+      case 'down': hy -= 0.9 * sw * E; hz += 0.35 * sw; break;
+      case 'across': hx -= ls * 1.0 * sw * E; hz += 0.1 * sw; hy -= 0.15 * sw; break;
+      case 'wipe': hx -= ls * 0.9 * sw * E; hy -= 0.45 * sw * E; hz += 0.3 * sw; break;
+      case 'pin': hz += 0.22 * sw; hy += 0.05 * sw; break;
+      case 'snatch': hy -= 0.85 * sw; hz -= 0.25 * sw; hx = lerp(hx, ls * 0.15, sw); break;
+      case 'clap': hx = lerp(hx, tx, sw); break;
+      case 'hammer': hy -= 1.1 * sw * E; hz += 0.5 * sw; hx -= ls * 0.2 * sw; break;
+      case 'volley': hy -= 0.7 * sw * E; hz += 0.55 * sw * E; break;
+      default: break;
+    }
+    set3(T, 'hand' + ld, hx, hy, hz);
+    set3(T, 'elbow' + ld, ls * (0.75 + 0.4 * cockK), -0.25 + 0.6 * cockK - 0.3 * sw, -0.45 - 0.4 * cockK + 0.6 * sw);
+    const oy = ty - 0.5, oz = Math.max(tz - 0.06, 0.2);
+    switch (S.off) {
+      case 'wide': set3(T, 'hand' + tr, lerp(-ls * 0.42, -ls * 0.6, up2), lerp(1.05, oy, up2), lerp(0.12, 0.1, up2)); set3(T, 'elbow' + tr, -ls * 0.95, -0.45, -0.35); break;
+      case 'tuck': set3(T, 'hand' + tr, -ls * 0.2, lerp(1.05, 1.35, up2), 0.25); set3(T, 'elbow' + tr, -ls * 0.7, -0.6, -0.3); break;
+      case 'shield': set3(T, 'hand' + tr, -ls * 0.3, lerp(1.05, 0.95, up2), 0.3); set3(T, 'elbow' + tr, -ls * 0.8, -0.3, -0.5); break;
+      case 'mirror': {
+        let mx = lerp(-ls * 0.42, tx - ls * sp / 2, up2), my = lerp(1.05, ry, up2), mz = lerp(0.12, Math.max(oz, rz), up2);
+        if (S.swat === 'clap') mx = lerp(mx, tx, sw);
+        if (S.swat === 'down') { my -= 0.9 * sw * E; mz += 0.35 * sw; }
+        if (S.swat === 'pin') mz += 0.22 * sw;
+        set3(T, 'hand' + tr, mx, my, mz); set3(T, 'elbow' + tr, -ls * 0.75, -0.25, -0.45);
+        break;
+      }
+      case 'high': set3(T, 'hand' + tr, lerp(-ls * 0.42, -ls * 0.35, up2), lerp(1.05, ty - 0.15, up2), lerp(0.12, 0.05, up2)); set3(T, 'elbow' + tr, -ls * 0.9, -0.1, -0.5); break;
+      case 'back': set3(T, 'hand' + tr, lerp(-ls * 0.42, -ls * 0.45, up2), lerp(1.05, 1.5, up2), lerp(0.12, -0.35, up2)); set3(T, 'elbow' + tr, -ls * 0.9, -0.5, -0.6); break;
+      default: break;
+    }
+    if (S.lead === 'cross') { set3(T, 'hand' + tr, lerp(-ls * 0.42, tx + ls * 0.12, up2), lerp(1.05, ry + 0.12, up2), lerp(0.12, rz + 0.05, up2)); set3(T, 'elbow' + tr, ls * 0.3, 0.1, -0.5); }
+    if (S.lead === 'far') { set3(T, 'hand' + tr, hx + ls * 0.3, hy - 0.05, hz); set3(T, 'elbow' + tr, ls * 0.6, 0.2 - 0.3 * sw, -0.2); set3(T, 'hand' + ld, lerp(ls * 0.42, ls * 0.5, up), lerp(1.05, ty - 0.45, up), 0.1); set3(T, 'elbow' + ld, ls * 0.9, -0.3, -0.4); }
+    const twoUp = S.lead === 'two' || S.off === 'mirror' || S.lead === 'cross';
+    this.palm[ld] = { normal: S.swat === 'pin' ? [0, 0.1, 1] : S.swat === 'snatch' ? [0, -0.3, 1] : [ls * 0.3, 0.2, 1], fingers: [0, 1, 0.1], w: 0.85 * up };
+    if (twoUp) this.palm[tr] = { normal: [0, 0.1, 1], fingers: [0, 1, 0.1], w: 0.8 * up2 };
+    // torso: roll toward the ball, turn the chest, arch back or bend forward, and snap forward on the swat
+    const snap = (S.swat === 'hammer' || S.swat === 'volley' || S.swat === 'down') ? 0.25 : S.swat === 'none' ? 0 : 0.1;
+    T[P.spine + 2] = ls * S.lean[0] * up * E; T[P.chest + 1] = -ls * (0.12 + 0.4 * S.twist) * up; T[P.chest + 2] = ls * 0.06 * up;
+    T[P.spine] = S.lean[1] * up * E + snap * sw; T[P.head] = -0.22 - 0.1 * up - (S.headUp || 0) * up + 0.15 * sw;
+    switch (S.legs) {
+      case 'straight': set3(T, 'footL', 0.13, 0.2, 0.0); set3(T, 'footR', -0.13, 0.22, 0.0); set3(T, 'kneeL', 0.2, 0.1, 1); set3(T, 'kneeR', -0.2, 0, 1); T[P.pitchL] = 0.4; T[P.pitchR] = 0.4; break;
+      case 'tuck': set3(T, 'footL', 0.14, 0.2 + 0.3 * up, 0.12); set3(T, 'footR', -0.14, 0.2 + 0.3 * up, 0.12); set3(T, 'kneeL', 0.22, 0.4, 1); set3(T, 'kneeR', -0.22, 0.4, 1); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7; break;
+      case 'split': set3(T, 'foot' + ld, ls * 0.15, 0.2 + 0.15 * up, 0.25); set3(T, 'foot' + tr, -ls * 0.12, 0.2 + 0.15 * up, -0.2); set3(T, 'knee' + ld, ls * 0.2, 0.2, 1); set3(T, 'knee' + tr, -ls * 0.2, 0.2, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; break;
+      case 'kick': set3(T, 'foot' + ld, ls * 0.14, 0.3 + 0.2 * up, 0.45 * up); set3(T, 'foot' + tr, -ls * 0.13, 0.22, -0.15 * up); set3(T, 'knee' + ld, ls * 0.2, 0.5, 1); set3(T, 'knee' + tr, -ls * 0.2, 0, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; break;
+      case 'pike': set3(T, 'footL', 0.15, 0.25 + 0.35 * up, 0.5 * up); set3(T, 'footR', -0.15, 0.25 + 0.35 * up, 0.5 * up); set3(T, 'kneeL', 0.2, 0.6, 1); set3(T, 'kneeR', -0.2, 0.6, 1); T[P.pitchL] = 0.3; T[P.pitchR] = 0.3; break;
+      case 'scissor': set3(T, 'foot' + ld, ls * 0.12, 0.2 + 0.25 * up, -0.35 * up); set3(T, 'foot' + tr, -ls * 0.14, 0.22 + 0.2 * up, 0.35 * up); set3(T, 'knee' + ld, ls * 0.2, 0.2, 1); set3(T, 'knee' + tr, -ls * 0.2, 0.5, 1); T[P.pitchL] = 0.65; T[P.pitchR] = 0.65; break;
+      default: break;
+    }
+  }
+  // the landing gesture after a block that got the ball: q2 seconds since the landing
+  blockLanding(T, a, q2) {
+    const S = BLOCK_BY_ID[a.bstyle];
+    if (!S || S.land === 'none' || q2 < 0) return;
+    const ld = a.ldUsed || (a.lead === 'R' ? 'R' : 'L'), ls = ld === 'L' ? 1 : -1, tr = ld === 'L' ? 'R' : 'L';
+    const k = sm(0.05, 0.3, q2) * (1 - sm(0.75, 1.0, q2)); // up, hold, down
+    switch (S.land) {
+      case 'wag': { const w = Math.sin(q2 * 22) * 0.07 * k; set3(T, 'hand' + ld, ls * 0.3 + w, lerp(1.1, 1.8, k), 0.35); set3(T, 'elbow' + ld, ls * 0.9, -0.3, -0.3); this.palm[ld] = { normal: [0, 0, 1], fingers: [0, 1, 0], w: 0.9 * k }; T[P.head + 1] = w * 0.8; T[P.head] = -0.05 * k; break; }
+      case 'stare': { T[P.spine] = -0.08 * k; T[P.head] = 0.12 * k; T[P.chest + 1] = ls * 0.1 * k; set3(T, 'hand' + ld, ls * 0.34, lerp(1.1, 1.0, k), 0.05); set3(T, 'hand' + tr, -ls * 0.34, lerp(1.1, 1.0, k), 0.05); break; }
+      case 'flex': { set3(T, 'handL', 0.5, lerp(1.1, 1.6, k), 0.05); set3(T, 'handR', -0.5, lerp(1.1, 1.6, k), 0.05); set3(T, 'elbowL', 1, -0.3, -0.2); set3(T, 'elbowR', -1, -0.3, -0.2); T[P.spine] = -0.12 * k; T[P.head] = 0.1 * k; break; }
+      case 'point': { set3(T, 'hand' + ld, ls * 0.25, lerp(1.1, 1.25, k), 0.55 * k + 0.1); set3(T, 'elbow' + ld, ls * 0.6, -0.4, -0.6); this.palm[ld] = { normal: [0, -1, 0.2], fingers: [0, 0.1, 1], w: 0.9 * k }; T[P.head] = 0.15 * k; break; }
+      case 'roar': { set3(T, 'handL', 0.42, lerp(1.1, 0.95, k), -0.28 * k); set3(T, 'handR', -0.42, lerp(1.1, 0.95, k), -0.28 * k); set3(T, 'elbowL', 0.9, -0.6, -0.5); set3(T, 'elbowR', -0.9, -0.6, -0.5); T[P.spine] = -0.22 * k; T[P.head] = 0.3 * k; break; }
+      case 'dust': { const b = Math.sin(q2 * 14) * 0.05 * k; set3(T, 'hand' + tr, ls * 0.2 + b, lerp(1.1, 1.62, k), 0.12); set3(T, 'elbow' + tr, -ls * 0.4, -0.4, -0.6); set3(T, 'hand' + ld, ls * 0.34, 1.0, 0.05); T[P.head + 1] = ls * 0.25 * k; break; }
+      default: break;
+    }
+  }
+
   // Hand targets for whoever is holding/dribbling the ball (positions in reference units)
   ballHands(T, p, g, a, b, mode) {
     const r = BALL_R / this.s;
@@ -1141,6 +1223,9 @@ export class Animator {
           if (own) {
             const r = sm(0, 0.18, u - (a.gotAt ?? u)); set3(T, 'handL', 0.17, 1.48 + 0.2 * (1 - r), 0.38); set3(T, 'handR', -0.17, 1.48 + 0.2 * (1 - r), 0.38);
             set3(T, 'elbowL', 1, -0.3, -0.2); set3(T, 'elbowR', -1, -0.3, -0.2); T[P.spine] = 0.12; T[P.head] = -0.05;
+          } else if (a.type === 'block' && a.bstyle && !a.icon && BLOCK_BY_ID[a.bstyle]) {
+            // v0.4.7.5 qp3: thirty block styles by tier (sim/blocks.js)
+            this.blockPose(T, a, { u, air, up, up2, tx, ty, tz, ld, tr, ls, t });
           } else {
             // (both hands stay out in front of the chest when they cross toward the ball's side)
             const lz2 = Math.max(tz, 0.18), tz2 = Math.max(tz - 0.06, Math.abs(tx - ls * 0.3) < 0.3 ? 0.34 : 0.12);
@@ -1176,6 +1261,8 @@ export class Animator {
           T[P.root + 1] = -0.12 * (1 - q); T[P.spine] = 0.18 * (1 - q) + 0.06;
           set3(T, 'handL', 0.3, 1.25 - 0.2 * q, 0.16); set3(T, 'handR', -0.3, 1.25 - 0.2 * q, 0.16);
           set3(T, 'elbowL', 0.7, -0.6, -0.4); set3(T, 'elbowR', -0.7, -0.6, -0.4);
+          // v0.4.7.5 qp3: after a block that got the ball, the style's landing gesture (a finger wag, a stare, a flex...)
+          if (a.type === 'block' && a.hit && a.bstyle && BLOCK_BY_ID[a.bstyle]) this.blockLanding(T, a, t - (a.jumpAt || 0.06) - (a.air || 0.6));
         } else {
           // loading the jump: hips sit back, arms swing down and back
           const q = Math.min(1, t / Math.max(0.05, a.jumpAt || 0.06));
