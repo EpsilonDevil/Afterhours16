@@ -742,7 +742,9 @@ export class AI {
       const hd = g.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null);
       const sx = hd ? hd.x + (hd.x - rim.x) * 0.0 + (h.x - hd.x) * -0.15 : h.x, sz = hd ? hd.z + Math.sign(h.z - rim.z) * 0.0 - side * 0.55 : h.z;
       const dd = this.seek(p, sx + (h.x > 0 ? -0.6 : 0.6), sz, { sprint: true, arrive: 0.4 });
-      if (dd < 0.7) { it.mx = 0; it.mz = 0; it.screen = true; h.ai_screen = { by: p.id, until: g.time + 0.8 }; if (h.dist(p) > 2.2 && o.screenT < 2.4) { const pop = g.rng.next() < this.tend(p).pop * (0.4 + 0.6 * n(p.ratings.three_point)); o.plan = pop ? 'pop' : 'roll'; o.rollT = pop ? 1.4 : 1.6; } }
+      if (dd < 0.7) { it.mx = 0; it.mz = 0; it.screen = true; h.ai_screen = { by: p.id, until: g.time + 0.8 };
+        if (hd) it.face = Math.atan2(hd.x - p.x, hd.z - p.z); // (v0.4.7.5 qp3: chest to the defender; a square screen hits harder)
+        if (h.dist(p) > 2.2 && o.screenT < 2.4) { const pop = g.rng.next() < this.tend(p).pop * (0.4 + 0.6 * n(p.ratings.three_point)); o.plan = pop ? 'pop' : 'roll'; o.rollT = pop ? 1.4 : 1.6; } }
       return;
     }
     if (o.plan === 'pop') {

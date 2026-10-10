@@ -60,6 +60,15 @@ export function repeatMoveK(run) {
 export const REACH_FOUL = { len: 0.68, touch: 0.07, body: 0.8 };
 // v0.4.7.5 quick patch: passing 10% more accurate across the board (aim error x0.9, in-flight accuracy x1.1)
 export const PASS_ACC_K = 0.9, PASS_ACC_BOOST = 1.1;
+// v0.4.7.5 quick patch 3: screens (Game.screenQuality / screenHit). q = base + spd·(run-in speed) + set·(planted)
+// + face·(square to the defender) + called + size·(mass and height edge) + str·(Strength rating edge) + bw·tier
+// − dbw·tier (tiers through badges.bk: 1 / 2.1 / 3.31 / 4.64). A screen takes stop0..1 of the defender's speed and slows him for slow0 + slow1·q seconds; q ≥ stunQ
+// stops him dead (stun0..stun0+stun1 s); a Brick Wall screener's q ≥ fallQ0 − fallQk·tier + fallQd·(defender's tier) knocks him down for
+// fall0 + fallk·tier (+ up to 0.4) seconds, if he ran into it at fallV m/s or more.
+export const SCREEN = {
+  base: 0.28, spd: 0.25, set: 0.12, face: 0.12, called: 0.06, size: 0.18, str: 0.12, bw: 0.06, dbw: 0.06,
+  stop0: 0.35, slow0: 0.2, slow1: 0.7, stunQ: 0.5, stun0: 0.3, stun1: 0.35, fallQ0: 0.95, fallQk: 0.06, fallQd: 0.05, fallV: 1.5, fall0: 1.0, fallk: 0.2,
+};
 export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
 export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375) * 1.025; // (v0.4.5 quick patch: −3.75%; v0.4.7.5 quick patch: +2.5%)
 // v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
@@ -288,7 +297,7 @@ export class Game {
       case 'foul': if (P) this.bad(P, 'foul'); break;
       case 'ankle': if (P) this.good(P, 'ankle'); if (e.victim != null) this.bad(this.players[e.victim], 'crossed'); break;
       case 'slam': if (e.poster >= 0 && e.poster != null) this.bad(this.players[e.poster], 'posterized'); break;
-      case 'screen': if (P) this.good(P, 'screen'); break;
+      case 'screen': if (P && !e.incidental) this.good(P, 'screen'); break; // (qp3: brushing past a standing man isn't a screen)
     }
   }
   // a play that helps the team: every second one gives back a little stamina and doubles recovery (no stacking)
@@ -672,6 +681,7 @@ export class Game {
     p.handsSide = !has && !p.handsUp ? it.handsSide || null : null; // v0.4.4: a hand out to one side
     if (it.call) { p.calling = 1.2; }
     if (p.calling > 0) p.calling -= dt;
+    if (p.screening > 0) p.screening -= dt; // (v0.4.7.5 qp3: a called screen is "set" for a moment, see screenHit)
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
     // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
     if (has && p.speed < 2.2) {
@@ -2443,6 +2453,80 @@ export class Game {
     }
   }
 
+  // v0.4.7.5 quick patch 3: screens.
+  // A set offensive player without the ball is a screener. When a defender runs into him the screen's quality
+  // (screenQuality, 0..1) comes from how hard he ran into it, how set and square the screener was, whether the
+  // screen was called, the size of both men (mass from weight and strength, plus height), the Strength ratings and
+  // Brick Wall on either side. The quality decides how much of the defender's speed the screen takes, how long he
+  // is slowed (bumpT), whether he is stopped outright (a short shoved-back stumble, lock 1) and, for a screener with
+  // Brick Wall, whether a perfect screen puts him on the floor.
+  isSetScreener(s, h) {
+    return s.team === this.possession && s !== h && s.speed < 0.8 && !s.airborne && !['shoot', 'layup', 'dunk', 'land', 'celebrate', 'stumble', 'bump'].includes(s.action?.type);
+  }
+  screenAnchor(s) { return 1 + 0.9 * s.phys.strength + 0.3 * bk(s.badges, 'brick_wall') + (s.screening > 0 ? 0.4 : 0); }
+  screenQuality(s, d, approach) {
+    const ms = s.phys.W * (0.7 + 0.6 * s.phys.strength), md = d.phys.W * (0.7 + 0.6 * d.phys.strength);
+    const size = (ms - md) / (ms + md) * 1.6 + 0.35 * (s.phys.H - d.phys.H); // both men: weight, strength and height
+    const str = n(s.ratings.strength) - n(d.ratings.strength);
+    const bw = bk(s.badges, 'brick_wall'), dbw = bk(d.badges, 'brick_wall');
+    const set = s.speed < 0.3 ? 1 : Math.max(0, 1 - (s.speed - 0.3) / 0.5); // planted, or still settling
+    const ax = d.x - s.x, az = d.z - s.z, al = Math.hypot(ax, az) || 1;
+    const face = Math.max(0, (ax * Math.sin(s.facing) + az * Math.cos(s.facing)) / al); // chest to the defender
+    const called = s.screening > 0 ? 1 : 0;
+    const spd = Math.min(1, Math.max(0, (approach - 0.8) / 2.7)); // a walk into it 0, a hard run (3.5 m/s) 1
+    const q = SCREEN.base + SCREEN.spd * spd + SCREEN.set * set + SCREEN.face * face + SCREEN.called * called
+      + SCREEN.size * size + SCREEN.str * str + SCREEN.bw * bw - SCREEN.dbw * dbw;
+    return { q: Math.max(0, Math.min(1, q)), bw, dbw, size, str, set, face, spd, called };
+  }
+  screenHit(s, d, closing = null) {
+    const ux = (s.x - d.x), uz = (s.z - d.z), ul = Math.hypot(ux, uz) || 1, nx = ux / ul, nz = uz / ul;
+    // (collide() passes the closing speed from before its own velocity exchange; that is how hard he ran into it)
+    const approach = Math.max(0, closing != null ? closing : (d.vx - s.vx) * nx + (d.vz - s.vz) * nz);
+    const r = this.screenQuality(s, d, approach);
+    // A real screen is one that was called (the screener set it on purpose) or set square to the defender near
+    // the ball. Anything else (a defender brushing past a man standing in the corner) is incidental: it costs a
+    // little speed and a stagger, never a stop or a knockdown, and it isn't a screen for the Lock-In grade.
+    const h = this.holder();
+    let onBall = false; // the defender was going for the ball handler (closing out on the screener himself isn't a screen)
+    if (h && h !== s && h.dist(s) < 3.5) {
+      const hx = h.x - d.x, hz = h.z - d.z, hl = Math.hypot(hx, hz) || 1, dl = d.speed || 1;
+      const aim = (d.vx * hx + d.vz * hz) / (hl * dl);
+      const nearest = this.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null);
+      onBall = aim > 0.5 || nearest === d;
+    }
+    const incidental = !(s.screening > 0 || (r.face > 0.5 && onBall));
+    const q = incidental ? Math.min(r.q, SCREEN.stunQ - 0.01) * 0.7 : r.q;
+    const busy = d.airborne || ['block', 'rebound', 'tipjump', 'steal', 'shoot', 'layup', 'dunk', 'hang', 'stumble', 'oop'].includes(d.action?.type);
+    // the screen takes speed: a glancing one a third of it, a perfect one all of it
+    const keep = 1 - (SCREEN.stop0 + (1 - SCREEN.stop0) * q);
+    d.vx *= keep; d.vz *= keep;
+    d.bumpT = SCREEN.slow0 + SCREEN.slow1 * q;
+    s.vx *= 0.3; s.vz *= 0.3; // the screener holds
+    s.spend(COST.screen); d.spend(COST.screen * 0.75); // (v0.4.5: screens cost stamina, both ways)
+    let knock = false, stun = false;
+    const fallQ = SCREEN.fallQ0 - SCREEN.fallQk * r.bw + SCREEN.fallQd * r.dbw; // (his own Brick Wall keeps him up)
+    if (!busy && !incidental && r.bw > 0 && q >= fallQ && approach >= SCREEN.fallV) {
+      // Brick Wall's perfect screen: the defender goes down and has to get up before he can recover
+      knock = true;
+      d.action = null;
+      d.startAction('stumble', SCREEN.fall0 + SCREEN.fallk * r.bw + this.rng.range(0, 0.4), { fall: true, back: true, screen: true, dir: this.rng.next() < 0.5 ? 1 : -1, hard: s.badges.brick_wall || 0 });
+      d.vx = -nx * 1.1; d.vz = -nz * 1.1; // (knocked back off the screen)
+      d.bumpT = Math.max(d.bumpT, 0.9);
+    } else if (!busy && q >= SCREEN.stunQ && (!d.action || d.action.type === 'bump' || d.action.type === 'catch')) {
+      // stopped dead: shoved back, feet stuck for a moment
+      stun = true;
+      d.action = null;
+      d.startAction('stumble', SCREEN.stun0 + SCREEN.stun1 * (q - SCREEN.stunQ) / (1 - SCREEN.stunQ), { fall: false, back: true, screen: true, dir: 1 });
+      d.vx = -nx * 0.4; d.vz = -nz * 0.4;
+    } else if (!busy && !d.action) {
+      d.startAction('bump', 0.3, {}); // (a stagger)
+    }
+    this.emit({ type: 'screen', player: s.id, victim: d.id, q: +q.toFixed(2), v: +approach.toFixed(2), knock, stun, called: !!r.called, incidental });
+    if (!incidental && r.bw) this.badgeFx(s, 'brick_wall');
+    if (!incidental && r.dbw) this.badgeFx(d, 'brick_wall');
+    return { q, knock, stun, incidental };
+  }
+
   anchorK(p, q) {
     const b = this.ball;
     const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
@@ -2473,6 +2557,9 @@ export class Game {
       const nx = dx / d, nz = dz / d, pen = r - d;
       let ma = a.phys.W * (0.7 + 0.6 * a.phys.strength), mc = c.phys.W * (0.7 + 0.6 * c.phys.strength);
       if (a.team !== c.team) { ma *= this.anchorK(a, c); mc *= this.anchorK(c, a); }
+      // v0.4.7.5 qp3: a set screener holds his ground (strength and Brick Wall), so the defender bounces off him
+      // instead of pushing him off the spot
+      if (a.team !== c.team) { if (this.isSetScreener(a, h)) ma *= this.screenAnchor(a); if (this.isSetScreener(c, h)) mc *= this.screenAnchor(c); }
       const ka = mc / (ma + mc), kc = ma / (ma + mc);
       a.x -= nx * pen * ka; a.z -= nz * pen * ka;
       c.x += nx * pen * kc; c.z += nz * pen * kc;
@@ -2508,16 +2595,12 @@ export class Game {
         // while a shot is up (or from the shooter himself) is not a screen.
         const shotUp = this.ball.mode === 'flight' && this.ball.kind === 'shot';
         for (const [s, d2] of [[a, c], [c, a]]) {
-          if (s.team === this.possession && s !== h && s.speed < 0.8 && d2.team !== this.possession && d2.bumpT <= 0) {
-            if (shotUp || (this.ball.info && this.ball.info.shooter === s.id) || ['shoot', 'layup', 'dunk', 'land', 'celebrate'].includes(s.action?.type)) continue;
-            if (d2.speed < 1.0) continue; // he has to be moving into it
-            // Brick Wall: the screener's makes the screen hit harder (offense); a defender's fights through it (defense)
-            const bw = bk(s.badges, 'brick_wall'), dbw = bk(d2.badges, 'brick_wall');
-            d2.bumpT = Math.max(0.12, 0.3 + bw * 0.08 - dbw * 0.05);
-            s.spend(COST.screen); d2.spend(COST.screen * 0.75); // (v0.4.5: screens cost stamina, both ways)
-            this.emit({ type: 'screen', player: s.id, victim: d2.id });
-            if (bw) this.badgeFx(s, 'brick_wall');
-            if (dbw) this.badgeFx(d2, 'brick_wall');
+          if (this.isSetScreener(s, h) && d2.team !== this.possession && d2.bumpT <= 0) {
+            if (shotUp || (this.ball.info && this.ball.info.shooter === s.id)) continue;
+            if (d2.speed < 1.0 && -rv < 1.0) continue; // he has to be moving into it
+            if (d2.screened && d2.screened.id === s.id && this.time - d2.screened.t < 1.5) continue; // (one screen, one hit)
+            d2.screened = { id: s.id, t: this.time };
+            this.screenHit(s, d2, -rv);
           }
         }
       }

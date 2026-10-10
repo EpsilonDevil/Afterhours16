@@ -1188,7 +1188,20 @@ export class Animator {
       case 'stumble': {
         const q = Math.min(1, t / a.dur);
         if (a.react && ANKLE_POSE[a.react]) { ANKLE_POSE[a.react](T, q, a.dir || 1, t); break; }
-        if (a.fall) {
+        if (a.fall && a.screen) {
+          // v0.4.7.5 qp3: ran into a Brick Wall screen. Thrown back off the chest, down onto the backside with the
+          // legs out in front and the arms catching the floor behind, then rolls up to the feet to recover
+          const hit = Math.sin(Math.min(1, q / 0.18) * Math.PI) * (1 - sm(0.12, 0.3, q));
+          const down = sm(0.08, 0.32, q) * (1 - sm(0.7, 1, q));
+          const up = sm(0.7, 1, q);
+          T[P.root + 1] = -0.86 * down - 0.1 * hit; T[P.root + 2] = -0.42 * down - 0.2 * hit;
+          T[P.spine] = -0.45 * hit + (0.35 - 0.2 * up) * down; T[P.chest] = -0.2 * hit; T[P.head] = 0.3 * hit - 0.15 * down;
+          T[P.pelvis] = -0.5 * down;
+          set3(T, 'footL', 0.22, 0.08, 0.55 * down + 0.08 - 0.15 * hit); set3(T, 'footR', -0.2, 0.08, 0.4 * down - 0.1 * hit);
+          set3(T, 'handL', 0.42, 1.3 * hit + 0.12 * down + 0.4 * (1 - down - hit), -0.42 * down + 0.1 * hit);
+          set3(T, 'handR', -0.42, 1.25 * hit + 0.12 * down + 0.4 * (1 - down - hit), -0.4 * down + 0.1 * hit);
+          set3(T, 'elbowL', 0.7, -0.1, -0.5); set3(T, 'elbowR', -0.7, -0.1, -0.5);
+        } else if (a.fall) {
           const down = sm(0.05, 0.3, q) * (1 - sm(0.72, 1, q));
           T[P.root + 1] = -0.82 * down; T[P.root + 2] = -0.25 * down;
           set3(T, 'footL', 0.2, 0.08, 0.35 * down + 0.05); set3(T, 'footR', -0.22, 0.08, 0.5 * down);

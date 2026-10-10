@@ -385,6 +385,15 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 - **Contesting with your arms up, feet on the floor, is neutral for the defender.** It used to drain like a defensive slide. Sliding in the stance still costs a little (with or without the hands up), and leaving your feet to contest still costs a jump.
 - The AI lives by the same rules.
 
+### Screens and Brick Wall (Oct 10)
+- **Screens have a quality now,** and it decides what happens to the defender who runs into one. It comes from how hard he ran into it, whether the screener was planted and square to him (chest on, not a shoulder brushing past), whether the screen was called, **the size of both men** (weight, strength and height), the **Strength ratings** of both, and **Brick Wall** on either side (the screener's makes it hit harder, the defender's fights through it).
+- **Good screens visibly stop the defender.** Every real screen takes speed out of him (a glancing one a third of it, a perfect one all of it) and slows him for up to a second. A solid screen stops him dead: he's shoved back off the screener's chest with his feet stuck for a third to two thirds of a second. A weak one is just a stagger.
+- **Brick Wall's perfect screen puts him on the floor.** A set, square screen that a defender runs into at speed, from a screener with Brick Wall, knocks him down: thrown back off the chest, onto the floor, and he has to get back up before he can recover. The bar is lower at every tier (Hall of Fame needs about two thirds of a perfect screen; Bronze needs nearly all of it), it's higher against a defender with his own Brick Wall, and nobody is floored by a walk-in or while he's in the air or already going for a block or a steal.
+- **The screener holds his ground.** A set screener's weight in the contact goes up with Strength and Brick Wall (and more when he called it), so the defender bounces off him instead of pushing him off the spot.
+- **Brushing past a man standing in the corner isn't a screen.** Incidental contact with a standing teammate costs the defender a little speed and a stagger but never a stop or a knockdown, and it no longer counts as a screen for the Lock-In grade. A screen counts when it was called (yours or the AI's) or set square to a defender who was going for the ball.
+- **The AI squares up** to the defender it's screening, so its screens hit harder too.
+- In testing: about 23 real screens per park game, 10 of them stops and about one Brick Wall knockdown every other game; about 36 real screens, 28 stops and 1–2 knockdowns per Pro-Am game.
+
 ## Progression: Icon Legend, up to 99
 
 - **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
@@ -497,7 +506,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 149 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 154 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.
@@ -507,4 +516,5 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - "Double the green animations and sounds" means twice as many of each, counting the King Tut Cup's (16 → 32 sounds, 14 → 28 effects). The Cup prizes themselves weren't doubled.
   - "Walking without sprint" means any movement without the sprint button. Defensive slides still cost a little; since stamina part 3, hands-up defense on the floor is neutral.
   - Stamina part 3: "very minimally positive" for walking and jogging is a tenth of the old resting rate (so about a thirtieth of the new one). Hands up while *sliding* still costs the slide; only hands up with the feet planted is neutral.
+  - Screens: "perfect" means the screen's quality clears a bar that drops with the Brick Wall tier and rises with the defender's own tier, and the defender came in at 1.5 m/s or more. A screen is only a screen when it was called or set square to a defender going for the ball; the rest is incidental contact.
   - The faster AI reactions apply to every AI player: teammates, opponents and your own player on auto-play.
