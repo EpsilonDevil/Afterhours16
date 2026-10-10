@@ -35,6 +35,7 @@ export class HUD {
       <div class="hud-score" id="hud-score"></div>
       <div class="hud-meter" id="hud-meter"><div class="hm-track"><div class="hm-fill"></div></div><div class="hm-win"></div><div class="hm-edge"></div><div class="hm-cursor"></div></div>
       <div class="hud-feedback" id="hud-feedback"></div>
+      <div class="hud-feedback other" id="hud-fb1"></div><div class="hud-feedback other" id="hud-fb2"></div><div class="hud-feedback other" id="hud-fb3"></div>
       <div class="hud-tags" id="hud-tags"></div>
       <div class="hud-feed" id="hud-feed"></div>
       <div class="hud-center" id="hud-center"></div>
@@ -55,6 +56,7 @@ export class HUD {
     this.meterCursor = this.meter.querySelector('.hm-cursor');
     this.meterKey = '';
     this.feedback = this.el('hud-feedback');
+    this.fbOthers = [1, 2, 3].map(i => ({ el: this.el('hud-fb' + i), t: 0 })); // (qp3: everyone else's shot feedback)
     this.tags = this.el('hud-tags');
     this.feed = this.el('hud-feed');
     this.center = this.el('hud-center');
@@ -129,6 +131,15 @@ export class HUD {
     this.fbT = 1.6;
   }
 
+  // v0.4.7.5 qp3: shot feedback over another player's release (Settings → Shot feedback → Everyone). Smaller than
+  // yours, three at a time, oldest replaced
+  releaseOther(x, y, text, color, sub) {
+    const slot = this.fbOthers.reduce((a, b) => (b.t < a.t ? b : a));
+    slot.el.innerHTML = `<b style="color:${color}">${esc(text)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}`;
+    slot.el.style.transform = `translate(${x - 120}px, ${y - 110}px)`;
+    slot.el.classList.add('on');
+    slot.t = 1.4;
+  }
   callout(text, kind = '') {
     this.center.innerHTML = `<span class="${kind}">${esc(text)}</span>`;
     this.center.classList.remove('pop'); void this.center.offsetWidth; this.center.classList.add('pop');
@@ -255,10 +266,11 @@ export class HUD {
 
   update(dt) {
     if (this.fbT > 0) { this.fbT -= dt; if (this.fbT <= 0) this.feedback.classList.remove('on'); }
+    for (const f of this.fbOthers) if (f.t > 0) { f.t -= dt; if (f.t <= 0) f.el.classList.remove('on'); }
     if (this.centerT > 0) { this.centerT -= dt; if (this.centerT <= 0) this.center.classList.remove('pop'); }
     if (this.camT > 0) { this.camT -= dt; if (this.camT <= 0) this.camLabel.classList.remove('on'); }
     if (this.badgeT > 0) this.badgeT -= dt;
     if (this.badgeT <= 0 && this.badgeQ.length) this.showNextBadge();
   }
-  clear() { this.setOop(null); this.setStatus(null); this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
+  clear() { for (const f of this.fbOthers) { f.t = 0; f.el.classList.remove('on'); } this.setOop(null); this.setStatus(null); this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
 }

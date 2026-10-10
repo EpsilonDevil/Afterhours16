@@ -183,3 +183,17 @@ test('a squad mate next to you on a Got Next spot walks straight to his circle; 
   Walker.prototype.goTo.call(w, rect.x0 - 2, -3);
   assert.equal(w.path.length, 1);
 });
+
+test('the court overview moves the near plane out (no flicker between the court floor, the ground and the neon lines from 100 m up) and puts it back', async () => {
+  const { OVERVIEW_NEAR } = await import('../client/js/game/park.js');
+  const cam = { near: 0.1 }, hub = { scene: { fog: { density: 0.02 } }, app: { camera: cam }, ui: {} };
+  assert.ok(OVERVIEW_NEAR >= 2 && OVERVIEW_NEAR <= 8);
+  H.setOverview.call(hub, true);
+  assert.equal(cam.near, OVERVIEW_NEAR); assert.ok(hub.scene.fog.density <= 0.004);
+  H.setOverview.call(hub, false);
+  assert.equal(cam.near, 0.1); assert.equal(hub.scene.fog.density, 0.02);
+  // the 5-6 mm gaps are resolvable from the overview camera's height (84+ m) with the new near plane
+  const dist = 110, bits = 2 ** 24, prec = n => dist * dist / (n * bits); // (perspective depth: ~d² / (near · 2^24))
+  assert.ok(prec(0.1) > 0.005, `0.1 m near: ${(prec(0.1) * 1000).toFixed(1)} mm steps at 110 m (worse than the 5 mm gap)`);
+  assert.ok(prec(OVERVIEW_NEAR) < 0.001, `${OVERVIEW_NEAR} m near: ${(prec(OVERVIEW_NEAR) * 1000).toFixed(2)} mm steps`);
+});

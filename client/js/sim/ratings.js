@@ -1,4 +1,5 @@
 // Attribute → physical/gameplay parameters. Attributes are 25..99.
+import { bodyDims } from '../char/skeleton.js';
 import { INCH } from './constants.js';
 
 export const ATTRS = [
@@ -75,7 +76,7 @@ export function physical(build) {
     brake: (17 + rk(a.acceleration) * 6) * massK * 0.97,
     turn: 13 * massK * 0.93,
     vertical: 0.42 + n(a.vertical) * 0.4,
-    reach: H * 1.315 * (WS / H / 1.04), // standing reach
+    reach: bodyDims(build).reachStanding, // standing reach (qp3: the model's own, see skeleton.standingReach)
     strength: n(a.strength) * 0.7 + Math.min(1, (W - 75) / 50) * 0.3,
     // v0.4.5 stamina overhaul: sprinting drains faster and recovery is slower, so stamina actually matters
     staminaRate: (0.055 - n(a.stamina) * 0.03) * 1.35, // drain per second when sprinting

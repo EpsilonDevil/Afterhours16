@@ -522,11 +522,12 @@ export class MatchSession {
   // into a smothering contest starts the green sound and gets cut off the same way (no effect: it isn't going in).
   cutGreen(id) {
     const g = this.greenNow?.get(id);
-    if (!g) return;
+    if (!g) return false;
     this.greenNow.delete(id);
-    if (performance.now() - g.t > 1600) return;
+    if (performance.now() - g.t > 1600) return false;
     g.h.stop(0.03);
     playRecordScratch(audio, { pan: g.pan, vol: g.vol });
+    return true;
   }
   greenScratch(P, mine) {
     const mode = settings.greens || 'all';
@@ -591,11 +592,16 @@ export class MatchSession {
             // graded with (who was where, facing which way, hands up or not, their length and their defensive
             // ratings, help defense), 100% being a full contest
             if (settings.shotFeedback !== false) hud.release(pos.x, pos.y, (e.kind === 'layup' && gr.label ? 'Layup: ' : '') + (gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')), gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.guard ?? e.contest));
+          } else if (!mine && P && settings.shotFeedback !== false && settings.shotFeedbackAll && (e.kind !== 'layup' || e.grade !== 'none') && e.kind !== 'close') {
+            // v0.4.7.5 qp3: everyone's shot feedback (Settings → Shot feedback for → Everyone's shots)
+            const gr = GRADE[e.grade] || GRADE.none, pos = this.screenOf(P, 2.4);
+            hud.releaseOther(pos.x, pos.y, `${P.name.split(' ').slice(-1)[0]}: ${(e.kind === 'layup' && gr.label ? 'Layup ' : '')}${gr.label || (e.kind === 'ft' ? 'Free Throw' : 'Shot')}`, gr.color, e.kind === 'ft' ? 'Free throw' : guardedText(e.guard ?? e.contest));
           }
           // v0.4.7.5: a green that goes in plays the shooter's green release sound and effect (everyone's, the AI too)
           if (e.grade === 'excellent' && e.made && P) this.greenRelease(P, e, mine);
-          // v0.4.7.5 quick patch: timed right, but smothered: the green sound starts and a record scratch cuts it off
-          else if (e.scratch && P) this.greenScratch(P, mine);
+          // v0.4.7.5 quick patch: timed right, but smothered: the green sound starts and a record scratch cuts it off.
+          // qp3: and any green that isn't going in (a green layup that misses, a green from past 35 ft) gets the same
+          else if ((e.scratch || (e.grade === 'excellent' && !e.made)) && P) this.greenScratch(P, mine);
           break;
         }
         case 'score': {
@@ -635,8 +641,10 @@ export class MatchSession {
         case 'hang': { const h = this.hoopFor(e.side); if (h) h.hang = 1; break; }
         case 'hangRelease': { const h = this.hoopFor(e.side); if (h) { h.hang = 0; h.hit(1.5); } break; }
         case 'block': {
-          // v0.4.7.5 quick patch: a green blocked in flight: the record scratch cuts the green sound off
-          this.cutGreen(e.shooter);
+          // v0.4.7.5 quick patch: a green blocked in flight: the record scratch cuts the green sound off.
+          // qp3: every blocked dunk gets the record scratch, green or not
+          const wasGreen = this.cutGreen(e.shooter);
+          if (!wasGreen && e.kind === 'dunk') { const S0 = g.players[e.shooter], sx = S0.x + ox; playRecordScratch(audio, { pan: this.pan(sx), vol: S0.human ? 1 : 0.7 * this.vol(sx, S0.z + oz) }); }
           audio.board(1.2); audio.ooh(); this.rig.shake(0.1, 0.25);
           const blk = g.players[e.player];
           hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}`, blk.team === myTeam ? 'good' : 'bad');

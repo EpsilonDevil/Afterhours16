@@ -337,7 +337,7 @@ BOOSTS = {
 }
 BOOST_AMOUNT = 5
 BOOST_PACKS = {1: 390, 3: 975, 5: 1460}  # games -> VC (v0.4.5: 35% cheaper)
-BOOST_MAX_GAMES = 10
+BOOST_MAX_GAMES = 35  # v0.4.7.5 quick patch 3: stock up to 35 games per category (was 10)
 WOODS = ("natural", "blonde", "dark")
 
 

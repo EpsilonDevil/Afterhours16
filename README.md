@@ -46,6 +46,9 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Posterizer only fires on a dunk that gets to the rim.
 - **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
 - **Stamina:** recovery is 1.2× faster, and standing still recovers 2× on top of that. Moving without sprint recovers a very little, and contesting with the arms up (feet on the floor) is neutral for the defender.
+- **Boosts:** stock up to 35 games per category (was 10).
+- **Reach:** contests, blocks, rebounds and finishes measure against the model's own standing reach (shoulder + lift + the wingspan-sized arm), 4–8% less than before; dunks need a bit more Vertical.
+- **Defense:** transition defense varies with each defender's speed and IQ, and defenders on a moving dribbler take the occasional bad step (a dribbler gets free about 2.75% more often). Every player model stands exactly its height with exactly its wingspan. Shot feedback can be shown for everyone's shots, the record scratch cuts off every green that misses and every blocked dunk, and the court overview no longer flickers.
 - **Got Next:** your squad walks straight to the circles beside you when you step on a spot (no more detour round the park), and the Lock-In stat line fits inside the grade box.
 - **The break:** the AI's first look in transition is the man running the open floor: an alley-oop if he can get up for it, a quick lob over the top, or the pass ahead. AI teammates throw **you** alley-oops too: hit the face button called over your head while the ball is in the air to finish; mistime it and the lob gets away.
 - **Screens:** a screen's quality comes from the run-in, how set and square the screener is, the size and Strength of both men and Brick Wall on either side. Good screens visibly stop the defender, a set screener holds his ground, and a Brick Wall screener's perfect screen knocks the defender to the floor.
@@ -103,7 +106,7 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
 - **The plaza:** three kiosks stand side by side.
   - **Daily Spin:** a prize wheel you can spin once every 24 hours. VC comes in five tiers (500, 2,500, 10,000, 50,000, and a very rare 250,000 jackpot), and some slices hold exclusive gear and animations you can't buy in the store. The odds are shown on the wheel.
   - **VC Store.**
-  - **Boosts:** 2K17-style boosts by category (Shooting, Finishing, Playmaking, Defense, Rebounding, Athleticism). Each adds +5 to every attribute in its category, up to 99, for 1, 3 or 5 games. A boost game is used when a park or Pro-Am game tips off.
+  - **Boosts:** 2K17-style boosts by category (Shooting, Finishing, Playmaking, Defense, Rebounding, Athleticism). Each adds +5 to every attribute in its category, up to 99, for 1, 3 or 5 games, and you can stock up to 35 games per category. A boost game is used when a park or Pro-Am game tips off.
 - **Shootaround:** hit the practice hoop by the 1v1 court.
 
 **The King Tut Cup (v0.4.5 park event).** A glow-in-the-dark park among the pyramids — neon court lines, sphinxes, obelisks, a mini-golf strip and laser-tag barriers — where every game is an ante-up. Pick a stake (500 to 10,000 VC) when you claim a spot: win and you take the other side's stake too, boosted by your Cup win streak, on top of the normal game VC; lose and the stake is gone. Each Cup runs for 48 hours and ranks the most VC won against the AI hoopers who entered it. The winner gets the glow-in-the-dark mo-cap suit, and the top finishers get exclusive shoes, a celebration, a headband and VC. In every park, a 3-game win streak lights a wall of fire around the court (it grows at 6, 9 and 12 wins); in the Cup it's green lasers instead. Since the v0.4.5 quick patch the fire is live and procedural: one continuous wall all the way round with no repeating picture, about 1.4 m tall at 3 wins, 2.2 m at 6, 3 m at 9 and 3.8 m at 12, brighter and fuller at each step, and it eases in as it grows.
@@ -199,7 +202,7 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 
 **Settings → Controller & window** also has vibration on/off, stick deadzone, prompt style, inverted park camera, lock-in, the Locked-In grade display and pause-on-focus-loss.
 
-**Settings → Shot meter / Shot feedback** (both on by default). Turn the meter off and your green window gets **10% wider**. With the meter on or off, and with any jumpshot base or release, the middle of the green window is the exact moment the ball leaves your hands. Shot feedback is the grade and percentage that pops up over your player after a shot.
+**Settings → Shot meter / Shot feedback** (both on by default; *Shot feedback for → Everyone's shots* shows the grade over every player's release). Turn the meter off and your green window gets **10% wider**. With the meter on or off, and with any jumpshot base or release, the middle of the green window is the exact moment the ball leaves your hands. Shot feedback is the grade and percentage that pops up over your player after a shot.
 
 **The shot meter** (v0.4.5 quick patch) is a slim bar next to your player that fills as you shoot. The window on it is drawn to scale from the same numbers that grade your release, so letting go anywhere inside it is an Excellent release and anywhere outside isn't, with the contest measured live:
 - **Solid green** in the middle is the window your ratings give you on their own.

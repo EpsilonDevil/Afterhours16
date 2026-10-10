@@ -8,6 +8,8 @@ const DEFAULTS = {
   binds: { key: {}, pad: {} }, gradeHud: true,
   // v0.4.3: shot meter (off = +10% green window) and release feedback text
   shotMeter: true, shotFeedback: true,
+  // v0.4.7.5 qp3: shot feedback (grade and how guarded) over everyone's releases, not only yours
+  shotFeedbackAll: false,
   // v0.4.5: auto-play (H) stays on from one game to the next until you turn it off
   autoPlay: false,
   // v0.4.7.5: green release sounds and effects: 'all' players, 'mine' only, or 'off'

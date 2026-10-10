@@ -2,6 +2,7 @@
 // Park: halfcourt 21 by 2s/3s with check-ball and take-it-back. Pro-Am: full court 5v5 with quarters,
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
 import { RNG } from '../core/rng.js';
+import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
@@ -177,7 +178,7 @@ export const DUNK_PATH2 = {
 
 // v0.4.5 quick patch: reaching up for the release, the shooting shoulder rises this much (×H; the animator lifts the
 // collarbone to match), and the arm ends 97% straight
-export const ARM_LIFT = 0.025, ARM_EXT = 0.97;
+export const ARM_LIFT = OVERHEAD_LIFT, ARM_EXT = 0.955; // (qp3: 0.97 → 0.955 with the exact-wingspan arms, so the hand is always on the ball at the release)
 // v0.4.7.5: how far the shoulders sit back at the release of a running fade (it leans back the furthest)
 export const RUNFADE_BACK = 0.135;
 // v0.4.5 quick patch: how hard a made dunk is thrown down through the rim (m/s)
@@ -1659,6 +1660,7 @@ export class Game {
 
   blockBall(d, shooter, chase, countFga = true) {
     const b = this.ball;
+    const kind = (b.mode === 'flight' && b.info?.type) || (shooter.action?.type === 'dunk' ? 'dunk' : shooter.action?.type === 'layup' ? 'layup' : 'jumper'); // (qp3: for the record scratch)
     const fx = Math.sin(d.facing), fz = Math.cos(d.facing);
     const P = b.mode === 'flight' ? { x: b.x, y: b.y, z: b.z } : this.holdPoint(shooter);
     b.setFlight(P.x, P.y, P.z, fx * this.rng.range(3, 6) + this.rng.range(-2, 2), this.rng.range(-1, 2.5), fz * this.rng.range(3, 6) + this.rng.range(-2, 2), 'loose', { blocked: d.id, shooter: shooter.id });
@@ -1667,7 +1669,7 @@ export class Game {
     if (chase) d.stats.chasedowns++;
     if (shooter.action && (shooter.action.type === 'layup' || shooter.action.type === 'dunk')) { shooter.action.released = true; shooter.action.slammed = true; shooter.action.hang = 0; }
     if (countFga) shooter.stats.fga++;
-    this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase });
+    this.emit({ type: 'block', player: d.id, shooter: shooter.id, chase, kind });
   }
 
   checkShootingFoul(p, contest, kind) {
@@ -1839,9 +1841,13 @@ export class Game {
       // how long it sits there, where it's let go), so the bases differ in ball travel and not only in the legs
       const sp = SHOT_PATH[a.kind === 'close' ? 'standard' : p.shotPkg.style] || SHOT_PATH.standard;
       const rel = [sh * 0.05, 0, 0.3 + p.shotPkg.push + (sp.rz || 0) - (a.hustle === 'runfade' ? 0.12 : 0)]; // (falling away: let go closer in)
+      const back = a.hustle === 'runfade' ? Math.max(sp.back, RUNFADE_BACK) : a.fade ? Math.max(sp.back, 0.065) : sp.back;
+      // (qp3: and never so far out in front that the arm can't get there: at most 80% of the arm out from where the
+      // shoulder sits in the lean, like the layups; it matters for a short-armed build falling away)
+      { const A = p.arm; if (A) { const L = A.len * ARM_EXT * 0.8, dx = rel[0] + sh * 0.01 * H - sh * A.shoulderX, z0 = A.z - back * H + 0.03 * H; rel[2] = Math.min(rel[2], z0 + Math.sqrt(Math.max(0, L * L - dx * dx))); } }
       // the release point: as high as the base lets it go, but never out of the shooting hand's reach (so the top of
       // the ball's travel, the middle of the green window, is where it leaves his hand, whatever his build)
-      rel[1] = Math.min(p.phys.reach * (p.shotPkg.relK ?? 0.93), this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', rel[0], rel[2], a.hustle === 'runfade' ? Math.max(sp.back, RUNFADE_BACK) : a.fade ? Math.max(sp.back, 0.065) : sp.back));
+      rel[1] = Math.min(p.phys.reach * (p.shotPkg.relK ?? 0.93), this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', rel[0], rel[2], back));
       const pocket = [sh * 0.06, sp.py * H, 0.32], set = [sh * sp.sx, Math.min(p.shotPkg.setH * H, rel[1] - 0.04 * H), sp.sz];
       // (gameplay still measures the contest at the height the build's reach gives the release, as it always has:
       // relU/setU, the uncapped points; the cap is the body model's, it doesn't move the defense)
@@ -1872,8 +1878,12 @@ export class Game {
       const end = { scoop: [-0.12, 0.56], finger: [-0.06, 0.5], euro: [-0.05, 0.38], reverse: [-0.3, 0.1], hop: [0, 0.42], floater: [-0.05, 0.42], spin: [-0.05, 0.38] }[ls] || [-0.05, 0.38];
       const body = (LAYUP_BODY[ls] || LAYUP_BODY.basic)[cv] || LAYUP_BODY.basic.open, hand = S.layupHand(a);
       // (and never so far out in front that a shorter arm can't get there: at most 80% of the arm out from the shoulder)
-      const A = p.arm, zMax = A ? A.z - body[1] * H + 0.03 * H + 0.8 * A.len : Infinity;
-      const ex = cv === 'side' ? cs * 0.28 : cv === 'rim' ? cs * 0.32 : end[0], ez = Math.min(zMax, end[1] + (cv === 'rim' ? -0.3 : cv === 'trail' ? 0.06 : 0));
+      const A = p.arm, ex = cv === 'side' ? cs * 0.28 : cv === 'rim' ? cs * 0.32 : end[0];
+      // (qp3: 80% of the arm, measured from the finishing shoulder, sideways offset included, so a finish
+      // carried across to the far side doesn't outrun a short arm)
+      let zMax = Infinity;
+      if (A) { const sgH = hand === 'L' ? 1 : -1, L8 = 0.8 * A.len, dxs = ex + sgH * 0.01 * H - sgH * A.shoulderX; zMax = A.z - body[1] * H + 0.03 * H + Math.sqrt(Math.max(0, L8 * L8 - dxs * dxs)); }
+      const ez = Math.min(zMax, end[1] + (cv === 'rim' ? -0.3 : cv === 'trail' ? 0.06 : 0));
       const cap = this.reachTop(p, hand, ex, ez, 0, body) - (cv === 'trail' ? 0.07 * H : 0);
       const top = k => Math.min(p.phys.reach * k, cap);
       const ue = ls === 'scoop' ? e * e : ls === 'finger' || ls === 'floater' ? Math.pow(e, 0.8) : e, uk = ls === 'scoop' ? 0.88 : ls === 'finger' ? 1.02 : ls === 'floater' ? 1.0 : ls === 'reverse' ? 0.95 : 0.97;
@@ -1888,7 +1898,8 @@ export class Game {
       } else if (ls === 'euro') {
         // swept across the body on the long second step, then up on the far side
         const sw = a.lsDir || 1, cross = Math.sin(Math.min(1, t / 0.7) * Math.PI);
-        lx = sh * 0.1 * (1 - e) + sw * 0.26 * cross + sh * 0.05 * e; ly = 0.56 * H + (top(0.97) - 0.56 * H) * e; lz = 0.3 + e * 0.08;
+        const sweep = 0.26 * Math.min(1, (A?.armScale ?? 1) / 0.97); // (qp3: as wide as a short arm allows)
+        lx = sh * 0.1 * (1 - e) + sw * sweep * cross + sh * 0.05 * e; ly = 0.56 * H + (top(0.97) - 0.56 * H) * e; lz = 0.3 + e * 0.08;
       } else if (ls === 'reverse') {
         // under the rim and up behind on the right: the arm reaches back up over the shoulder
         lx = sh * (0.1 * (1 - e) + 0.3 * e); ly = 0.6 * H + (top(0.95) - 0.6 * H) * e; lz = 0.3 - 0.2 * e * e;

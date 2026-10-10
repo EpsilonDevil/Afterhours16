@@ -51,7 +51,7 @@ export class Player {
     this.phys = physical(entry.build);
     // v0.4.5 quick patch: the body model's real shoulder and arm (char/skeleton.js), so a ball held at the top of a
     // shot is somewhere the hands can actually be (see Game.reachTop)
-    { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen }; }
+    { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen, armScale: d.armScale }; }
     this.shotPkg = jumpshotPackage(entry.build, catalog);
     this.dunkPkg = entry.build.equipment?.dunk || 'dunk_basic';
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves

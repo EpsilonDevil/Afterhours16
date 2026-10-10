@@ -270,3 +270,8 @@ body.overview-on #prompt, body.overview-on .toast-wrap { opacity: 0; }
 .hud-oop[data-state="hit"] .ho-btn { color: #3ddc84; font-size: 20px; } .hud-oop[data-state="hit"] .ho-ring { box-shadow: 0 0 0 2px #3ddc84, 0 0 18px #3ddc84; }
 .hud-oop[data-state="miss"] .ho-btn { color: #ff5a5a; font-size: 11px; letter-spacing: .06em; } .hud-oop[data-state="miss"] .ho-ring { box-shadow: 0 0 0 2px #ff5a5a; }
 @keyframes oop-pulse { from { transform: scale(1); } to { transform: scale(1.14); } }
+
+/* v0.4.7.5 qp3: everyone else's shot feedback (Settings → Shot feedback → Everyone) */
+.hud-feedback.other b { font-size: 16px; }
+.hud-feedback.other small { font-size: 10px; }
+.hud-feedback.other { opacity: 0; } .hud-feedback.other.on { opacity: .9; }

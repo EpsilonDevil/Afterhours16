@@ -484,12 +484,23 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(b["balance"], bal - progression.BOOST_PACKS[3])
             self.assertEqual(b["character"]["boosts"], {"shooting": 3})
             self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 5})
-            self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 5}, expect=400)
+            # v0.4.7.5 quick patch 3: the stock limit is 35 games per category. 8 so far: five more 5-packs make 33,
+            # a 3-pack would be 36 (refused), a 1-pack makes 34, another 1-pack 35, and then nothing fits
+            self.assertEqual(progression.BOOST_MAX_GAMES, 35)
+            for _ in range(5):
+                self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 5})
+            self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 3}, expect=400)
+            self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 1})
+            b = self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 1})
+            self.assertEqual(b["character"]["boosts"], {"shooting": 35})
+            self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "shooting", "games": 1}, expect=400)
+            # (another category has its own stock)
+            self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "finishing", "games": 1})
             self.call("/api/boosts/purchase", {"key": self.key(), "character_id": cid, "category": "luck", "games": 1}, expect=400)
             t = self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "park", "venue": "brick", "format": 1, "target": 11})
-            self.assertEqual(t["meta"]["boosts"], ["shooting"])
+            self.assertEqual(sorted(t["meta"]["boosts"]), ["finishing", "shooting"])
             chars = {c["id"]: c for c in self.call("/api/me")["characters"]}
-            self.assertEqual(chars[cid]["boosts"], {"shooting": 7})
+            self.assertEqual(chars[cid]["boosts"], {"shooting": 34})
         finally:
             self.opener = prev
 

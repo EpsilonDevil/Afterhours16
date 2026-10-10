@@ -46,6 +46,8 @@ function segHitsBox(b, ax, az, bx, bz) {
   return true;
 }
 
+export const OVERVIEW_NEAR = 3; // (m) the camera's near plane while the court overview is up (0.1 otherwise)
+
 export class Walker {
   constructor(hub, entry, x, z) {
     this.hub = hub;
@@ -317,6 +319,12 @@ export class ParkHub {
     this.overview = on;
     const f = this.scene.fog;
     if (on) { this.fogKeep = f.density; f.density = Math.min(f.density, 0.004); } else if (this.fogKeep != null) { f.density = this.fogKeep; this.fogKeep = null; }
+    // v0.4.7.5 qp3: from 100 m up, the depth buffer's 0.1 m near plane can't tell the court floor from the ground
+    // (5 mm) or from the Cup's neon lines (6 mm) a hundred metres away, so they flickered against each other. With
+    // nothing nearer than the courts, the near plane moves out to OVERVIEW_NEAR for the overview (30x the depth
+    // precision) and back when it ends
+    const cam = this.app.camera;
+    if (cam) { if (on) { this.nearKeep = cam.near; cam.near = OVERVIEW_NEAR; } else if (this.nearKeep != null) { cam.near = this.nearKeep; this.nearKeep = null; } }
     this.ui.overview?.(this, on);
   }
   overviewCam(dt) {

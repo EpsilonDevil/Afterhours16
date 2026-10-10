@@ -216,6 +216,7 @@ export function openSettings(app) {
       <label>Fullscreen lock-in<select data-k="lockIn"><option value="1" ${settings.lockIn ? 'selected' : ''}>On (F11)</option><option value="0" ${!settings.lockIn ? 'selected' : ''}>Off</option></select></label>
       <label>Shot meter<select data-k="shotMeter"><option value="1" ${settings.shotMeter !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotMeter === false ? 'selected' : ''}>Off (+10% green window)</option></select></label>
       <label>Shot feedback<select data-k="shotFeedback"><option value="1" ${settings.shotFeedback !== false ? 'selected' : ''}>On</option><option value="0" ${settings.shotFeedback === false ? 'selected' : ''}>Off</option></select></label>
+      <label>Shot feedback for<select data-k="shotFeedbackAll"><option value="0" ${!settings.shotFeedbackAll ? 'selected' : ''}>My shots</option><option value="1" ${settings.shotFeedbackAll ? 'selected' : ''}>Everyone's shots</option></select></label>
       <label>Green releases<select data-k="greens">${[['all', 'Everyone'], ['mine', 'Mine only'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${(settings.greens || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Defense arrows<select data-k="defArrows"><option value="1" ${settings.defArrows !== false ? 'selected' : ''}>Show</option><option value="0" ${settings.defArrows === false ? 'selected' : ''}>Hide</option></select></label>
       <label>Locked-In grade<select data-k="gradeHud"><option value="1" ${settings.gradeHud !== false ? 'selected' : ''}>Show</option><option value="0" ${settings.gradeHud === false ? 'selected' : ''}>Hide</option></select></label>
@@ -228,7 +229,7 @@ export function openSettings(app) {
     const k = el.dataset.k;
     let v = el.value;
     if (['sfx', 'crowd', 'musicVol', 'difficulty', 'deadzone'].includes(k)) v = +v;
-    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'defArrows'].includes(k)) v = v === '1';
+    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'shotFeedbackAll', 'defArrows'].includes(k)) v = v === '1';
     settings[k] = v; saveSettings();
     if (k === 'quality') app.renderer.setQuality(v);
     if (k === 'camera') app.cameraRig.mode = v;

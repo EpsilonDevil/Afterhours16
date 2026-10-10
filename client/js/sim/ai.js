@@ -17,6 +17,14 @@ const hyp = Math.hypot;
 // counts, how open he has to be, how wide the lane in front of him has to be clear, how fast he must be running at
 // the rim (m/s), how close for an alley-oop and with what share of the sprint budget, the chance the handler takes
 // the look each read (plus IQ), and the half-court alley-oop chance (was 0.25, AI receivers only)
+// v0.4.7.5 qp3: transition defense varies with the man. Each change of possession, every defender draws his own
+// moment to turn and go (delay0 + delaySpd·(1 − Speed) + jitter·(1.2 − IQ), seconds) and, now and then, jogs the
+// first stretch instead of sprinting (jog0 + jogSpd·(1 − Speed) + jogIQ·(1 − IQ)), for jogFor seconds.
+export const TRANS = { delay0: 0.05, delaySpd: 0.45, jitter: 0.3, jog0: 0.04, jogSpd: 0.1, jogIQ: 0.12, jogFor: 1.0 };
+// v0.4.7.5 qp3: the occasional mistake guarding a moving dribbler: a bad step (the wrong way on his movement, read
+// late) that lasts `dur` s, drawn at `rate` per second (× (1.3 − skill)) while the man is moving. The size of the
+// step is `step` m. Calibrated so a dribbler gets free about 2.75% more often than before (tools: /tmp/claude-0/esc.mjs).
+export const MISTAKE = { rate: 0.3, dur: 0.32, step: 0.55, minSpeed: 2.0 };
 export const RUNNER = { maxRim: 9.5, open: 2.0, lane: 2.0, recover: 2.5, run: 1.5, oopRim: 6.5, reachK: 0.7, lobRisk: 0.35, lobRiskMax: 0.9, lobOpen: 4.0, chance0: 0.7, chanceIQ: 0.3, setOop: 0.32 };
 
 const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
@@ -168,7 +176,16 @@ export class AI {
     for (const p of g.players) { const h = p._hist || (p._hist = []); h.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz }); if (h.length > 40) h.shift(); }
     // v0.4.7.5: how long each handler has had the ball (dead-dribble check); a new touch resets a screen call
     for (const p of g.players) { const o = this.m(p); if (g.ball.holder === p.id) { if (!o.ballT) o.fresh = true; o.ballT = (o.ballT || 0) + dt; } else { o.ballT = 0; o.screenAsk = false; o.fresh = false; o.inMove = false; } }
-    if (g.possession !== this.lastPossession) { this.lastPossession = g.possession; this.matchups(g.possession); this.variant[g.possession] = g.rng.int(0, 2); for (const p of g.players) { const o = this.m(p); o.plan = null; o.cutT = 0; } }
+    if (g.possession !== this.lastPossession) {
+      this.lastPossession = g.possession; this.matchups(g.possession); this.variant[g.possession] = g.rng.int(0, 2);
+      for (const p of g.players) {
+        const o = this.m(p); o.plan = null; o.cutT = 0;
+        // (qp3) his own moment to turn and get back, and whether he jogs the first stretch
+        const spd = n(p.ratings.speed), IQ = this.iq(p);
+        o.transAt = g.time + TRANS.delay0 + TRANS.delaySpd * Math.max(0, 1 - spd) + g.rng.range(0, TRANS.jitter) * Math.max(0, 1.2 - IQ);
+        o.transJog = g.rng.next() < TRANS.jog0 + TRANS.jogSpd * Math.max(0, 1 - spd) + TRANS.jogIQ * Math.max(0, 1 - IQ);
+      }
+    }
     for (const p of g.players) {
       if (!g.isAI(p)) { this.humanAssistHints(p, dt); continue; }
       if (g.practice && p.team === 1) { this.practiceDefender(p, dt); continue; }
@@ -993,7 +1010,12 @@ export class AI {
     // loose ball included, not only once somebody's dribbling it up)
     const bz0 = h ? h.z : g.ball.z, theirs = h ? h.team !== p.team : g.possession !== p.team;
     if (!g.half && theirs && (p.z - rim.z) * side < -COURT.hoopZ - 2 + 14 && (bz0 * side) < 3 && (p.z * side) < (bz0 * side) - 1) {
-      this.seek(p, rim.x * 0.5 + man.x * 0.3, rim.z - side * 4, { sprint: true });
+      // (qp3) not everyone turns at once: the slow and the careless are a beat late, and some jog the first stretch
+      const since = g.time - (o.transAt ?? -9);
+      if (since < 0) { it.mx = 0; it.mz = 0; it.sprint = false; this.face(p, g.ball.x, g.ball.z); this.stats.transLate = (this.stats.transLate || 0) + dt; return; }
+      const jog = o.transJog && since < TRANS.jogFor;
+      this.seek(p, rim.x * 0.5 + man.x * 0.3, rim.z - side * 4, { sprint: !jog });
+      if (jog) this.stats.transJog = (this.stats.transJog || 0) + dt;
       return;
     }
     // v0.4.7.5 quick patch: react to the pass, not the catch. When the ball is thrown to my man I close out on him
@@ -1031,6 +1053,17 @@ export class AI {
       tx = seenM.x + dx / dl * gap; tz = seenM.z + dz / dl * gap;
       // anticipate the handler's movement (better defenders read it earlier)
       tx += seenM.vx * (0.08 + skill * 0.14); tz += seenM.vz * (0.08 + skill * 0.14);
+      // (qp3) the occasional bad step on a moving dribbler: for a moment he anticipates the wrong way
+      const mv = hyp(man.vx, man.vz);
+      if (o.badStep > 0) {
+        o.badStep -= dt;
+        tx += o.badDir.x * MISTAKE.step; tz += o.badDir.z * MISTAKE.step;
+      } else if (mv > MISTAKE.minSpeed && g.rng.next() < dt * MISTAKE.rate * Math.max(0.2, 1.3 - skill)) {
+        o.badStep = MISTAKE.dur;
+        const s = g.rng.next() < 0.5 ? 1 : -1; // across his movement, or straight back against it
+        o.badDir = g.rng.next() < 0.7 ? { x: s * -man.vz / mv, z: s * man.vx / mv } : { x: -man.vx / mv, z: -man.vz / mv };
+        this.stats.badStep = (this.stats.badStep || 0) + 1;
+      }
       it.defense = true;
       this.face(p, man.x, man.z);
       // v0.4.7.5 quick patch: left a step behind (a move that made space, a blow-by): out of the stance and run to

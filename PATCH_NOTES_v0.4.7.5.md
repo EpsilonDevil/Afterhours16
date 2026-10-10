@@ -404,6 +404,21 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 - **Your squad lines up next to you.** Step on a Got Next spot and your squad mates walk straight to their circles beside you. They used to run off to the edge of the park and come back the long way round before filing in: every walk in the park was routed through the south plaza whenever either end was near the courts. Now everyone walks straight to where he's going, around the shops, the wheel and any court with a game on it.
 - **The stat line fits the Lock-In box.** PTS REB AST / STL BLK TO are smaller (16 px values, 9 px labels like the grade's own caption) and sit inside the grade's height instead of spilling past it.
 
+### Defense, scale, feedback and the scratch (Oct 10)
+- **Transition defense varies with the man.** On a change of possession every defender draws his own moment to turn and go: a fast, smart one goes at once, a slow one is up to half a second late and a careless one later still, and now and then a defender jogs the first stretch instead of sprinting (the slower and the dimmer, the more often). The spread in how long it takes a defense to get back went up by about a fifth.
+- **The occasional bad step.** A defender guarding a moving dribbler sometimes anticipates the wrong way for a third of a second — a bad step across or against the man's movement — less often the better he is (Perimeter D and IQ). The rate is set so a dribbler gets free about **2.75% more often** than before (measured over 240 AI games at a 1.0/s rate for the slope, then scaled; at the shipped rate the difference sits inside the noise of 120 games, as it should).
+- **Every player model is exactly his height.** A hard check across 51 builds from 5'7" to 7'3": the skull's crown stands at exactly the build's height (it was 1% short), the shoes on the floor, a 20-inch difference in the builds is a 20-inch difference on the floor, and **the wingspan is exactly the build's** fingertip to fingertip (heavier, wider builds used to come out 2–3% longer than their wingspan). Jump-shot and layup release points are kept within the arm's horizontal reach too, so a short-armed build falling away or finishing across his body never floats the ball off his hand.
+- **Shot feedback for everyone.** Settings → *Shot feedback for* → *Everyone's shots* shows the grade and how guarded he was over every player's jumper, free throw and timed layup (smaller than yours, with his name; three at a time).
+- **The record scratch** now cuts off *every* green that isn't going in — a green layup that misses, a green from past 35 ft — not only a smothered or blocked jumper, and **every blocked dunk** gets a record scratch, green or not.
+- **The court overview doesn't flicker.** From a hundred metres up, the depth buffer couldn't tell the court floor from the ground (5 mm apart) or from the King Tut Cup's neon lines (6 mm), so they flickered against each other while you held View/Share. The camera's near plane now moves out for the overview (thirty times the depth precision) and back when you let go.
+
+### Reach follows the arms (Oct 10)
+- **Contests, blocks, rebounds and finishes now measure against the model's own standing reach:** the shoulder's height plus the overhead lift plus the arm to the fingertips, the arm being sized exactly to the build's wingspan. The old figure (1.315 × height, scaled by the wingspan) ran 4–8% longer than the arms on screen, most of all for long-wingspan builds. Reach is now 1.22–1.29 × height depending on the wingspan (a 6'6" with a 6'9" wingspan: 8'2" instead of 8'6").
+- What that does, measured over 48 AI games: blocks about the same (3.75 → 3.85 a game), FG 40 → 41%, threes 31 → 35% (perimeter contests reach a little less), layups 55 → 52%, and **dunks halved** (1.8 → 0.85 a game): with the shorter reach a build needs more Vertical to get a hand to the rim, so the attack bind picks a layup more often. Verticals and contest strengths were left as they were; say the word if you'd like either re-tuned around the new reach.
+
+### Boosts (Oct 10)
+- **Stock up to 35 games of a boost per category** (it was 10). The kiosk's packs are unchanged (1, 3 or 5 games); the buttons grey out when a pack wouldn't fit under 35.
+
 ## Progression: Icon Legend, up to 99
 
 - **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
@@ -516,7 +531,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 160 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 165 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.
@@ -527,5 +542,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - "Walking without sprint" means any movement without the sprint button. Defensive slides still cost a little; since stamina part 3, hands-up defense on the floor is neutral.
   - Stamina part 3: "very minimally positive" for walking and jogging is a tenth of the old resting rate (so about a thirtieth of the new one). Hands up while *sliding* still costs the slide; only hands up with the feet planted is neutral.
   - The alley-oop press: the four face buttons are read raw (whatever your context) only while a lob to you is in the air, and that press is used for nothing else, so the shoot button can't also jump you. The window opens a quarter of the way to the takeoff and closes 0.05 s after it. A mistimed one is 0.22 s late at 40% of the height.
+  - The bad step is drawn at `MISTAKE.rate` × (1.3 − skill) per second while the man moves faster than 2 m/s; "2.75% more escapes" is relative (7.35% → ~7.55% of guarded dribbling spells end with the handler two metres clear within 1.2 s, in AI park games).
+  - "True to scale" was taken to mean the model's standing height and wingspan; the standing *reach* the simulation uses for contests and blocks is unchanged (1.315 × height, scaled by wingspan) and is still a few percent longer than the model's arms, as it was.
   - Screens: "perfect" means the screen's quality clears a bar that drops with the Brick Wall tier and rises with the defender's own tier, and the defender came in at 1.5 m/s or more. A screen is only a screen when it was called or set square to a defender going for the ball; the rest is incidental contact.
   - The faster AI reactions apply to every AI player: teammates, opponents and your own player on auto-play.

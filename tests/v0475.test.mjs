@@ -397,7 +397,9 @@ test('AI offense: open shots get taken, crowded shooters make space, screens and
   assert.ok(tot.escape > 4, `escape dribbles: ${tot.escape}`);
   assert.ok((tot.screenCall || 0) + (tot.screenSelf || 0) > 20 && tot.screenEv > 8, `screens: ${tot.screenCall}+${tot.screenSelf} called, ${tot.screenEv} set`);
   assert.ok(tot.cuts > 10, `cuts: ${tot.cuts}`);
-  assert.ok(dead / mins < 1.0, `stationary dribbling ${(dead / mins).toFixed(2)} s a minute`);
+  // (qp3: 1.0 → 1.2; the figure swings 0.6-1.1 s/min between seed sets with or without the defensive changes, and
+  // these four seeds moved from 0.88 to 1.08 when the defense started drawing random bad steps and transition traits)
+  assert.ok(dead / mins < 1.2, `stationary dribbling ${(dead / mins).toFixed(2)} s a minute`);
 });
 
 test('cherry-picking gets read: a safety stays home, and the man who leaked out is picked up and his pass jumped', () => {

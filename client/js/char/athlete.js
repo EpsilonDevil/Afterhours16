@@ -509,7 +509,7 @@ export class AthleteModel {
   // ---------- head ----------
   headCenter() {
     const P = this.bind[B.head], H = this.d.H;
-    return [P[0], P[1] + 0.052 * H, P[2] + 0.010 * H];
+    return [P[0], P[1] + 0.057 * H, P[2] + 0.010 * H]; // (qp3: +0.005H so the crown stands at exactly H, see the crown scale in headShape0)
   }
 
   // Unit direction n → head surface point (head-radius units, head-centered). Features are modeled in
@@ -529,7 +529,7 @@ export class AthleteModel {
     const [nx, ny, nz] = n;
     // cranium: ellipsoid with a narrower crown; lower face tapers into the jaw and tucks in at the back
     let sx = F.sx, sy = 1.0, sz = nz > 0 ? 0.98 : 1.0;
-    if (ny > 0.3) sx *= lerp(1, 0.93, smooth(0.3, 1, ny));
+    if (ny > 0.3) { const k = smooth(0.3, 1, ny); sx *= lerp(1, 0.93, k); sy *= lerp(1, 1.08, k); } // (qp3: a taller crown)
     if (ny < 0) { const k = smooth(0, -0.95, ny); sx *= lerp(1, jawW, k); if (nz < 0.3) sz *= lerp(1, 0.84, k * smooth(0.3, -0.4, nz)); }
     let x = nx * sx, y = ny * sy, z = nz * sz;
     if (opts.skullOnly) return [x, y, z];

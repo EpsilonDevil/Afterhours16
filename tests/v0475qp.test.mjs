@@ -91,7 +91,7 @@ test('the record scratch: green sounds hand back a cut-off, and the scratch itse
   assert.ok(playGreenSound(audio, 'gsnd_chant', {}));
   assert.ok(greenRecipe('gsnd_chant'));
   const src = fs.readFileSync(new URL('../client/js/game/session.js', import.meta.url), 'utf8');
-  assert.ok(src.includes('this.cutGreen(e.shooter)') && src.includes('else if (e.scratch && P) this.greenScratch(P, mine);'), 'blocked greens and smothered greens are cut off');
+  assert.ok(src.includes('this.cutGreen(e.shooter)') && src.includes("(e.scratch || (e.grade === 'excellent' && !e.made)) && P) this.greenScratch(P, mine);"), 'blocked greens and smothered greens are cut off (qp3: and any green that misses)');
 });
 
 test('contests count at the release: the AI\'s planned green slips when a closeout arrives in time', () => {
