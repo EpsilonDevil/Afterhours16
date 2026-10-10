@@ -148,3 +148,38 @@ test('v0.4.5 King Tut Cup: streak visuals step every 3 wins up to 12; entrants s
   assert.equal(wrong, 0);
   assert.ok(world.onlineAt('kingtut', t).every(id => cupEntrant(id, w)));
 });
+
+// ---- v0.4.7.5 qp3: no more long way round through the plaza ----
+import { Walker } from '../client/js/game/park.js';
+
+test('a squad mate next to you on a Got Next spot walks straight to his circle; a walker across a live court goes round it, not through the plaza', () => {
+  const c = { origin: [0, 0, 0], format: 3, full: true };
+  const rect = courtPlayRect(c);
+  const courts = [{ ...c, rect, session: {}, mine: false }, { origin: [26, 0, 0], format: 3, full: true, rect: courtPlayRect({ origin: [26, 0, 0], format: 3, full: true }), session: null, mine: false }];
+  const hub = { venue: { solids: [box] }, courts, freeSpot: (x, z) => H.freeSpot.call({ venue: { solids: [box] } }, x, z), routeAround: H.routeAround, blockers: H.blockers };
+  const rows = squadSpots(c), sp = rows[0][1];
+  // standing a step from the spot (next to you), with the spot assigned: one leg, straight there
+  const w = Object.create(Walker.prototype);
+  w.hub = hub; w.p = { x: sp.x + 1.2, z: sp.z + 0.8 }; w.spot = { court: courts[0], row: 0, slot: 1 }; w.follow = null; w.exit = false;
+  Walker.prototype.goTo.call(w, sp.x, sp.z);
+  assert.equal(w.path.length, 1, `one leg, not ${w.path.length}`);
+  assert.ok(w.path.every(q => q.z > -19.5), 'never through the south plaza');
+  assert.ok(Math.hypot(w.path[0].x - sp.x, w.path[0].z - sp.z) < 0.01);
+  // from the far side of a live court: round its corners, never across it
+  w.p = { x: rect.x1 + 2, z: 3 }; w.spot = null;
+  Walker.prototype.goTo.call(w, rect.x0 - 2, -3);
+  let ax = w.p.x, az = w.p.z;
+  for (const q of w.path) {
+    for (let k = 0; k <= 30; k++) { const x = ax + (q.x - ax) * k / 30, z = az + (q.z - az) * k / 30; assert.ok(!(x > rect.x0 && x < rect.x1 && z > rect.z0 && z < rect.z1), `crosses the live court at ${x.toFixed(1)},${z.toFixed(1)}`); }
+    ax = q.x; az = q.z;
+  }
+  assert.ok(w.path.every(q => q.z > -19.5), 'and still not through the plaza');
+  // a court with no game on it is not in the way
+  w.p = { x: 26 + rect.x1 + 2, z: 3 };
+  Walker.prototype.goTo.call(w, 26 + rect.x0 - 2, -3);
+  assert.equal(w.path.length, 1, 'straight across an empty court');
+  // a squad mate following you (or a man walking off) may cross
+  w.follow = 0; w.p = { x: rect.x1 + 2, z: 3 };
+  Walker.prototype.goTo.call(w, rect.x0 - 2, -3);
+  assert.equal(w.path.length, 1);
+});

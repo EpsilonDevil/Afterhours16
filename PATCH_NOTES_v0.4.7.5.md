@@ -400,6 +400,10 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 - Runners free at the rim call for the ball, so you see the look when you have it.
 - In testing (AI only): about one alley-oop a game in Pro-Am with nine in ten caught, ten lobs ahead, and points within a few percent of before; the open court is rarer in AI 3v3 park games, so most of the action there is the pass ahead. With you running the floor it comes up a lot more.
 
+### Got Next, and the Lock-In line (Oct 10)
+- **Your squad lines up next to you.** Step on a Got Next spot and your squad mates walk straight to their circles beside you. They used to run off to the edge of the park and come back the long way round before filing in: every walk in the park was routed through the south plaza whenever either end was near the courts. Now everyone walks straight to where he's going, around the shops, the wheel and any court with a game on it.
+- **The stat line fits the Lock-In box.** PTS REB AST / STL BLK TO are smaller (16 px values, 9 px labels like the grade's own caption) and sit inside the grade's height instead of spilling past it.
+
 ## Progression: Icon Legend, up to 99
 
 - **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
@@ -512,7 +516,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 159 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 160 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.

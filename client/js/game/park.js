@@ -46,7 +46,7 @@ function segHitsBox(b, ax, az, bx, bz) {
   return true;
 }
 
-class Walker {
+export class Walker {
   constructor(hub, entry, x, z) {
     this.hub = hub;
     this.entry = entry;
@@ -66,12 +66,11 @@ class Walker {
   goTo(x, z) {
     // v0.4.5: never aim inside a shop, the wheel or another solid (walkers used to walk into them forever)
     const q = this.hub.freeSpot(x, z); x = q.x; z = q.z;
-    // route through the south plaza so walkers never cross active courts
-    const p = this.p, path = [];
-    const inMid = (px, pz) => pz > -19.5 && Math.abs(px) < 63;
-    if (inMid(p.x, p.z) || inMid(x, z)) { path.push({ x: p.x, z: -21.5 }); path.push({ x, z: -21.5 }); }
-    path.push({ x, z });
-    this.path = this.hub.routeAround(p.x, p.z, path.filter((w, i) => i === path.length - 1 || Math.hypot(w.x - p.x, w.z - p.z) > 0.5));
+    // v0.4.7.5 qp3: straight there, with corner waypoints around the shops, the wheel and any court with a game on
+    // it. It used to send everyone round through the south plaza whenever either end was anywhere near the courts,
+    // so a squad standing next to you on a Got Next spot ran off to the edge of the park and back before it lined up
+    const p = this.p;
+    this.path = this.hub.routeAround(p.x, p.z, [{ x, z }], this.hub.blockers(this));
     this.state = 'walk';
     this.prog = { d: Infinity, t: 0 };
   }
@@ -266,13 +265,22 @@ export class ParkHub {
     }
     return { x, z };
   }
+  // v0.4.7.5 qp3: what a walker has to go round: the solids, plus every court with a game on it (a squad mate of
+  // yours, or a man walking off after a loss, may cross; the court his own Got Next spot is on is fine to skirt)
+  blockers(w) {
+    const out = [...(this.venue.solids || [])];
+    if (w && (w.follow != null || w.leaving > 0)) return out;
+    for (const c of this.courts) if (c.session || c.mine) out.push(c.rect);
+    return out;
+  }
   // v0.4.5: add corner waypoints so a path goes around the shops and the wheel instead of into them
-  routeAround(x, z, path) {
+  // (v0.4.7.5 qp3: and around the live courts, so nobody needs the long way round through the plaza)
+  routeAround(x, z, path, solids = this.venue.solids || []) {
     const out = [];
     let ax = x, az = z;
     for (const w of path) {
-      for (let guard = 0; guard < 3; guard++) {
-        const hit = (this.venue.solids || []).map(s0 => grow(s0, 0.7)).find(b => segHitsBox(b, ax, az, w.x, w.z));
+      for (let guard = 0; guard < 6; guard++) {
+        const hit = solids.map(s0 => grow(s0, 0.7)).find(b => segHitsBox(b, ax, az, w.x, w.z));
         if (!hit) break;
         // corners we can reach in a straight line from here (not the one we're standing on), shortest detour first
         const corners = [[hit.x0 - 0.2, hit.z0 - 0.2], [hit.x1 + 0.2, hit.z0 - 0.2], [hit.x0 - 0.2, hit.z1 + 0.2], [hit.x1 + 0.2, hit.z1 + 0.2]]

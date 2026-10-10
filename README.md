@@ -46,6 +46,7 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Posterizer only fires on a dunk that gets to the rim.
 - **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
 - **Stamina:** recovery is 1.2× faster, and standing still recovers 2× on top of that. Moving without sprint recovers a very little, and contesting with the arms up (feet on the floor) is neutral for the defender.
+- **Got Next:** your squad walks straight to the circles beside you when you step on a spot (no more detour round the park), and the Lock-In stat line fits inside the grade box.
 - **The break:** the AI's first look in transition is the man running the open floor: an alley-oop if he can get up for it, a quick lob over the top, or the pass ahead. AI teammates throw **you** alley-oops too: hit the face button called over your head while the ball is in the air to finish; mistime it and the lob gets away.
 - **Screens:** a screen's quality comes from the run-in, how set and square the screener is, the size and Strength of both men and Brick Wall on either side. Good screens visibly stop the defender, a set screener holds his ground, and a Brick Wall screener's perfect screen knocks the defender to the floor.
 - **Green releases doubled and remade:** 32 sounds and 28 effects. Every sound is rebuilt to sound like its name, the Eagle Screech now a real raptor's scream, and they're made in the background so a green never waits.

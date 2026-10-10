@@ -99,11 +99,13 @@ select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 /* v0.4.7.5 quick patch: your line (PTS REB AST / STL BLK TO) attached to the right of the grade. The panel is 1.2x the
    grade's width (132px -> 158px) at the same height; the grade keeps its size and moves left to make room. */
 .hud-grade.with-stats { right: calc(22px + 158px); border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.lg-stats { position: absolute; left: 100%; top: -1px; height: calc(100% + 2px); width: 158px; display: grid; grid-template-columns: repeat(3, 1fr); align-content: center; row-gap: 7px; padding: 8px 8px; background: linear-gradient(180deg, rgba(14,17,22,.9), rgba(8,10,13,.92)); border: 1px solid var(--line); border-radius: 0 12px 12px 0; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+/* v0.4.7.5 qp3: the line sits inside the grade's height (values 16px, labels 9px like the grade's own caption), so
+   nothing spills past the box; two rows of 16 + 1 + 10 with a 5px gap and 5px padding fit the 74px grade box */
+.lg-stats { position: absolute; left: 100%; top: -1px; height: calc(100% + 2px); width: 158px; display: grid; grid-template-columns: repeat(3, 1fr); align-content: center; row-gap: 5px; padding: 5px 8px; overflow: hidden; background: linear-gradient(180deg, rgba(14,17,22,.9), rgba(8,10,13,.92)); border: 1px solid var(--line); border-radius: 0 12px 12px 0; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
 .lg-stats[hidden] { display: none; }
-.lg-st { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.lg-st b { font-family: var(--display); font-size: 21px; line-height: 1; font-weight: 600; color: #f2f4f7; font-variant-numeric: tabular-nums; }
-.lg-st span { font-size: 9px; letter-spacing: .16em; color: var(--muted); }
+.lg-st { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.lg-st b { font-family: var(--display); font-size: 16px; line-height: 1; font-weight: 600; color: #f2f4f7; font-variant-numeric: tabular-nums; }
+.lg-st span { font-size: 9px; line-height: 1.1; letter-spacing: .14em; color: var(--muted); }
 .lg-st.up b { animation: lgstat .6s ease-out; }
 @keyframes lgstat { 0% { transform: scale(1.4); color: var(--gc); } 100% { transform: scale(1); } }
 /* the shot meter legend (Tab overlay) */
