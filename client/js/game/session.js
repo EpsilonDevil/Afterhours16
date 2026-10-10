@@ -207,6 +207,12 @@ export class MatchSession {
     const offense = holder ? holder.team === me.team : g.possession === me.team;
     inp.ctx = has ? 'offense' : offense ? 'offball' : 'defense';
     const P = this.pend;
+    // v0.4.7.5 qp3: an alley-oop is in the air for you: the called face button decides it, and nothing else is read
+    // from that press (so the shoot button doesn't also jump you)
+    if (me.oopQte && !me.oopQte.result) {
+      const f = inp.facePressed();
+      if (f != null) { g.oopInput(me, f); return; }
+    }
     const mv = inp.moveVector();
     const basis = this.stickBasis();
     const wx = basis.rx * mv.x + basis.fx * mv.y, wz = basis.rz * mv.x + basis.fz * mv.y;
@@ -668,6 +674,9 @@ export class MatchSession {
         case 'oob': audio.whistle(); break;
         case 'foul': audio.whistle(); break;
         case 'feed': hud.pushFeed(e.text, 'neutral'); break;
+        case 'oopPrompt': if (mine) { audio.cheer?.(0.3); this.rig.shake?.(0.04, 0.15); this.oopShow = null; } break; // (qp3) the prompt itself is drawn in updateHUD
+        case 'oopQte': if (mine) this.oopShow = { t: 0.8, state: e.result === 'hit' ? 'hit' : 'miss', text: e.result === 'hit' ? 'OOP!' : e.result === 'wrong' ? 'WRONG BUTTON' : e.result === 'early' ? 'TOO EARLY' : 'TOO LATE' }; break;
+        case 'oopMiss': { const P2 = g.players[e.player]; if (P2?.human) hud.callout('OFF THE HANDS', 'bad'); else if (P2) hud.pushFeed(`${P2.name} can't handle the lob`, P2.team === myTeam ? 'bad' : 'good'); break; }
         case 'check': hud.pushFeed(e.team === myTeam ? 'Your ball — check it up' : 'Defense — check ball', 'neutral'); this.rig.snap(); this.checkCelebrations(); break;
         case 'inbound': this.rig.snap(); this.checkCelebrations(); break;
         case 'cleared': if (e.team === myTeam) hud.pushFeed('Ball cleared', 'neutral'); break;
@@ -806,6 +815,15 @@ export class MatchSession {
         hud.setMeter({ x: pos.x, y: pos.y, ...this.meterFreeze });
       } else hud.setMeter(null);
       hud.setStamina(pos.x, pos.y + 70, me.stamina, me.sprinting || me.stamina < 0.5);
+      // v0.4.7.5 qp3: the alley-oop button prompt while the lob is in the air, then the result for a moment
+      const q = me.oopQte;
+      if (q && !q.result) {
+        const t = g.time - q.t0, open = t >= q.open;
+        hud.setOop({ x: pos.x, y: pos.y, html: this.input.faceGlyph(q.btn), frac: Math.max(0, Math.min(1, (q.close - t) / q.close)), state: open ? 'open' : 'wait' });
+      } else if (this.oopShow && this.oopShow.t > 0) {
+        this.oopShow.t -= dt;
+        hud.setOop({ x: pos.x, y: pos.y, html: this.oopShow.text, frac: 0, state: this.oopShow.state });
+      } else hud.setOop(null);
       const to = me.takeover, TO = TAKEOVERS[to.kind];
       hud.setStatus(this.inIntro ? null : { hot: !!me.hot, cold: !!me.cold, takeover: TO && (to.active || to.prog > 0) ? { label: TO.label, active: to.active, left: Math.ceil(to.left), prog: to.prog, need: TAKEOVER_NEED } : null });
     }

@@ -394,6 +394,12 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 - **The AI squares up** to the defender it's screening, so its screens hit harder too.
 - In testing: about 23 real screens per park game, 10 of them stops and about one Brick Wall knockdown every other game; about 36 real screens, 28 stops and 1–2 knockdowns per Pro-Am game.
 
+### The break, and your alley-oops (Oct 10)
+- **The AI sees the man running the open floor.** With the ball in transition (and for a couple of seconds after the break is on), the handler's first look is a teammate well ahead of him, running at the rim, with nobody between him and the basket and nobody level with him who could recover. He gets it before anything else happens: an **alley-oop** if he can get up to the rim in time, a quicker, flatter **lob over the top** when a body is in the chest lane and he's clear, or the fast pass ahead otherwise. Smart handlers take that look almost every time.
+- **You get the lob too.** Beat your man down the floor (or get free at the rim in a set) and an AI teammate will throw you the alley-oop. When he does, **one of the four face buttons is called at random**, shown over your player's head: A, B, X or Y on an Xbox pad (✕ ○ □ △ on PlayStation, your own symbols on a Switch pad), or the keys they stand for (pass, bounce pass, shoot, lob) on a keyboard. **Hit that button while the ball is in the air** — the ring turns green when the window opens, about a quarter of the way to your takeoff — and you go up and finish it. **Miss it and the alley-oop fails:** the wrong button, pressing too early or not pressing at all is a mistimed jump — a beat late and short — and the ball comes off your hands or sails over your head as a loose ball.
+- Runners free at the rim call for the ball, so you see the look when you have it.
+- In testing (AI only): about one alley-oop a game in Pro-Am with nine in ten caught, ten lobs ahead, and points within a few percent of before; the open court is rarer in AI 3v3 park games, so most of the action there is the pass ahead. With you running the floor it comes up a lot more.
+
 ## Progression: Icon Legend, up to 99
 
 - **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
@@ -506,7 +512,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 154 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 159 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.
@@ -516,5 +522,6 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - "Double the green animations and sounds" means twice as many of each, counting the King Tut Cup's (16 → 32 sounds, 14 → 28 effects). The Cup prizes themselves weren't doubled.
   - "Walking without sprint" means any movement without the sprint button. Defensive slides still cost a little; since stamina part 3, hands-up defense on the floor is neutral.
   - Stamina part 3: "very minimally positive" for walking and jogging is a tenth of the old resting rate (so about a thirtieth of the new one). Hands up while *sliding* still costs the slide; only hands up with the feet planted is neutral.
+  - The alley-oop press: the four face buttons are read raw (whatever your context) only while a lob to you is in the air, and that press is used for nothing else, so the shoot button can't also jump you. The window opens a quarter of the way to the takeoff and closes 0.05 s after it. A mistimed one is 0.22 s late at 40% of the height.
   - Screens: "perfect" means the screen's quality clears a bar that drops with the Brick Wall tier and rises with the defender's own tier, and the defender came in at 1.5 m/s or more. A screen is only a screen when it was called or set square to a defender going for the ball; the rest is incidental contact.
   - The faster AI reactions apply to every AI player: teammates, opponents and your own player on auto-play.

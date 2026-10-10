@@ -13,6 +13,11 @@ import { bk } from './badges.js';
 import { MOVE_IDS, MOVES as MOVE_DEF, MOVE_STYLE, COMBOS } from './moves.js';
 const MOVE_FAM = Object.fromEntries(Object.entries(MOVE_DEF).map(([k, v]) => [k, v.fam]));
 const hyp = Math.hypot;
+// v0.4.7.5 qp3: runners in the open court (AI.runnerAhead / passToRunner): how far from the rim a runner still
+// counts, how open he has to be, how wide the lane in front of him has to be clear, how fast he must be running at
+// the rim (m/s), how close for an alley-oop and with what share of the sprint budget, the chance the handler takes
+// the look each read (plus IQ), and the half-court alley-oop chance (was 0.25, AI receivers only)
+export const RUNNER = { maxRim: 9.5, open: 2.0, lane: 2.0, recover: 2.5, run: 1.5, oopRim: 6.5, reachK: 0.7, lobRisk: 0.35, lobRiskMax: 0.9, lobOpen: 4.0, chance0: 0.7, chanceIQ: 0.3, setOop: 0.32 };
 
 const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
 export const AI_SKILL_K = 1.1;
@@ -294,6 +299,64 @@ export class AI {
     return close;
   }
 
+  // v0.4.7.5 qp3: a teammate running the open floor ahead of the handler: well ahead, headed for the rim (or already
+  // near it), nobody on him and nobody between him and the rim. Returns {r, canOop} or null. The human counts too:
+  // an alley to him asks for the button press (game.oopQte).
+  runnerAhead(p) {
+    const g = this.g, side = g.sideFor(p.team), rim = rimOf(side);
+    let best = null, bv = -Infinity;
+    for (const m of g.mates(p)) {
+      if (m.airborne || (m.action && m.action.type !== 'catch')) continue;
+      const ahead = (m.z - p.z) * side;
+      if (ahead < 2.5) continue;
+      const dr = hyp(m.x - rim.x, m.z - rim.z);
+      if (dr > RUNNER.maxRim) continue;
+      const toward = ((rim.x - m.x) * m.vx + (rim.z - m.z) * m.vz) / (dr || 1);
+      if (toward < (dr > 3 ? RUNNER.run : RUNNER.run * 0.5)) continue; // he has to be running at it
+      const open = this.openness(m);
+      if (open < RUNNER.open) continue;
+      const lane = g.opponents(p).some(q => {
+        const t = ((q.x - m.x) * (rim.x - m.x) + (q.z - m.z) * (rim.z - m.z)) / (dr * dr || 1);
+        if (t < -0.1 || t > 1) return false;
+        return hyp(q.x - (m.x + (rim.x - m.x) * t), q.z - (m.z + (rim.z - m.z) * t)) < RUNNER.lane;
+      });
+      if (lane) continue;
+      // open court means nobody back who can recover: any defender already level with him or deeper has to be
+      // well away from him
+      if (g.opponents(p).some(q => hyp(q.x - rim.x, q.z - rim.z) < dr + 1.5 && q.dist(m) < RUNNER.recover)) continue;
+      const v = ahead + open * 0.5 - dr * 0.3 + (m.human ? 0.5 : 0);
+      if (v > bv) { bv = v; best = m; }
+    }
+    if (!best) return null;
+    const finisher = best.human || (best.ratings.driving_dunk ?? 0) > 55 || best.phys.reach + best.phys.vertical > 3.25;
+    const dr = hyp(best.x - rim.x, best.z - rim.z);
+    // an alley-oop only when he can really get there: inside oopRim of the rim and with time to spare (0.7 of
+    // the full-sprint budget; game.oopReachable), so the lob isn't at the rim before he is
+    return { r: best, canOop: finisher && dr <= RUNNER.oopRim && g.oopReachable(p, best, RUNNER.reachK), open: this.openness(best) };
+  }
+  // the lob-first pass to a runner: alley if he can get up for it, a lob over the defense when the chest lane is
+  // crowded, a chest pass otherwise. Returns true when a pass was called
+  passToRunner(p, it, IQ, lobOk = true) {
+    const run = this.runnerAhead(p);
+    if (!run) return false;
+    const g = this.g;
+    if (!run.canOop && !lobOk) return false; // (no numbers: only the alley-oop to a man who's clear is worth it)
+    if (g.rng.next() > RUNNER.chance0 + RUNNER.chanceIQ * IQ) return false;
+    // over the top only when a body is in the chest lane and the runner is clear enough to come down with it;
+    // otherwise the fast pass ahead
+    let type = 'alley';
+    if (!run.canOop) {
+      const risk = this.passRisk(p, run.r);
+      if (risk < RUNNER.lobRisk) type = 'chest';
+      else if (risk < RUNNER.lobRiskMax && run.open >= RUNNER.lobOpen) type = 'lob';
+      else return false; // (no clean way to get it to him)
+    }
+    it.pass = { target: run.r.id, type, quick: type === 'lob' };
+    const k = type === 'alley' ? 'breakOop' : type === 'lob' ? 'breakLob' : 'breakAhead';
+    this.stats[k] = (this.stats[k] || 0) + 1;
+    return true;
+  }
+
   bestPassTarget(p, dir) {
     const g = this.g;
     let best = null, bv = -Infinity;
@@ -418,7 +481,10 @@ export class AI {
       if (brk) o.fastBreak = g.time;
       o.next -= dt;
       if (o.next <= 0) {
-        o.next = 0.2;
+        o.next = 0.12;
+        // v0.4.7.5 qp3: first look is the man running the open floor: lob it over the top (an alley-oop if he can
+        // get up for it). Only then the man open up the floor, then the big's outlet
+        if (this.passToRunner(p, it, IQb)) return;
         const r = this.bestPassTarget(p);
         if (r && (r.z * side > p.z * side + 4) && this.openness(r) > 2.6 && this.passRisk(p, r) < 0.4 && g.rng.next() < 0.5 + 0.35 * IQb) it.pass = { target: r.id, type: 'chest' };
         else if ((p.position === 'C' || p.position === 'PF') && o.ballT < 1.5) {
@@ -436,6 +502,11 @@ export class AI {
     }
     if (p.action && p.action.type !== 'catch') { if (p.action.type === 'move' && !o.inMove) { o.inMove = true; o.moveGap = defDist; } return; }
     const IQ = this.iq(p);
+    // v0.4.7.5 qp3: still in transition (the break was on, or the ball has just come over): a teammate running
+    // free at the rim gets the lob before anything else
+    if (!g.half && g.time - (o.fastBreak || -9) < 2.5 && g.rng.next() < dt * 10) {
+      if (this.passToRunner(p, it, IQ)) return;
+    }
     // v0.4.7.5 quick patch: quicker reads. Off the catch he reads the floor right away (not after a beat of holding
     // it), and when his own move has just made space (his man stumbling, planted, or left a step behind) he uses
     // it now: the shot, the drive or the pass
@@ -648,7 +719,8 @@ export class AI {
     if (pick === 'post') { o.plan = 'post'; o.postT = 2.6; o.postSide = p.x >= 0 ? 1 : -1; this.stats.posts = (this.stats.posts || 0) + 1; return; }
     if (pick === 'pass' && passTarget) {
       const lob = passTarget.position === 'C' || passTarget.position === 'PF';
-      const oop = hyp(passTarget.x - rim.x, passTarget.z - rim.z) < 5.5 && g.oopReachable(p, passTarget) && this.openness(passTarget) > 1.6 && (passTarget.ratings.driving_dunk ?? 0) > 70 && passTarget.phys.reach + passTarget.phys.vertical > 3.3 && g.rng.next() < 0.25 && !passTarget.human;
+      // (v0.4.7.5 qp3: the human can be thrown an alley too; he has to hit the button in the air, game.oopQte)
+      const oop = hyp(passTarget.x - rim.x, passTarget.z - rim.z) < 5.5 && g.oopReachable(p, passTarget) && this.openness(passTarget) > 1.6 && (passTarget.human || ((passTarget.ratings.driving_dunk ?? 0) > 70 && passTarget.phys.reach + passTarget.phys.vertical > 3.3)) && g.rng.next() < RUNNER.setOop;
       const bounce = !oop && this.passRisk(p, passTarget) > 0.25 && hyp(passTarget.x - p.x, passTarget.z - p.z) < 7;
       it.pass = { target: passTarget.id, type: oop ? 'alley' : bounce ? 'bounce' : 'chest' };
       return;
@@ -719,6 +791,11 @@ export class AI {
     }
     // oop runner keeps going
     if (p.action?.type === 'oop') return;
+    // v0.4.7.5 qp3: a man running free at the rim on the break asks for the ball (the human handler sees the call)
+    if (!g.half && h && h !== p && h.human) {
+      const dr = hyp(rim.x - p.x, rim.z - p.z), ahead = (p.z - h.z) * side;
+      if (ahead > 2.5 && dr < RUNNER.maxRim && this.openness(p) > RUNNER.open) it.call = true;
+    }
     // v0.4.7.5 anti cherry-pick: someone on the other team is hanging back by his basket instead of defending. A
     // smart team keeps a safety home: between him and the rim, shaded toward the ball to pick off the outlet
     const lurk = this.lurker(p.team);

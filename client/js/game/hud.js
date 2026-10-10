@@ -42,6 +42,7 @@ export class HUD {
       <div class="hud-status" id="hud-status" hidden></div>
       <div class="hud-cam" id="hud-cam"></div>
       <div class="hud-hint" id="hud-hint"></div>
+      <div class="hud-oop" id="hud-oop"><div class="ho-ring"><i></i></div><div class="ho-btn"></div><div class="ho-k">ALLEY-OOP</div></div>
       <div class="hud-badges" id="hud-badges"></div>
       <div class="hud-intro" id="hud-intro" hidden></div>
       <div class="hud-grade" id="hud-grade" hidden><div class="lg-k">LOCKED-IN</div><div class="lg-letter"></div><div class="lg-bar"><i></i></div><div class="lg-pop"></div><div class="lg-stats" hidden>${LINE.map(([k, l]) => `<div class="lg-st" data-k="${k}"><b></b><span>${l}</span></div>`).join('')}</div></div>`;
@@ -61,6 +62,7 @@ export class HUD {
     this.statusBox = this.el('hud-status'); this.statusKey = '';
     this.camLabel = this.el('hud-cam');
     this.hint = this.el('hud-hint');
+    this.oop = this.el('hud-oop'); this.oopBtn = this.oop.querySelector('.ho-btn'); this.oopRing = this.oop.querySelector('.ho-ring i'); this.oopKey = '';
     this.grade = this.el('hud-grade');
     this.badgeBox = this.el('hud-badges');
     this.introBox = this.el('hud-intro');
@@ -201,6 +203,16 @@ export class HUD {
 
   showCam(label) { this.camLabel.textContent = label; this.camLabel.classList.add('on'); this.camT = 1.4; }
   setHint(text) { this.hint.innerHTML = text || ''; this.hint.hidden = !text; }
+  // v0.4.7.5 qp3: the alley-oop press. o: {x, y, html (the button glyph, or the result text), frac (time left,
+  // 1 → 0), state: wait | open | hit | miss}; null hides it
+  setOop(o) {
+    if (!o) { if (this.oop.classList.contains('on')) { this.oop.classList.remove('on'); this.oop.dataset.state = ''; this.oopKey = ''; } return; }
+    this.oop.classList.add('on');
+    this.oop.style.transform = `translate(${o.x - 44}px, ${o.y - 150}px)`;
+    this.oop.dataset.state = o.state;
+    this.oopRing.style.setProperty('--f', o.frac);
+    if (o.html !== this.oopKey) { this.oopKey = o.html; this.oopBtn.innerHTML = o.html; }
+  }
 
   // tags: [{id, x, y, text, cls, visible}]
   setTags(list) {
@@ -248,5 +260,5 @@ export class HUD {
     if (this.badgeT > 0) this.badgeT -= dt;
     if (this.badgeT <= 0 && this.badgeQ.length) this.showNextBadge();
   }
-  clear() { this.setStatus(null); this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
+  clear() { this.setOop(null); this.setStatus(null); this.setIntro(null); this.tags.innerHTML = ''; this.tagPool.clear(); this.feed.innerHTML = ''; this.setMeter(null); this.setHint(''); this.setGrade(null); this.badgeQ = []; this.badgeT = 0; if (this.badgeBox) this.badgeBox.innerHTML = ''; }
 }

@@ -272,6 +272,23 @@ export class Input {
     if (g.buttons[MOD]) { if (!g.prev[MOD]) { g.lbDownT = 0; g.lbUsed = !!g.buttons[PAD.RB]; } g.lbDownT += dt; if (faces.some(i => g.buttons[i] && !g.prev[i])) g.lbUsed = true; if (g.buttons[PAD.RB]) g.lbUsed = true; }
     else if (g.prev[MOD]) { if (!g.lbUsed && g.lbDownT < 0.35) g.lbTap = true; }
   }
+  // v0.4.7.5 qp3: which of the four face buttons (pass / bounce / shoot / lob, or their keys) went down this frame,
+  // whatever the context: the alley-oop press (game.oopInput). 0..3, or null
+  facePressed() {
+    if (this.capturing) return null;
+    const faces = ['pass', 'bounce', 'shoot', 'lob'];
+    for (let i = 0; i < 4; i++) {
+      const a = faces[i];
+      if ((this.keymap[a] || []).some(k => this.pressed.has(k))) return i;
+      if (this.gp.connected && this.gpEdge(this.pb(a))) return i;
+    }
+    return null;
+  }
+  faceGlyph(i) {
+    const a = ['pass', 'bounce', 'shoot', 'lob'][i];
+    if (this.usingPad) return padGlyph(this.gp.family, this.padLabel(a));
+    return `<kbd>${String(this.keyLabel(a)).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)}</kbd>`;
+  }
   gpBtn(i) { return !!this.gp.buttons[i]; }
   gpEdge(i) { return !!this.gp.buttons[i] && !this.gp.prev[i]; }
   gpUp(i) { return !this.gp.buttons[i] && !!this.gp.prev[i]; }

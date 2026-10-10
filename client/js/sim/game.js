@@ -69,6 +69,12 @@ export const SCREEN = {
   base: 0.28, spd: 0.25, set: 0.12, face: 0.12, called: 0.06, size: 0.18, str: 0.12, bw: 0.06, dbw: 0.06,
   stop0: 0.35, slow0: 0.2, slow1: 0.7, stunQ: 0.5, stun0: 0.3, stun1: 0.35, fallQ0: 0.95, fallQk: 0.06, fallQd: 0.05, fallV: 1.5, fall0: 1.0, fallk: 0.2,
 };
+// v0.4.7.5 qp3: the alley-oop button press for your player. When a teammate lobs you an alley-oop, one of the four
+// face buttons (pass / bounce / shoot / lob: A B X Y on an Xbox pad, their equivalents elsewhere, your keyboard keys)
+// is called at random. Hit that button while the ball is in the air, from `open` of the way to the takeoff up to
+// `grace` seconds after it, and you go up and finish. The wrong button, too early or no press is a mistimed jump
+// (`lateBy` seconds late, `hopK` of the height): the ball comes off your hands or sails over you (loose ball).
+export const OOP_QTE = { open: 0.25, grace: 0.05, hopK: 0.4, lateBy: 0.22 };
 export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
 export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375) * 1.025; // (v0.4.5 quick patch: −3.75%; v0.4.7.5 quick patch: +2.5%)
 // v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
@@ -978,7 +984,7 @@ export class Game {
     p.spend(COST.pass); this.endMoveChain(p);
     // v0.4.1: better passers get the ball out quicker (release up to ~25% faster)
     const quick = 1.1 - 0.32 * n(p.ratings.pass_accuracy);
-    const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id, icon: p.icon === 'oprah' ? 'oprah' : null });
+    const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id, icon: p.icon === 'oprah' ? 'oprah' : null, quick: !!spec.quick });
     // turn to the receiver: part of it at once, the rest through the throw (the ball isn't let go until he's
     // facing within 60 degrees of him, so it always leaves toward the man it's meant for)
     const face = Math.atan2(target.x - p.x, target.z - p.z);
@@ -1013,7 +1019,7 @@ export class Game {
     return { T, spot: { x: T.x + ax / al * td, z: T.z + az / al * td } };
   }
   // can he run to the takeoff spot before he has to leave the floor? (lob flight from the passer, minus the rise)
-  oopReachable(passer, target) {
+  oopReachable(passer, target, k = 0.85) {
     if (target.airborne || target.action?.type === 'shoot') return false;
     const { T, spot } = this.oopPoints(target);
     const from = { x: passer.x, y: passer.phys.H * 0.9, z: passer.z };
@@ -1021,7 +1027,7 @@ export class Game {
     const vh = Math.hypot(L.vx, L.vz) || 1, flight = Math.hypot(T.x - from.x, T.z - from.z) / vh + PASS.alley.rel;
     const h = Math.min(target.phys.vertical * 1.05, Math.max(0.3, T.y + 0.15 - target.phys.reach)), tUp = Math.sqrt(2 * h / GRAVITY);
     const run = Math.hypot(spot.x - target.x, spot.z - target.z);
-    return target.phys.reach + target.phys.vertical * 1.05 >= T.y - 0.05 && run <= target.phys.sprint * Math.max(0, flight - tUp) * 0.85 + 0.5;
+    return target.phys.reach + target.phys.vertical * 1.05 >= T.y - 0.05 && run <= target.phys.sprint * Math.max(0, flight - tUp) * k + 0.5;
   }
 
   releasePass(p, a) {
@@ -1043,9 +1049,10 @@ export class Game {
       vx = L.vx; vy = L.vy; vz = L.vz;
       a.oopTarget = T;
     } else if (type === 'lob') {
-      const tt = 0.9;
-      T = { x: target.x + target.vx * tt, y: 2.1, z: target.z + target.vz * tt };
-      const L = S.solveLaunch(from, T, 40);
+      // (qp3: the lob ahead to a runner on the break is flatter and quicker, over the defense but not floated)
+      const tt = a.quick ? 0.75 : 0.9;
+      T = { x: target.x + target.vx * tt, y: a.quick ? 2.0 : 2.1, z: target.z + target.vz * tt };
+      const L = S.solveLaunch(from, T, a.quick ? 30 : 40);
       vx = L.vx; vy = L.vy; vz = L.vz;
     } else {
       // v0.4.1: pass speed scales with Pass Accuracy (chest ~12.5-17 m/s), leading the receiver's run
@@ -1074,6 +1081,11 @@ export class Game {
     this.lastPass = { from: p.id, to: target.id, time: this.time };
     p.dribble.used = false;
     if (type === 'alley') this.ai.startOop(target, a.oopTarget, b);
+    if (type === 'alley' && target.human && !this.assist && target.action?.type === 'oop') {
+      const oa = target.action;
+      oa.qte = target.oopQte = { btn: this.rng.int(0, 3), t0: this.time, open: oa.jumpAt * OOP_QTE.open, close: oa.jumpAt + OOP_QTE.grace, result: null, at: null };
+      this.emit({ type: 'oopPrompt', player: target.id, btn: oa.qte.btn, open: this.time + oa.qte.open, close: this.time + oa.qte.close });
+    }
     this.emit({ type: 'pass', player: p.id, to: target.id, ptype: type });
     if (this.phase === 'inbound') { this.phase = 'live'; this.emit({ type: 'live' }); }
   }
@@ -1389,12 +1401,19 @@ export class Game {
       case 'oop': {
         // v0.4.5: a real jump from where he is: he carries his run-up into it, but the drift toward the ball
         // through the rise is capped (about 1.8 m), so nobody glides in from the perimeter
+        // v0.4.7.5 qp3: your own alley-oop needs the button (OOP_QTE). No press by the takeoff, the wrong one or
+        // too early, and the jump is mistimed: a beat late and a short hop that doesn't get up to the ball
+        if (!a.jumped && !a.failed && a.qte && a.qte.result !== 'hit' && a.t >= a.jumpAt) {
+          if (!a.qte.result) { a.qte.result = 'late'; a.qte.at = a.t; this.emit({ type: 'oopQte', player: p.id, result: 'late', t: +a.t.toFixed(2) }); }
+          a.failed = true; a.jumpAt += OOP_QTE.lateBy; a.jumpH *= OOP_QTE.hopK; a.dur += OOP_QTE.lateBy;
+        }
         if (!a.jumped && a.t >= a.jumpAt) {
           a.jumped = true; p.jump(a.jumpH);
           const dx = a.T.x - p.x, dz = a.T.z - p.z, dl = Math.hypot(dx, dz) || 1;
           const go = Math.min(OOP_DRIFT, Math.max(0, dl - 0.35)), v = Math.min(go / a.tUp, 4.5);
           p.vx = dx / dl * v; p.vz = dz / dl * v;
         }
+        if (a.t >= a.dur && !p.airborne && a.qte) p.oopQte = null;
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
@@ -2270,6 +2289,23 @@ export class Game {
         if (p.action?.type === 'stumble') continue;
         const hand = { x: p.x + Math.sin(p.facing) * 0.25, z: p.z + Math.cos(p.facing) * 0.25 };
         const isT = p.id === info.to;
+        if (isT && info.type === 'alley' && p.action?.type === 'oop' && p.action.failed) {
+          // (qp3) mistimed: within reach of his stretched fingers it comes off his hands and drops, a loose ball for
+          // anyone; higher than that it sails over his head (and lands as a loose ball too)
+          if (!info.oopFail && Math.hypot(b.x - p.x, b.z - p.z) < 1.0 && b.y <= p.phys.reach + p.y + 0.5) {
+            const sp = Math.hypot(b.vx, b.vz) || 1;
+            b.vx = b.vx / sp * 1.2 + this.rng.range(-0.8, 0.8); b.vz = b.vz / sp * 1.2 + this.rng.range(-0.8, 0.8); b.vy = -1.2;
+            b.kind = 'loose'; info.oopFail = true;
+            p.oopQte = null;
+            this.emit({ type: 'oopMiss', player: p.id, from: info.from, why: p.action.qte?.result || 'late', over: false });
+            return;
+          }
+          if (!info.oopFail && Math.hypot(b.x - p.action.T.x, b.z - p.action.T.z) < 0.6 && b.y <= p.action.T.y + 0.3) {
+            info.oopFail = true; p.oopQte = null;
+            this.emit({ type: 'oopMiss', player: p.id, from: info.from, why: p.action.qte?.result || 'late', over: true });
+          }
+          continue;
+        }
         // teammates leave a live pass alone for its receiver (they used to pick off each other's passes)
         if (!isT && p.team === info.team && b.flightTime < (info.eta || 0.5) + 0.3 && b.floorBounces <= (info.type === 'bounce' ? 1 : 0)) continue;
         // the intended receiver turns to the ball, so his hands can be on either side of his body
@@ -2305,6 +2341,7 @@ export class Game {
       }
       // pass sailed out / hit floor and stopped
       if (b.floorBounces > 1 || b.flightTime > 3) { b.kind = 'loose'; }
+      if (info.oopFail && (b.floorBounces > 0 || b.touchedRim || b.touchedBoard)) { b.kind = 'loose'; } // (qp3: a lob that got away)
     }
     // rebounds & loose ball recovery
     if (reboundable || kind === 'loose' || kind === 'tip') {
@@ -2385,6 +2422,7 @@ export class Game {
   catchOop(p) {
     const b = this.ball;
     const rim = this.rimFor(p.team);
+    p.oopQte = null; // (qp3: the press is done with)
     b.mode = 'held'; b.holder = p.id; b.kind = null;
     b.lastTouch = p.id; b.lastTeam = p.team;
     const canDunk = (p.raw.driving_dunk ?? 50) >= 58 && p.phys.reach + p.y > COURT.rimY + 0.05;
@@ -2402,6 +2440,17 @@ export class Game {
       a.oop = true;
       this.emit({ type: 'oopCatch', player: p.id });
     }
+  }
+
+  // v0.4.7.5 qp3: the human's alley-oop press. btn: 0..3 (pass / bounce / shoot / lob). Resolved once per lob.
+  oopInput(p, btn) {
+    const q = p.oopQte;
+    if (!q || q.result) return null;
+    const t = this.time - q.t0;
+    q.at = t;
+    q.result = btn !== q.btn ? 'wrong' : t < q.open ? 'early' : t > q.close ? 'late' : 'hit';
+    this.emit({ type: 'oopQte', player: p.id, result: q.result, t: +t.toFixed(2) });
+    return q.result;
   }
 
   // ---------- collisions ----------

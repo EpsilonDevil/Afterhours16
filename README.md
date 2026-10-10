@@ -46,6 +46,7 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Posterizer only fires on a dunk that gets to the rim.
 - **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
 - **Stamina:** recovery is 1.2× faster, and standing still recovers 2× on top of that. Moving without sprint recovers a very little, and contesting with the arms up (feet on the floor) is neutral for the defender.
+- **The break:** the AI's first look in transition is the man running the open floor: an alley-oop if he can get up for it, a quick lob over the top, or the pass ahead. AI teammates throw **you** alley-oops too: hit the face button called over your head while the ball is in the air to finish; mistime it and the lob gets away.
 - **Screens:** a screen's quality comes from the run-in, how set and square the screener is, the size and Strength of both men and Brick Wall on either side. Good screens visibly stop the defender, a set screener holds his ground, and a Brick Wall screener's perfect screen knocks the defender to the floor.
 - **Green releases doubled and remade:** 32 sounds and 28 effects. Every sound is rebuilt to sound like its name, the Eagle Screech now a real raptor's scream, and they're made in the background so a green never waits.
 - **Store, menus and HUD:**
@@ -174,6 +175,7 @@ Controllers are first-class in v0.4. Any controller Chrome/Edge sees with the st
 | Attack the rim: your better finish, dunk or layup (a layup is timed: hold, let go at the top) | Hold Z | Right stick down while sprinting, held |
 | Pump fake | Tap Space | Tap X |
 | Pass (aims with your stick) / bounce / lob / alley-oop | E / R / T / Y | A / B / Y / RB+Y |
+| Finish an alley-oop thrown to you: press the face button shown over your head while the ball is in the air (random each time; the wrong button or mistiming fails it) | E / R / Space / T, as called | A / B / X / Y, as called |
 | Icon pass to a teammate (the input shows over each teammate's head) | 1–4 | LB + face button |
 | Crossover · in-and-out / hesitation · step-back | ← → / ↑ ↓ | Flick right stick left/right / up/down |
 | Spin / behind-the-back | Q / F | Rotate right stick / flick down while moving |
@@ -249,6 +251,7 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
   - **Over 95:** extra weight on top.
   - **99:** a different class. The green window is about 1.65× a 95's. An open 99 layup or free throw is about 97%, and an open 99 three that isn't badly mistimed is about 90%. Only the defense (whose contest scales with the defender's own ratings) or fatigue brings it down.
   - **Contested shots:** every contested state shrinks the green window 3.75% more than before (open shots are unchanged).
+- **The open court (v0.4.7.5 quick patch 3):** in transition the AI handler reads the man running free ahead of him first: a teammate well ahead, running at the rim, nobody between him and the basket and nobody level with him who could recover. That man gets an alley-oop if he can get to the rim in time, a quick lob over a crowded lane, or the pass ahead. You can be that man: an AI teammate lobs it, a random face button is called over your head, and pressing it while the ball is in the air finishes the alley-oop. The wrong button, too early or no press is a mistimed jump and the ball gets away.
 - **Screens (v0.4.7.5 quick patch 3):** a defender who runs into a set screen loses speed in proportion to the screen's quality: how hard he ran in, whether the screener was planted and chest-on, a called screen, the weight, strength and height of both men, their Strength ratings and Brick Wall on either side. A solid screen stops him dead for a moment; a Brick Wall screener's perfect screen puts him on the floor until he gets back up. Set screeners hold their ground, and brushing past a standing player isn't a screen.
 - **Brick Wall (v0.4.4)** only fires where it should:
   - **Bumps:** on defense only.
