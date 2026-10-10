@@ -45,7 +45,7 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Celebrations work in games and none clip.
   - Posterizer only fires on a dunk that gets to the rim.
 - **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
-- **Stamina:** moving without sprint is neutral, and recovery is 1.2× faster.
+- **Stamina:** recovery is 1.2× faster, and standing still recovers 2× on top of that. Moving without sprint recovers a very little, and contesting with the arms up (feet on the floor) is neutral for the defender.
 - **Green releases doubled and remade:** 32 sounds and 28 effects. Every sound is rebuilt to sound like its name, the Eagle Screech now a real raptor's scream, and they're made in the background so a green never waits.
 - **Store, menus and HUD:**
   - Twice the apparel, Daily Spin exclusives included.

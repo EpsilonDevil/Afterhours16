@@ -379,6 +379,12 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Standing still and drifting recover.
 - **Recovery is 1.2× faster** for everyone. That's on top of the Lock-In grade, hot-streak and good-play bonuses.
 
+### Stamina, part 3 (Oct 10)
+- **Standing still recovers twice as fast** as it did in the quick patch (and that was already 1.2× the original). Catch your breath at the top of the key and it comes back quickly: a few seconds from empty to full for a high-Stamina build, about ten for a low one.
+- **Walking and jogging without the sprint button now recover a very little** instead of being neutral: about a thirtieth of the standing rate, so it takes a couple of minutes of jogging to refill from empty. Sprinting still drains as before.
+- **Contesting with your arms up, feet on the floor, is neutral for the defender.** It used to drain like a defensive slide. Sliding in the stance still costs a little (with or without the hands up), and leaving your feet to contest still costs a jump.
+- The AI lives by the same rules.
+
 ## Progression: Icon Legend, up to 99
 
 - **Once a build has its Icon badge, every 2 Pro Run games you play to the end raise its overall by 1, up to 99.**
@@ -491,7 +497,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - Every new effect was captured frozen in time over a player in the studio.
 
 ## Under the hood (quick patch)
-- **Tests:** 148 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
+- **Tests:** 149 game tests and 40 service tests pass. The new ones cover non-shooter windows, smothered shots, the record scratch, repeat moves, diagonal moves, the straps being drawn, the apparel counts, dunk variety, the windmill and Eastbay paths, celebrations (input and clipping), reach-in contact, the AI staying in bounds, the D-pad fallback, Icon Legend, the green release counts and what each sound is made of, the AI's reaction times, stamina and the line beside the grade.
 - **Judgment calls I made without asking:**
   - "Shooters" are Sharpshooters and Stretch Bigs. The 10% smaller window for non-shooters applies to jump shots only, not layups or free throws.
   - "Career mode games" for Icon Legend are Pro Run games, the same as the 80 → 90 climb.
@@ -499,5 +505,6 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
   - The record scratch also plays for the AI's green sounds near you.
   - "Double apparel" covers clothing, shoes and accessories (everything you wear); King Tut Cup prizes weren't doubled.
   - "Double the green animations and sounds" means twice as many of each, counting the King Tut Cup's (16 → 32 sounds, 14 → 28 effects). The Cup prizes themselves weren't doubled.
-  - "Walking without sprint" means any movement without the sprint button. Defensive slides and hands-up defense still cost a little.
+  - "Walking without sprint" means any movement without the sprint button. Defensive slides still cost a little; since stamina part 3, hands-up defense on the floor is neutral.
+  - Stamina part 3: "very minimally positive" for walking and jogging is a tenth of the old resting rate (so about a thirtieth of the new one). Hands up while *sliding* still costs the slide; only hands up with the feet planted is neutral.
   - The faster AI reactions apply to every AI player: teammates, opponents and your own player on auto-play.

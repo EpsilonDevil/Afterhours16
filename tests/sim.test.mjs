@@ -360,13 +360,16 @@ test('v0.4.5 stamina: repeated moves and repeated mistakes drain faster, good pl
   p.hot = 1; assert.equal(p.recK, 2.25);
   p.hot = 0; p.stam.grade = 2; p.cold = true;
   assert.equal(+p.drainK.toFixed(4), 1.875);
-  // moving without sprint is neutral (v0.4.7.5 quick patch; it used to cost a little); standing still recovers
+  // moving without sprint recovers a very little (v0.4.7.5 quick patch 3; it was neutral, and before that it cost a
+  // little); standing still recovers much faster
   const q = g.players[1]; q.stam.grade = null;
   q.intent = { ...q.intent, mx: 1, mz: 0, sprint: false }; for (let i = 0; i < 60; i++) q.move(1 / 60, false, 0); // (up to speed)
   q.stamina = 0.8; for (let i = 0; i < 120; i++) q.move(1 / 60, false, 0);
-  assert.ok(Math.abs(q.stamina - 0.8) < 0.004, `moving without sprint holds steady (${q.stamina})`);
-  const s1 = q.stamina; q.intent = { ...q.intent, mx: 0, mz: 0 }; for (let i = 0; i < 240; i++) q.move(1 / 60, false, 0);
-  assert.ok(q.stamina > s1, 'standing recovers');
+  assert.ok(q.stamina > 0.8 && q.stamina - 0.8 < 0.03, `moving without sprint recovers a very little (${q.stamina})`);
+  const jog = q.stamina - 0.8;
+  q.intent = { ...q.intent, mx: 0, mz: 0 }; for (let i = 0; i < 60; i++) q.move(1 / 60, false, 0); // (stop)
+  q.stamina = 0.3; for (let i = 0; i < 120; i++) q.move(1 / 60, false, 0); // (well under the cap)
+  assert.ok((q.stamina - 0.3) > jog * 10, `standing recovers far faster (${(q.stamina - 0.3).toFixed(3)} vs ${jog.toFixed(3)} jogging, both over 2 s)`);
 });
 
 test('v0.4.5 hot and cold, and position takeovers', () => {
