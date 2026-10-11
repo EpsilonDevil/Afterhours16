@@ -59,7 +59,45 @@ export const BLOCK_STYLES = [
 ];
 export const BLOCK_BY_ID = Object.fromEntries(BLOCK_STYLES.map(s => [s.id, s]));
 
-// the tier a player blocks in: by Block rating, bumped a tier for the tall and down one for the small
+// v0.4.7.5 qp3 (revised): the thirty are sold as five Block Packages of six, one a tier, in the VC Store's Animations
+// → Blocks (server/catalog.json mirrors this table: `blockPackageItems()` builds the entries). Fundamentals is free and
+// on every build; the rest need the Block rating of their tier, a tier less for the tall (BLOCK_TALL) and a tier more
+// for the small (BLOCK_SHORT), the way the styles used to be dealt out by rating and height.
+export const BLOCK_PACKAGES = [
+  { id: 'block_basic', tier: 1, name: 'Block Package: Fundamentals', price: 0, desc: 'The basics: a straight reach, a two-hand wall, a late hand, a side reach. Every build starts with it.' },
+  { id: 'block_swatter', tier: 2, name: 'Block Package: Swatter', price: 3900, desc: 'The arm cocks and fires: a volleyball swat, a chest swat, a cross-arm wipe, a hook, a shield, a lean-in.' },
+  { id: 'block_wiper', tier: 3, name: 'Block Package: Wiper', price: 7800, desc: 'Big swings with a stare after: the windshield wiper, a spike, a double clutch, a pin, a chase-down swat, a twist.' },
+  { id: 'block_hammer', tier: 4, name: 'Block Package: Hammer', price: 13000, rep: 4, desc: 'Emphatic: the hammer, a spike with a roar, a palm snatch, a scissor, a superman chase-down, a backboard pin. Your name on the callout.' },
+  { id: 'block_eraser', tier: 5, name: 'Block Package: Eraser', price: 19500, rep: 8, ovr: 85, desc: 'The flashiest blocks in the park: the hammer fist, a sky pin, the finger wag, the eraser, a thunder clap, a launch.' },
+];
+export const BLOCK_PKG_BY_ID = Object.fromEntries(BLOCK_PACKAGES.map(k => [k.id, k]));
+export const BLOCK_PKG_BY_TIER = Object.fromEntries(BLOCK_PACKAGES.map(k => [k.tier, k.id]));
+export const blockPackageStyles = id => BLOCK_STYLES.filter(s => s.tier === (BLOCK_PKG_BY_ID[id]?.tier ?? 1));
+// the requirement to buy or wear a package: its tier's Block rating; the tall need the tier below's, the small the
+// tier above's (tier 1 is free for everyone; the top tier stays the top for the tall)
+export function blockPackageNeed(tier, height = 78) {
+  if (tier <= 1) return 0;
+  let t = tier;
+  if (height >= BLOCK_TALL) t--;
+  if (height <= BLOCK_SHORT) t++;
+  return BLOCK_TIER_MIN[Math.max(1, Math.min(5, t))];
+}
+// the catalog entries (server/catalog.json carries exactly these; tests check)
+export function blockPackageItems() {
+  return BLOCK_PACKAGES.map(k => ({
+    category: 'animation', min_overall: k.ovr || 0, rep_required: k.rep || 0, original_2k_asset: false,
+    id: k.id, name: k.name, slot: 'block', price: k.price,
+    min_attr: k.tier > 1 ? { block: BLOCK_TIER_MIN[k.tier] } : {},
+    min_attr_tall: k.tier > 1 ? { block: blockPackageNeed(k.tier, BLOCK_TALL) } : {},
+    min_attr_short: k.tier > 1 ? { block: blockPackageNeed(k.tier, BLOCK_SHORT) } : {},
+    tall_height: BLOCK_TALL, short_height: BLOCK_SHORT,
+    styles: blockPackageStyles(k.id).map(s => s.id), signature: blockPackageStyles(k.id)[0].id,
+    tier: k.tier, description: k.desc, v0475qp3: true,
+  }));
+}
+
+// the tier a player blocks in with no package of his own (a park regular): by Block rating, bumped a tier for the
+// tall and down one for the small
 export function blockTier(p) {
   const r = p.ratings?.block ?? p.raw?.block ?? 50, h = p.entry?.build?.height ?? 78;
   let t = 1;
@@ -68,16 +106,19 @@ export function blockTier(p) {
   if (h <= BLOCK_SHORT) t--;
   return Math.max(1, Math.min(5, t));
 }
-// the styles a player can block with: his tier's, plus the tier below for variety (and a chase-down from any tier
-// up to his, since a tier's chase-down style is rare)
+// the package a player blocks with: the one he wears (Player.blockPkg, from his equipment), else his tier's
+export function blockPackageOf(p) {
+  const id = p.blockPkg;
+  return BLOCK_PKG_BY_ID[id] ? id : BLOCK_PKG_BY_TIER[blockTier(p)];
+}
+// the styles a player can block with: his package's six, those that fit the moment first (a chase-down from behind,
+// a rim protection, a perimeter closeout), the rest of the six if none does
 export function blockPool(p, situ = 'any') {
-  const tier = blockTier(p);
-  const fits = s => s.situ.includes(situ) || (situ !== 'any' && s.situ.includes('any') && s.tier === tier);
-  let pool = BLOCK_STYLES.filter(s => (s.tier === tier || s.tier === tier - 1) && s.situ.includes(situ));
-  if (!pool.length) pool = BLOCK_STYLES.filter(s => s.tier <= tier && fits(s));
-  if (!pool.length) pool = BLOCK_STYLES.filter(s => s.tier === tier);
-  // the player's own tier is favoured 3:1 over the one below
-  return pool.flatMap(s => (s.tier === tier ? [s, s, s] : [s]));
+  const six = blockPackageStyles(blockPackageOf(p));
+  let pool = six.filter(s => s.situ.includes(situ));
+  if (!pool.length) pool = six.filter(s => s.situ.includes('any'));
+  if (!pool.length) pool = six;
+  return pool;
 }
 export function pickBlockStyle(p, rng, situ = 'any') {
   const pool = blockPool(p, situ);

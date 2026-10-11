@@ -2394,6 +2394,165 @@
   "min_overall": 0,
   "rep_required": 0,
   "original_2k_asset": false,
+  "id": "block_basic",
+  "name": "Block Package: Fundamentals",
+  "slot": "block",
+  "price": 0,
+  "min_attr": {},
+  "min_attr_tall": {},
+  "min_attr_short": {},
+  "tall_height": 83,
+  "short_height": 73,
+  "styles": [
+   "reach",
+   "straight_up",
+   "late_hand",
+   "wall",
+   "side_reach",
+   "stand_tall"
+  ],
+  "signature": "reach",
+  "tier": 1,
+  "description": "The basics: a straight reach, a two-hand wall, a late hand, a side reach. Every build starts with it.",
+  "v0475qp3": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "id": "block_swatter",
+  "name": "Block Package: Swatter",
+  "slot": "block",
+  "price": 3900,
+  "min_attr": {
+   "block": 55
+  },
+  "min_attr_tall": {
+   "block": 0
+  },
+  "min_attr_short": {
+   "block": 70
+  },
+  "tall_height": 83,
+  "short_height": 73,
+  "styles": [
+   "volleyball",
+   "chest_swat",
+   "cross_arm",
+   "hook",
+   "shield",
+   "lean_in"
+  ],
+  "signature": "volleyball",
+  "tier": 2,
+  "description": "The arm cocks and fires: a volleyball swat, a chest swat, a cross-arm wipe, a hook, a shield, a lean-in.",
+  "v0475qp3": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "id": "block_wiper",
+  "name": "Block Package: Wiper",
+  "slot": "block",
+  "price": 7800,
+  "min_attr": {
+   "block": 70
+  },
+  "min_attr_tall": {
+   "block": 55
+  },
+  "min_attr_short": {
+   "block": 85
+  },
+  "tall_height": 83,
+  "short_height": 73,
+  "styles": [
+   "wiper",
+   "spike",
+   "double_clutch",
+   "pin",
+   "chase_swat",
+   "twist"
+  ],
+  "signature": "wiper",
+  "tier": 3,
+  "description": "Big swings with a stare after: the windshield wiper, a spike, a double clutch, a pin, a chase-down swat, a twist.",
+  "v0475qp3": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 4,
+  "original_2k_asset": false,
+  "id": "block_hammer",
+  "name": "Block Package: Hammer",
+  "slot": "block",
+  "price": 13000,
+  "min_attr": {
+   "block": 85
+  },
+  "min_attr_tall": {
+   "block": 70
+  },
+  "min_attr_short": {
+   "block": 95
+  },
+  "tall_height": 83,
+  "short_height": 73,
+  "styles": [
+   "hammer",
+   "spike_pro",
+   "palm_snatch",
+   "scissor",
+   "superman",
+   "glass_pin"
+  ],
+  "signature": "hammer",
+  "tier": 4,
+  "description": "Emphatic: the hammer, a spike with a roar, a palm snatch, a scissor, a superman chase-down, a backboard pin. Your name on the callout.",
+  "v0475qp3": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 85,
+  "rep_required": 8,
+  "original_2k_asset": false,
+  "id": "block_eraser",
+  "name": "Block Package: Eraser",
+  "slot": "block",
+  "price": 19500,
+  "min_attr": {
+   "block": 95
+  },
+  "min_attr_tall": {
+   "block": 85
+  },
+  "min_attr_short": {
+   "block": 95
+  },
+  "tall_height": 83,
+  "short_height": 73,
+  "styles": [
+   "hammer_fist",
+   "sky_pin",
+   "finger_wag",
+   "eraser",
+   "thunder_clap",
+   "launch"
+  ],
+  "signature": "hammer_fist",
+  "tier": 5,
+  "description": "The flashiest blocks in the park: the hammer fist, a sky pin, the finger wag, the eraser, a thunder clap, a launch.",
+  "v0475qp3": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
   "id": "sizeup_pound",
   "name": "Size-Up Package: Pound",
   "slot": "sizeup",

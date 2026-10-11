@@ -66,10 +66,19 @@ export function signatureAttrs(archetype) {
   return Object.entries(ARCH_BONUS[archetype] || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k);
 }
 // can this build equip the item (same rules the server applies to a player's purchases)
-export function canEquip(item, attributes, ovr, rep) {
+// v0.4.7.5 qp3: the attribute requirement of an item for a build of this height: the Block Packages ask a tier less
+// of the tall and a tier more of the small (min_attr_tall / min_attr_short with tall_height / short_height; the
+// server's Service.min_attr_for is the same rule); everything else just has min_attr
+export function minAttrFor(item, height) {
+  const h = height || 78;
+  if (item.tall_height && h >= item.tall_height && item.min_attr_tall) return item.min_attr_tall;
+  if (item.short_height && h <= item.short_height && item.min_attr_short) return item.min_attr_short;
+  return item.min_attr || {};
+}
+export function canEquip(item, attributes, ovr, rep, height = 78) {
   if (!item) return false;
   if ((item.rep_required || 0) > rep || (item.min_overall || 0) > ovr) return false;
-  for (const [k, v] of Object.entries(item.min_attr || {})) if ((attributes[k] ?? 0) < v) return false;
+  for (const [k, v] of Object.entries(minAttrFor(item, height))) if ((attributes[k] ?? 0) < v) return false;
   return true;
 }
 
@@ -100,7 +109,7 @@ export function makeBot(rng, opts = {}) {
   const rep = opts.rep ?? 8, flash = Math.max(0, Math.min(1, opts.flash ?? level));
   const cat = opts.catalog || {};
   const items = Object.values(cat);
-  const bySlot = slot => items.filter(i => i.slot === slot && !i.exclusive && canEquip(i, attributes, ovr, rep));
+  const bySlot = slot => items.filter(i => i.slot === slot && !i.exclusive && canEquip(i, attributes, ovr, rep, build.height));
   // pricier (flashier) gear and animations are more likely the more he plays and spends
   const pick = (slot, fallback) => {
     const l = bySlot(slot);
@@ -113,7 +122,7 @@ export function makeBot(rng, opts = {}) {
   const eq = {
     top: pick('top', 'yard_teal'), bottom: pick('bottom', 'yard_shorts'), shoes: pick('shoes', 'yard_shoes'),
     release: pick('release', 'release_classic'), jumpshot: pick('jumpshot', 'js_base_standard'), dunk: pick('dunk', 'dunk_basic'),
-    sizeup: pick('sizeup', 'sizeup_basic'), layup: pick('layup', 'layup_basic'),
+    sizeup: pick('sizeup', 'sizeup_basic'), layup: pick('layup', 'layup_basic'), block: pick('block', 'block_basic'), // (qp3: Block Packages)
   };
   // wheel exclusives: a few of the regulars have hit on the wheel
   const wheel = items.filter(i => i.exclusive === 'wheel' && ['jumpshot', 'release', 'dunk'].includes(i.slot));

@@ -56,6 +56,8 @@ export class Player {
     this.shotPkg = jumpshotPackage(entry.build, catalog);
     // (qp3: a Hash-Slinging Icon holder with no dunk package of his own, a park legend say, carries the Icon's package)
     this.dunkPkg = entry.build.equipment?.dunk || (this.icon === 'hash_slinging' && catalog?.[HS_PKG] ? HS_PKG : 'dunk_basic');
+    // qp3: the Block Package he wears (sim/blocks.js: none → his tier's, by Block rating and height)
+    this.blockPkg = entry.build.equipment?.block || null;
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves
     const su = entry.build.equipment?.sizeup || 'sizeup_basic';
     // v0.4.5: a package's own lvl (from the catalog) decides how hard it sells the handle; `style` is its look

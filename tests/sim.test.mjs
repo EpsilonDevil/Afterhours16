@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { Game } from '../client/js/sim/game.js';
-import { makeTeam } from '../client/js/sim/bots.js';
+import { makeTeam, minAttrFor } from '../client/js/sim/bots.js';
 import { planShot } from '../client/js/sim/shots.js';
 import { rimPos } from '../client/js/sim/constants.js';
 import { RNG } from '../client/js/core/rng.js';
@@ -278,7 +278,7 @@ test('v0.4.4 AI world: persistent accounts, clear skill tiers, schedules through
   for (const e of by.casual.concat(by.legend)) for (const id of Object.values(e.build.equipment)) {
     const it = catalog[id]; if (!it || it.exclusive) continue;
     assert.ok((it.min_overall || 0) <= e.build.overall, `${e.name} meets ${id} overall`);
-    for (const [k, v] of Object.entries(it.min_attr || {})) assert.ok(e.build.attributes[k] >= v, `${e.name} meets ${id} ${k}`);
+    for (const [k, v] of Object.entries(minAttrFor(it, e.build.height))) assert.ok(e.build.attributes[k] >= v, `${e.name} meets ${id} ${k}`); // (qp3: the Block Packages ask by height)
   }
   // who is online changes with the hour: evenings busy, early morning quiet
   const day = new Date(); day.setHours(0, 0, 0, 0);

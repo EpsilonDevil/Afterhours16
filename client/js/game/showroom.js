@@ -128,7 +128,7 @@ export class Showroom {
   }
 
   lookAt() {
-    if (this.preview === 'jumpshot' || this.preview === 'dunk' || this.preview === 'layup') return null;
+    if (this.preview === 'jumpshot' || this.preview === 'dunk' || this.preview === 'layup' || this.preview === 'block') return null; // (block: he looks at the ball)
     if (this.preview === 'walk' || this.preview === 'jog' || this.preview === 'sprint') { const f = this.player.facing; return [Math.sin(f) * 12, 0.12 + this.visual.view.H * 0.9, Math.cos(f) * 12]; }
     const cam = this.app.camera;
     return [cam.pos[0], cam.pos[1] - 0.1, cam.pos[2]];

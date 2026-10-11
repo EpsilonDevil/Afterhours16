@@ -536,6 +536,25 @@ class ApiTests(unittest.TestCase):
         finally:
             self.opener = prev
 
+    def test_block_packages_are_in_the_store_with_the_height_break(self):
+        # v0.4.7.5 qp3 (revised): five Block Packages, one a tier; the tall need a tier less of Block, the small a tier more
+        pk = [i for i in server_app.CATALOG.values() if i.get("slot") == "block"]
+        self.assertEqual(sorted(i["tier"] for i in pk), [1, 2, 3, 4, 5])
+        self.assertEqual(builds.DEFAULT_EQUIPMENT["block"], "block_basic")
+        self.assertIn("block", builds.EQUIP_SLOTS)
+        hammer = server_app.CATALOG["block_hammer"]
+        self.assertEqual(hammer["min_attr"], {"block": 85})
+        self.assertEqual(self.service.min_attr_for({"height": 78}, hammer), {"block": 85})
+        self.assertEqual(self.service.min_attr_for({"height": 84}, hammer), {"block": 70})
+        self.assertEqual(self.service.min_attr_for({"height": 72}, hammer), {"block": 95})
+        char = {"attributes": {"block": 80}, "position": "C", "height": 84, "progression": {"rep": 10 ** 9}}
+        self.assertIsNone(self.service.eligible(char, hammer))
+        char["height"] = 78
+        self.assertEqual(self.service.eligible(char, hammer), "Requires 85 block.")
+        # an older build picks the free package up in its equipment on normalize
+        old = builds.normalize({"name": "Old", "position": "SF", "archetype": "slasher", "height": 78, "weight": 200, "wingspan": 80, "attributes": {}, "equipment": {"dunk": "dunk_basic"}})
+        self.assertEqual(old["equipment"]["block"], "block_basic")
+
     def test_icon_unlock_grants_and_equips_the_icon_items(self):
         # the grant at the moment the Icon badge unlocks (the game result path) equips the package too
         aid = "grant_" + uuid.uuid4().hex[:6]

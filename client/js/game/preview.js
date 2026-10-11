@@ -150,6 +150,25 @@ export class PreviewSim {
       if (a && a.t > a.dur) p.action = null;
       return;
     }
+    if (kind === 'block') {
+      // v0.4.7.5 qp3: Block Packages. A shot floats up in front of him; he rises with one of the package's six (in turn,
+      // every loop) and swats it away at the top, with the landing gesture after
+      const o = this.previewOpts || {}, list = o.styles?.length ? o.styles : [o.style || 'reach'];
+      fb.holder = -1;
+      if (this.loop(2.6, dt)) {
+        const n = this.loopN || 0; this.loopN = n + 1;
+        const style = list[n % list.length];
+        p.action = null; p.y = 0; p.vy = 0; p.airborne = false;
+        // the ball: up from a shooter's hands 1.6 m in front, timed to be at 2.5 m, just in front of his hand, at the swat
+        this.ballFree = { x: 0.15, y: 1.3, z: 1.4, vx: 0, vy: 5.0, vz: -2.0, swatted: false };
+        p.startAction('block', 1.9, { jumpAt: 0.2, jumpH: 0.55, jumped: false, triedBlock: false, air: 0.68, bstyle: style, lead: 'L' });
+      }
+      const a = p.action, b = this.ballFree;
+      if (a && !a.jumped && a.t >= a.jumpAt) { a.jumped = true; p.jump(a.jumpH); }
+      if (a && b && !b.swatted && a.t >= a.jumpAt + 0.34) { b.swatted = true; a.hit = true; a.hitAt = a.t; b.vx = 1.6; b.vy = 1.2; b.vz = 3.2; }
+      if (a && a.t > a.dur) p.action = null;
+      return;
+    }
     if (kind === 'celebrate') {
       fb.holder = -1; this.ballFree = null;
       if (!p.action) p.startAction('celebrate', 2.4, { kind: this.previewOpts?.kind || 'flex' });

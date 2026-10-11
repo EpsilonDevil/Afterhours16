@@ -230,10 +230,21 @@ class Service:
         rep_lvl = progression.rep_level(char.get("progression", {}).get("rep", 0))
         if rep_lvl < item.get("rep_required", 0):
             return f"Requires Rep {progression.rep_label(item['rep_required'])}."
-        for attr, need in (item.get("min_attr") or {}).items():
+        for attr, need in self.min_attr_for(char, item).items():
             if char["attributes"].get(attr, 0) < need:
                 return f"Requires {need} {attr.replace('_', ' ')}."
         return None
+
+    # v0.4.7.5 qp3: the Block Packages ask a tier less of the tall and a tier more of the small (min_attr_tall /
+    # min_attr_short with tall_height / short_height); everything else just has min_attr
+    @staticmethod
+    def min_attr_for(char, item):
+        h = char.get("height") or 78
+        if item.get("tall_height") and h >= item["tall_height"] and "min_attr_tall" in item:
+            return item["min_attr_tall"] or {}
+        if item.get("short_height") and h <= item["short_height"] and "min_attr_short" in item:
+            return item["min_attr_short"] or {}
+        return item.get("min_attr") or {}
 
     def close(self):
         self.db.conn.close()

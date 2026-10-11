@@ -25,9 +25,9 @@ FACES = ("oval", "square", "angular", "round")
 BEARDS = ("none", "stubble", "goatee", "full")
 EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
-                     "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic"}
+                     "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic", "block": "block_basic"}
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "block")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller

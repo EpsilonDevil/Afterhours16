@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { BLOCK_STYLES, BLOCK_BY_ID, blockTier, blockPool, pickBlockStyle, blockCallout, BLOCK_TIER_MIN } from '../client/js/sim/blocks.js';
+import { BLOCK_STYLES, BLOCK_BY_ID, blockTier, blockPool, pickBlockStyle, blockCallout, BLOCK_TIER_MIN, BLOCK_PACKAGES, blockPackageItems, blockPackageNeed, blockPackageOf } from '../client/js/sim/blocks.js';
 import { Animator } from '../client/js/char/animator.js';
 import { P, neutral } from '../client/js/char/pose.js';
 import { Game } from '../client/js/sim/game.js';
@@ -40,22 +40,70 @@ test('the tier follows the Block rating, bumped for the tall and down for the sm
   assert.equal(blockTier(mk(40, 78)), 1); assert.equal(blockTier(mk(60, 78)), 2); assert.equal(blockTier(mk(75, 78)), 3); assert.equal(blockTier(mk(90, 78)), 4); assert.equal(blockTier(mk(97, 78)), 5);
   assert.equal(blockTier(mk(75, 84)), 4, 'a 7-footer blocks a tier up'); assert.equal(blockTier(mk(75, 72)), 2, 'a 6-footer a tier down');
   assert.equal(blockTier(mk(99, 86)), 5); assert.equal(blockTier(mk(30, 70)), 1);
-  // pools: his tier (favoured 3:1) plus the one below, for the moment
+  // pools (revised: packages): with no package of his own he blocks with his tier's six, those that fit the moment
   const p3 = mk(75, 78);
+  assert.equal(blockPackageOf(p3), 'block_wiper');
   const pool = blockPool(p3, 'rim');
-  assert.ok(pool.every(s => (s.tier === 3 || s.tier === 2) && s.situ.includes('rim')));
-  assert.ok(pool.filter(s => s.tier === 3).length > pool.filter(s => s.tier === 2).length);
+  assert.ok(pool.length && pool.every(s => s.tier === 3 && s.situ.includes('rim')));
   const chase = blockPool(p3, 'chase'); assert.ok(chase.some(s => s.id === 'chase_swat') && chase.every(s => s.situ.includes('chase')));
-  // a tier-1 man has a chase pool too (fallbacks never leave it empty)
+  // every package has a block for every moment (fallbacks never leave it empty)
   for (const t of [1, 2, 3, 4, 5]) for (const situ of ['any', 'rim', 'chase', 'perim']) assert.ok(blockPool(mk([30, 60, 75, 90, 97][t - 1], 78), situ).length > 0, `tier ${t} ${situ}`);
-  // picks are from the pool, spread across it
+  // picks are from the package, spread across it
   const rng = new RNG(5), seen = new Set();
   for (let i = 0; i < 300; i++) seen.add(pickBlockStyle(p3, rng, 'any'));
-  assert.ok(seen.size >= 6, `variety: ${[...seen].join(', ')}`);
-  for (const id of seen) assert.ok(BLOCK_BY_ID[id].tier <= 3 && BLOCK_BY_ID[id].tier >= 2);
+  assert.ok(seen.size >= 5, `variety: ${[...seen].join(', ')}`);
+  for (const id of seen) assert.equal(BLOCK_BY_ID[id].tier, 3);
   // a top-tier giant never throws a basic block
   const g5 = mk(97, 86), s5 = new Set(); for (let i = 0; i < 300; i++) s5.add(pickBlockStyle(g5, rng, 'any'));
-  assert.ok([...s5].every(id => BLOCK_BY_ID[id].tier >= 4));
+  assert.ok([...s5].every(id => BLOCK_BY_ID[id].tier === 5));
+  // the package he wears wins over his rating: a 40 Block who bought the Hammer package throws hammers
+  const worn = { ...mk(40, 78), blockPkg: 'block_hammer' }, sw = new Set(); for (let i = 0; i < 200; i++) sw.add(pickBlockStyle(worn, rng, 'any'));
+  assert.ok(sw.size >= 4 && [...sw].every(id => BLOCK_BY_ID[id].tier === 4));
+  assert.equal(blockPackageOf({ ...mk(40, 78), blockPkg: 'no_such_thing' }), 'block_basic', 'an unknown package falls back to his tier');
+});
+
+test('the five Block Packages: six styles a tier, in the catalog and the store, gated by Block rating with the height break', async () => {
+  assert.equal(BLOCK_PACKAGES.length, 5);
+  assert.deepEqual(BLOCK_PACKAGES.map(k => k.tier), [1, 2, 3, 4, 5]);
+  const items = blockPackageItems();
+  for (const it of items) {
+    const cat = catalog[it.id];
+    assert.ok(cat, `${it.id} is in server/catalog.json`);
+    assert.deepEqual(cat, it, `${it.id}: the catalog entry is the table's`);
+    assert.equal(cat.slot, 'block'); assert.equal(cat.category, 'animation'); assert.equal(cat.styles.length, 6);
+    assert.ok(cat.styles.every(id => BLOCK_BY_ID[id].tier === it.tier), 'the tier\'s six');
+  }
+  assert.equal(items[0].price, 0, 'Fundamentals is free'); assert.ok(items.slice(1).every((it, i) => it.price > (items[i].price || 0)), 'dearer up the tiers');
+  // the requirement: the tier's Block rating; a tier less for 6'11"+, a tier more for 6'1" and under
+  assert.deepEqual(items.map(i => i.min_attr.block ?? 0), [0, 55, 70, 85, 95]);
+  assert.deepEqual(items.map(i => i.min_attr_tall.block ?? 0), [0, 0, 55, 70, 85]);
+  assert.deepEqual(items.map(i => i.min_attr_short.block ?? 0), [0, 70, 85, 95, 95]);
+  assert.equal(blockPackageNeed(4, 84), 70); assert.equal(blockPackageNeed(4, 72), 95); assert.equal(blockPackageNeed(1, 72), 0);
+  // the store's lock reason and the bots' canEquip read the same height break
+  const { canEquip, minAttrFor } = await import('../client/js/sim/bots.js');
+  const hammer = catalog.block_hammer;
+  assert.deepEqual(minAttrFor(hammer, 78), { block: 85 }); assert.deepEqual(minAttrFor(hammer, 84), { block: 70 }); assert.deepEqual(minAttrFor(hammer, 72), { block: 95 });
+  assert.equal(canEquip(hammer, { block: 80 }, 70, 4, 84), true); assert.equal(canEquip(hammer, { block: 80 }, 70, 4, 78), false); assert.equal(canEquip(hammer, { block: 90 }, 70, 4, 72), false); assert.equal(canEquip(hammer, { block: 80 }, 70, 0, 84), false, 'and Rep 4');
+  // (the store's lockReason reads minAttrFor with the build's height; it needs a DOM, so the source is checked)
+  const storeSrc = fs.readFileSync(new URL('../client/js/ui/store.js', import.meta.url), 'utf8');
+  assert.ok(storeSrc.includes("minAttrFor(i, c.height || c.build?.height)") && storeSrc.includes("['block', 'Blocks', 'wide', 'Animations']"), 'the store: height-aware locks and a Blocks tab under Animations');
+  assert.ok(/optionalSlot = i => !\[[^\]]*'block'\]/.test(storeSrc), 'the block slot always has something on');
+  assert.ok(storeSrc.includes("app.showroom.setPreview('block', { styles: item.styles })"), 'try-on previews the six');
+  // the server's defaults and slots
+  const py = fs.readFileSync(new URL('../server/builds.py', import.meta.url), 'utf8');
+  assert.ok(py.includes('"block": "block_basic"') && /EQUIP_SLOTS = \([^)]*"block"\)/.test(py));
+  // the store preview: the package's six in turn, each swatting the ball away
+  const { PreviewSim } = await import('../client/js/game/preview.js');
+  const sim = new PreviewSim(); sim.setPlayer({ height: 80, weight: 230, wingspan: 85, hand: 'R', attributes: {}, equipment: { block: 'block_eraser' } }, catalog); sim.setPreview('block', { styles: catalog.block_eraser.styles });
+  const seen = []; let swats = 0;
+  for (let i = 0; i < 60 * 16; i++) { sim.step(1 / 60, 0); const a = sim.player.action; if (a?.bstyle && seen[seen.length - 1] !== a.bstyle) seen.push(a.bstyle); if (sim.ballFree?.swatted && sim.ballFree.vz > 0 && sim.ballFree.vz === 3.2 && a?.hit) swats++; }
+  assert.deepEqual(seen.slice(0, 6), catalog.block_eraser.styles, 'all six, in order (then round again)');
+  assert.ok(swats > 0);
+  // bots pick one by their rating and height; a Player wears what his equipment says
+  const rng = new RNG(11), team = makeTeam(rng, 3, { catalog, level: 0.9 });
+  assert.ok(team.every(e => catalog[e.build.equipment.block]?.slot === 'block'), 'every bot carries a Block Package');
+  const g = new Game({ mode: 'practice', seed: 11, rosters: [team, []], catalog });
+  assert.ok(g.players.every(p => p.blockPkg === p.entry.build.equipment.block && blockPackageOf(p) === p.blockPkg));
 });
 
 test('every style has its own body: pairwise distinct poses through the rise, the swat and the landing', () => {

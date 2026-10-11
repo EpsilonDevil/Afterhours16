@@ -174,7 +174,7 @@ function badges(app, root, c) {
     }).join('')}</div>`).join('')}`;
 }
 
-const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
+const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['block', 'Block package', 'block'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
 function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
@@ -195,9 +195,9 @@ function animations(app, root, c) {
     const dk = app.catalog[ch.equipment.dunk];
     const cel = app.catalog[ch.equipment.celebration];
     // v0.4.5: preview the equipped layup and size-up packages with their own style too
-    const lay = app.catalog[ch.equipment.layup], su = app.catalog[ch.equipment.sizeup];
+    const lay = app.catalog[ch.equipment.layup], su = app.catalog[ch.equipment.sizeup], bk = app.catalog[ch.equipment.block]; // (qp3: and the Block Package)
     const style = kind === 'layup' ? (lay?.style || 'basic') : kind === 'moves' ? (su?.style || 'basic') : dk?.styles?.[0];
-    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex' });
+    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : kind === 'block' ? bk?.styles : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex' });
     app.showroom.setFocus(kind === 'celebrate' ? 'upper' : 'wide');
   });
 }
