@@ -24,6 +24,14 @@ export function isThree(x, z, side) {
   if (cornerZone) return false;
   return d >= COURT.threeRadius;
 }
+// v0.4.7.5 qp3: the lane (the paint / the key) in front of the rim on `side`: 16 ft wide, from the baseline to the
+// free-throw line (19 ft). m: a margin (m): a player stands in the lane while his centre is within m of it, since a
+// foot is on the line before the centre is
+export const LANE = { halfW: COURT.keyWidth / 2, zNear: COURT.length / 2 - COURT.ftDist, zFar: COURT.length / 2 };
+export function inLane(x, z, side, m = 0) {
+  const zz = z * side;
+  return Math.abs(x) <= LANE.halfW + m && zz >= LANE.zNear - m && zz <= LANE.zFar + m;
+}
 export function inBounds(x, z, pad = 0) {
   return Math.abs(x) <= COURT.width / 2 + pad && Math.abs(z) <= COURT.length / 2 + pad;
 }

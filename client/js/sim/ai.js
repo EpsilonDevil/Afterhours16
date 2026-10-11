@@ -1,6 +1,6 @@
 // Basketball AI: spacing, drives, pick-and-roll, cuts, passing reads, man defense with help,
 // contests, box-outs, rebounding and transition. Uses the same intent interface as the human.
-import { COURT, GRAVITY, isThree } from './constants.js';
+import { COURT, GRAVITY, isThree, inLane, LANE } from './constants.js';
 import { spotsFor, rimOf, spot } from './formation.js';
 import { tendenciesFor } from './bots.js';
 
@@ -35,6 +35,13 @@ export function threeTend(p) {
   if (p.position === 'PF' || p.position === 'C') k *= T.big + (1 - T.big) * Math.max(0, Math.min(1, (r - T.bigFrom) / (T.bigTo - T.bigFrom)));
   return k;
 }
+// v0.4.7.5 qp3: the lane and the rules (sim/game.js RULES). Offense: a man off the ball steps out of the paint once he
+// has been in it `out` seconds (the count is three), a cut or a roll ends at `cutOut`, the handler shoots or passes at
+// `handlerOut`. Defense (NBA rules): a defender with no attacker within arm's length guards the paint from its edge —
+// on the line between his man and the lane, `edge` outside the lane line, sliding with the ball — and steps out at
+// `defOut` if he has drifted in. Backcourt: a handler who has crossed never seeks a spot back over the line
+// (`frontKeep`), and a teammate still in the backcourt is not a pass option.
+export const PAINT = { out: 1.2, cutOut: 1.4, handlerOut: 2.0, defOut: 1.6, edge: 0.45, guardIn: 1.3, frontKeep: 0.9, strafeK: 0.62 };
 export const RUNNER = { maxRim: 9.5, open: 2.0, lane: 2.0, recover: 2.5, run: 1.5, oopRim: 6.5, reachK: 0.7, lobRisk: 0.35, lobRiskMax: 0.9, lobOpen: 4.0, chance0: 0.7, chanceIQ: 0.3, setOop: 0.32 };
 
 const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
@@ -218,6 +225,8 @@ export class AI {
     // v0.4.7.5 quick patch: in play, nobody runs at a spot out of bounds, and nobody runs through a line (see lineBrake)
     const live = this.g.phase === 'live' && !opts.allowOut;
     if (live) [x, z] = this.clampCourt(x, z, this.g.half);
+    // (qp3: the man with the ball never heads back over the half-court line once he has crossed it)
+    if (live && !this.g.half && this.g.frontcourt && this.g.ball.holder === p.id) { const sd = this.g.sideFor(p.team); if (z * sd < PAINT.frontKeep) z = sd * PAINT.frontKeep; }
     const dx = x - p.x, dz = z - p.z, d = hyp(dx, dz);
     const slow = opts.arrive ?? 1.2;
     const k = d < 0.15 ? 0 : Math.min(1, d / slow);
@@ -389,6 +398,7 @@ export class AI {
     let best = null, bv = -Infinity;
     for (const r of g.mates(p)) {
       if (r.action?.type === 'stumble') continue;
+      if (!g.half && g.frontcourt && r.z * g.sideFor(p.team) < 1.5) continue; // (qp3: a pass back over the line is a violation)
       const sv = this.shotValue(r, r.x, r.z, g.opponents(r)).val;
       let v = sv + Math.min(3, this.openness(r)) * 0.25 - this.passRisk(p, r) * 1.2 + (r.calling > 0 ? 0.35 : 0) + (r.human ? 0.25 : 0);
       const lp = g.lastPass;
@@ -529,6 +539,14 @@ export class AI {
     }
     if (p.action && p.action.type !== 'catch') { if (p.action.type === 'move' && !o.inMove) { o.inMove = true; o.moveGap = defDist; } return; }
     const IQ = this.iq(p);
+    // v0.4.7.5 qp3: three seconds: a handler who has sat in the lane for most of the count goes up with it, or moves it
+    if ((p.paintT || 0) > PAINT.handlerOut - (1 - IQ) * 0.4 && g.mode !== 'practice') {
+      const dr = hyp(rim.x - p.x, rim.z - p.z);
+      if (dr < 3.4) { it.shoot = 'press'; o.plan = null; this.stats.laneShot = (this.stats.laneShot || 0) + 1; return; }
+      const r = this.bestPassTarget(p);
+      if (r && this.passRisk(p, r) < 0.55) { it.pass = { target: r.id, type: 'chest' }; o.plan = null; this.stats.laneOut = (this.stats.laneOut || 0) + 1; return; }
+      this.seek(p, Math.sign(p.x || 1) * (LANE.halfW + 1.0), p.z, { sprint: true, arrive: 0.5 }); o.plan = null; return;
+    }
     // v0.4.7.5 qp3: still in transition (the break was on, or the ball has just come over): a teammate running
     // free at the rim gets the lob before anything else
     if (!g.half && g.time - (o.fastBreak || -9) < 2.5 && g.rng.next() < dt * 10) {
@@ -845,9 +863,10 @@ export class AI {
     if (!o.plan && h && h !== p && !p.human) {
       const hd = g.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null);
       const big = p.position === 'C' || p.position === 'PF' || this.tend(p).pop > 0.5;
-      if (hd && hd.dist(h) < 1.4 && p.dist(h) < 7.5 && g.rng.next() < dt * (0.12 + 0.38 * this.iq(p)) * (big ? 1.4 : 0.6)) { o.plan = 'screen'; o.screenFor = h.id; o.screenT = 3; this.stats.screenSelf = (this.stats.screenSelf || 0) + 1; }
+      if (hd && hd.dist(h) < 1.4 && p.dist(h) < 7.5 && !inLane(h.x, h.z, side, 0.6) && g.rng.next() < dt * (0.12 + 0.38 * this.iq(p)) * (big ? 1.4 : 0.6)) { o.plan = 'screen'; /* (qp3: no screens set in the lane) */ o.screenFor = h.id; o.screenT = 3; this.stats.screenSelf = (this.stats.screenSelf || 0) + 1; }
     }
-    // screen plan
+    // screen plan (qp3: a screener who has stood in the lane for most of the count leaves it)
+    if (o.plan === 'screen' && (p.paintT || 0) > PAINT.cutOut) o.plan = null;
     if (o.plan === 'screen' && h && o.screenT > 0) {
       o.screenT -= dt;
       const hd = g.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null);
@@ -873,14 +892,24 @@ export class AI {
       o.rollT -= dt;
       this.seek(p, rim.x + (p.x > 0 ? 1.2 : -1.2), rim.z - side * 1.6, { sprint: true });
       if (this.openness(p) > 1.6) it.call = true;
-      if (o.rollT <= 0) o.plan = null;
+      if (o.rollT <= 0 || (p.paintT || 0) > PAINT.cutOut) o.plan = null; // (qp3: out before the three-second count)
       return;
     }
     if (o.plan === 'cut') {
       o.cutT -= dt;
       this.seek(p, rim.x + (p.x > 0 ? 0.8 : -0.8), rim.z - side * 1.2, { sprint: true });
       if (this.openness(p) > 1.5) it.call = true;
-      if (o.cutT <= 0) o.plan = null;
+      if (o.cutT <= 0 || (p.paintT || 0) > PAINT.cutOut) o.plan = null;
+      return;
+    }
+    // v0.4.7.5 qp3: three seconds: a man who has been standing in the lane steps out to the nearest spot beside it (the
+    // dunker spot on the baseline, or the line beside him), and nobody picks a spot inside it to stand on
+    if ((p.paintT || 0) > PAINT.out - (1 - this.iq(p)) * 0.5 && g.mode !== 'practice') {
+      const sx = Math.sign(p.x || (p.id % 2 ? 1 : -1)) * (LANE.halfW + PAINT.edge + 0.1);
+      const nearBase = (p.z * side) > LANE.zFar - 2.2;
+      this.seek(p, nearBase ? sx + Math.sign(sx) * 0.3 : sx, nearBase ? side * (COURT.hoopZ + 0.4) : p.z, { sprint: true, arrive: 0.4 });
+      it.face = h ? Math.atan2(h.x - p.x, h.z - p.z) : null;
+      this.stats.laneStep = (this.stats.laneStep || 0) + 1;
       return;
     }
     // base spacing spot (avoid the handler's area)
@@ -1122,7 +1151,7 @@ export class AI {
           // rim protectors meet the drive at the rim (verticality); others step up to stop the ball
           const dx = rim.x - h.x, dz = rim.z - h.z, dl = hyp(dx, dz) || 1;
           const prot = n(p.ratings.interior_d) * 0.6 + n(p.ratings.block) * 0.4;
-          const stand = prot > 0.6 && T.help > 0.6 ? Math.max(0.7, Math.min(1.4, hToRim - 1.1)) : 1.0;
+          const stand = Math.min(g.mode === 'proam' ? 1.0 : 9, prot > 0.6 && T.help > 0.6 ? Math.max(0.7, Math.min(1.4, hToRim - 1.1)) : 1.0); // (qp3: within arm's length of the driver under NBA rules, so the help is 'guarding')
           tx = h.x + dx / dl * stand; tz = h.z + dz / dl * stand;
           it.defense = true; this.face(p, h.x, h.z);
           this.seek(p, tx, tz, { sprint: true, arrive: 0.4 });
@@ -1139,7 +1168,31 @@ export class AI {
       if (T.help > 0.7 && hyp(man.x - rim.x, man.z - rim.z) > 5.5 && shooterThreat < 0.6) sag = Math.max(sag, 0.45 + 0.12 * n(p.ratings.interior_d));
       tx = man.x + (rim.x - man.x) * sag + (bx - man.x) * 0.15;
       tz = man.z + (rim.z - man.z) * sag + (bz - man.z) * 0.15;
-      if (p.dist(man) < 3) it.defense = p.speed < 3.5;
+      // v0.4.7.5 qp3 (NBA rules, Pro-Am / the Pro Run): a helper doesn't camp in the lane. If the spot the sag puts him
+      // on is inside the paint and his man isn't close by, he guards the paint from its edge instead: on the line
+      // between his man and the lane, PAINT.edge outside the lane line, sliding with the ball (strafeK of the way
+      // toward the ball's side), so he can get to either in a step; a man who has drifted in steps out in time
+      if (g.mode === 'proam') {
+        const dm = hyp(tx - man.x, tz - man.z), closeToMan = p.dist(man) < PAINT.guardIn;
+        const tooDeep = inLane(tx, tz, side, 0.1) && dm > PAINT.guardIn - 0.3;
+        if (tooDeep || ((p.paintT || 0) > PAINT.defOut && !closeToMan)) {
+          if (inLane(man.x, man.z, side, 1.0)) {
+            // his man is at the lane: stay within arm's length of him (that is guarding, and legal)
+            const k = Math.min(1, (PAINT.guardIn - 0.35) / Math.max(0.01, dm));
+            tx = man.x + (tx - man.x) * k; tz = man.z + (tz - man.z) * k;
+          } else {
+            // guard the paint from its edge: on the line between his man and the lane, PAINT.edge outside the lane line,
+            // sliding toward the ball's side (strafeK) so he can get to either in a step
+            const ex = Math.sign(man.x || (bx || 1)) * (LANE.halfW + PAINT.edge);
+            const ezRaw = Math.max(LANE.zNear, Math.min(LANE.zFar, man.z * side));
+            const ez = side * (ezRaw + (bz * side - ezRaw) * PAINT.strafeK * 0.5);
+            tx = man.x + (ex - man.x) * PAINT.strafeK; tz = man.z + (ez - man.z) * PAINT.strafeK;
+            if (inLane(tx, tz, side, 0.1)) { tx = ex; tz = ez; }
+          }
+          it.defense = true; this.stats.paintEdge = (this.stats.paintEdge || 0) + 1;
+        }
+      }
+      if (p.dist(man) < 3) it.defense = p.speed < 3.5 || it.defense;
       this.face(p, (man.x + bx) / 2, (man.z + bz) / 2);
     }
     [tx, tz] = this.clampCourt(tx, tz, g.half);

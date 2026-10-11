@@ -5,7 +5,7 @@ const R = COURT.hoopZ;
 // Offensive spots expressed as (x, distance-from-baseline-side rim z offset), mirrored by side.
 const SPOTS = {
   top: [0, R - 7.9], wingL: [5.3, R - 5.6], wingR: [-5.3, R - 5.6], cornerL: [6.75, R - 0.3], cornerR: [-6.75, R - 0.3],
-  elbowL: [2.45, R - 4.6], elbowR: [-2.45, R - 4.6], blockL: [2.1, R - 1.2], blockR: [-2.1, R - 1.2], dunkL: [2.9, R + 0.4], dunkR: [-2.9, R + 0.4],
+  elbowL: [2.45, R - 4.6], elbowR: [-2.45, R - 4.6], blockL: [2.95, R - 1.1], blockR: [-2.95, R - 1.1], // (qp3: the low block is outside the lane line, not in the paint) dunkL: [2.9, R + 0.4], dunkR: [-2.9, R + 0.4],
   slotL: [2.9, R - 7.3], slotR: [-2.9, R - 7.3],
 };
 export const FORMATIONS = {

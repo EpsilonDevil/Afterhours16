@@ -5,7 +5,7 @@ import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
-import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT } from './constants.js';
+import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT, inLane, LANE } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
 import * as S from './shots.js';
@@ -61,6 +61,17 @@ export function repeatMoveK(run) {
 // v0.4.7.5 quick patch, reach-in fouls by contact (Game.reachContact): how far the hand goes (m), how close counts as
 // touching (m), and how often a reach into the handler's body or arm (not the ball first) is called
 export const REACH_FOUL = { len: 0.68, touch: 0.07, body: 0.8 };
+// v0.4.7.5 qp3: the rule book. Every mode: offensive three seconds in the lane (`three`; a man driving, shooting or
+// in the air is exempt, and the count resets when a shot goes up), reach-in and shooting fouls (the park plays them
+// streetball style: no free throws, the offense keeps the ball — `parkFoulK` scales how often they're called there).
+// Full court (park full court, Pro-Am, the Pro Run): backcourt (over and back) and the 8-second count. Pro-Am / the
+// Pro Run (NBA rules): defensive three seconds (a defender in the lane not within `def3Guard` of an attacker for
+// `def3` s: a technical, one free throw and the ball), the 5-second inbound, charges (a driver into a set, square
+// defender outside the restricted area) and goaltending (a block on the way down above the rim near the basket counts).
+export const RULES = {
+  three: 3.0, laneMargin: 0.05, driveSpeed: 2.0, def3: 3.0, def3Guard: 1.1, backcourt: 8.0, frontDepth: 0.3, inbound5: 5.0, parkFoulK: 0.75,
+  charge: { p: 0.3, setSpeed: 0.7, driveSpeed: 3.0, face: 0.6 },
+};
 // v0.4.7.5 quick patch: passing 10% more accurate across the board (aim error x0.9, in-flight accuracy x1.1)
 export const PASS_ACC_K = 0.9, PASS_ACC_BOOST = 1.1;
 // v0.4.7.5 quick patch 3: screens (Game.screenQuality / screenHit). q = base + spd·(run-in speed) + set·(planted)
@@ -242,6 +253,8 @@ export class Game {
     this.attackDir = this.half ? [1, 1] : [1, -1];
     this.needsClear = [false, false];
     this.teamFouls = [0, 0];
+    // v0.4.7.5 qp3 rules: the frontcourt (backcourt violations), the 8-second count, the inbounder's 5 seconds
+    this.frontcourt = false; this.backcourtT = 0; this.inboundT = 0;
     this.lastPass = null;
     this.over = false; this.winner = -1;
     this.assist = !!cfg.assist;
@@ -626,7 +639,7 @@ export class Game {
       const inb = this.inbounder;
       if (this.phaseT <= 0 && this.ball.holder === inb.id && !inb.action) {
         // auto inbound pass to best guard (human inbounder chooses with pass button)
-        if (this.isAI(inb) || this.phaseT < -2.5) {
+        if (this.isAI(inb)) { // (qp3: a human inbounder has five seconds, then it's a violation: fiveSeconds)
           const recv = this.ai.inboundTarget(inb);
           if (recv) this.startPass(inb, { target: recv.id, type: 'inbound' });
         }
@@ -1494,7 +1507,7 @@ export class Game {
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three };
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
     this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three, made: plan.made, kind: a.kind, closest: this.closestDef(p), ...(a.kind === 'close' ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
-    if (foul) this.pendingFoul = foul;
+    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
   }
 
   // v0.4.7.5 quick patch: the defense at the release, for the AI too. The AI picks its timing when the shot starts,
@@ -1549,7 +1562,7 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade });
     this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p), ...(W ? { err, tRel: a.tRel, win: W.total, nat: W.natural, sure: W.sure } : {}) });
-    if (foul) this.pendingFoul = foul;
+    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
   }
 
   slam(p, a, rim) {
@@ -1604,7 +1617,7 @@ export class Game {
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.stats.fga++;
     const foul = this.checkShootingFoul(p, contest, 'dunk');
-    if (foul) this.pendingFoul = foul;
+    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made, grade: 'none' });
     a.hang = made && (a.style === 'power' || a.style === 'tomahawk' || a.style === 'double' || a.style === 'rimrock' || a.style === 'bully' || this.rng.next() < 0.35 + 0.1 * (a.tier || 0)) ? 0.45 + 0.12 * (a.tier || 0) + this.rng.range(0, 0.35) : 0;
@@ -1649,6 +1662,18 @@ export class Game {
     d.vx = lx * 2.6 + ux / ul * 0.9; d.vz = lz * 2.6 + uz / ul * 0.9; // v0.4.5: velocity only, no position jump
     if (!d.action || d.action.type !== 'block') { d.action = null; d.startAction('stumble', 0.6, { fall: false, back: true, dir: sx }); }
     this.emit({ type: 'bump', player: p.id, defender: d.id, v: 3 });
+  }
+
+  // v0.4.7.5 qp3: a charge: the handler driving (RULES.charge.driveSpeed) into a defender who is set (under setSpeed,
+  // on the floor), square to him (facing within `face`) and outside the restricted area, RULES.charge.p of the time
+  isCharge(h, d, v) {
+    const C = RULES.charge;
+    if (v < C.driveSpeed || d.speed > C.setSpeed || d.airborne || d.action?.type === 'stumble') return false;
+    const dx = h.x - d.x, dz = h.z - d.z, dl = Math.hypot(dx, dz) || 1;
+    if ((Math.sin(d.facing) * dx + Math.cos(d.facing) * dz) / dl < C.face) return false;
+    const rim = this.rimFor(h.team);
+    if (Math.hypot(d.x - rim.x, d.z - rim.z) < COURT.restricted + 0.2) return false;
+    return this.rng.next() < C.p;
   }
 
   // v0.4.7.5 Contact Finisher push-off: Posterizer's shove without the knockdown, bigger with every tier. Used when a
@@ -1711,12 +1736,13 @@ export class Game {
   }
 
   checkShootingFoul(p, contest, kind) {
-    if (this.mode !== 'proam' || this.phase !== 'live') return null;
+    if (!(this.mode === 'proam' || this.mode === 'park') || this.phase !== 'live') return null; // (qp3: the park calls them too)
     let best = null, bd = 9;
     for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd) { bd = dd; best = d; } }
     if (!best || bd > 1.15) return null;
     let pf = 0.02 + (best.airborne ? 0.08 : 0.02) + (kind !== 'jumper' ? 0.06 : 0) + Math.max(0, 1 - bd) * 0.1 - n(best.ratings.interior_d) * 0.04;
     if (kind !== 'jumper' && p.badges.contact_finisher) pf += 0.01 * bk(p.badges, 'contact_finisher');
+    if (this.mode === 'park') pf *= RULES.parkFoulK;
     if (this.rng.next() < pf) return { fouler: best.id, shooter: p.id, three: kind === 'jumper' && isThree(p.x, p.z, this.sideFor(p.team)) };
     return null;
   }
@@ -1809,7 +1835,7 @@ export class Game {
       // through), and a reach that touches nothing is never a foul.
       const c = this.reachContact(p, h);
       const pf = c.body ? (c.ballFirst ? 0.06 : REACH_FOUL.body * Math.min(1.5, foulK)) : 0;
-      if (this.mode === 'proam' && pf > 0 && this.rng.next() < pf) this.callFoul(p, h, false);
+      if ((this.mode === 'proam' || this.mode === 'park') && pf > 0 && this.rng.next() < pf * (this.mode === 'park' ? RULES.parkFoulK : 1)) this.callFoul(p, h, false); // (qp3: reach-ins in the park too)
     }
   }
   // v0.4.7.5 quick patch: where a reach lands. The hand goes out along the defender's facing on the side of the hand
@@ -2262,7 +2288,7 @@ export class Game {
       this.lastPass = null;
       b.kind = 'dead';
       const andOne = this.pendingFoul && this.pendingFoul.shooter === shooter?.id ? this.pendingFoul : null;
-      this.pendingFoul = null;
+      this.pendingFoul = null; if (info) info.foul = null;
       if (this.checkGameOver()) return;
       if (info.ft) { this.ftMade(); return; }
       if (andOne) { this.callFoul(this.players[andOne.fouler], shooter, true, 1); return; }
@@ -2310,7 +2336,19 @@ export class Game {
           // v0.4.3: Perimeter D outside, Interior D and size in the paint
           const pw = S.paintWeight(b.info.d ?? 6), size = Math.max(-0.25, Math.min(0.3, d.phys.H - shooter.phys.H));
           const pb = 0.1 + 0.26 * n(d.ratings.block) + (1 - pw) * 0.06 * n(d.ratings.perimeter_d) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.3) - 0.1 * n(shooter.ratings.three_point) + bk(d.badges, 'rim_protector') * 0.02 - dd * 0.25;
-          if (this.rng.next() < pb) { b.info.blocked = true; this.blockBall(d, shooter, false, false); return; }
+          if (this.rng.next() < pb) {
+            // qp3 (NBA rules): a hand on it on the way down, above the rim and over the basket, is goaltending: it counts
+            const rim = rimOf(b.info.side);
+            if (this.mode === 'proam' && b.vy < 0 && b.y > COURT.rimY && Math.hypot(b.x - rim.x, b.z - rim.z) < 1.2) {
+              this.emit({ type: 'violation', what: 'Goaltending', player: d.id });
+              this.feedMsg(`Goaltending on ${d.name}`);
+              b.info.made = true; b.info.goaltend = true; b.ghost = true;
+              const tt = Math.max(0.05, (b.y - COURT.rimY + 0.05) / Math.max(1, -b.vy));
+              b.setFlight(b.x, b.y, b.z, (rim.x - b.x) / tt, b.vy, (rim.z - b.z) / tt, 'shot', b.info);
+              return;
+            }
+            b.info.blocked = true; this.blockBall(d, shooter, false, false); return;
+          }
         }
       }
     }
@@ -2681,6 +2719,8 @@ export class Game {
             const b = this.ball;
             this.pokeOut(def, handler);
             this.emit({ type: 'steal', player: def.id, victim: handler.id, bump: true });
+          } else if (this.mode === 'proam' && this.isCharge(handler, def, -rv)) {
+            this.callFoul(handler, def, false, 0, true); // (qp3: a charge: he ran over a set, square defender)
           } else if (this.mode === 'proam' && def.speed > 2.5 && this.rng.next() < 0.18) {
             this.callFoul(def, handler, false);
           }
@@ -2784,8 +2824,91 @@ export class Game {
         this.gameClock = 0;
         if (!(b.mode === 'flight' && b.kind === 'shot' && !b.info.missed && b.info.released <= this.time)) this.endPeriod();
       }
+      // v0.4.7.5 qp3: three seconds in the lane (both ends), backcourt and the 8-second count
+      if (!this.practice) { if (this.laneRules(dt)) return; if (!this.half && this.backcourtRules(dt)) return; }
+    } else {
+      for (const p of this.players) p.paintT = 0;
+      this.frontcourt = false; this.backcourtT = 0;
+      // the inbounder's five seconds (a human holding it; the AI inbounds on its own)
+      if (this.phase === 'inbound' && this.inbounder && this.ball.holder === this.inbounder.id && !this.practice) {
+        this.inboundT += dt / this.speed;
+        if (this.inboundT > RULES.inbound5 && !this.inbounder.action) { this.inboundT = 0; this.fiveSeconds(this.inbounder); return; }
+      } else this.inboundT = 0;
     }
     if (this.mode === 'proam' && this.phase !== 'live' && this.phase !== 'dead' && this.gameClock <= 0 && this.phase !== 'ft') this.endPeriod();
+  }
+
+  // v0.4.7.5 qp3: the lane. Every player's time in the paint in front of the offense's basket (p.paintT, the AI reads
+  // it to get out in time). Offense: three seconds is a turnover, unless he is driving, shooting or in the air; a shot
+  // going up resets everyone. Defense (NBA rules: Pro-Am / the Pro Run): three seconds without an attacker within
+  // RULES.def3Guard is a technical: one free throw for the offense and the ball. Returns true when it stopped play.
+  laneRules(dt) {
+    const b = this.ball, off = this.possession, side = this.sideFor(off), h = this.holder();
+    const shotUp = b.mode === 'flight' && b.kind === 'shot';
+    for (const p of this.players) {
+      const inside = inLane(p.x, p.z, side, RULES.laneMargin);
+      if (!inside || shotUp || p.airborne) { p.paintT = 0; continue; }
+      if (p.team === off) {
+        const act = p.action?.type, driving = p === h && (act === 'layup' || act === 'dunk' || act === 'shoot' || act === 'oop' || p.speed > RULES.driveSpeed);
+        if (driving) { p.paintT = 0; continue; }
+        p.paintT = (p.paintT || 0) + dt / this.speed;
+        if (p.paintT > RULES.three) {
+          p.paintT = 0;
+          this.emit({ type: 'violation', what: 'Offensive 3 seconds', player: p.id });
+          this.stats3s = (this.stats3s || 0) + 1;
+          this.turnover(p, 'Offensive 3 seconds');
+          return true;
+        }
+      } else if (this.mode === 'proam') {
+        let guarding = false;
+        for (const q of this.teams[off]) if (q.dist(p) < RULES.def3Guard) { guarding = true; break; }
+        if (guarding) { p.paintT = 0; continue; }
+        p.paintT = (p.paintT || 0) + dt / this.speed;
+        if (p.paintT > RULES.def3) {
+          p.paintT = 0;
+          this.emit({ type: 'violation', what: 'Defensive 3 seconds', player: p.id });
+          this.technical(p, off);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  // a technical foul on `p`: the other team's best free-throw shooter takes one, then that team keeps the ball
+  technical(p, team) {
+    p.stats.pf++;
+    this.feedMsg(`Defensive 3 seconds on ${p.name}: technical`);
+    const b = this.ball;
+    if (b.holder >= 0) b.holder = -1;
+    b.mode = 'dead';
+    const shooter = [...this.teams[team]].sort((a, c) => (c.ratings.free_throw || 0) - (a.ratings.free_throw || 0))[0];
+    this.shotClock = Math.max(this.shotClock, 14);
+    this.deadBall(1.3, () => { this.startFT(shooter, 1); this.ftState.tech = true; });
+  }
+  // v0.4.7.5 qp3: full court: the frontcourt is established once the handler has the ball past the half-court line
+  // (RULES.frontDepth); taking it back across is a backcourt violation; 8 seconds without getting it across is one too
+  backcourtRules(dt) {
+    const h = this.holder();
+    if (!h) return false;
+    if (this._bcPoss !== this.possession) { this._bcPoss = this.possession; this.frontcourt = false; this.backcourtT = 0; }
+    const side = this.sideFor(h.team), zz = h.z * side;
+    if (!this.frontcourt) {
+      if (zz > RULES.frontDepth) { this.frontcourt = true; this.backcourtT = 0; return false; }
+      this.backcourtT += dt / this.speed;
+      if (this.backcourtT > RULES.backcourt) { this.backcourtT = 0; this.emit({ type: 'violation', what: '8 seconds', player: h.id }); this.turnover(h, '8 seconds'); return true; }
+      return false;
+    }
+    if (zz < -RULES.frontDepth && !h.airborne) { this.frontcourt = false; this.emit({ type: 'violation', what: 'Backcourt', player: h.id }); this.turnover(h, 'Backcourt violation'); return true; }
+    return false;
+  }
+  // the inbounder held it five seconds: the other side's ball, from the same spot
+  fiveSeconds(inb) {
+    this.emit({ type: 'violation', what: '5 seconds', player: inb.id });
+    this.feedMsg('5-second violation');
+    inb.stats.tov++;
+    const team = 1 - inb.team, x = inb.x, z = inb.z;
+    const b = this.ball; if (b.holder >= 0) b.holder = -1; b.mode = 'dead';
+    this.deadBall(1.2, () => this.restartFor(team, x, z));
   }
 
   isOut(x, z) { return feetOut(x, z, this.half); }
@@ -2826,18 +2949,22 @@ export class Game {
     this.deadBall(1.3, () => this.restartFor(team, x, z));
   }
 
-  callFoul(fouler, victim, shooting, shots = 0) {
-    if (this.mode !== 'proam' || this.over) return;
+  // qp3: the park plays fouls streetball style: no free throws, the offense keeps the ball (an and-one counts and
+  // they keep it). offensive: a charge — the fouler's personal, no team foul, the other side's ball.
+  callFoul(fouler, victim, shooting, shots = 0, offensive = false) {
+    if (!(this.mode === 'proam' || this.mode === 'park') || this.over) return;
     fouler.stats.pf++;
-    this.teamFouls[fouler.team]++;
-    this.emit({ type: 'foul', player: fouler.id, victim: victim.id, shooting });
-    this.feedMsg(`Foul on ${fouler.name}${shooting ? ' (shooting)' : ''}`);
+    if (!offensive && this.mode === 'proam') this.teamFouls[fouler.team]++;
+    this.emit({ type: 'foul', player: fouler.id, victim: victim.id, shooting, offensive });
+    this.feedMsg(offensive ? `Offensive foul on ${fouler.name}: charge` : `Foul on ${fouler.name}${shooting ? ' (shooting)' : ''}`);
     const b = this.ball;
     if (b.holder >= 0) { b.holder = -1; }
     b.mode = 'dead';
+    const vx = victim.x, vz = victim.z;
+    if (offensive) { fouler.stats.tov++; this.deadBall(1.3, () => this.restartFor(victim.team, vx, vz)); return; }
+    if (this.mode === 'park') { this.deadBall(1.3, () => this.restartFor(victim.team, vx, vz)); return; }
     if (shooting) { this.deadBall(1.3, () => this.startFT(victim, shots)); return; }
     if (this.teamFouls[fouler.team] >= 5) { this.deadBall(1.3, () => this.startFT(victim, 2)); return; }
-    const vx = victim.x, vz = victim.z;
     this.deadBall(1.3, () => this.restartFor(victim.team, vx, vz));
   }
 
@@ -2911,6 +3038,7 @@ export class Game {
     if (f.idx < f.count) { this.phase = 'ft'; f.wait = 1.0; this.giveBall(this.players[f.shooter], 'held'); this.players[f.shooter].dribble.used = true; this.players[f.shooter].action = null; return; }
     const shooter = this.players[f.shooter];
     this.ftState = null;
+    if (f.tech) { this.deadBall(1.3, () => this.restartFor(shooter.team, this.rng.range(-3, 3), this.sideFor(shooter.team) * 6)); return; } // (qp3: a technical: the ball stays with them)
     const inbTeam = 1 - shooter.team;
     const bz = this.attackDir[shooter.team] * (COURT.length / 2 + 0.45);
     this.deadBall(1.3, () => this.startInbound(inbTeam, { x: this.rng.range(-1.2, 1.2), z: bz }, 'baseline'));
@@ -2922,8 +3050,9 @@ export class Game {
       this.deadBall(1.0, () => { this.phase = 'ft'; f.wait = 0.8; this.giveBall(this.players[f.shooter], 'held'); this.players[f.shooter].dribble.used = true; });
       return;
     }
-    // last free throw missed: live rebound
+    // last free throw missed: live rebound (qp3: a missed technical is still their ball)
     this.ftState = null;
+    if (f.tech) { const sh = this.players[f.shooter]; this.deadBall(1.3, () => this.restartFor(sh.team, this.rng.range(-3, 3), this.sideFor(sh.team) * 6)); return; }
     this.phase = 'live';
     this.ball.info.ft = false;
     this.ball.kind = 'loose';

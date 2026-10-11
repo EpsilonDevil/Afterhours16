@@ -104,6 +104,7 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
   - **3v3 is full court:** a jump ball, inbounds after scores, a 24-second shot clock.
   - **2v2 and 1v1 are half court:** check ball at the top, take it back past the arc after a change of possession.
   - All park games are 2s and 3s, first to 11, 15 or 21.
+  - **Park rules, with the contact calls kept:** reach-in and shooting fouls are called (no free throws; the offense keeps the ball) and offensive three seconds in the paint is a turnover. Full court adds backcourt and 8 seconds. Pro-Am and the Pro Run play under the full NBA book: defensive three seconds (a technical), charges, goaltending, the inbounder's 5 seconds and free throws on every shooting foul.
 - **Win streaks:** win and you can **Run it back**. Each straight win multiplies the VC *and* Rep you earn: ×1.0 for the first win, then +0.15 per win, up to ×2.5 at an 11-game streak. The results card shows your multiplier.
 - **Your Rep:** goes up from Rookie 1 through Pro, All-Star and Superstar to Legend.
 - **The plaza:** three kiosks stand side by side.
