@@ -96,7 +96,7 @@ test('defensive three seconds (NBA rules): a defender loitering in the paint awa
   assert.ok(!run(g3, 4).some(e => e.type === 'violation' && e.what === 'Defensive 3 seconds'));
 });
 
-test('backcourt and 8 seconds (full court): over and back is a turnover, so is eight seconds in the backcourt; half court has neither', () => {
+test('backcourt and 8 seconds (NBA rules, full court): over and back is a turnover, so is eight seconds in the backcourt; the park has neither', () => {
   const g = live('proam', 10);
   const h = g.holder(), side = g.sideFor(h.team); park(g, h, side);
   h.setPos(0, side * 2, 0); g.giveBall(h, 'dribble'); // in the frontcourt
@@ -109,9 +109,12 @@ test('backcourt and 8 seconds (full court): over and back is a turnover, so is e
   h2.setPos(0, -side2 * 6, 0); g2.giveBall(h2, 'dribble'); g2.frontcourt = false; g2.backcourtT = 0; g2._bcPoss = g2.possession;
   const ev2 = run(g2, 10.5);
   assert.ok(ev2.some(e => e.type === 'violation' && e.what === '8 seconds'), 'eight seconds');
-  const g3 = live('park', 12);
-  const h3 = g3.holder(); h3.setPos(0, 2, 0); g3.giveBall(h3, 'dribble'); run(g3, 0.3); h3.setPos(0, 0.6, 0);
-  assert.ok(!run(g3, 11).some(e => e.type === 'violation' && (e.what === 'Backcourt' || e.what === '8 seconds')), 'half court: no backcourt rules');
+  for (const full of [false, true]) { // (the park, half or full court, has no backcourt rules at all)
+    const g3 = live('park', 12, { full });
+    const h3 = g3.holder(), s3 = g3.sideFor(h3.team); park(g3, h3, s3); h3.setPos(0, s3 * 2, 0); g3.giveBall(h3, 'dribble'); run(g3, 0.3); h3.setPos(0, -s3 * 1.5, 0);
+    assert.ok(!run(g3, 11).some(e => e.type === 'violation' && (e.what === 'Backcourt' || e.what === '8 seconds')), `park${full ? ' full' : ''}: no backcourt rules`);
+    assert.ok(!g3.frontcourt);
+  }
 });
 
 test('fouls in the park: shooting fouls and reach-ins are called, with no free throws: the offense keeps the ball (an and-one counts)', () => {

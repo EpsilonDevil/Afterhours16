@@ -2825,7 +2825,8 @@ export class Game {
         if (!(b.mode === 'flight' && b.kind === 'shot' && !b.info.missed && b.info.released <= this.time)) this.endPeriod();
       }
       // v0.4.7.5 qp3: three seconds in the lane (both ends), backcourt and the 8-second count
-      if (!this.practice) { if (this.laneRules(dt)) return; if (!this.half && this.backcourtRules(dt)) return; }
+      // (the backcourt rules are NBA rules only: the park's full court has no over-and-back and no 8-second count)
+      if (!this.practice) { if (this.laneRules(dt)) return; if (this.mode === 'proam' && !this.half && this.backcourtRules(dt)) return; }
     } else {
       for (const p of this.players) p.paintT = 0;
       this.frontcourt = false; this.backcourtT = 0;
