@@ -5,6 +5,7 @@ import { COURT, BALL_R } from '../sim/constants.js';
 import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
 import { BLOCK_BY_ID } from '../sim/blocks.js';
+import { isHS, hsHand, hsK } from '../sim/hashsling.js';
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -12,7 +13,7 @@ const D = Math.PI / 180;
 const TAU = Math.PI * 2;
 
 // v0.4.5 stage 7: dunks finished with one hand, and which hand has it at a given moment
-const ONE_HAND_DUNK = new Set(['onehand', 'tomahawk', 'windmill', 'cradle', 'reverse', 'hammer', 'liberty', 'scoop', 'switch', 'eastbay', 'hashsling', 'bully', 'aroundback', 'superman',
+const ONE_HAND_DUNK = new Set(['onehand', 'tomahawk', 'windmill', 'cradle', 'reverse', 'hammer', 'liberty', 'scoop', 'switch', 'eastbay', 'bully', 'aroundback', 'superman',
   'sidemill', 'backscratch', 'spinmill', 'kneeup', 'crossleg', 'helicopter', 'behindhead', 'hurdle', 'jackknife']);
 // the hand a layup is finished with: the far hand when he takes it away from a defender (side) or around a shot
 // blocker (rim); otherwise the right
@@ -20,6 +21,7 @@ export { layupHand }; // (shots.js: the sim needs it too, to keep the ball where
 // collarbone roll that raises the shoulder joint by ARM_LIFT (0.025H) over the 0.072H collarbone-to-shoulder span
 const CLAV_LIFT = Math.asin(0.025 / 0.072);
 export function dunkHand(a) {
+  if (isHS(a.style)) { const h = hsHand(a.style, hsK(a)); return h === 'B' ? 'R' : h; } // (qp3: Hash-Slinging, by its own script)
   const q = a.t / Math.max(0.1, a.slam || 1);
   const air = (a.t - (a.takeoff || 0)) / Math.max(0.1, (a.slam || 1) - (a.takeoff || 0)); // (the Eastbay is timed on the flight)
   return (a.style === 'switch' && q > 0.57) || (a.style === 'eastbay' && air > 0.4) || (a.style === 'aroundback' && q > 0.5) || (a.style === 'behindhead' && q > 0.55) ? 'L' : 'R';
@@ -83,6 +85,74 @@ const DUNK_LEGS2 = {
   splits: T => { set3(T, 'footL', 0.52, 0.44, 0.04); set3(T, 'footR', -0.52, 0.44, 0.04); set3(T, 'kneeL', 1, 0.3, 0.2); set3(T, 'kneeR', -1, 0.3, 0.2); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; },
   hurdle: T => { set3(T, 'footR', -0.1, 0.52, 0.6); set3(T, 'kneeR', -0.1, 0.2, 1); set3(T, 'footL', 0.16, 0.36, -0.3); set3(T, 'kneeL', 0.4, -0.2, 1); T[P.pitchL] = 0.7; T[P.pitchR] = 0.3; },
   jackknife: T => { set3(T, 'footL', 0.08, 0.5, 0.5); set3(T, 'footR', -0.08, 0.52, 0.5); set3(T, 'kneeL', 0.1, 0.2, 1); set3(T, 'kneeR', -0.1, 0.2, 1); T[P.pitchL] = 0.3; T[P.pitchR] = 0.3; },
+};
+// v0.4.7.5 qp3: the Hash-Slinging bodies (sim/hashsling.js has the ball): k is the share of the flight (0 a step before
+// the takeoff, 1 the slam); each sets the legs, the trunk and both free hands (ballHands then puts the holding hand(s)
+// on the ball). They are the longest finishes in the game, so every one has two or three distinct phases.
+const HS_BODY = {
+  // Lost Cause: scissor for the pass through the legs (right knee driven up, left leg back), the knees come together
+  // as it goes round the back, then the lead knee drives for the tomahawk with the chest open and the head back
+  hs_lostcause: (T, k) => {
+    const thr = Math.sin(Math.PI * sm(0.08, 0.44, k)) * (1 - sm(0.36, 0.5, k)), wrap = Math.sin(Math.PI * sm(0.36, 0.68, k)), tom = sm(0.66, 0.92, k);
+    set3(T, 'footR', -0.12 - 0.14 * thr - 0.02 * tom, 0.3 + 0.3 * thr + 0.3 * tom, 0.1 + 0.3 * thr + 0.2 * tom); set3(T, 'kneeR', -0.2 - 0.5 * thr, 0.3, 1);
+    set3(T, 'footL', 0.12 + 0.1 * thr, 0.26 + 0.1 * wrap, -0.1 - 0.36 * thr - 0.1 * tom); set3(T, 'kneeL', 0.14 + 0.3 * thr, -0.2, 1);
+    T[P.pitchL] = 0.9; T[P.pitchR] = 0.5; T[P.pelvis] = -0.1 * thr;
+    T[P.spine] = 0.1 * thr - 0.22 * tom; T[P.chest] = -0.12 * tom; T[P.head] = -0.15 - 0.2 * tom; T[P.chest + 1] = 0.3 * wrap - 0.2 * tom;
+    set3(T, 'handL', 0.5 - 0.15 * wrap, 1.55 + 0.2 * tom, 0.1 + 0.2 * tom); set3(T, 'elbowL', 1, -0.2, -0.3);
+    set3(T, 'handR', -0.5, 1.5 + 0.2 * wrap, 0.05); set3(T, 'elbowR', -1, -0.2, -0.3);
+  },
+  // Stinger: through the half turn the legs trail, then both heels kick up behind toward the head and the back arches
+  // (the scorpion's tail) as the ball goes behind the back and over the top
+  hs_stinger: (T, k) => {
+    const arch = sm(0.36, 0.78, k), kick = sm(0.44, 0.86, k);
+    set3(T, 'footL', 0.1 + 0.04 * kick, 0.26 + 0.5 * kick, -0.18 - 0.5 * kick); set3(T, 'footR', -0.1 - 0.04 * kick, 0.24 + 0.52 * kick, -0.2 - 0.48 * kick);
+    set3(T, 'kneeL', 0.14, -0.5, 1); set3(T, 'kneeR', -0.14, -0.5, 1); T[P.pitchL] = 1; T[P.pitchR] = 1;
+    T[P.spine] = -0.12 - 0.42 * arch; T[P.chest] = -0.05 - 0.26 * arch; T[P.head] = -0.1 - 0.3 * arch; T[P.pelvis] = 0.3 * arch;
+    set3(T, 'handL', 0.35, 1.6, 0.2); set3(T, 'handR', -0.35, 1.6, 0.2); set3(T, 'elbowL', 1, 0, -0.5); set3(T, 'elbowR', -1, 0, -0.5);
+  },
+  // Double Dip: two scissors, opposite ways (right knee up for the first pass, left knee up for the second), then a
+  // tight tuck with the chest crunched over the slam
+  hs_doubledip: (T, k) => {
+    const s1 = Math.sin(Math.PI * sm(0.04, 0.36, k)), s2 = Math.sin(Math.PI * sm(0.36, 0.72, k)), tuck = sm(0.7, 0.92, k);
+    set3(T, 'footR', -0.12 - 0.16 * s1 + 0.04 * s2, 0.3 + 0.32 * s1 + 0.04 * s2 + 0.14 * tuck, 0.08 + 0.3 * s1 - 0.4 * s2 + 0.04 * tuck); set3(T, 'kneeR', -0.2 - 0.5 * s1 + 0.3 * s2, 0.2, 1);
+    set3(T, 'footL', 0.12 + 0.04 * s1 + 0.16 * s2, 0.3 + 0.04 * s1 + 0.32 * s2 + 0.14 * tuck, 0.08 - 0.4 * s1 + 0.3 * s2 + 0.04 * tuck); set3(T, 'kneeL', 0.2 + 0.3 * s1 - 0.5 * s2, 0.2, 1);
+    T[P.pitchL] = 0.7 + 0.2 * s1; T[P.pitchR] = 0.7 + 0.2 * s2; T[P.pelvis] = -0.08 * (s1 + s2);
+    T[P.spine] = 0.14 * (s1 + s2) + 0.1 * tuck; T[P.chest] = 0.06 * tuck; T[P.head] = -0.2 + 0.1 * tuck; T[P.chest + 1] = 0.2 * s1 - 0.2 * s2;
+    set3(T, 'handL', 0.5, 1.4 + 0.3 * s1, 0.0); set3(T, 'elbowL', 1, -0.2, -0.3);
+    set3(T, 'handR', -0.5, 1.4 + 0.3 * s2, 0.0); set3(T, 'elbowR', -1, -0.2, -0.3);
+  },
+  // Backdoor Mill: knees up together while the ball goes round the back (the shoulders turning with it), then the
+  // windmill's split the other way round (left knee high, right leg kicked back) for the left-arm circle
+  hs_backdoormill: (T, k) => {
+    const wrap = sm(0.02, 0.2, k) * (1 - sm(0.34, 0.5, k)), mill = sm(0.36, 0.56, k), turn = Math.sin(Math.PI * sm(0.0, 0.4, k));
+    set3(T, 'footL', 0.11 - 0.01 * mill, 0.3 + 0.16 * wrap + 0.32 * mill, 0.06 + 0.1 * wrap + 0.28 * mill); set3(T, 'kneeL', 0.2, 0.35 * wrap + 0.3 * mill, 1);
+    set3(T, 'footR', -0.11 - 0.01 * mill, 0.3 + 0.16 * wrap + 0.04 * mill, 0.06 + 0.1 * wrap - 0.48 * mill); set3(T, 'kneeR', -0.2, 0.35 * wrap - 0.2 * mill, 1);
+    T[P.pitchL] = 0.7 - 0.2 * mill; T[P.pitchR] = 0.7 + 0.2 * mill;
+    T[P.spine] = 0.12 * wrap - 0.12 * Math.sin(Math.PI * mill) - 0.04; T[P.chest] = -0.08 * mill; T[P.head] = -0.15; T[P.chest + 1] = -0.34 * turn + 0.25 * mill;
+    set3(T, 'handL', 0.45, 1.5, 0.1); set3(T, 'elbowL', 1, -0.2, -0.3);
+    set3(T, 'handR', -0.55, 1.75 * mill + 1.45 * (1 - mill), 0.05); set3(T, 'elbowR', -1, -0.2, -0.3);
+  },
+  // Cradle Spin: a pencil through the turn (legs straight down and together, toes pointed) with the free arm out for
+  // balance, the knees snapping up only for the switch and the slam
+  hs_cradlespin: (T, k) => {
+    const pen = sm(0.04, 0.2, k) * (1 - sm(0.72, 0.88, k)), snap = sm(0.76, 0.94, k);
+    set3(T, 'footL', 0.06, 0.1 + 0.02 * pen + 0.36 * snap, -0.02 + 0.1 * snap); set3(T, 'footR', -0.06, 0.1 + 0.02 * pen + 0.34 * snap, -0.04 + 0.1 * snap);
+    set3(T, 'kneeL', 0.1, -0.3 * pen + 0.4 * snap, 1); set3(T, 'kneeR', -0.1, -0.3 * pen + 0.4 * snap, 1); T[P.pitchL] = 0.95 - 0.25 * snap; T[P.pitchR] = 0.95 - 0.25 * snap;
+    T[P.spine] = -0.06 + 0.1 * snap; T[P.chest] = -0.04; T[P.head] = -0.15; T[P.chest + 1] = -0.3 * pen;
+    set3(T, 'handL', 0.62 - 0.1 * snap, 1.45 + 0.3 * snap, -0.1); set3(T, 'elbowL', 1, 0, -0.4);
+    set3(T, 'handR', -0.6, 1.5 + 0.25 * snap, 0.05); set3(T, 'elbowR', -1, -0.2, -0.3);
+  },
+  // The Hash Sling: a wide scissor for the pass through the legs in the middle of the turn, then the legs snap
+  // together and tuck for the rest of the spin, the knees driving up with the left-hand slam
+  hs_sling: (T, k) => {
+    const thr = Math.sin(Math.PI * sm(0.2, 0.62, k)) * (1 - sm(0.52, 0.66, k)), tuck = sm(0.6, 0.8, k), drive = sm(0.84, 1, k);
+    set3(T, 'footR', -0.12 - 0.16 * thr, 0.3 + 0.3 * thr + 0.12 * tuck, 0.1 + 0.3 * thr - 0.06 * tuck + 0.1 * drive); set3(T, 'kneeR', -0.2 - 0.5 * thr + 0.1 * tuck, 0.3, 1);
+    set3(T, 'footL', 0.12 + 0.1 * thr, 0.26 + 0.14 * tuck + 0.08 * drive, -0.1 - 0.4 * thr + 0.3 * tuck * (1 - 0.3 * drive)); set3(T, 'kneeL', 0.14 + 0.3 * thr - 0.1 * tuck, -0.2 + 0.4 * tuck, 1);
+    T[P.pitchL] = 0.9 - 0.2 * tuck; T[P.pitchR] = 0.5 + 0.2 * tuck; T[P.pelvis] = -0.1 * thr;
+    T[P.spine] = 0.12 * thr + 0.06 * tuck - 0.1 * drive; T[P.chest] = 0.0; T[P.head] = -0.15 - 0.1 * drive; T[P.chest + 1] = 0.25 * thr;
+    set3(T, 'handL', 0.5, 1.4 + 0.3 * thr, 0.05); set3(T, 'elbowL', 1, -0.2, -0.3);
+    set3(T, 'handR', -0.5 - 0.1 * tuck, 1.45 + 0.35 * tuck, -0.05); set3(T, 'elbowR', -1, -0.2, -0.3);
+  },
 };
 const SPINE2 = {
   twomill: [-0.1, -0.06, -0.15], sidemill: [-0.06, -0.04, -0.15], backscratch: [-0.28, -0.18, -0.05], rev360: [-0.12, -0.08, -0.3], spinmill: [0.06, 0, -0.15],
@@ -705,7 +775,7 @@ export class Animator {
     if (a && (a.type === 'layup' || a.type === 'dunk')) {
       // v0.4.5 stage 7: the one-handed finishes really are one-handed (the free arm does its own thing), and the
       // hand switch, the eastbay and the around-the-back finish in the other hand
-      const one = (a.type === 'layup' && a.lstyle !== 'hop') || ONE_HAND_DUNK.has(a.style); // (v0.4.7.5: the hop layup is two-handed)
+      const one = (a.type === 'layup' && a.lstyle !== 'hop') || (isHS(a.style) ? hsHand(a.style, hsK(a)) !== 'B' : ONE_HAND_DUNK.has(a.style)); // (v0.4.7.5: the hop layup is two-handed; qp3: Hash-Slinging by its script)
       const sh = a.type === 'dunk' ? dunkHand(a) : layupHand(a), oh = sh === 'L' ? 'R' : 'L', sg = sh === 'L' ? 1 : -1;
       set3(T, 'hand' + sh, b[0] + sg * 0.02, b[1] - r - 0.07, b[2] - 0.06);
       palm[sh] = { normal: [0, 0.8, 0.55], fingers: [0, 0.8, -0.5], w: 0.85 };
@@ -1106,22 +1176,19 @@ export class Animator {
             set3(T, 'footR', -0.12 - thr * 0.14, 0.52 + thr * 0.22, 0.34 + thr * 0.24); set3(T, 'kneeR', -0.2 - thr * 0.5, 0.35, 1);
             set3(T, 'footL', 0.12 + thr * 0.1, 0.26 - thr * 0.04, -0.4 - thr * 0.2); set3(T, 'kneeL', 0.14 + thr * 0.3, -0.2, 1);
             T[P.pitchL] = 0.9; T[P.pitchR] = 0.5; T[P.pelvis] = -0.1 * thr;
-          } else if (st === 'hashsling') {
-            // Hash-Slinging (Icon badge only): legs scissor wide open while the arm whips all the way around
-            const wh = Math.sin(Math.min(1, up / 0.8) * Math.PI);
-            set3(T, 'footR', -0.1 - wh * 0.16, 0.58 + wh * 0.2, 0.36 + wh * 0.3); set3(T, 'kneeR', -0.2 - wh * 0.4, 0.3, 1);
-            set3(T, 'footL', 0.14 + wh * 0.14, 0.3, -0.46 - wh * 0.22); set3(T, 'kneeL', 0.12, -0.25, 1);
-            T[P.pitchL] = 0.95; T[P.pitchR] = 0.45; T[P.chest + 1] = (a.spinDir || 1) * 0.35 * wh; T[P.pelvis] = -0.08 * wh;
+          } else if (isHS(st)) { HS_BODY[st](T, hsK(a), a);
           } else if (DUNK_LEGS2[st]) { DUNK_LEGS2[st](T, up, a);
           } else if (two || a.type === 'oop') { set3(T, 'footL', 0.14, 0.32, 0.05); set3(T, 'footR', -0.14, 0.3, 0.05); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7; set3(T, 'kneeL', 0.3, 0, 1); set3(T, 'kneeR', -0.3, 0, 1); }
           else { set3(T, 'footR', -0.1, 0.6, 0.3); set3(T, 'kneeR', -0.1, 0.3, 1); set3(T, 'footL', 0.1, 0.2, -0.2); T[P.pitchL] = 0.8; T[P.pitchR] = 0.5; }
-          T[P.spine] = st === 'tomahawk' || st === 'hammer' ? -0.2 : st === 'rimrock' ? -0.3 : st === 'liberty' ? -0.26 : st === 'windmill' || st === 'cradle' ? -0.12 * Math.sin(up * Math.PI) - 0.04 : st === '360' ? 0.08 : st === 'eastbay' ? 0.1 : st === 'scoop' ? 0.06 : st === 'superman' ? 0.34 : st === 'bully' ? 0.1 : st === 'aroundback' ? 0.12 : -0.05;
-          T[P.chest] = st === 'tomahawk' || st === 'hammer' ? -0.15 : st === 'rimrock' ? -0.16 : st === 'liberty' ? -0.12 : st === 'windmill' ? -0.08 : st === 'superman' ? 0.1 : 0;
-          T[P.head] = st === 'superman' ? -0.42 : -0.15;
-          if (SPINE2[st]) { const [sp, ch, hd] = SPINE2[st]; T[P.spine] = sp; T[P.chest] = ch; T[P.head] = hd; }
+          if (!isHS(st)) { // (qp3: a Hash-Slinging body sets its own trunk)
+            T[P.spine] = st === 'tomahawk' || st === 'hammer' ? -0.2 : st === 'rimrock' ? -0.3 : st === 'liberty' ? -0.26 : st === 'windmill' || st === 'cradle' ? -0.12 * Math.sin(up * Math.PI) - 0.04 : st === '360' ? 0.08 : st === 'eastbay' ? 0.1 : st === 'scoop' ? 0.06 : st === 'superman' ? 0.34 : st === 'bully' ? 0.1 : st === 'aroundback' ? 0.12 : -0.05;
+            T[P.chest] = st === 'tomahawk' || st === 'hammer' ? -0.15 : st === 'rimrock' ? -0.16 : st === 'liberty' ? -0.12 : st === 'windmill' ? -0.08 : st === 'superman' ? 0.1 : 0;
+            T[P.head] = st === 'superman' ? -0.42 : -0.15;
+            if (SPINE2[st]) { const [sp, ch, hd] = SPINE2[st]; T[P.spine] = sp; T[P.chest] = ch; T[P.head] = hd; }
+          }
           // the free arm balances flashy dunks out wide (on the other side once the ball has changed hands)
           const fh = dunkHand(a) === 'L' ? 'R' : 'L', fs = fh === 'L' ? 1 : -1;
-          if (!a.slammed && (st === 'windmill' || st === 'cradle' || st === 'tomahawk' || st === 'hammer' || st === 'liberty' || st === '180' || st === 'eastbay' || st === 'hashsling' || st === 'switch' || st === 'aroundback' || st === 'sidemill' || st === 'spinmill' || st === 'helicopter' || st === 'crossleg' || st === 'hurdle')) { set3(T, 'hand' + fh, fs * 0.55, 1.75, 0.05); set3(T, 'elbow' + fh, fs * 1, -0.2, -0.3); }
+          if (!a.slammed && (st === 'windmill' || st === 'cradle' || st === 'tomahawk' || st === 'hammer' || st === 'liberty' || st === '180' || st === 'eastbay' || st === 'switch' || st === 'aroundback' || st === 'sidemill' || st === 'spinmill' || st === 'helicopter' || st === 'crossleg' || st === 'hurdle')) { set3(T, 'hand' + fh, fs * 0.55, 1.75, 0.05); set3(T, 'elbow' + fh, fs * 1, -0.2, -0.3); }
           // v0.4.7.5: the free arm's own job in the new finishes
           if (!a.slammed && st === 'kneeup') { set3(T, 'hand' + fh, fs * 0.3, 1.25, 0.42); set3(T, 'elbow' + fh, fs * 0.8, -0.6, 0.2); }
           if (!a.slammed && st === 'jackknife') { set3(T, 'hand' + fh, fs * 0.2, 0.9, 0.55); set3(T, 'elbow' + fh, fs * 0.6, -0.6, 0.5); }
@@ -1288,6 +1355,29 @@ export class Animator {
           set3(T, 'handL', 0.42, 1.3 * hit + 0.12 * down + 0.4 * (1 - down - hit), -0.42 * down + 0.1 * hit);
           set3(T, 'handR', -0.42, 1.25 * hit + 0.12 * down + 0.4 * (1 - down - hit), -0.4 * down + 0.1 * hit);
           set3(T, 'elbowL', 0.7, -0.1, -0.5); set3(T, 'elbowR', -0.7, -0.1, -0.5);
+        } else if (a.fall && a.flat) {
+          // v0.4.7.5 qp3: posterized by a Hash-Slinging finish: hit in the chest, the arms fly up, he goes over backward
+          // and lands flat on his back (the pelvis turned face-up, so the whole trunk lies along the floor behind him,
+          // the legs out in front), lies there, then rolls to one side onto a hand and a knee and gets up
+          const hit = Math.sin(Math.min(1, q / 0.1) * Math.PI) * (1 - sm(0.06, 0.18, q));
+          const over = sm(0.04, 0.26, q) * (1 - sm(0.74, 0.96, q)); // on the way down and flat
+          const flat = sm(0.16, 0.3, q) * (1 - sm(0.7, 0.9, q));      // fully down
+          const roll = sm(0.72, 0.9, q) * (1 - sm(0.9, 1, q)), d = a.dir || 1;
+          // the pelvis pitches back 90 deg (face up); the hips end just off the floor
+          T[P.pelvis] = -1.5 * over; T[P.pelvis + 2] = d * 0.5 * roll;
+          T[P.root + 1] = -0.95 * over + 0.03 * flat - 0.1 * hit + 0.3 * roll; T[P.root + 2] = -0.25 * over - 0.2 * hit + 0.1 * roll;
+          // the trunk straight along the floor (a touch of arch), the head lifted an inch, then back down
+          T[P.spine] = -0.4 * hit + 0.08 * flat; T[P.chest] = -0.2 * hit - 0.06 * flat; T[P.head] = 0.3 * hit + 0.4 * flat * (1 - sm(0.3, 0.5, q)) - 0.2 * roll;
+          // legs: thrown up with the hit, then out in front along the floor (heels down, knees a little bent), one
+          // knee tucked under for the roll
+          set3(T, 'footL', 0.2, 0.08 + 0.25 * hit, 0.58 * over + 0.08 - 0.1 * hit - 0.35 * roll * (d > 0 ? 1 : 0)); set3(T, 'footR', -0.2, 0.08 + 0.2 * hit, 0.62 * over - 0.12 * hit - 0.35 * roll * (d < 0 ? 1 : 0));
+          set3(T, 'kneeL', 0.2, 0.6 * over + 0.4 * roll, 1 - 0.5 * over); set3(T, 'kneeR', -0.2, 0.6 * over + 0.4 * roll, 1 - 0.5 * over);
+          T[P.pitchL] = 0.6 * over; T[P.pitchR] = 0.6 * over;
+          // arms: flung up and back with the hit, then out on the floor either side above the shoulders, then a hand
+          // under him for the roll
+          set3(T, 'handL', 0.5 + 0.15 * flat, 1.5 * hit + 0.1 * over + 0.5 * (1 - over - hit) + 0.4 * roll, -0.4 * over + 0.2 * hit - 0.3 * flat + (d > 0 ? 0.3 * roll : 0));
+          set3(T, 'handR', -0.5 - 0.15 * flat, 1.45 * hit + 0.1 * over + 0.5 * (1 - over - hit) + 0.4 * roll, -0.4 * over + 0.2 * hit - 0.3 * flat + (d < 0 ? 0.3 * roll : 0));
+          set3(T, 'elbowL', 0.8, 0.2 * over - 0.3, -0.5); set3(T, 'elbowR', -0.8, 0.2 * over - 0.3, -0.5);
         } else if (a.fall) {
           const down = sm(0.05, 0.3, q) * (1 - sm(0.72, 1, q));
           T[P.root + 1] = -0.82 * down; T[P.root + 2] = -0.25 * down;

@@ -129,6 +129,12 @@ select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 .bp-text { display: flex; flex-direction: column; line-height: 1.15; }
 .bp-text small { font-size: 10px; letter-spacing: .18em; color: var(--tc); }
 .bp-text b { font-size: 16px; letter-spacing: .02em; }
+/* qp3: an Icon badge's activation (Hash-Slinging, after every dunk): the same window 20% bigger (every measure x1.2), the
+   badge's full-size art (77 px = 64 x 1.2, its own gradients animating) and the spectrum border */
+.badge-pop.icon { gap: 14.4px; padding: 8.4px 21.6px 8.4px 9.6px; border-radius: 48px; border: 1.8px solid transparent; background: linear-gradient(180deg, rgba(22,10,38,.96), rgba(10,6,20,.96)) padding-box, var(--hof-grad) border-box; background-size: 100% 100%, 300% 100%; animation: hofShift 5s linear infinite, hofGlow 2.4s ease-in-out infinite; --tc: #ffd84a; }
+.badge-pop.icon .bp-art { width: 77px; height: 77px; }
+.badge-pop.icon .bp-text small { font-size: 12px; letter-spacing: .216em; background: var(--hof-grad); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hofShift 5s linear infinite; font-weight: 700; }
+.badge-pop.icon .bp-text b { font-size: 19.2px; letter-spacing: .024em; }
 
 /* v0.4.3 pre-game intro (lower third) */
 #hud.intro-on .hud-score, #hud.intro-on .hud-grade, #hud.intro-on .hud-feed, #hud.intro-on .hud-stamina { opacity: 0; }
@@ -162,7 +168,7 @@ select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 svg.bart.hof-vibe { animation: hofArt 2.4s ease-in-out infinite; overflow: visible; }
 svg.icon-art { overflow: visible; filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
 svg.icon-art.locked { filter: grayscale(.85) brightness(.75); opacity: .8; }
-@media (prefers-reduced-motion: reduce) { .ib.hof, .tag.hof, .badge-pop.tier4, svg.bart.hof-vibe { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ib.hof, .tag.hof, .badge-pop.tier4, .badge-pop.icon, .badge-pop.icon .bp-text small, svg.bart.hof-vibe { animation: none; } }
 .ib.none { background: rgba(255,255,255,.06); color: var(--muted); }
 @keyframes introIn { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
 @keyframes introP { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }

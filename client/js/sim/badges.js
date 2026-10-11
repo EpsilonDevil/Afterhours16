@@ -39,7 +39,7 @@ export const NO_BADGE_K = 0.9;
 // v0.4.5 Archetype Icon badges: one per archetype, unlocked with the build's 7th Hall of Fame badge
 export const ICON_BADGES = {
   sharp_eye: { name: 'Sharp Eye', archetype: 'sharpshooter', desc: '5% bigger green window on every shot, everywhere on the court. Unlocks exclusive ultra-flashy shooting animations.', stats: {}, green: 0.05 },
-  hash_slinging: { name: 'Hash-Slinging', archetype: 'slasher', desc: '+5% Driving Dunk and Standing Dunk (can pass 99). Unlocks exclusive ultra-flashy dunk animations.', stats: { driving_dunk: 0.05, standing_dunk: 0.05 } },
+  hash_slinging: { name: 'Hash-Slinging', archetype: 'slasher', desc: '+5% Driving Dunk and Standing Dunk (can pass 99). Unlocks the exclusive Hash-Slinging dunk package: six long streetball finishes that put defenders flat on their back.', stats: { driving_dunk: 0.05, standing_dunk: 0.05 } },
   oprah: { name: 'Oprah', archetype: 'playmaker', desc: '+5% Ball Handle, Speed with Ball and Pass Accuracy (can pass 99). Unlocks exclusive ultra-flashy passing animations.', stats: { ball_handle: 0.05, speed_with_ball: 0.05, pass_accuracy: 0.05 } },
   the_clamp: { name: 'The Clamp', archetype: 'lockdown', desc: '+5% Perimeter D and Steal (can pass 99). Unlocks steal animations that exist only for this badge.', stats: { perimeter_d: 0.05, steal: 0.05 } },
   the_general: { name: 'The General', archetype: 'two_way', desc: '+2.5% to every attribute (can pass 99). Unlocks an exclusive salute celebration.', all: 0.025, stats: {} },

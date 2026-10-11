@@ -1,6 +1,10 @@
 // In-game DOM HUD: score bug, shot meter, release feedback, player tags, feed, big callouts.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-import { badgeSVG } from '../ui/badgeart.js';
+import { badgeSVG, iconBadgeSVG } from '../ui/badgeart.js';
+
+// badge activation banner timing (ms up, then the fade) and the Icon badge's version of it: ICON_POP_K times as long
+// (2x), the window 20% bigger (CSS .badge-pop.icon) with the badge's full-size art at ICON_POP_ART px
+export const BADGE_POP_MS = 1700, BADGE_POP_GAP = 1.9, ICON_POP_K = 2, ICON_POP_ART = 77;
 
 // the shot meter's track runs from the start of the shot (0) to 30% past the ideal release (1)
 export const METER_SCALE = 1.3;
@@ -157,6 +161,7 @@ export class HUD {
   }
 
   // v0.4.2 badge activation banner: shown one at a time at the top of the screen, in activation order
+  // (info.icon: an Icon badge's activation, see showNextBadge)
   badge(info) {
     if (this.badgeQ.length > 6) return;
     const last = this.badgeQ[this.badgeQ.length - 1];
@@ -168,14 +173,19 @@ export class HUD {
     if (!b) return;
     const TIER = ['', 'Bronze', 'Silver', 'Gold', 'Hall of Fame'];
     // v0.4.7.5: the badge's own art (Hall of Fame keeps its full vibrance here too)
+    // qp3: an Icon badge's activation (Hash-Slinging, after every dunk) is 20% bigger, carries the badge's full-size art
+    // with its animation running (ICON_POP_ART px, against the 42 px miniature), and stays up twice as long
     const d = document.createElement('div');
-    d.className = `badge-pop tier${b.tier}`;
-    d.innerHTML = `<span class="bp-art">${badgeSVG(b.key, b.tier, 42)}</span><span class="bp-text"><small>BADGE ACTIVATED · ${esc(TIER[b.tier] || '')}</small><b>${esc(b.name)}</b></span>`;
+    const k = b.icon ? ICON_POP_K : 1;
+    d.className = b.icon ? 'badge-pop icon' : `badge-pop tier${b.tier}`;
+    d.innerHTML = b.icon
+      ? `<span class="bp-art">${iconBadgeSVG(b.key, ICON_POP_ART)}</span><span class="bp-text"><small>ICON BADGE ACTIVATED</small><b>${esc(b.name)}</b></span>`
+      : `<span class="bp-art">${badgeSVG(b.key, b.tier, 42)}</span><span class="bp-text"><small>BADGE ACTIVATED · ${esc(TIER[b.tier] || '')}</small><b>${esc(b.name)}</b></span>`;
     this.badgeBox.appendChild(d);
     requestAnimationFrame(() => d.classList.add('on'));
-    setTimeout(() => { d.classList.remove('on'); d.classList.add('off'); }, 1700);
-    setTimeout(() => d.remove(), 2300);
-    this.badgeT = 1.9;
+    setTimeout(() => { d.classList.remove('on'); d.classList.add('off'); }, BADGE_POP_MS * k);
+    setTimeout(() => d.remove(), (BADGE_POP_MS + 600) * k);
+    this.badgeT = BADGE_POP_GAP * k;
   }
 
   // v0.4.1 Locked-In grade (null hides it)

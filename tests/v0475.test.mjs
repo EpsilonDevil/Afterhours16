@@ -445,7 +445,7 @@ import { ANKLE_REACT, millCircle } from '../client/js/sim/game.js';
 
 test('animations doubled in every category, a dozen movement styles, and the AI wears them', () => {
   const n = slot => list.filter(i => i.category === 'animation' && i.slot === slot).length;
-  assert.deepEqual([n('jumpshot'), n('release'), n('dunk'), n('sizeup'), n('layup'), n('celebration')], [30, 32, 28, 20, 8, 34]);
+  assert.deepEqual([n('jumpshot'), n('release'), n('dunk'), n('sizeup'), n('layup'), n('celebration')], [30, 32, 29, 20, 8, 34]); // (qp3: + the Hash-Slinging Icon package, not for sale)
   assert.ok(n('movement') >= 13, 'standard plus at least 12 movement styles');
   const styles = new Set();
   for (let s = 0; s < 40; s++) { const b = makeBot(new RNG(s), { level: 0.7, catalog }); styles.add(b.build.equipment?.movement); }

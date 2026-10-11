@@ -4,6 +4,7 @@
 import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
+import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
 import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
@@ -937,10 +938,14 @@ export class Game {
     const need = COURT.rimY + 0.22 - p.phys.reach;
     const h = Math.max(need, Math.min(p.phys.vertical * (1.05 + 0.03 * tier), need + 0.25 + 0.05 * tier + (flair >= 2 ? 0.06 : 0)));
     const tUp = Math.sqrt(2 * h / GRAVITY);
+    // v0.4.7.5 qp3: a Hash-Slinging finish is slammed past the apex, while he is still above the rim on the way down
+    // (HS_TIMING.hang of the time he has up there), so the flight is long enough for two passes of the ball
+    const hs = isHS(style);
+    const slam = hs ? takeoff + tUp + HS_TIMING.hang * Math.sqrt(2 * Math.max(0, h - need) / GRAVITY) : takeoff + tUp * 0.98;
     p.spend(COST.dunk);
-    const a = p.startAction('dunk', takeoff + tUp + 1.2, {
-      takeoff, slam: takeoff + tUp * 0.98, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
-      jumpH: h, standing, style, tUp, side: this.sideFor(p.team), tier, spinDir: this.rng.next() < 0.5 ? 1 : -1,
+    const a = p.startAction('dunk', Math.max(takeoff + tUp + 1.2, slam + 1.0), {
+      takeoff, slam, spotX: p.x + dx * travel, spotZ: p.z + dz * travel, gatherSpeed: gs,
+      jumpH: h, standing, style, tUp, side: this.sideFor(p.team), tier, spinDir: this.rng.next() < 0.5 ? 1 : -1, hs,
     });
     this.ball.mode = 'held'; p.dribble.used = true;
     this.emit({ type: 'gather', player: p.id, kind: 'dunk', style });
@@ -953,15 +958,15 @@ export class Game {
     const pk = p.dunkPkg || 'dunk_basic';
     const item = this.catalog[pk];
     let styles = item?.styles || ['power', 'onehand'];
-    // v0.4.5: the Hash-Slinging Icon badge unlocks a finish nobody else has
-    if (p.icon === 'hash_slinging' && !standing) styles = [...styles, 'hashsling', 'hashsling'];
+    // (v0.4.5's single Hash-Slinging finish is gone: qp3 made the Icon badge a whole package, HS_PKG, hashsling.js)
     if (standing) { styles = styles.filter(s => (S.STYLE_FLAIR[s] ?? 0) <= 1.5); if (!styles.length) styles = ['power']; }
     const tier = S.dunkTier(p);
     const traffic = this.opponents(p).some(d => d.dist(p) < 1.6);
     const ws = styles.map(s => { const f = S.STYLE_FLAIR[s] ?? 0; return traffic ? (f <= 1 ? 2.5 : 0.6) : 1 + f * (0.2 + 0.45 * tier); });
     // v0.4.5 stage 7: the package's signature finish (nobody else's package has it) is about half of its dunks,
     // so two packages never look alike in a game
-    const si = styles.indexOf(item?.signature);
+    // (qp3: not the Icon package: its six are the point, so they come up evenly)
+    const si = item?.icon ? -1 : styles.indexOf(item?.signature);
     if (si >= 0) { const rest = ws.reduce((a, b, i) => a + (i === si ? 0 : b), 0); ws[si] = Math.max(ws[si], rest); }
     let r = this.rng.next() * ws.reduce((a, b) => a + b, 0);
     for (let i = 0; i < styles.length; i++) { r -= ws[i]; if (r <= 0) return styles[i]; }
@@ -1300,7 +1305,8 @@ export class Game {
           const dx = rim.x - p.x, dz = rim.z - p.z, dl = Math.hypot(dx, dz) || 1;
           const reachFront = a.style === 'reverse' ? 0.2 : 0.42;
           const go = Math.max(0, dl - reachFront);
-          p.vx = dx / dl * go / a.tUp; p.vz = dz / dl * go / a.tUp;
+          const air = a.hs ? Math.max(0.1, a.slam - a.takeoff) : a.tUp; // (qp3: a Hash-Slinging slam comes past the apex)
+          p.vx = dx / dl * go / air; p.vz = dz / dl * go / air;
           if (a.style === 'reverse') a.revFacing = Math.atan2(-dx, -dz);
         }
         if (a.style === 'reverse' && a.jumped && !a.slammed) p.facing += wrap(a.revFacing - p.facing) * Math.min(1, dt * 6);
@@ -1317,12 +1323,18 @@ export class Game {
             if (dd > p.phys.radius + d.phys.radius + 0.06 || along < 0 || lat > 0.6 || along > ul + 0.3) continue;
             if (d.action?.type === 'stumble') continue;
             // finishing through contact: dunk ratings + Close Shot vs the defender's size and interior D
-            const tier = bk(p.badges, 'posterizer'), traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
-            const pc = Math.max(0.12, Math.min(0.96, 0.45 + 0.44 * traffic + 0.07 * tier + 0.04 * pkT + (p.phys.strength - d.phys.strength) * 0.3 - 0.22 * n(d.ratings.interior_d) - Math.max(0, d.phys.H - p.phys.H) * 0.3 + (d.airborne ? 0.05 : 0)));
+            // (qp3: a Hash-Slinging finish carries the Icon's own poster: he wins the contact HS_POSTER.pc of the time at
+            // least, and the knockdown comes with the package, Posterizer badge or not)
+            const tier = a.hs ? Math.max(bk(p.badges, 'posterizer'), bk({ posterizer: 4 }, 'posterizer')) : bk(p.badges, 'posterizer'), traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
+            let pc = Math.max(0.12, Math.min(0.96, 0.45 + 0.44 * traffic + 0.07 * tier + 0.04 * pkT + (p.phys.strength - d.phys.strength) * 0.3 - 0.22 * n(d.ratings.interior_d) - Math.max(0, d.phys.H - p.phys.H) * 0.3 + (d.airborne ? 0.05 : 0)));
+            if (a.hs) pc = Math.max(pc, HS_POSTER.pc);
             if (this.rng.next() < pc) {
               // v0.4.5: the shove-and-knockdown is the Posterizer badge's alone; without it the dunker finishes
               // through the contact and bumps the defender off the line (no knockdown)
-              if (tier > 0) { a.posterPending = d.id; a.through = d.id; }
+              // (qp3: a Hash-Slinging finish clears him out right there, on the way up: the shove and the knockdown come
+              // with the package, so the lane is open for the long finish)
+              if (a.hs) this.posterize(p, d, a, rim, true);
+              else if (tier > 0) { a.posterPending = d.id; a.through = d.id; }
               else this.shoulderThrough(p, d, a, rim);
             } else if (p.badges.contact_finisher) {
               // v0.4.7.5: stopped short of the dunk, a Contact Finisher (not Posterizer) takes over: he pushes off
@@ -1565,8 +1577,11 @@ export class Game {
     }
     if (!poster && made) {
       // a contest in the air at the rim: the dunker goes through him -> knock him back as he comes down
-      poster = this.opponents(p).find(d => d.dist(p) < 1.1 && (d.airborne || d.action?.type === 'block')) || null;
-      if (poster && p.badges.posterizer) this.posterize(p, poster, a, rim, false);
+      // (qp3: a Hash-Slinging finish goes over anyone contesting it, in the air or not, within HS_POSTER.reach and
+      // not behind him)
+      const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
+      poster = this.opponents(p).find(d => d.dist(p) < (a.hs ? HS_POSTER.reach : 1.1) && (d.airborne || d.action?.type === 'block' || (a.hs && d.action?.type !== 'stumble' && ((d.x - p.x) * fx + (d.z - p.z) * fz) / (d.dist(p) || 1) > HS_POSTER.ahead))) || null;
+      if (poster && (p.badges.posterizer || a.hs)) this.posterize(p, poster, a, rim, false);
       else if (poster) { this.shoulderThrough(p, poster, a, rim); poster = null; }
     }
     a.slamAt = a.t;
@@ -1593,7 +1608,10 @@ export class Game {
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made, grade: 'none' });
     a.hang = made && (a.style === 'power' || a.style === 'tomahawk' || a.style === 'double' || a.style === 'rimrock' || a.style === 'bully' || this.rng.next() < 0.35 + 0.1 * (a.tier || 0)) ? 0.45 + 0.12 * (a.tier || 0) + this.rng.range(0, 0.35) : 0;
-    this.emit({ type: 'slam', player: p.id, made, style: a.style, side: a.side, poster: poster ? poster.id : -1, tier: a.tier || 0, flair: S.STYLE_FLAIR[a.style] ?? 0 });
+    if (made && a.hs) a.hang = HS_TIMING.hangOnRim + this.rng.range(0, HS_TIMING.hangOnRimR); // (qp3: every Hash-Slinging finish hangs)
+    this.emit({ type: 'slam', player: p.id, made, style: a.style, side: a.side, poster: poster ? poster.id : -1, tier: a.tier || 0, flair: S.STYLE_FLAIR[a.style] ?? 0, hs: !!a.hs, flat: !!(poster && poster.action?.flat) });
+    // qp3: the Hash-Slinging Icon badge (+5% to both dunk ratings) activates on every dunk he throws down
+    if (made && p.icon === 'hash_slinging') this.emit({ type: 'badge', player: p.id, badge: 'hash_slinging', tier: 5, icon: true });
   }
 
   // Dunker `p` posterizes defender `d`: the defender is shoved back along the dunk line (and often knocked
@@ -1605,15 +1623,21 @@ export class Game {
     const nx = (dx / dl) * 0.6 + (ux / ul) * 0.4, nz = (dz / dl) * 0.6 + (uz / ul) * 0.4, nl = Math.hypot(nx, nz) || 1;
     // v0.4.3: higher dunk packages hit harder: a bigger shove, more knockdowns, longer on the floor
     const pkT = a.tier || 0;
-    const push = (2.6 + 1.6 * Math.max(0, p.phys.strength - d.phys.strength + 0.3)) * (1 + 0.18 * pkT);
+    let push = (2.6 + 1.6 * Math.max(0, p.phys.strength - d.phys.strength + 0.3)) * (1 + 0.18 * pkT);
     d.action = null;
-    const fall = this.rng.next() < 0.45 + 0.1 * bk(p.badges, 'posterizer') + 0.13 * pkT;
-    d.startAction('stumble', fall ? 2.4 + 0.3 * pkT + this.rng.range(0, 0.8) : 1.0 + 0.15 * pkT, { fall, back: !fall, dir: this.rng.next() < 0.5 ? 1 : -1, poster: true, hard: pkT });
+    let fall = this.rng.next() < 0.45 + 0.1 * bk(p.badges, 'posterizer') + 0.13 * pkT;
+    if (a.hs) {
+      // qp3: a Hash-Slinging finish puts most defenders flat on their back (HS_POSTER.fall, more against a weaker man)
+      // for a good three seconds; the strongest sometimes stay up (shoved back hard instead)
+      fall = this.rng.next() < Math.max(HS_POSTER.fallMin, Math.min(HS_POSTER.fallMax, HS_POSTER.fall + HS_POSTER.fallStr * (p.phys.strength - d.phys.strength) * 10));
+      push *= HS_POSTER.push;
+      d.startAction('stumble', fall ? HS_POSTER.dur0 + this.rng.range(0, HS_POSTER.durR) : 1.2, { fall, flat: fall, back: !fall, dir: this.rng.next() < 0.5 ? 1 : -1, poster: true, hard: pkT, hs: true });
+    } else d.startAction('stumble', fall ? 2.4 + 0.3 * pkT + this.rng.range(0, 0.8) : 1.0 + 0.15 * pkT, { fall, back: !fall, dir: this.rng.next() < 0.5 ? 1 : -1, poster: true, hard: pkT });
     // v0.4.5: the shove is all velocity (no position jump), so you see him get moved
     d.vx = nx / nl * push * 1.15; d.vz = nz / nl * push * 1.15;
     if (early) { p.vx *= 0.8; p.vz *= 0.8; }
     if (p.badges.posterizer) this.badgeFx(p, 'posterizer');
-    this.emit({ type: 'posterContact', player: p.id, victim: d.id, fall });
+    this.emit({ type: 'posterContact', player: p.id, victim: d.id, fall, flat: !!(a.hs && fall) });
   }
 
   // finishing through lighter contact: the defender is bumped off the line (no fall), never passed through
@@ -2015,14 +2039,10 @@ export class Game {
         [lx, ly, lz] = keyPath(EASTBAY_KEYS, Math.min(1, air / 0.9), H);
         const f = Math.max(0, (air - 0.9) / 0.1), ef = f * f * (3 - 2 * f);
         if (ef > 0) { lx += (0.08 - lx) * ef; ly += (topY * 1.02 - ly) * ef; lz += (0.5 - lz) * ef; }
-      } else if (st === 'hashsling') {
-        // Hash-Slinging (Icon badge only): a full wind-up behind the back, around the body, then slung over the top
-        const k = Math.min(1, t / 0.9), ek = k * k * (3 - 2 * k);
-        const al = 0.2 * Math.PI - 2.1 * Math.PI * ek, R = 0.4 * H, cy = 0.92 * H;
-        const cyy = cy + R * Math.sin(al), czz = 0.04 + R * Math.cos(al) * 0.9;
-        const f = Math.max(0, (t - 0.84) / 0.16), ef = f * f * (3 - 2 * f);
-        lx = (-0.22 + 0.3 * Math.sin(Math.PI * k)) * (1 - ef) - 0.04 * ef;
-        ly = cyy + (topY * 1.04 - cyy) * ef; lz = czz + (0.52 - czz) * ef;
+      } else if (isHS(st)) {
+        // v0.4.7.5 qp3: Hash-Slinging (the Icon package, hashsling.js): the ball's own key path on the flight, in the
+        // body frame (the turn is applied below with the spin)
+        [lx, ly, lz] = hsPath(st, hsK(a), H, topY * 1.02, p.arm);
       } else if (st === 'reverse') {
         ly = 0.65 * H + (topY * 0.99 - 0.65 * H) * e; lz = 0.3 + e * 0.05 - Math.sin(Math.PI * t) * 0.18; lx = 0;
       } else if (DUNK_PATH2[st]) {

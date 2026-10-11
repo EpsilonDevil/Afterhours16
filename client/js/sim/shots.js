@@ -1,4 +1,5 @@
 // Shot model: classification, timing windows, make probability, physically-solved trajectories.
+import { HS_PKG, isHS, hsSpin, hsK } from './hashsling.js';
 import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
 import { Ball, cloneBall, predictShot } from './ball.js';
 
@@ -333,16 +334,20 @@ export const DUNK_TIER = {
   // v0.4.7.5 packages
   dunk_cannonball: 1, dunk_kneeup: 1, dunk_pump: 1, dunk_hurdle: 2, dunk_crossleg: 2, dunk_jackknife: 2, dunk_sidemill: 2, dunk_twomill: 2,
   dunk_splits: 3, dunk_backscratch: 3, dunk_behindhead: 3, dunk_helicopter: 3, dunk_rev360: 4, dunk_spinmill: 4,
+  // v0.4.7.5 qp3: the Slasher Icon's own package (hashsling.js); nobody can buy it
+  [HS_PKG]: 5,
 };
 export const STYLE_FLAIR = {
   power: 0, onehand: 0.3, tomahawk: 1, reverse: 1.5, double: 2, windmill: 2, cradle: 2.5, '360': 3,
   // v0.4.5 finishes
-  hammer: 1.2, liberty: 1.3, scoop: 2.2, switch: 2.6, 180: 3, eastbay: 4, hashsling: 4,
+  hammer: 1.2, liberty: 1.3, scoop: 2.2, switch: 2.6, 180: 3, eastbay: 4,
   // v0.4.5 stage 7 signatures: Rim Rocker, Contact, Showtime, High Flyer
   rimrock: 1.1, bully: 0.8, aroundback: 3.1, superman: 3.3,
   // v0.4.7.5 signatures
   twomill: 2.4, sidemill: 2.3, backscratch: 2.8, rev360: 3.4, spinmill: 3.6, pump: 1.6, kneeup: 1.4, crossleg: 2.0, helicopter: 3.2,
   behindhead: 3.0, cannonball: 1.2, splits: 2.6, hurdle: 1.8, jackknife: 2.2,
+  // v0.4.7.5 qp3: Hash-Slinging (Icon badge): the flashiest finishes in the game
+  hs_lostcause: 4.6, hs_stinger: 4.5, hs_doubledip: 4.7, hs_backdoormill: 4.4, hs_cradlespin: 4.5, hs_sling: 4.8,
 };
 export const dunkTier = p => DUNK_TIER[p?.dunkPkg] ?? 0;
 
@@ -392,6 +397,7 @@ export function advanceDribble(p, dt, rnd, pressured) {
 export function dunkSpin(a) {
   // v0.4.5: the 180 turns half a revolution on the way up and stays backward through the slam
   if (!a || a.type !== 'dunk' || !(a.slam > 0)) return 0;
+  if (isHS(a.style)) return hsSpin(a.style, hsK(a), a.spinDir || 1); // (qp3: the Hash-Slinging turns run on the flight)
   const turn = a.style === '360' || a.style === 'rev360' || a.style === 'spinmill' || a.style === 'helicopter' ? Math.PI * 2 : a.style === '180' ? Math.PI : 0;
   if (!turn) return 0;
   const t0 = (a.takeoff || 0) + 0.03, t1 = a.slam - (a.style === '180' ? 0.12 : 0.06);

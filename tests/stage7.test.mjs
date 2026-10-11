@@ -240,7 +240,9 @@ test('dunk packages: every one has its own signature finish, shown first in the 
     p.dunkPkg = i.id;
     let n = 0;
     for (let k = 0; k < 600; k++) if (g.dunkStyle(p) === i.signature) n++;
-    assert.ok(n / 600 > 0.4, `${i.id}: signature ${(n / 6).toFixed(0)}% of open-court dunks`);
+    // (qp3: the Icon package's six come up evenly: each is the point)
+    if (i.icon) assert.ok(n / 600 > 1 / i.styles.length * 0.7 && n / 600 < 1 / i.styles.length * 1.3, `${i.id}: ${(n / 6).toFixed(0)}% each`);
+    else assert.ok(n / 600 > 0.4, `${i.id}: signature ${(n / 6).toFixed(0)}% of open-court dunks`);
   }
 });
 

@@ -83,6 +83,10 @@ class Service:
             conn = self.db.conn
             account = conn.execute("SELECT id,username,created_at FROM accounts WHERE id=?", (account_id,)).fetchone()
             chars = [self.describe(builds.normalize(json.loads(r[0]))) for r in conn.execute("SELECT data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,))]
+            # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
+            # that earned the Icon before this patch pick theirs up here
+            for ch in chars:
+                self.grant_icon_items(conn, account_id, ch.get("icon_badge"))
             team = conn.execute("SELECT data FROM proam_teams WHERE account_id=?", (account_id,)).fetchone()
             return {"account": dict(account),
                     "balance": conn.execute("SELECT balance FROM wallets WHERE account_id=?", (account_id,)).fetchone()[0],
@@ -205,7 +209,22 @@ class Service:
                 raise HTTPError(429, "Too many attempts. Try again shortly.")
             queue.append(now)
 
+    # v0.4.7.5 qp3: the items an Icon badge brings with it (catalog items with "icon": <badge>): into the inventory, and
+    # (equip=True, at the moment the badge unlocks) straight into their slot
+    def grant_icon_items(self, c, aid, icon, char=None, equip=False):
+        if not icon:
+            return []
+        items = [i for i in CATALOG.values() if i.get("icon") == icon]
+        for i in items:
+            c.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (aid, i["id"], time.time()))
+            if equip and char is not None and i.get("slot") in builds.EQUIP_SLOTS:
+                char.setdefault("equipment", {})[i["slot"]] = i["id"]
+        return [i["id"] for i in items]
+
     def eligible(self, char, item):
+        # v0.4.7.5 qp3: an Icon badge's own package (the Hash-Slinging dunks) fits only the build that holds that badge
+        if item.get("icon") and char.get("icon_badge") != item["icon"]:
+            return f"Requires the {progression.ICON_BADGES.get(item['icon'], {}).get('name', item['icon'])} Icon badge."
         if builds.overall(char["attributes"], char["position"]) < item.get("min_overall", 0):
             return f"Requires {item['min_overall']} overall."
         rep_lvl = progression.rep_level(char.get("progression", {}).get("rep", 0))
@@ -506,6 +525,8 @@ class Handler(BaseHTTPRequestHandler):
                         return {"item_id": item["id"], "cost": 0, "already_owned": True, "balance": c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]}
                     if item.get("exclusive") == "cup":
                         raise builds.Invalid("King Tut Cup exclusive. Win it in the Cup.")
+                    if item.get("exclusive") == "icon":
+                        raise builds.Invalid("Icon badge exclusive. It comes with the Icon badge; it cannot be bought.")
                     if item.get("exclusive"):
                         raise builds.Invalid("Daily Spin exclusive. Win it on the wheel in your park.")
                     why = s.eligible(char, item)
@@ -933,6 +954,7 @@ class Handler(BaseHTTPRequestHandler):
             char = s.character(aid, row["character_id"], c)
             rw = progression.rewards(summary, ticket, char)
             prog = progression.apply_progress(char, summary, rw)
+            icon_items = s.grant_icon_items(c, aid, prog["icon_unlocked"], char, equip=True) if prog["icon_unlocked"] else []
             balance = db.change_wallet(c, aid, rw["vc"], "match_reward", "match:" + match_id) if rw["vc"] > 0 else c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]
             c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char["id"]))
             team = None
@@ -972,7 +994,7 @@ class Handler(BaseHTTPRequestHandler):
             result = {"match_id": match_id, "mode": row["mode"], "won": rw["won"], "score": summary["score"], "vc": rw["vc"], "rep": rw["rep"], "cup": cup_info, "crew": crew_info,
                       "streak": rw["streak"], "bounty": rw.get("bounty", 0), "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
                       "badges_upgraded": prog["badges_upgraded"], "badge_progress": rw["badges"], "stats": summary["stats"],
-                      "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "max_ovr_unlocked": prog["max_ovr_unlocked"],
+                      "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "icon_items": icon_items, "max_ovr_unlocked": prog["max_ovr_unlocked"],
                       "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result

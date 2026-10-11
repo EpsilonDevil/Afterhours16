@@ -23,6 +23,7 @@ import { stickMove } from '../sim/moves.js';
 import { meterLegendHTML } from './hud.js';
 import { playGreenSound, playRecordScratch, warmGreenSounds } from '../core/greensound.js';
 import { BLOCK_BY_ID, blockCallout } from '../sim/blocks.js';
+import { hsName, hsCallout } from '../sim/hashsling.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 
@@ -571,7 +572,9 @@ export class MatchSession {
       const mine = P && P.human;
       const myTeam = g.human ? g.human.team : 0;
       this.rumbleFor(e);
-      if (e.type === 'badge' && mine) { const bd = this.app.config.badges?.[e.badge]; hud.badge({ key: e.badge, tier: e.tier, name: bd?.name || e.badge, group: bd?.group }); continue; }
+      // (qp3: an Icon badge's activation, the Hash-Slinging dunks, is the big one: hud.badge shows it 20% larger, with the
+      // badge's full art running, for twice as long)
+      if (e.type === 'badge' && mine) { const bd = e.icon ? this.app.config.icon_badges?.[e.badge] : this.app.config.badges?.[e.badge]; hud.badge({ key: e.badge, tier: e.tier, name: bd?.name || e.badge, group: bd?.group, icon: !!e.icon }); continue; }
       // v0.4.5 hot / cold / takeovers
       if (e.type === 'hot' && e.on && P) { if (mine) { hud.callout('ON FIRE', 'hot'); audio.cheer(0.9); } else hud.pushFeed(`${P.name} is on fire`); continue; }
       if (e.type === 'cold' && e.on && P) { if (mine) hud.callout('GOING COLD', 'cold'); else hud.pushFeed(`${P.name} went cold`); continue; }
@@ -612,10 +615,11 @@ export class MatchSession {
           audio.cheer(big ? 1 : 0.5);
           this.scene.hype = big ? 1 : 0.5;
           const who = shooter ? shooter.name : 'Tip-in';
-          hud.pushFeed(`${e.team === myTeam ? '▲' : '▼'} ${who} +${e.pts}${e.kind === 'dunk' ? ' · dunk' : e.three ? ' · three' : e.kind === 'layup' ? ' · layup' : ''}`, e.team === myTeam ? 'good' : 'bad');
-          if (e.poster >= 0 && e.poster != null) hud.callout('POSTERIZED!', 'hot'); // (v0.4.5 quick patch: no slow motion; play goes on)
+          const hsN = e.kind === 'dunk' ? hsName(this.lastDunkStyle) : null; // (qp3: a Hash-Slinging finish is named in the feed)
+          hud.pushFeed(`${e.team === myTeam ? '▲' : '▼'} ${who} +${e.pts}${e.kind === 'dunk' ? ' · ' + (hsN || 'dunk') : e.three ? ' · three' : e.kind === 'layup' ? ' · layup' : ''}`, e.team === myTeam ? 'good' : 'bad');
+          if (e.poster >= 0 && e.poster != null) hud.callout(this.lastDunkFlat ? 'FLATTENED!' : 'POSTERIZED!', 'hot'); // (v0.4.5 quick patch: no slow motion; play goes on)
           else if (e.oop) hud.callout('ALLEY-OOP!', 'hot');
-          else if (e.kind === 'dunk' && (mine || shooter?.team === myTeam)) hud.callout({ '360': 'THREE-SIXTY!', windmill: 'WINDMILL!', cradle: 'CRADLE JAM!', double: 'DOUBLE CLUTCH!', reverse: 'REVERSE JAM!', tomahawk: 'TOMAHAWK!' }[this.lastDunkStyle] || ['SLAM!', 'JAM!', 'FLUSHED!'][g.tick % 3], 'hot');
+          else if (e.kind === 'dunk' && (mine || shooter?.team === myTeam)) hud.callout(hsCallout(this.lastDunkStyle) || { '360': 'THREE-SIXTY!', windmill: 'WINDMILL!', cradle: 'CRADLE JAM!', double: 'DOUBLE CLUTCH!', reverse: 'REVERSE JAM!', tomahawk: 'TOMAHAWK!' }[this.lastDunkStyle] || ['SLAM!', 'JAM!', 'FLUSHED!'][g.tick % 3], 'hot');
           else if (e.three && mine) hud.callout('SPLASH!', 'good');
           if (e.andOne) { audio.whistle(); hud.callout('AND ONE!', 'hot'); }
           // celebrations on big plays
@@ -629,12 +633,13 @@ export class MatchSession {
           // straight through the rise and the finish); every slam hits harder instead: a bigger rim shake, camera
           // kick, sparks and sound, more for the flashier packages and posters
           const tier = e.tier || 0, flash = (e.flair || 0) >= 2, poster = e.poster >= 0 && e.poster != null;
-          this.lastDunkStyle = e.style;
+          this.lastDunkStyle = e.style; this.lastDunkFlat = !!e.flat;
           if (e.made && h) {
             h.hit(4.2 + tier * 0.5 + (poster ? 0.8 : 0)); audio.rim(3 + tier * 0.3); audio.board(1 + tier * 0.15);
             this.rig.shake(0.26 + tier * 0.05 + (poster ? 0.08 : 0), 0.34 + tier * 0.06);
             this.r.particles.burst(h.rim.x, h.rim.y, h.rim.z, 26 + tier * 10, { color: [1.7, 1.45, 1.0], speed: 2.6 + tier * 0.45, life: 0.5, size: 0.022 });
             if (flash || poster) audio.cheer(1.1);
+            if (e.hs) { audio.cheer(1.4); this.rig.shake(0.12, 0.5); } // (qp3: the park loses it for a Hash-Slinging finish)
           }
           if (P && (P.human || poster || (flash && e.made))) this.highlightAt(P, 0.9);
           break;

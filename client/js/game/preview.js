@@ -2,6 +2,7 @@
 // the podium. The Showroom draws it; tests drive it directly to check that every animation package looks
 // different (v0.4.5 stage 7).
 import { Player } from '../sim/player.js';
+import { isHS } from '../sim/hashsling.js';
 import { Game, MOVE_SNAP, posMoveK } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
 import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
@@ -140,7 +141,9 @@ export class PreviewSim {
       // v0.4.5 stage 7: the package's signature finish every other loop, its other finishes in between
       const o = this.previewOpts || {}, list = o.styles?.length ? o.styles : [o.style || 'power'];
       const n = this.loopN || 0, style = n % 2 === 0 || list.length < 2 ? list[0] : list[1 + ((n >> 1) % (list.length - 1))];
-      if (this.loop(2.6, dt) && (!p.action || p.action.type !== 'dunk')) { this.loopN = n + 1; fb.holder = 0; fb.mode = 'held'; this.ballFree = null; p.action = null; p.startAction('dunk', 1.6, { takeoff: 0.35, slam: 0.85, style, tUp: 0.5, jumpH: p.phys.vertical, spinDir: 1 }); }
+      // (qp3: a Hash-Slinging finish gets the long flight it has in games: a higher jump, the slam past the apex)
+      const hs = isHS(style);
+      if (this.loop(hs ? 3.2 : 2.6, dt) && (!p.action || p.action.type !== 'dunk')) { this.loopN = n + 1; fb.holder = 0; fb.mode = 'held'; this.ballFree = null; p.action = null; p.startAction('dunk', hs ? 2.1 : 1.6, hs ? { takeoff: 0.35, slam: 1.25, style, tUp: 0.55, jumpH: 1.45, spinDir: 1, hs: true } : { takeoff: 0.35, slam: 0.85, style, tUp: 0.5, jumpH: p.phys.vertical, spinDir: 1 }); }
       const a = p.action;
       if (a && !a.jumped && a.t >= a.takeoff) { a.jumped = true; p.jump(a.jumpH); }
       if (a && !a.slammed && a.t >= a.slam) { a.slammed = true; const bp = holdPoint.call(this.fake, p, {}); this.ballFree = { x: bp.x, y: bp.y + 0.12, z: bp.z, vx: 0, vy: -5, vz: 0 }; fb.holder = -1; }

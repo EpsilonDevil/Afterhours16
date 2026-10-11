@@ -40,7 +40,7 @@ export function render(app, root, params = {}) {
 function card(c, i, sel) {
   const equipped = c.equipment[i.slot] === i.id;
   return `<button class="item ${sel === i.id ? 'on' : ''} ${equipped ? 'equipped' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
 }
 
 function detail(c, i) {

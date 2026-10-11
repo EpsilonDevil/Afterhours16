@@ -239,7 +239,7 @@ test('celebrations never put a hand or forearm through the body', () => {
 // ---------------- dunks ----------------
 test('dunk packages share fewer finishes, and the windmill and the Eastbay are real', () => {
   const dunks = list.filter(i => i.slot === 'dunk'), uses = {};
-  for (const d of dunks) { assert.equal(d.styles[0], d.signature, d.id); assert.ok(d.styles.length <= 3, d.id); for (const s of d.styles.slice(1)) uses[s] = (uses[s] || 0) + 1; }
+  for (const d of dunks) { assert.equal(d.styles[0], d.signature, d.id); assert.ok(d.styles.length <= 3 || d.exclusive === 'icon', d.id); if (d.exclusive !== 'icon') for (const s of d.styles.slice(1)) uses[s] = (uses[s] || 0) + 1; } // (qp3: the Icon package carries six of its own)
   assert.ok(Math.max(...Object.values(uses)) <= 4, JSON.stringify(uses));
   const sigs = dunks.map(d => d.signature); assert.equal(new Set(sigs).size, sigs.length, 'every signature is its own');
   assert.ok(!dunks.some(d => d.id !== 'dunk_eastbay' && d.styles.includes('eastbay')), 'nobody else gets the Eastbay');

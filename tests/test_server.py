@@ -504,6 +504,52 @@ class ApiTests(unittest.TestCase):
         finally:
             self.opener = prev
 
+    def test_hash_slinging_package_comes_with_the_icon_badge_and_cannot_be_bought(self):
+        # v0.4.7.5 qp3: the Slasher Icon's dunk package: granted (and equipped) when the badge unlocks, back-filled for
+        # builds that already hold it, refused in the store and in another build's dunk slot
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        prev, self.opener = self.opener, opener
+        try:
+            prof = self.call("/api/register", {"username": "slash_" + uuid.uuid4().hex[:6], "password": "longpassword1"})
+            self.assertNotIn("dunk_hash_slinging", prof["inventory"])
+            item = server_app.CATALOG["dunk_hash_slinging"]
+            self.assertEqual((item["exclusive"], item["icon"], item["price"], len(item["styles"])), ("icon", "hash_slinging", 0, 6))
+            build = {"name": "Slash Guy", "position": "SF", "archetype": "slasher", "height": 78, "weight": 205, "wingspan": 82}
+            cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
+            self.call("/api/store/purchase", {"key": self.key(), "item_id": "dunk_hash_slinging", "character_id": cid}, expect=400)  # never sold
+            self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "dunk", "item_id": "dunk_hash_slinging"}, expect=400)  # not owned
+            # a build that already holds the Icon badge (earned before this patch) picks the package up on its next profile
+            aid = self.service.db.query("SELECT id FROM accounts WHERE username LIKE 'slash_%'")[0][0]
+            with self.service.db.transaction() as c:
+                row = c.execute("SELECT data FROM characters WHERE id=?", (cid,)).fetchone()
+                char = json.loads(row[0]); char["icon_badge"] = "hash_slinging"
+                c.execute("UPDATE characters SET data=? WHERE id=?", (json.dumps(char), cid))
+            prof = self.call("/api/me")
+            self.assertIn("dunk_hash_slinging", prof["inventory"])
+            self.assertEqual(self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "dunk", "item_id": "dunk_hash_slinging"})["character"]["equipment"]["dunk"], "dunk_hash_slinging")
+            # a second build on the account without the badge owns it (inventory is per account) but can't wear it
+            build2 = {"name": "Shooter Guy", "position": "SG", "archetype": "sharpshooter", "height": 76, "weight": 190, "wingspan": 78}
+            cid2 = self.call("/api/characters", {"key": self.key(), "build": build2})["character"]["id"]
+            self.call(f"/api/characters/{cid2}/equip", {"key": self.key(), "slot": "dunk", "item_id": "dunk_hash_slinging"}, expect=400)
+            # the eligibility text names the badge
+            self.assertIn("Hash-Slinging Icon badge", self.service.eligible({"attributes": {}, "position": "SG", "icon_badge": None}, item))
+        finally:
+            self.opener = prev
+
+    def test_icon_unlock_grants_and_equips_the_icon_items(self):
+        # the grant at the moment the Icon badge unlocks (the game result path) equips the package too
+        aid = "grant_" + uuid.uuid4().hex[:6]
+        with self.service.db.transaction() as c:
+            c.execute("INSERT INTO accounts VALUES(?,?,?,?,?)", (aid, aid, "salt", "hash", 0))
+            char = {"equipment": {"dunk": "dunk_basic"}}
+            ids = self.service.grant_icon_items(c, aid, "hash_slinging", char, equip=True)
+            self.assertEqual(ids, ["dunk_hash_slinging"])
+            self.assertEqual(char["equipment"]["dunk"], "dunk_hash_slinging")
+            self.assertEqual(self.service.grant_icon_items(c, aid, "hash_slinging", char, equip=True), ["dunk_hash_slinging"])  # idempotent
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM inventory WHERE account_id=?", (aid,)).fetchone()[0], 1)
+            self.assertEqual(self.service.grant_icon_items(c, aid, "sharp_eye", {"equipment": {}}, equip=True), [])  # no items yet for the others
+            self.assertEqual(self.service.grant_icon_items(c, aid, None), [])
+
     def test_bug_reports_land_in_a_text_file_next_to_the_exe(self):
         r = self.call("/api/bug-report", {"key": self.key(), "category": "animation", "what": "My elbow went through my chest\non a step-back.", "expected": "No clipping", "steps": "", "context": {"where": "The Park · Court 2", "system": "test", "errors": ["TypeError: x is undefined"], "events": ["12.3s release excellent made", {"t": 13}]}})
         self.assertEqual(r["number"], 1)

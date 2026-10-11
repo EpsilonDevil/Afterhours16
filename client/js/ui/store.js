@@ -1,6 +1,7 @@
 // VC Store: browse by category, try on with the 3D player, and buy (server-priced). v0.4.7.5: equipping moved to its
 // own screen, the Inventory (ui/inventory.js), so the store is just the store; jumpshot bases and releases are their
 // own categories in both.
+import { hsName } from '../sim/hashsling.js';
 import { $, $$, esc, money, toast, modal, closeModal, title } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
@@ -72,11 +73,11 @@ export function lockReason(app, c, i) {
 function card(app, c, i, inv, sel) {
   const owned = inv.has(i.id), equipped = c.equipment[i.slot] === i.id, lock = lockReason(app, c, i);
   return `<button class="item ${sel === i.id ? 'on' : ''} ${owned ? 'owned' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
 }
 
 export function itemExtra(i) {
-  return i.release_seconds ? `Release speed ${i.release_seconds < 0.66 ? 'Quick' : i.release_seconds > 0.8 ? 'Slow' : 'Normal'} · arc ${i.arc}°` : i.set_height ? `Set point ${i.set_height > 1.08 ? 'High' : i.set_height < 1 ? 'Low' : 'Medium'}` : i.styles ? `Styles: ${i.styles.map(title).join(', ')}` : i.move_speed ? `Move speed ×${i.move_speed}` : i.cut ? `${title(i.cut)}-top` : '';
+  return i.release_seconds ? `Release speed ${i.release_seconds < 0.66 ? 'Quick' : i.release_seconds > 0.8 ? 'Slow' : 'Normal'} · arc ${i.arc}°` : i.set_height ? `Set point ${i.set_height > 1.08 ? 'High' : i.set_height < 1 ? 'Low' : 'Medium'}` : i.styles ? `Styles: ${i.styles.map(st => hsName(st) || title(st)).join(', ')}` : i.move_speed ? `Move speed ×${i.move_speed}` : i.cut ? `${title(i.cut)}-top` : '';
 }
 
 function detail(app, c, i, inv) {
@@ -86,9 +87,9 @@ function detail(app, c, i, inv) {
     <div class="eyebrow">${esc((CATS.find(x => x[0] === catOf(i)) || [, title(i.slot)])[1])}</div><h2>${esc(i.name)}</h2>
     <p class="muted">${esc(i.description || '')}</p>${extra ? `<p class="small">${esc(extra)}</p>` : ''}
     ${lock && !owned ? `<p class="lock">🔒 Requires ${esc(lock)}</p>` : ''}
-    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
+    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive === 'icon' ? '★ Icon badge exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
     ${i.slot === 'greensound' ? '<button class="btn ghost small" data-hear>▶ Hear it</button>' : ''}
-    <div class="row gap">${owned ? `<span class="owned-tag">${equipped ? '✓ Equipped' : '✓ Owned'}</span><button class="btn" data-inventory>${equipped ? 'In your Inventory' : 'Equip in Inventory'} →</button>` : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy · ${money(i.price)} VC</button>`}</div>
+    <div class="row gap">${owned ? `<span class="owned-tag">${equipped ? '✓ Equipped' : '✓ Owned'}</span><button class="btn" data-inventory>${equipped ? 'In your Inventory' : 'Equip in Inventory'} →</button>` : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive === 'icon' ? `<button class="btn ghost" disabled>Comes with the ${esc(app.config.icon_badges?.[i.icon]?.name || 'Icon')} Icon badge</button>` : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy · ${money(i.price)} VC</button>`}</div>
   </aside>`;
 }
 

@@ -425,7 +425,10 @@ export function showResults(app, summary, result, won, opts = {}) {
   // are unlocked at 90 max OVR; until then they're banked in MyPlayer → Attributes → Cap Breakers)
   const hof = r && (r.cap_breakers_awarded > 0 || r.icon_unlocked);
   const cbOpen = !!(r?.character?.cap_breakers_unlocked);
-  if (hof) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b></div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}</div>`);
+  // qp3: the items an Icon badge brings (the Hash-Slinging dunk package) are in the inventory and equipped already
+  if (r?.icon_items?.length && app.profile?.inventory) for (const id of r.icon_items) if (!app.profile.inventory.includes(id)) app.profile.inventory.push(id);
+  const iconItems = (r?.icon_items || []).map(id => app.catalog?.[id]?.name).filter(Boolean);
+  if (hof) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b>${iconItems.length ? `<span class="muted small">${esc(iconItems.join(', '))} — yours, and equipped</span>` : ''}</div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}</div>`);
   let countdown = null;
   const stopCountdown = () => { if (countdown) { clearInterval(countdown); countdown = null; } };
   const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => { stopCountdown(); closeModal(); if (hof && r.cap_breakers_awarded && cbOpen && MyPlayer.openCapBreakers) MyPlayer.openCapBreakers(app, f); else f(); }; };

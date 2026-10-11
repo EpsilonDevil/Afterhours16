@@ -1,6 +1,7 @@
 // v0.4.5 park hub tests: squad spot rows, walking around shops and the wheel, the line queue, AI-game speed,
 // and the "not in a game" squad rule. Run: node --test tests/
 import test from 'node:test';
+import { isHS } from '../client/js/sim/hashsling.js';
 import assert from 'node:assert/strict';
 import { squadSpots, gotNextSpots, gotNextMid, SQUAD_ROWS, courtPlayRect } from '../client/js/world/themes.js';
 import { ParkHub } from '../client/js/game/park.js';
@@ -99,7 +100,7 @@ test('v0.4.5 animation packages: 32 new ones, every style is implemented and rea
   for (const i of anims.filter(x => x.slot === 'dunk')) {
     for (const st of i.styles) {
       assert.ok(S.STYLE_FLAIR[st] != null, `no flair for dunk style ${st}`);
-      assert.ok(gameSrc.includes(`'${st}'`) || G.DUNK_PATH2[st], `no ball path for dunk style ${st}`); // (v0.4.7.5: DUNK_PATH2)
+      assert.ok(gameSrc.includes(`'${st}'`) || G.DUNK_PATH2[st] || isHS(st), `no ball path for dunk style ${st}`); // (v0.4.7.5: DUNK_PATH2; qp3: hashsling.js)
     }
     assert.ok(S.DUNK_TIER[i.id] != null, `no tier for ${i.id}`);
   }
@@ -114,7 +115,7 @@ test('v0.4.5 animation packages: 32 new ones, every style is implemented and rea
   for (const i of anims.filter(x => x.slot === 'sizeup' && x.style !== 'basic')) assert.ok(animSrc.includes(`su === '${i.style}'`), `no pose for size-up ${i.style}`);
   // the Icon badges all have an exclusive animation wired up
   const B = await import('../client/js/sim/badges.js');
-  const hooks = ['sharpeye', 'hashsling', 'oprah', 'clamp', 'general', 'bigbro', 'openarms', 'sexy_red'];
+  const hooks = ['sharpeye', 'hashsling.js', 'oprah', 'clamp', 'general', 'bigbro', 'openarms', 'sexy_red']; // (qp3: Hash-Slinging is a whole package, sim/hashsling.js)
   assert.equal(Object.keys(B.ICON_BADGES).length, 8);
   for (const h of hooks) assert.ok(animSrc.includes(h) || gameSrc.includes(h), `Icon animation ${h} is not wired up`);
 });

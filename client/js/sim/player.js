@@ -1,4 +1,5 @@
 // Player state + movement physics (momentum, braking, plant cuts, jumps, stamina).
+import { HS_PKG } from './hashsling.js';
 import { physical } from './ratings.js';
 import { bodyDims } from '../char/skeleton.js';
 import { DT, GRAVITY, COURT } from './constants.js';
@@ -53,7 +54,8 @@ export class Player {
     // shot is somewhere the hands can actually be (see Game.reachTop)
     { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen, armScale: d.armScale }; }
     this.shotPkg = jumpshotPackage(entry.build, catalog);
-    this.dunkPkg = entry.build.equipment?.dunk || 'dunk_basic';
+    // (qp3: a Hash-Slinging Icon holder with no dunk package of his own, a park legend say, carries the Icon's package)
+    this.dunkPkg = entry.build.equipment?.dunk || (this.icon === 'hash_slinging' && catalog?.[HS_PKG] ? HS_PKG : 'dunk_basic');
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves
     const su = entry.build.equipment?.sizeup || 'sizeup_basic';
     // v0.4.5: a package's own lvl (from the catalog) decides how hard it sells the handle; `style` is its look

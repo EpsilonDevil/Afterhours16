@@ -49,7 +49,7 @@ BADGES = {
 # v0.4.5 Archetype Icon badges (mirrors client/js/sim/badges.js ICON_BADGES): unlocked by a build's 7th HOF badge
 ICON_BADGES = {
     "sharp_eye": {"name": "Sharp Eye", "archetype": "sharpshooter", "desc": "5% bigger green window on every shot, everywhere on the court. Unlocks exclusive ultra-flashy shooting animations."},
-    "hash_slinging": {"name": "Hash-Slinging", "archetype": "slasher", "desc": "+5% Driving Dunk and Standing Dunk (can pass 99). Unlocks exclusive ultra-flashy dunk animations."},
+    "hash_slinging": {"name": "Hash-Slinging", "archetype": "slasher", "desc": "+5% Driving Dunk and Standing Dunk (can pass 99). Unlocks the exclusive Hash-Slinging dunk package: six long streetball finishes that put defenders flat on their back."},
     "oprah": {"name": "Oprah", "archetype": "playmaker", "desc": "+5% Ball Handle, Speed with Ball and Pass Accuracy (can pass 99). Unlocks exclusive ultra-flashy passing animations."},
     "the_clamp": {"name": "The Clamp", "archetype": "lockdown", "desc": "+5% Perimeter D and Steal (can pass 99). Unlocks steal animations that exist only for this badge."},
     "the_general": {"name": "The General", "archetype": "two_way", "desc": "+2.5% to every attribute (can pass 99). Unlocks an exclusive salute celebration."},
