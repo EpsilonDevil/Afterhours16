@@ -25,6 +25,16 @@ export const TRANS = { delay0: 0.05, delaySpd: 0.45, jitter: 0.3, jog0: 0.04, jo
 // late) that lasts `dur` s, drawn at `rate` per second (× (1.3 − skill)) while the man is moving. The size of the
 // step is `step` m. Calibrated so a dribbler gets free about 2.75% more often than before (tools: /tmp/claude-0/esc.mjs).
 export const MISTAKE = { rate: 0.3, dur: 0.32, step: 0.55, minSpeed: 2.0 };
+// v0.4.7.5 qp3: who takes threes. A three is worth less to the AI (and to auto-play) the further his Three Point
+// rating sits under `rating` (down to `low` of its value at `floor` and below), and less again to a PF or a C
+// (`big`, easing back toward 1 between `bigFrom` and `bigTo` for the bigs who can really shoot)
+export const THREE_TEND = { rating: 70, floor: 55, low: 0.35, big: 0.55, bigFrom: 75, bigTo: 95, valK: 0.4, pickK: 0.8, holdFor: 2.5 };
+export function threeTend(p) {
+  const r = p.ratings?.three_point ?? 50, T = THREE_TEND;
+  let k = r >= T.rating ? 1 : T.low + (1 - T.low) * Math.max(0, (r - T.floor) / (T.rating - T.floor));
+  if (p.position === 'PF' || p.position === 'C') k *= T.big + (1 - T.big) * Math.max(0, Math.min(1, (r - T.bigFrom) / (T.bigTo - T.bigFrom)));
+  return k;
+}
 export const RUNNER = { maxRim: 9.5, open: 2.0, lane: 2.0, recover: 2.5, run: 1.5, oopRim: 6.5, reachK: 0.7, lobRisk: 0.35, lobRiskMax: 0.9, lobOpen: 4.0, chance0: 0.7, chanceIQ: 0.3, setOop: 0.32 };
 
 const d0 = (p, rim) => Math.hypot(rim.x - p.x, rim.z - p.z);
@@ -255,7 +265,7 @@ export class AI {
     // (what a near-miss used to be worth: the AI's timing is set to keep that make rate, see keepMakeRate)
     const miss = type === 'close' ? S.finalChance({ type, d, a: p.ratings, three, grade: 'none', contest, stamina: p.stamina, badges: p.badges }) : S.finalChance({ type, d, a: p.ratings, three, grade: 'none', contest, stamina: p.stamina, badges: p.badges }) * offK(attr);
     const pct = gExp + (1 - gExp) * miss;
-    return { val: pct * (three ? 3 : 2), d, three, contest, pct };
+    return { val: pct * (three ? 3 * (1 - THREE_TEND.valK + THREE_TEND.valK * threeTend(p)) : 2), d, three, contest, pct }; // (qp3: a three is worth less to a weak or big shooter)
   }
 
   // contest the shooter would face if defenders put a hand up now
@@ -646,7 +656,7 @@ export class AI {
     // in his range lets it fly instead of putting it on the floor
     const estC0 = this.estimateContest(p, defs, rim, 0.5);
     const shotAttr = sv.three ? p.ratings.three_point : p.ratings.mid_range;
-    if (estC0 < 0.16 && shotAttr >= 70 && sv.val > 1.0 - 0.08 * IQ && d > 1.9 && d < 8.2 && o.ballT > 0.12 && g.rng.next() < 0.5 + 0.4 * IQ) {
+    if (estC0 < 0.16 && shotAttr >= 70 && sv.val > 1.0 - 0.08 * IQ && d > 1.9 && d < 8.2 && o.ballT > 0.12 && g.rng.next() < (0.5 + 0.4 * IQ) * (sv.three ? threeTend(p) : 1)) { // (qp3: a big lets fewer open threes fly)
       it.shoot = 'press'; it.forceJumper = d > 2.4; o.plan = null; this.stats.openShot = (this.stats.openShot || 0) + 1; return;
     }
     // v0.4.7.5 quick patch: a lane that opens while he's probing gets attacked now, not at his next read
@@ -731,6 +741,13 @@ export class AI {
     if (d > 8.4) choices[0][1] -= 2;
     choices.sort((a, b) => b[1] - a[1]);
     const pick = choices[0][0];
+    // (qp3: a weak or big shooter talks himself out of some of the threes he'd otherwise take, and keeps the ball)
+    if (pick === 'shoot' && sv.three && g.shotClock >= 5) {
+      // (one roll per look: a three he has passed up stays passed up for holdFor seconds, so he doesn't talk himself
+      // back into it a third of a second later)
+      if (o.noThreeT == null || g.time > o.noThreeT + THREE_TEND.holdFor) o.noThreeT = g.rng.next() > 1 - THREE_TEND.pickK + THREE_TEND.pickK * threeTend(p) ? g.time : -9;
+      if (o.noThreeT >= 0 && g.time <= o.noThreeT + THREE_TEND.holdFor) { this.stats.threePassedUp = (this.stats.threePassedUp || 0) + 1; o.next = 0.3; return; }
+    }
     if (pick === 'shoot' && ((sv.val > 0.9 - (1 - IQ) * 0.25 && estC < (sv.three ? 0.45 : 0.55) + (T.shoot - 0.5) * 0.08 + bk(p.badges, 'deadeye') * 0.03 + (1 - IQ) * 0.2) || g.shotClock < 5)) { it.shoot = 'press'; const k = g.shotClock < 5 ? 'lateClock' : 'chosen'; this.stats[k] = (this.stats[k] || 0) + 1; return; }
     if (pick === 'drive') { o.plan = 'drive'; this.stats.drives = (this.stats.drives || 0) + 1; this.seek(p, rim.x, rim.z, { sprint: true }); return; }
     if (pick === 'post') { o.plan = 'post'; o.postT = 2.6; o.postSide = p.x >= 0 ? 1 : -1; this.stats.posts = (this.stats.posts || 0) + 1; return; }
@@ -838,7 +855,7 @@ export class AI {
       const dd = this.seek(p, sx + (h.x > 0 ? -0.6 : 0.6), sz, { sprint: true, arrive: 0.4 });
       if (dd < 0.7) { it.mx = 0; it.mz = 0; it.screen = true; h.ai_screen = { by: p.id, until: g.time + 0.8 };
         if (hd) it.face = Math.atan2(hd.x - p.x, hd.z - p.z); // (v0.4.7.5 qp3: chest to the defender; a square screen hits harder)
-        if (h.dist(p) > 2.2 && o.screenT < 2.4) { const pop = g.rng.next() < this.tend(p).pop * (0.4 + 0.6 * n(p.ratings.three_point)); o.plan = pop ? 'pop' : 'roll'; o.rollT = pop ? 1.4 : 1.6; } }
+        if (h.dist(p) > 2.2 && o.screenT < 2.4) { const pop = g.rng.next() < this.tend(p).pop * (0.4 + 0.6 * n(p.ratings.three_point)) * threeTend(p); /* (qp3: a big rolls more than he pops) */ o.plan = pop ? 'pop' : 'roll'; o.rollT = pop ? 1.4 : 1.6; } }
       return;
     }
     if (o.plan === 'pop') {
@@ -848,7 +865,7 @@ export class AI {
       const [tx, tz] = this.clampCourt(rim.x + dx / dl * 7.6, rim.z + dz / dl * 7.6, g.half);
       this.seek(p, tx, tz, { sprint: true, arrive: 0.5 });
       it.face = h ? Math.atan2(h.x - p.x, h.z - p.z) : null;
-      if (isThree(p.x, p.z, side) && this.openness(p) > 1.8) it.call = true;
+      if (isThree(p.x, p.z, side) && this.openness(p) > 1.8 && g.rng.next() < threeTend(p)) it.call = true; // (qp3: a weak or big shooter calls for it at the arc less)
       if (o.rollT <= 0) o.plan = null;
       return;
     }
@@ -924,7 +941,7 @@ export class AI {
           if (best) { o.arc = best; o.arcT = g.time + 1.6; }
         }
       }
-      if (this.openness(p) > 3 && isThree(p.x, p.z, side) && n(p.ratings.three_point) > 0.55) it.call = true;
+      if (this.openness(p) > 3 && isThree(p.x, p.z, side) && n(p.ratings.three_point) > 0.55 && g.rng.next() < threeTend(p)) it.call = true; // (qp3)
       // pass-first ball handlers want it back
       else if (h && h !== p && T.dribble > 0.8 && this.tend(h).dribble < 0.6 && this.openness(p) > 2.2 && g.rng.next() < 0.35) it.call = true;
     }

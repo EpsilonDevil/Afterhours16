@@ -128,14 +128,28 @@ test('every style has its own body: pairwise distinct poses through the rise, th
     const a = S[i].v, b = S[j].v; let d = 0; for (let k = 0; k < a.length; k++) d += (a[k] - b[k]) ** 2; d = Math.sqrt(d / a.length);
     if (d < minD) { minD = d; pair = `${S[i].id} vs ${S[j].id}`; }
   }
-  assert.ok(minD > 0.09, `the closest pair (${pair}) differs by ${minD.toFixed(3)} RMS over the sampled pose`);
+  assert.ok(minD > 0.11, `the closest pair (${pair}) differs by ${minD.toFixed(3)} RMS over the sampled pose`);
+  // (qp3 revision: no two packages share a block: across packages every pair is further apart still, every style has
+  // its own lead / off-hand / legs triple, and no swat shape is in more than two packages)
+  let minX = Infinity, pairX = '';
+  for (let i = 0; i < S.length; i++) for (let j = i + 1; j < S.length; j++) {
+    if (BLOCK_BY_ID[S[i].id].tier === BLOCK_BY_ID[S[j].id].tier) continue;
+    const a = S[i].v, b = S[j].v; let d = 0; for (let k = 0; k < a.length; k++) d += (a[k] - b[k]) ** 2; d = Math.sqrt(d / a.length);
+    if (d < minX) { minX = d; pairX = `${S[i].id} vs ${S[j].id}`; }
+  }
+  assert.ok(minX > 0.12, `across packages the closest pair (${pairX}) differs by ${minX.toFixed(3)} RMS`);
+  assert.equal(new Set(BLOCK_STYLES.map(s => [s.lead, s.off, s.legs].join('/'))).size, 30, 'every style its own lead / off-hand / legs');
+  const swatPk = {}; for (const s of BLOCK_STYLES) (swatPk[s.swat] = swatPk[s.swat] || new Set()).add(s.tier);
+  for (const [sw, pk] of Object.entries(swatPk)) assert.ok(pk.size <= 2, `the ${sw} swat is in ${pk.size} packages`);
+  assert.ok(Object.keys(swatPk).length >= 18, `${Object.keys(swatPk).length} swat shapes`);
   // every lead hand gets up to the ball at the top of the reach
   for (const s of BLOCK_STYLES) {
     const T = neutral(); an.palm = { L: null, R: null };
     const a = { type: 'block', bstyle: s.id, jumpAt: 0.06, air: 0.7, hit: false };
-    an.blockPose(T, a, { u: 0.3, air: 0.7, up: 1, up2: 1, tx: 0.2, ty: 2.55, tz: 0.3, ld: 'L', tr: 'R', ls: 1, t: 0.36 });
+    an.blockPose(T, a, { u: 0.3, air: 0.7, up: 1, up2: 1, tx: 0.2, ty: 2.3, tz: 0.3, ld: 'L', tr: 'R', ls: 1, t: 0.36 });
     const hand = s.lead === 'far' ? 'handR' : 'handL';
-    assert.ok(T[P[hand] + 1] > 2.3, `${s.id}: a hand up at the ball (${T[P[hand] + 1].toFixed(2)})`);
+    // (qp3 revision: within the arm's reach of the shoulder, clampReach, so a touch under the ball's centre at most)
+    assert.ok(T[P[hand] + 1] > 2.0, `${s.id}: a hand up at the ball (${T[P[hand] + 1].toFixed(2)})`);
   }
 });
 
@@ -198,4 +212,73 @@ test('the gesture after a block never costs a play: wanting to move or jump ends
   d.intent = { ...d.intent, mx: 1, mz: 0 };
   g.applyIntent(d, 1 / 60);
   assert.equal(d.action, null, 'he wants to run: the wag is over');
+});
+
+// ---------------- qp3 revision: no limb clips through the body ----------------
+test('no block clips: arms never pass through the torso, the head, the legs or each other, on three builds', async () => {
+  const { ARM_PROBE_UPPER, ARM_PROBE_FORE, ARM_HEAD_R, segSegDist } = await import('../client/js/char/rig.js');
+  const M = await import('../client/js/core/math.js');
+  const rng = new RNG(31);
+  const g = new Game({ mode: 'park', seed: 31, rosters: [makeTeam(rng, 3, { catalog, level: 0.7 }), makeTeam(rng, 3, { catalog, level: 0.7 })], catalog, target: 21 });
+  const d = g.players[3]; g.phase = 'live'; g.ball.mode = 'dead'; g.ball.holder = -1;
+  const segPt = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  const bad = [];
+  for (const bd of [{ height: 78, weight: 210, wingspan: 82 }, { height: 84, weight: 260, wingspan: 88 }, { height: 71, weight: 170, wingspan: 72 }]) {
+    const build = { ...d.entry.build, ...bd };
+    for (const s of BLOCK_STYLES) {
+      const model = new AthleteModel(build, {}, 0.5), rig = new Rig(model), H = model.d.H;
+      const view = { H, model, rig, y: 0, update(pose, x, y, z, yaw, o) { rig.solve(pose, o); this.y = y; } };
+      const anim = new Animator(view);
+      const a = d.startAction('block', 0.9, { jumpAt: 0.06, jumpH: 0.5, jumped: false, air: 0.64, bstyle: s.id, lead: 'L', hit: false });
+      d.y = 0; d.vy = 0; d.airborne = false; d.setPos(0, 0, 0);
+      let torso = 0, head = 0, leg = 0, arms = 0;
+      for (let i = 0; i < 90; i++) {
+        a.t += 1 / 60;
+        if (!a.jumped && a.t >= a.jumpAt) { a.jumped = true; d.jump(0.5); }
+        if (a.t > 0.36 && !a.hit) { a.hit = true; a.hitAt = a.t; }
+        d.vy -= 9.81 / 60; d.y = Math.max(0, d.y + d.vy / 60); if (d.y === 0) { d.vy = 0; d.airborne = false; } else d.airborne = true;
+        anim.update(1 / 60, { x: 0, y: d.y, z: 0, facing: 0 }, d, g, { x: 0.2, y: 2.45, z: 0.3 });
+        const pos = rig.pos, chestInv = M.qinvert(M.q4(), rig.rot[BONE.chest]);
+        const hd = pos[BONE.head], hc = [hd[0], hd[1] + 0.055 * H, hd[2] + 0.01 * H], hr = 0.07 * H;
+        const arm = { L: [[pos[BONE.upperL], pos[BONE.foreL]], [pos[BONE.foreL], pos[BONE.handL]]], R: [[pos[BONE.upperR], pos[BONE.foreR]], [pos[BONE.foreR], pos[BONE.handR]]] };
+        const legs = [[pos[BONE.thighL], pos[BONE.shinL]], [pos[BONE.shinL], pos[BONE.footL]], [pos[BONE.thighR], pos[BONE.shinR]], [pos[BONE.shinR], pos[BONE.footR]]];
+        let fT = 0, fH = 0, fL = 0;
+        for (const side of ['L', 'R']) for (const [si, [p, q]] of arm[side].entries()) for (const [k, thr] of (si === 0 ? ARM_PROBE_UPPER : ARM_PROBE_FORE)) {
+          const pt = segPt(p, q, k), tt = rig.torsoAt(pt, chestInv);
+          if (tt && tt.x * tt.x + tt.z * tt.z < thr - 0.02) fT++;
+          if (Math.hypot(pt[0] - hc[0], pt[1] - hc[1], pt[2] - hc[2]) < ARM_HEAD_R * H - 0.012 * H) fH++; // (the arm's surface off the head)
+          for (const [lp, lq] of legs) if (segSegDist(pt, pt, lp, lq) < 0.059 * H) fL++;
+        }
+        if (fT) torso++; if (fH) head++; if (fL) leg++;
+        if (segSegDist(pos[BONE.foreL], pos[BONE.handL], pos[BONE.foreR], pos[BONE.handR]) < 0.04 * H) arms++;
+      }
+      d.action = null; d.y = 0; d.vy = 0; d.airborne = false;
+      if (torso || head || leg || arms) bad.push(`${s.id} @${bd.height}": torso ${torso} head ${head} legs ${leg} arms ${arms}`);
+    }
+  }
+  assert.deepEqual(bad, [], bad.join('; '));
+});
+
+test('the arm clearance leaves ordinary poses alone and fixes an arm aimed through the body', async () => {
+  const { Rig, ARM_PROBE_UPPER } = await import('../client/js/char/rig.js');
+  const M = await import('../client/js/core/math.js');
+  const build = { height: 78, weight: 210, wingspan: 82, hand: 'R', attributes: {} };
+  const model = new AthleteModel(build, {}, 0.5), rig = new Rig(model), H = model.d.H;
+  // natural poses: nothing to do
+  for (const [name, hx, hy, hz, ex, ey, ez] of [['hanging', null], ['hand on the far shoulder', -0.25, 1.62, 0.18, 0.6, -0.3, 0.6], ['hand in front of the chest', 0.0, 1.45, 0.35, 0.8, -0.4, 0.3], ['hands on hips', 0.3, 1.1, 0.05, 0.9, -0.4, -0.3]]) {
+    const p2 = neutral(); if (hx != null) { p2[P.handL] = hx; p2[P.handL + 1] = hy; p2[P.handL + 2] = hz; p2[P.elbowL] = ex; p2[P.elbowL + 1] = ey; p2[P.elbowL + 2] = ez; }
+    rig.solve(p2, {});
+    const chestInv = M.qinvert(M.q4(), rig.rot[BONE.chest]);
+    assert.equal(rig.armPenetration(rig.pos[BONE.upperL], rig.pos[BONE.foreL], rig.pos[BONE.handL], chestInv), 0, `${name}: clear`);
+    // the hand lands where the pose asked
+    if (hx != null) { const w = rig.pos[BONE.handL], s = rig.s; assert.ok(Math.hypot(w[0] - hx * s, w[1] - hy * s, w[2] - hz * s) < 0.16 * s, `${name}: the hand is where it was put`); }
+  }
+  // a hand aimed straight through the chest to the far hip: the arm is kept out of the body
+  const p3 = neutral(); p3[P.handL] = -0.3; p3[P.handL + 1] = 1.25; p3[P.handL + 2] = -0.02; p3[P.elbowL] = 0.3; p3[P.elbowL + 1] = -0.5; p3[P.elbowL + 2] = -0.8;
+  rig.solve(p3, {});
+  const chestInv = M.qinvert(M.q4(), rig.rot[BONE.chest]);
+  const S = rig.pos[BONE.upperL], E = rig.pos[BONE.foreL], W = rig.pos[BONE.handL];
+  assert.ok(rig.armPenetration(S, E, W, chestInv) < 0.25, 'the arm is brought (almost all the way) out of the torso'); // (a target inside the far hip: as far out as the arm allows)
+  assert.ok(Math.abs(W[2]) > 0.06 * H, `the hand came out through the nearest skin, front or back (z ${(W[2] / H).toFixed(2)} H)`);
+  assert.ok(ARM_PROBE_UPPER[0][1] < ARM_PROBE_UPPER[3][1], 'the upper arm is held looser near the shoulder');
 });

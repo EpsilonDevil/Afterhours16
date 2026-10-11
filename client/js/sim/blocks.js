@@ -21,41 +21,45 @@ export const BLOCK_TIER_MIN = [0, 0, 55, 70, 85, 95]; // tier 1..5 by Block rati
 export const BLOCK_TALL = 83, BLOCK_SHORT = 73;        // inches: a +1 / −1 tier bump
 
 export const BLOCK_STYLES = [
-  // ---- tier 1: the basics ----
+  // (qp3 revision: every style has its own lead / off-hand / legs triple, and each package its own motif: Fundamentals
+  // are upright and plain; Swatter cocks and fires one arm; Wiper swings big with a twist and a stare; Hammer is
+  // overhead power on piked and scissored legs; Eraser is the whole body, arched back, with the gesture after.
+  // reachX: how far out to the side the lead hand reaches (0 straight up); elbowOut: the lead elbow flared wide)
+  // ---- tier 1, Fundamentals: upright, no wind-up, no gesture ----
   { id: 'reach', name: 'Reach', tier: 1, lead: 'one', cock: 0.0, swat: 'none', off: 'wide', lean: [0.1, 0], twist: 0.1, legs: 'split', land: 'none', emph: 0.9, reachZ: 0.12, situ: ['any', 'perim'] },
   { id: 'straight_up', name: 'Straight Up', tier: 1, lead: 'two', cock: 0.0, swat: 'none', off: 'mirror', lean: [0, 0], twist: 0, legs: 'straight', land: 'none', emph: 0.9, spread: 0.24, reachZ: -0.12, headUp: 0.35, situ: ['any', 'rim'] },
-  { id: 'late_hand', name: 'Late Hand', tier: 1, lead: 'one', cock: 0.15, swat: 'down', off: 'tuck', lean: [0.05, 0.1], twist: 0.2, legs: 'split', land: 'none', emph: 0.85, reachZ: 0.1, situ: ['any', 'perim'] },
-  { id: 'wall', name: 'Two-Hand Wall', tier: 1, lead: 'two', cock: 0.0, swat: 'pin', off: 'mirror', lean: [0, 0.05], twist: 0, legs: 'tuck', land: 'none', emph: 0.95, spread: 0.62, reachZ: 0.28, situ: ['any', 'rim'] },
-  { id: 'side_reach', name: 'Side Reach', tier: 1, lead: 'one', cock: 0.0, swat: 'across', off: 'shield', lean: [0.3, 0], twist: 0.35, legs: 'kick', land: 'none', emph: 0.9, situ: ['any', 'chase'] },
-  { id: 'stand_tall', name: 'Stand Tall', tier: 1, lead: 'one', cock: 0.0, swat: 'none', off: 'high', lean: [0, -0.2], twist: 0, legs: 'tuck', land: 'none', emph: 0.9, reachZ: -0.08, headUp: 0.25, situ: ['any', 'rim'] },
-  // ---- tier 2 ----
+  { id: 'late_hand', name: 'Late Hand', tier: 1, lead: 'one', cock: 0.15, swat: 'tip', off: 'tuck', lean: [0.05, 0.12], twist: 0.2, legs: 'split', land: 'none', emph: 0.85, reachZ: 0.1, reachX: 0.15, situ: ['any', 'perim'] },
+  { id: 'wall', name: 'Two-Hand Wall', tier: 1, lead: 'two', cock: 0.0, swat: 'push', off: 'mirror', lean: [0, 0.12], twist: 0, legs: 'kick', land: 'none', emph: 0.95, spread: 0.62, reachZ: 0.3, situ: ['any', 'rim'] },
+  { id: 'side_reach', name: 'Side Reach', tier: 1, lead: 'one', cock: 0.0, swat: 'across', off: 'shield', lean: [0.4, 0], twist: 0.35, legs: 'straight', land: 'none', emph: 0.9, reachX: 0.3, situ: ['any', 'chase'] },
+  { id: 'stand_tall', name: 'Stand Tall', tier: 1, lead: 'one', cock: 0.0, swat: 'none', off: 'tuck', lean: [0, -0.25], twist: 0, legs: 'straight', land: 'none', emph: 0.9, reachZ: -0.08, headUp: 0.25, situ: ['any', 'rim'] },
+  // ---- tier 2, Swatter: the arm cocks and fires ----
   { id: 'volleyball', name: 'Volleyball', tier: 2, lead: 'one', cock: 0.35, swat: 'volley', off: 'back', lean: [0.1, 0.15], twist: 0.25, legs: 'kick', land: 'none', emph: 1.0, reachZ: 0.2, situ: ['any', 'perim'] },
-  { id: 'chest_swat', name: 'Chest Swat', tier: 2, lead: 'one', cock: 0.1, swat: 'across', off: 'tuck', lean: [0.15, 0.1], twist: 0.3, legs: 'straight', land: 'none', emph: 1.0, reachZ: 0.25, situ: ['any', 'rim'] },
+  { id: 'chest_swat', name: 'Chest Swat', tier: 2, lead: 'one', cock: 0.1, swat: 'across', off: 'tuck', lean: [0.15, 0.1], twist: 0.3, legs: 'kick', land: 'none', emph: 1.0, reachZ: 0.25, elbowOut: 1, situ: ['any', 'rim'] },
   { id: 'cross_arm', name: 'Cross Arm', tier: 2, lead: 'cross', cock: 0.0, swat: 'wipe', off: 'wide', lean: [0.25, 0], twist: 0.45, legs: 'kick', land: 'none', emph: 1.0, situ: ['any', 'chase'] },
-  { id: 'hook', name: 'Hook', tier: 2, lead: 'far', cock: 0.2, swat: 'down', off: 'shield', lean: [0.35, 0.05], twist: 0.5, legs: 'split', land: 'none', emph: 1.0, situ: ['any', 'perim'] },
-  { id: 'shield', name: 'Shield', tier: 2, lead: 'one', cock: 0.0, swat: 'pin', off: 'shield', lean: [0.1, 0.1], twist: 0.15, legs: 'kick', land: 'none', emph: 0.95, reachZ: 0.3, situ: ['any', 'rim'] },
-  { id: 'lean_in', name: 'Lean In', tier: 2, lead: 'one', cock: 0.1, swat: 'none', off: 'back', lean: [0.2, 0.35], twist: 0.2, legs: 'pike', land: 'none', emph: 1.05, situ: ['any', 'chase'] },
-  // ---- tier 3 ----
-  { id: 'wiper', name: 'Windshield Wiper', tier: 3, lead: 'one', cock: 0.3, swat: 'wipe', off: 'wide', lean: [0.2, 0], twist: 0.3, legs: 'split', land: 'stare', emph: 1.1, situ: ['any', 'perim'] },
-  { id: 'spike', name: 'Spike', tier: 3, lead: 'one', cock: 0.45, swat: 'down', off: 'wide', lean: [0.1, 0.2], twist: 0.1, legs: 'split', land: 'none', emph: 1.1, reachZ: 0.15, situ: ['any', 'rim'] },
-  { id: 'double_clutch', name: 'Double Clutch', tier: 3, lead: 'one', cock: 0.6, swat: 'volley', off: 'high', lean: [0.1, -0.05], twist: 0.25, legs: 'kick', land: 'stare', emph: 1.05, reachZ: -0.05, situ: ['any', 'perim'] },
-  { id: 'pin', name: 'Pin', tier: 3, lead: 'two', cock: 0.0, swat: 'pin', off: 'mirror', lean: [0, -0.05], twist: 0, legs: 'split', land: 'point', emph: 1.1, spread: 0.3, reachZ: 0.0, headUp: 0.25, situ: ['any', 'rim'] },
-  { id: 'chase_swat', name: 'Chase Swat', tier: 3, lead: 'far', cock: 0.35, swat: 'across', off: 'wide', lean: [0.4, 0.2], twist: 0.6, legs: 'scissor', land: 'none', emph: 1.1, situ: ['chase'] },
+  { id: 'hook', name: 'Hook', tier: 2, lead: 'far', cock: 0.2, swat: 'chop', off: 'shield', lean: [0.35, 0.05], twist: 0.5, legs: 'split', land: 'none', emph: 1.0, situ: ['any', 'perim'] },
+  { id: 'shield', name: 'Shield', tier: 2, lead: 'one', cock: 0.0, swat: 'pin', off: 'shield', lean: [0.1, 0.1], twist: 0.15, legs: 'tuck', land: 'none', emph: 0.95, reachZ: 0.3, elbowOut: 1, situ: ['any', 'rim'] },
+  { id: 'lean_in', name: 'Lean In', tier: 2, lead: 'one', cock: 0.1, swat: 'none', off: 'back', lean: [0.2, 0.35], twist: 0.2, legs: 'pike', land: 'none', emph: 1.05, reachX: 0.1, situ: ['any', 'chase'] },
+  // ---- tier 3, Wiper: big swings, a twist, and a stare after ----
+  { id: 'wiper', name: 'Windshield Wiper', tier: 3, lead: 'one', cock: 0.3, swat: 'wipe', off: 'high', lean: [0.3, 0], twist: 0.45, legs: 'split', land: 'stare', emph: 1.1, reachX: 0.25, situ: ['any', 'perim'] },
+  { id: 'spike', name: 'Spike', tier: 3, lead: 'one', cock: 0.45, swat: 'down', off: 'wide', lean: [0.1, 0.25], twist: 0.1, legs: 'tuck', land: 'none', emph: 1.1, reachZ: 0.15, situ: ['any', 'rim'] },
+  { id: 'double_clutch', name: 'Double Clutch', tier: 3, lead: 'one', cock: 0.6, swat: 'volley', off: 'high', lean: [0.1, -0.05], twist: 0.25, legs: 'kick', land: 'stare', emph: 1.05, reachZ: -0.05, elbowOut: 1, situ: ['any', 'perim'] },
+  { id: 'pin', name: 'Pin', tier: 3, lead: 'two', cock: 0.0, swat: 'pin', off: 'mirror', lean: [0, -0.05], twist: 0, legs: 'scissor', land: 'point', emph: 1.1, spread: 0.3, reachZ: 0.0, headUp: 0.25, situ: ['any', 'rim'] },
+  { id: 'chase_swat', name: 'Chase Swat', tier: 3, lead: 'far', cock: 0.35, swat: 'sweep', off: 'wide', lean: [0.4, 0.2], twist: 0.6, legs: 'scissor', land: 'none', emph: 1.1, situ: ['chase'] },
   { id: 'twist', name: 'Twist', tier: 3, lead: 'cross', cock: 0.2, swat: 'down', off: 'back', lean: [0.3, -0.05], twist: 0.7, legs: 'scissor', land: 'stare', emph: 1.1, situ: ['any', 'chase'] },
-  // ---- tier 4 ----
-  { id: 'hammer', name: 'Hammer', tier: 4, lead: 'one', cock: 0.8, swat: 'hammer', off: 'back', lean: [0.1, -0.15], twist: 0.3, legs: 'tuck', land: 'stare', emph: 1.2, reachZ: -0.1, headUp: 0.15, situ: ['any', 'rim'] },
-  { id: 'spike_pro', name: 'Spike Pro', tier: 4, lead: 'one', cock: 0.55, swat: 'volley', off: 'wide', lean: [0.2, 0.3], twist: 0.35, legs: 'pike', land: 'roar', emph: 1.2, situ: ['any', 'chase', 'perim'] },
-  { id: 'palm_snatch', name: 'Palm Snatch', tier: 4, lead: 'one', cock: 0.0, swat: 'snatch', off: 'shield', lean: [0.1, 0.1], twist: 0.1, legs: 'straight', land: 'point', emph: 1.15, reachZ: 0.25, situ: ['any', 'rim', 'perim'] },
-  { id: 'scissor', name: 'Scissor', tier: 4, lead: 'cross', cock: 0.3, swat: 'wipe', off: 'high', lean: [0.25, 0], twist: 0.5, legs: 'scissor', land: 'flex', emph: 1.2, situ: ['any', 'chase'] },
-  { id: 'superman', name: 'Superman', tier: 4, lead: 'two', cock: 0.0, swat: 'down', off: 'mirror', lean: [0.15, 0.5], twist: 0.1, legs: 'pike', land: 'dust', emph: 1.25, spread: 0.4, reachZ: 0.45, situ: ['any', 'chase'] },
-  { id: 'glass_pin', name: 'Backboard Pin', tier: 4, lead: 'one', cock: 0.0, swat: 'pin', off: 'high', lean: [0.15, 0.25], twist: 0.3, legs: 'kick', land: 'stare', emph: 1.2, reachZ: 0.4, situ: ['rim'] },
-  // ---- tier 5: the emphatic ----
+  // ---- tier 4, Hammer: overhead power, piked and scissored legs, a roar or a point ----
+  { id: 'hammer', name: 'Hammer', tier: 4, lead: 'one', cock: 0.8, swat: 'hammer', off: 'wide', lean: [0.1, -0.15], twist: 0.3, legs: 'pike', land: 'stare', emph: 1.2, reachZ: -0.1, headUp: 0.15, situ: ['any', 'rim'] },
+  { id: 'spike_pro', name: 'Spike Pro', tier: 4, lead: 'one', cock: 0.55, swat: 'spike', off: 'tuck', lean: [0.2, 0.3], twist: 0.35, legs: 'pike', land: 'roar', emph: 1.2, reachX: 0.2, situ: ['any', 'chase', 'perim'] },
+  { id: 'palm_snatch', name: 'Palm Snatch', tier: 4, lead: 'one', cock: 0.0, swat: 'snatch', off: 'shield', lean: [0.1, 0.1], twist: 0.1, legs: 'scissor', land: 'point', emph: 1.15, reachZ: 0.25, situ: ['any', 'rim', 'perim'] },
+  { id: 'scissor', name: 'Scissor', tier: 4, lead: 'cross', cock: 0.5, swat: 'scissor', off: 'high', lean: [0.1, -0.1], twist: 0.45, legs: 'split', land: 'flex', emph: 1.25, headUp: 0.3, situ: ['any', 'chase'] },
+  { id: 'superman', name: 'Superman', tier: 4, lead: 'two', cock: 0.0, swat: 'slam', off: 'mirror', lean: [0.15, 0.5], twist: 0.1, legs: 'pike', land: 'dust', emph: 1.25, spread: 0.4, reachZ: 0.45, situ: ['any', 'chase'] },
+  { id: 'glass_pin', name: 'Backboard Pin', tier: 4, lead: 'one', cock: 0.0, swat: 'press', off: 'shield', lean: [0.2, 0.3], twist: 0.3, legs: 'kick', land: 'stare', emph: 1.2, reachZ: 0.4, reachX: 0.12, situ: ['rim'] },
+  // ---- tier 5, Eraser: the whole body, arched back, and the gesture after ----
   { id: 'hammer_fist', name: 'Hammer Fist', tier: 5, lead: 'one', cock: 1.0, swat: 'hammer', off: 'wide', lean: [0.15, -0.3], twist: 0.4, legs: 'kick', land: 'roar', emph: 1.3, situ: ['any', 'rim'] },
-  { id: 'sky_pin', name: 'Sky Pin', tier: 5, lead: 'far', cock: 0.0, swat: 'pin', off: 'high', lean: [0.35, -0.1], twist: 0.6, legs: 'scissor', land: 'point', emph: 1.3, situ: ['rim', 'chase'] },
-  { id: 'finger_wag', name: 'Finger Wag', tier: 5, lead: 'one', cock: 0.4, swat: 'across', off: 'back', lean: [0.15, 0.05], twist: 0.3, legs: 'tuck', land: 'wag', emph: 1.25, reachZ: 0.1, situ: ['any', 'rim'] },
-  { id: 'eraser', name: 'Eraser', tier: 5, lead: 'one', cock: 0.5, swat: 'wipe', off: 'back', lean: [0.35, 0.1], twist: 0.75, legs: 'scissor', land: 'stare', emph: 1.3, situ: ['any', 'chase', 'perim'] },
-  { id: 'thunder_clap', name: 'Thunder Clap', tier: 5, lead: 'two', cock: 0.3, swat: 'clap', off: 'mirror', lean: [0, 0.15], twist: 0, legs: 'pike', land: 'roar', emph: 1.3, spread: 0.9, reachZ: 0.1, situ: ['any', 'rim'] },
-  { id: 'launch', name: 'Launch', tier: 5, lead: 'one', cock: 0.7, swat: 'volley', off: 'wide', lean: [0.2, -0.4], twist: 0.35, legs: 'pike', land: 'flex', emph: 1.3, situ: ['any', 'perim', 'chase'] },
+  { id: 'sky_pin', name: 'Sky Pin', tier: 5, lead: 'far', cock: 0.0, swat: 'hold', off: 'high', lean: [0.1, -0.3], twist: 0.2, legs: 'pike', land: 'point', emph: 1.3, situ: ['rim', 'chase'] },
+  { id: 'finger_wag', name: 'Finger Wag', tier: 5, lead: 'one', cock: 0.4, swat: 'flick', off: 'back', lean: [0.15, 0.05], twist: 0.3, legs: 'split', land: 'wag', emph: 1.25, reachZ: 0.1, reachX: 0.18, situ: ['any', 'rim'] },
+  { id: 'eraser', name: 'Eraser', tier: 5, lead: 'one', cock: 0.5, swat: 'erase', off: 'back', lean: [0.35, 0.1], twist: 0.75, legs: 'scissor', land: 'stare', emph: 1.3, elbowOut: 1, situ: ['any', 'chase', 'perim'] },
+  { id: 'thunder_clap', name: 'Thunder Clap', tier: 5, lead: 'two', cock: 0.3, swat: 'clap', off: 'mirror', lean: [0, 0.15], twist: 0, legs: 'tuck', land: 'roar', emph: 1.3, spread: 0.9, reachZ: 0.1, situ: ['any', 'rim'] },
+  { id: 'launch', name: 'Launch', tier: 5, lead: 'one', cock: 0.7, swat: 'launch', off: 'wide', lean: [0.2, -0.4], twist: 0.35, legs: 'scissor', land: 'flex', emph: 1.3, reachX: 0.22, situ: ['any', 'perim', 'chase'] },
 ];
 export const BLOCK_BY_ID = Object.fromEntries(BLOCK_STYLES.map(s => [s.id, s]));
 

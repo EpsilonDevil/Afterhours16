@@ -20,6 +20,8 @@ const ONE_HAND_DUNK = new Set(['onehand', 'tomahawk', 'windmill', 'cradle', 'rev
 export { layupHand }; // (shots.js: the sim needs it too, to keep the ball where that hand can reach)
 // collarbone roll that raises the shoulder joint by ARM_LIFT (0.025H) over the 0.072H collarbone-to-shoulder span
 const CLAV_LIFT = Math.asin(0.025 / 0.072);
+// v0.4.7.5 qp3: how much of the arm's length a block's hand target may sit from its shoulder (Animator.clampReach)
+export const REACH_K = 0.96;
 export function dunkHand(a) {
   if (isHS(a.style)) { const h = hsHand(a.style, hsK(a)); return h === 'B' ? 'R' : h; } // (qp3: Hash-Slinging, by its own script)
   const q = a.t / Math.max(0.1, a.slam || 1);
@@ -596,7 +598,10 @@ export class Animator {
     for (const [g2, o] of Object.entries(P)) {
       if (g2 === 'N') continue;
       const n = GROUP_SIZE[g2];
-      const k = rawGroups.has(g2) ? 1 : (g2.startsWith('foot') || g2.startsWith('pitch') || g2.startsWith('toe') || g2.startsWith('yaw')) ? (wGait > 0.5 ? 1 : kFast) : (athletic && (g2 === 'root' || g2 === 'spine' || g2 === 'chest' || g2.startsWith('knee'))) ? kFast : kSlow;
+      // (qp3: a styled block's arms track their path tightly too: the swat is a snap, and the crossing hands are routed
+      // up and round the body on purpose, which a lagging arm would cut straight through)
+      const styledBlock = a && a.type === 'block' && a.bstyle && (g2.startsWith('hand') || g2.startsWith('elbow'));
+      const k = rawGroups.has(g2) ? 1 : (g2.startsWith('foot') || g2.startsWith('pitch') || g2.startsWith('toe') || g2.startsWith('yaw')) ? (wGait > 0.5 ? 1 : kFast) : (athletic && (g2 === 'root' || g2 === 'spine' || g2 === 'chest' || g2.startsWith('knee'))) || styledBlock ? kFast : kSlow;
       if (k === kSlow && !athletic) { // (shots and finishes keep their exact timing: the release is measured off them)
         const w = g2 === 'head' || g2 === 'neck' ? wS * 0.85 : wS;
         for (let i = 0; i < n; i++) { const j = o + i; for (let s2 = 0; s2 < nS; s2++) { vel[j] += (w * w * (T[j] - out[j]) - 2 * w * vel[j]) * dtS; out[j] += vel[j] * dtS; } }
@@ -611,7 +616,8 @@ export class Animator {
     if (lx < -1e-4) { fin[P.root + 1] += lx; fin[P.spine] -= lx * 0.9; fin[P.chest] -= lx * 0.3; fin[P.head] += lx * 0.5; }
     this.clearBody(fin);
     if (g && !has) this.clearOthers(fin, p, g);
-    this.view.update(fin, st.x, st.y, st.z, st.facing, { look, lookW, palmL: palm.L, palmR: palm.R });
+    // (qp3: a hand on the ball is pinned: the rig's limb clearance may swing its elbow but never moves the hand itself)
+    this.view.update(fin, st.x, st.y, st.z, st.facing, { look, lookW, palmL: palm.L, palmR: palm.R, pinL: rawGroups.has('handL'), pinR: rawGroups.has('handR') });
   }
 
   // v0.4.2 anti-clipping: keep hand targets outside an elliptic torso/hip column (sized by girth and moved
@@ -683,7 +689,7 @@ export class Animator {
     const hitT = a.hitAt ?? ((a.jumpAt || 0) + air * 0.5);
     const sw = sm(0, 0.16, t - hitT) * (a.hit ? 1 : 0.55);
     const two = S.lead === 'two' || S.off === 'mirror', sp = S.spread ?? 0.45;
-    const rx = tx + ls * (two ? sp / 2 : 0.03 * E), ry = ty + 0.04 * (E - 1), rz = Math.max(tz, 0.1) + (S.reachZ || 0);
+    const rx = tx + ls * (two ? sp / 2 : 0.03 * E + (S.reachX || 0)), ry = ty + 0.04 * (E - 1) - 0.1 * (S.reachX || 0), rz = Math.max(tz, 0.1) + (S.reachZ || 0);
     const cockK = S.cock * sm(0.12, 0.5, pre) * (1 - sm(0.55, 0.92, pre));
     let hx = lerp(ls * 0.42, rx, pre) + ls * 0.32 * cockK, hy = lerp(1.05, ry, pre) - 0.18 * cockK, hz = lerp(0.12, rz, pre) - 0.5 * cockK;
     switch (S.swat) {
@@ -692,13 +698,26 @@ export class Animator {
       case 'wipe': hx -= ls * 0.9 * sw * E; hy -= 0.45 * sw * E; hz += 0.3 * sw; break;
       case 'pin': hz += 0.22 * sw; hy += 0.05 * sw; break;
       case 'snatch': hy -= 0.85 * sw; hz -= 0.25 * sw; hx = lerp(hx, ls * 0.15, sw); break;
-      case 'clap': hx = lerp(hx, tx, sw); break;
+      case 'clap': hx = lerp(hx, tx + ls * 0.05, sw); break; // (palm to palm, a hand's thickness apart)
       case 'hammer': hy -= 1.1 * sw * E; hz += 0.5 * sw; hx -= ls * 0.2 * sw; break;
       case 'volley': hy -= 0.7 * sw * E; hz += 0.55 * sw * E; break;
+      // (qp3 revision: a swat of its own for every package, so the same block never shows up twice across them)
+      case 'tip': hy += 0.12 * sw; hz += 0.28 * sw; hx += ls * 0.08 * sw; break;                       // a fingertip flick up and out
+      case 'push': hz += 0.34 * sw; hy -= 0.12 * sw; break;                                             // two hands pushed out
+      case 'press': hz += 0.3 * sw; hy += 0.16 * sw; hx += ls * 0.06 * sw; break;                      // pressed forward and up, as on the glass
+      case 'hold': hy += 0.14 * sw; hz -= 0.08 * sw; break;                                             // grabbed and held high
+      case 'chop': hy -= 0.7 * sw * E; hx += ls * 0.3 * sw; hz += 0.2 * sw; break;                     // down and outward
+      case 'slam': hy -= 1.0 * sw * E; hz += 0.5 * sw * E; break;                                       // two hands straight down
+      case 'sweep': hx -= ls * 1.0 * sw * E; hz -= 0.3 * sw; hy -= 0.1 * sw; break;                    // across and round behind
+      case 'flick': { const f = Math.sin(Math.min(1, sw * 1.4) * Math.PI); hx -= ls * 0.5 * f; hz += 0.2 * f; break; } // a quick wrist flick across and back
+      case 'scissor': hx -= ls * 0.8 * sw * E; hy -= 0.25 * sw; hz += 0.25 * sw; break;                 // the arms cross over each other
+      case 'erase': { const w = Math.min(1, sw * 1.3), back = Math.max(0, w - 0.6) / 0.4; hx -= ls * (0.95 * w - 0.45 * back) * E; hy -= 0.3 * w; hz += 0.3 * w; break; } // across, then back
+      case 'spike': hy -= 0.9 * sw * E; hz += 0.7 * sw * E; hx -= ls * 0.2 * sw; break;               // the elbow leads, straight through
+      case 'launch': hy += 0.25 * sw * E; hz += 0.6 * sw * E; hx += ls * 0.1 * sw; break;             // punched up and out
       default: break;
     }
     set3(T, 'hand' + ld, hx, hy, hz);
-    set3(T, 'elbow' + ld, ls * (0.75 + 0.4 * cockK), -0.25 + 0.6 * cockK - 0.3 * sw, -0.45 - 0.4 * cockK + 0.6 * sw);
+    set3(T, 'elbow' + ld, ls * (0.75 + 0.4 * cockK + 0.5 * (S.elbowOut || 0)), -0.25 + 0.6 * cockK - 0.3 * sw + 0.3 * (S.elbowOut || 0), -0.45 - 0.4 * cockK + 0.6 * sw);
     const oy = ty - 0.5, oz = Math.max(tz - 0.06, 0.2);
     switch (S.off) {
       case 'wide': set3(T, 'hand' + tr, lerp(-ls * 0.42, -ls * 0.6, up2), lerp(1.05, oy, up2), lerp(0.12, 0.1, up2)); set3(T, 'elbow' + tr, -ls * 0.95, -0.45, -0.35); break;
@@ -706,9 +725,11 @@ export class Animator {
       case 'shield': set3(T, 'hand' + tr, -ls * 0.3, lerp(1.05, 0.95, up2), 0.3); set3(T, 'elbow' + tr, -ls * 0.8, -0.3, -0.5); break;
       case 'mirror': {
         let mx = lerp(-ls * 0.42, tx - ls * sp / 2, up2), my = lerp(1.05, ry, up2), mz = lerp(0.12, Math.max(oz, rz), up2);
-        if (S.swat === 'clap') mx = lerp(mx, tx, sw);
+        if (S.swat === 'clap') mx = lerp(mx, tx - ls * 0.05, sw);
         if (S.swat === 'down') { my -= 0.9 * sw * E; mz += 0.35 * sw; }
+        if (S.swat === 'slam') { my -= 1.0 * sw * E; mz += 0.5 * sw * E; }
         if (S.swat === 'pin') mz += 0.22 * sw;
+        if (S.swat === 'push') { mz += 0.34 * sw; my -= 0.12 * sw; }
         set3(T, 'hand' + tr, mx, my, mz); set3(T, 'elbow' + tr, -ls * 0.75, -0.25, -0.45);
         break;
       }
@@ -716,13 +737,28 @@ export class Animator {
       case 'back': set3(T, 'hand' + tr, lerp(-ls * 0.42, -ls * 0.45, up2), lerp(1.05, 1.5, up2), lerp(0.12, -0.35, up2)); set3(T, 'elbow' + tr, -ls * 0.9, -0.5, -0.6); break;
       default: break;
     }
-    if (S.lead === 'cross') { set3(T, 'hand' + tr, lerp(-ls * 0.42, tx + ls * 0.12, up2), lerp(1.05, ry + 0.12, up2), lerp(0.12, rz + 0.05, up2)); set3(T, 'elbow' + tr, ls * 0.3, 0.1, -0.5); }
-    if (S.lead === 'far') { set3(T, 'hand' + tr, hx + ls * 0.3, hy - 0.05, hz); set3(T, 'elbow' + tr, ls * 0.6, 0.2 - 0.3 * sw, -0.2); set3(T, 'hand' + ld, lerp(ls * 0.42, ls * 0.5, up), lerp(1.05, ty - 0.45, up), 0.1); set3(T, 'elbow' + ld, ls * 0.9, -0.3, -0.4); }
+    // (qp3 clipping fix: a hand that crosses the body goes up first and across only once it is above the shoulders,
+    // and crosses out in front, so the upper arm passes in front of the chest and the head instead of through them;
+    // the crossing hand sits a hand's length in front of the lead hand, so the forearms never share a line)
+    const xk = sm(0.45, 0.95, up2);
+    if (S.lead === 'cross') { const sc = S.swat === 'scissor' ? sw : 0; set3(T, 'hand' + tr, lerp(-ls * 0.42, tx - ls * 0.04, xk) + ls * 0.7 * sc, lerp(1.05, ry + 0.28, up2) + 0.35 * sw, lerp(0.12, rz + 0.2, up2) + 0.22 * xk * (1 - xk) - 0.1 * sw - 0.25 * sc); set3(T, 'elbow' + tr, ls * 0.3, 0.3, -0.5); } // (the crossing hand lifts out of the wipe's path on the swat)
+    // (the far hand goes straight up and hooks the ball over the top of the head, then comes down in front; it used to
+    // reach across the chest for it, which no arm can do without going through it)
+    if (S.lead === 'far') { const fk = sm(0.3, 0.9, up); set3(T, 'hand' + tr, lerp(lerp(-ls * 0.42, lerp(-ls * 0.1, tx + ls * 0.06, fk), up), -ls * 0.15, sw), lerp(1.05, ry + 0.22, up) - 0.38 * sw * E, lerp(0.12, Math.max(rz - 0.06, 0.2), up) + 0.38 * sw); set3(T, 'elbow' + tr, -ls * 0.5, 0.6, -0.3); set3(T, 'hand' + ld, lerp(ls * 0.42, ls * 0.5, up), lerp(1.05, ty - 0.45, up), 0.1); set3(T, 'elbow' + ld, ls * 0.9, -0.3, -0.4); }
+    // (qp3 clipping fix: every hand target stays within the arm's reach of its own shoulder: a target the arm can't
+    // get to used to stretch it straight through the chest or the head on the way)
+    for (const side of ['L', 'R']) this.clampReach(T, side);
+    // (and crossing hands keep a forearm's length between them, the crossing hand moved forward, so the forearms
+    // pass in front of each other: short arms used to be pulled in by the reach clamp until they met)
+    if (S.lead === 'cross' || S.lead === 'far') {
+      const li = P['hand' + ld], ti = P['hand' + tr], dd = Math.hypot(T[li] - T[ti], T[li + 1] - T[ti + 1], T[li + 2] - T[ti + 2]);
+      if (dd < 0.3) { T[ti + 2] += 0.3 - dd; this.clampReach(T, tr); }
+    }
     const twoUp = S.lead === 'two' || S.off === 'mirror' || S.lead === 'cross';
     this.palm[ld] = { normal: S.swat === 'pin' ? [0, 0.1, 1] : S.swat === 'snatch' ? [0, -0.3, 1] : [ls * 0.3, 0.2, 1], fingers: [0, 1, 0.1], w: 0.85 * up };
     if (twoUp) this.palm[tr] = { normal: [0, 0.1, 1], fingers: [0, 1, 0.1], w: 0.8 * up2 };
     // torso: roll toward the ball, turn the chest, arch back or bend forward, and snap forward on the swat
-    const snap = (S.swat === 'hammer' || S.swat === 'volley' || S.swat === 'down') ? 0.25 : S.swat === 'none' ? 0 : 0.1;
+    const snap = (S.swat === 'hammer' || S.swat === 'volley' || S.swat === 'down' || S.swat === 'slam' || S.swat === 'spike' || S.swat === 'chop') ? 0.25 : S.swat === 'none' || S.swat === 'hold' ? 0 : S.swat === 'launch' ? -0.12 : 0.1;
     T[P.spine + 2] = ls * S.lean[0] * up * E; T[P.chest + 1] = -ls * (0.12 + 0.4 * S.twist) * up; T[P.chest + 2] = ls * 0.06 * up;
     T[P.spine] = S.lean[1] * up * E + snap * sw; T[P.head] = -0.22 - 0.1 * up - (S.headUp || 0) * up + 0.15 * sw;
     switch (S.legs) {
@@ -734,6 +770,16 @@ export class Animator {
       case 'scissor': set3(T, 'foot' + ld, ls * 0.12, 0.2 + 0.25 * up, -0.35 * up); set3(T, 'foot' + tr, -ls * 0.14, 0.22 + 0.2 * up, 0.35 * up); set3(T, 'knee' + ld, ls * 0.2, 0.2, 1); set3(T, 'knee' + tr, -ls * 0.2, 0.5, 1); T[P.pitchL] = 0.65; T[P.pitchR] = 0.65; break;
       default: break;
     }
+  }
+  // a hand target pulled in to REACH_K of the arm's length from its shoulder (reference units; the model's own
+  // shoulder and arm, scaled to the 2 m reference), so the IK never has to stretch the arm straight toward it
+  clampReach(T, side) {
+    const d = this.view?.model?.d, k = d ? 2 / this.H : 1;
+    const sx = (side === 'L' ? 1 : -1) * (d ? d.shoulderX * k : 0.2), sy = d ? (d.hipY + d.spineLen + d.chestLen + d.clavY) * k : 1.61, sz = d ? -0.012 * this.H * k : -0.024;
+    const reach = (d ? (d.upperLen + d.foreLen + 0.5 * d.handLen) * k : 0.74) * REACH_K;
+    const i = P['hand' + side], dx = T[i] - sx, dy = T[i + 1] - sy, dz = T[i + 2] - sz, dd = Math.hypot(dx, dy, dz);
+    if (dd <= reach || dd < 1e-6) return;
+    const f = reach / dd; T[i] = sx + dx * f; T[i + 1] = sy + dy * f; T[i + 2] = sz + dz * f;
   }
   // the landing gesture after a block that got the ball: q2 seconds since the landing
   blockLanding(T, a, q2) {

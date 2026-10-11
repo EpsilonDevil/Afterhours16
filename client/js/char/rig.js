@@ -28,6 +28,35 @@ function frameRot(out, a0, n0, a1, n1) {
   return M.qmul(out, q1, M.qinvert(M.q4(), q0));
 }
 
+// v0.4.7.5 qp3 limb clearance (Rig.armClear): forearm samples inside this share of the padded torso column count as
+// inside the body; the hand target moves forward by ARM_CLEAR_STEP x H a time, up to ARM_CLEAR_ITERS times
+export const ARM_CLEAR_TORSO = 0.82, ARM_CLEAR_STEP = 0.04, ARM_CLEAR_ITERS = 8;
+// the least distance (x H) between the two forearms' centrelines: two forearms' thickness
+export const ARM_CROSS_GAP = 0.056;
+// the head's radius (x H) for the arm probes: a little under the hand's (0.07 H), so an upper arm beside the ear is fine
+export const ARM_HEAD_R = 0.084;
+// the least distance (x H) between a forearm's centreline and a thigh's / a shin's: the leg's radius plus the arm's
+export const LEG_CLEAR_THIGH = 0.082, LEG_CLEAR_SHIN = 0.068;
+// the least distance between two segments p1-q1 and p2-q2
+export function segSegDist(p1, q1, p2, q2) {
+  const d1 = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]], d2 = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]], r = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+  let sc = 0, tc = 0;
+  if (a > 1e-9 && e > 1e-9) {
+    const c = dot(d1, r), b = dot(d1, d2), den = a * e - b * b;
+    sc = den > 1e-9 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+    tc = (b * sc + f) / e;
+    if (tc < 0) { tc = 0; sc = Math.max(0, Math.min(1, -c / a)); } else if (tc > 1) { tc = 1; sc = Math.max(0, Math.min(1, (b - c) / a)); }
+  } else if (e > 1e-9) tc = Math.max(0, Math.min(1, f / e));
+  const x = p1[0] + d1[0] * sc - p2[0] - d2[0] * tc, y = p1[1] + d1[1] * sc - p2[1] - d2[1] * tc, z = p1[2] + d1[2] * sc - p2[2] - d2[2] * tc;
+  return Math.hypot(x, y, z);
+}
+// where the arm is probed against the torso column, as [share of the segment, the r2 it must keep]: the padded
+// column's r2 is 1 at an arm's radius outside the skin and ~0.6 at the skin itself; a hanging upper arm sits in the
+// shoulder's own mass (r2 ~0.6-0.7 along its first half), so it is held only from its middle and only to the skin
+export const ARM_PROBE_UPPER = [[0.5, 0.5], [0.65, 0.6], [0.8, 0.72], [1.0, ARM_CLEAR_TORSO]];
+export const ARM_PROBE_FORE = [[0.15, ARM_CLEAR_TORSO], [0.32, ARM_CLEAR_TORSO], [0.49, ARM_CLEAR_TORSO], [0.66, ARM_CLEAR_TORSO], [0.83, ARM_CLEAR_TORSO], [1.0, ARM_CLEAR_TORSO]];
+
 export class Rig {
   constructor(model) {
     this.model = model;
@@ -103,45 +132,6 @@ export class Rig {
     }
     this.chainFK(B.neck, B.chest, neckQ);
     this.chainFK(B.head, B.neck, headQ);
-    // arms
-    const chestInv = M.qinvert(M.q4(), this.rot[B.chest]);
-    for (const side of ['L', 'R']) {
-      const clav = B['clav' + side], up = B['upper' + side], fo = B['fore' + side], ha = B['hand' + side];
-      this.chainFK(clav, B.chest, this.eulerQ(tmpQ, pose, P['clav' + side]));
-      const S = [0, 0, 0];
-      const o = qrot(this.rot[clav], this.off[up]);
-      S[0] = this.pos[clav][0] + o[0]; S[1] = this.pos[clav][1] + o[1]; S[2] = this.pos[clav][2] + o[2];
-      const hi = P['hand' + side], ei = P['elbow' + side];
-      const T = [pose[hi] * s, pose[hi + 1] * s, pose[hi + 2] * s];
-      // v0.4.7.5 limb collisions: the hand never goes inside the head
-      this.clearHead(T);
-      let pole = [pose[ei], pose[ei + 1], pose[ei + 2]];
-      let { E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole);
-      // ...and the elbow never goes inside the torso: swing it round the shoulder-wrist line to the nearest spot
-      // outside (the hand stays exactly where it was)
-      if (this.insideTorso(E, chestInv)) {
-        const alt = this.elbowOut(S, W, E, side, chestInv);
-        if (alt) ({ E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, alt));
-      }
-      this.reach[side] = Math.hypot(T[0] - W[0], T[1] - W[1], T[2] - W[2]);
-      const a0 = this.armA0[side], n0 = this.armN0[side];
-      frameRot(this.rot[up], a0[0], n0, norm([E[0] - S[0], E[1] - S[1], E[2] - S[2]]), n);
-      this.pos[up][0] = S[0]; this.pos[up][1] = S[1]; this.pos[up][2] = S[2];
-      frameRot(this.rot[fo], a0[1], n0, norm([W[0] - E[0], W[1] - E[1], W[2] - E[2]]), n);
-      const ef = qrot(this.rot[up], this.off[fo]);
-      this.pos[fo][0] = S[0] + ef[0]; this.pos[fo][1] = S[1] + ef[1]; this.pos[fo][2] = S[2] + ef[2];
-      this.elbowPos[side] = this.pos[fo].slice();
-      const hf = qrot(this.rot[fo], this.off[ha]);
-      this.pos[ha][0] = this.pos[fo][0] + hf[0]; this.pos[ha][1] = this.pos[fo][1] + hf[1]; this.pos[ha][2] = this.pos[fo][2] + hf[2];
-      const palm = opts['palm' + side];
-      if (palm && palm.w > 0) {
-        const want = frameRot(M.q4(), this.handA0[side], this.palm0[side], palm.fingers, palm.normal);
-        const fk = M.qmul(M.q4(), this.rot[fo], this.eulerQ(tmpQ, pose, P['wrist' + side]));
-        M.qslerp(this.rot[ha], fk, want, palm.w);
-      } else {
-        M.qmul(this.rot[ha], this.rot[fo], this.eulerQ(tmpQ, pose, P['wrist' + side]));
-      }
-    }
     // legs (v0.4.7.5: the feet are kept a shin's width apart, so the legs never pass through each other, and the
     // knees swing out round the hip-ankle line when they'd knock)
     const FT = this.footTargets(pose), KP = this.kneePoles(pose, hips, rH, FT);
@@ -163,6 +153,70 @@ export class Rig {
       M.qeuler(this.rot[ft], pose[P['pitch' + side]], pose[P['yaw' + side]], 0);
       this.chainFK(toe, ft, M.qaxis(tmpQ, 1, 0, 0, pose[P['toe' + side]]));
     }
+    // arms (v0.4.7.5 qp3: solved after the legs, so an arm is kept off a raised thigh too; each solved by solveArm, then,
+    // where the two forearms would pass through each other, the second hand's target moves forward and its arm is
+    // solved again, so crossing arms pass in front of one another)
+    const chestInv = M.qinvert(M.q4(), this.rot[B.chest]);
+    const armT = { L: null, R: null };
+    for (const side of ['L', 'R']) armT[side] = this.solveArm(side, pose, opts, chestInv);
+    const mv = opts.pinR && !opts.pinL ? 'L' : opts.pinR && opts.pinL ? null : 'R'; // (the hand that moves: never one on the ball)
+    for (let it = 0; mv && it < ARM_CLEAR_ITERS; it++) {
+      const gap = ARM_CROSS_GAP * this.d.H, dd = segSegDist(this.pos[B.foreL], this.pos[B.handL], this.pos[B.foreR], this.pos[B.handR]);
+      if (dd >= gap) break;
+      const f = qrot(this.rot[B.chest], [0, 0, 1]), step = gap - dd + 0.01 * this.d.H;
+      armT[mv][0] += f[0] * step; armT[mv][1] += f[1] * step; armT[mv][2] += f[2] * step;
+      this.solveArm(mv, pose, opts, chestInv, armT[mv]);
+    }
+  }
+
+
+  // one arm: the clavicle, then the two-bone IK to the hand target (the pose's, or `T0` as given), kept out of the
+  // torso and the head (see the arm-clearance loop). Returns the hand target it ended with.
+  solveArm(side, pose, opts, chestInv, T0 = null) {
+    const s = this.s;
+    const clav = B['clav' + side], up = B['upper' + side], fo = B['fore' + side], ha = B['hand' + side];
+    this.chainFK(clav, B.chest, this.eulerQ(tmpQ, pose, P['clav' + side]));
+    const S = [0, 0, 0];
+    const o = qrot(this.rot[clav], this.off[up]);
+    S[0] = this.pos[clav][0] + o[0]; S[1] = this.pos[clav][1] + o[1]; S[2] = this.pos[clav][2] + o[2];
+    const hi = P['hand' + side], ei = P['elbow' + side];
+    const T = T0 ? T0.slice() : [pose[hi] * s, pose[hi + 1] * s, pose[hi + 2] * s];
+    // v0.4.7.5 limb collisions: the hand never goes inside the head
+    this.clearHead(T);
+    let pole = [pose[ei], pose[ei + 1], pose[ei + 2]];
+    let { E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole);
+    // ...and the arm never goes through the torso or the head (v0.4.7.5; qp3: the whole arm, not only the elbow):
+    // first the elbow swings round the shoulder-wrist line to the nearest spot where the upper arm and the forearm
+    // both clear the body (the hand stays exactly where it was); where no swing clears (the hand itself across the
+    // chest, say), the hand target moves out — forward of the chest, or off the head — and the arm is solved again
+    const pinned = !!opts['pin' + side]; // (a hand on the ball stays exactly where it is)
+    for (let it = 0; it < ARM_CLEAR_ITERS; it++) {
+      if (!this.armPenetration(S, E, W, chestInv)) break;
+      const alt = this.elbowOut(S, W, E, side, chestInv);
+      if (alt) ({ E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, alt.d));
+      if (pinned || (alt && alt.clear)) break;
+      if (!this.armClear(S, E, W, T, chestInv)) break;
+      ({ E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole));
+    }
+    this.reach[side] = Math.hypot(T[0] - W[0], T[1] - W[1], T[2] - W[2]);
+    const a0 = this.armA0[side], n0 = this.armN0[side];
+    frameRot(this.rot[up], a0[0], n0, norm([E[0] - S[0], E[1] - S[1], E[2] - S[2]]), n);
+    this.pos[up][0] = S[0]; this.pos[up][1] = S[1]; this.pos[up][2] = S[2];
+    frameRot(this.rot[fo], a0[1], n0, norm([W[0] - E[0], W[1] - E[1], W[2] - E[2]]), n);
+    const ef = qrot(this.rot[up], this.off[fo]);
+    this.pos[fo][0] = S[0] + ef[0]; this.pos[fo][1] = S[1] + ef[1]; this.pos[fo][2] = S[2] + ef[2];
+    this.elbowPos[side] = this.pos[fo].slice();
+    const hf = qrot(this.rot[fo], this.off[ha]);
+    this.pos[ha][0] = this.pos[fo][0] + hf[0]; this.pos[ha][1] = this.pos[fo][1] + hf[1]; this.pos[ha][2] = this.pos[fo][2] + hf[2];
+    const palm = opts['palm' + side];
+    if (palm && palm.w > 0) {
+      const want = frameRot(M.q4(), this.handA0[side], this.palm0[side], palm.fingers, palm.normal);
+      const fk = M.qmul(M.q4(), this.rot[fo], this.eulerQ(tmpQ, pose, P['wrist' + side]));
+      M.qslerp(this.rot[ha], fk, want, palm.w);
+    } else {
+      M.qmul(this.rot[ha], this.rot[fo], this.eulerQ(tmpQ, pose, P['wrist' + side]));
+    }
+    return T;
   }
 
   // ---- v0.4.7.5 limb collisions ----
@@ -176,7 +230,9 @@ export class Rig {
     return { x: v[0] / (rx * g * H + pad), z: (v[2] - zc * H) / ((v[2] - zc * H >= 0 ? zf : zb) * g * H + pad) };
   }
   insideTorso(E, chestInv) { const t = this.torsoAt(E, chestInv); return !!t && t.x * t.x + t.z * t.z < 1; }
-  // the pole that puts the elbow outside the torso with the least swing round the shoulder-wrist line
+  // the pole that puts the arm outside the torso and the head with the least swing round the shoulder-wrist line:
+  // {d: the pole, clear: whether the whole arm clears} (qp3: it used to look at the elbow point alone, so an upper
+  // arm could still cut through the chest or the head on its way to a clear elbow)
   elbowOut(S, W, E, side, chestInv) {
     const ax = norm([W[0] - S[0], W[1] - S[1], W[2] - S[2]]);
     const c = [S[0] + ax[0] * dot([E[0] - S[0], E[1] - S[1], E[2] - S[2]], ax), 0, 0];
@@ -189,12 +245,75 @@ export class Rig {
       const a = sg * k * Math.PI / 12, ca = Math.cos(a), sa = Math.sin(a);
       const d = [u[0] * ca + w[0] * sa, u[1] * ca + w[1] * sa, u[2] * ca + w[2] * sa];
       const P2 = [c[0] + d[0] * h, c[1] + d[1] * h, c[2] + d[2] * h];
-      if (!this.insideTorso(P2, chestInv)) return d;
-      const v = this.torsoDepth(P2, chestInv); if (v < bv) { bv = v; best = d; }
+      const v = this.armPenetration(S, P2, W, chestInv);
+      if (!v) return { d, clear: true };
+      if (v < bv) { bv = v; best = d; }
     }
-    return best; // (nowhere fully clear: as far out of the body as it can get)
+    return best ? { d: best, clear: false } : null; // (nowhere fully clear: as far out of the body as it can get)
+  }
+  // how far the arm (shoulder S, elbow E, wrist W) sits inside the torso's own surface (ARM_CLEAR_TORSO of the padded
+  // column: the pad is an arm's thickness, so that is the skin) or the head: 0 when it clears
+  armPenetration(S, E, W, chestInv) {
+    const H = this.d.H, hd = this.pos[B.head], hr = ARM_HEAD_R * H;
+    const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
+    let v = 0;
+    const probe = (px, py, pz, thr) => {
+      const t = this.torsoAt([px, py, pz], chestInv);
+      if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr) v += thr - r2; }
+      const dd = Math.hypot(px - cx, py - cy, pz - cz);
+      if (dd < hr - 0.005 * H) v += (hr - dd) / hr;
+    };
+    for (const [k, thr] of ARM_PROBE_UPPER) probe(S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr);
+    for (const [k, thr] of ARM_PROBE_FORE) probe(E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr);
+    // ...and the forearm and hand against the thighs and shins (a raised knee, a pike)
+    for (const [lp, lq, r] of this.legCapsules()) { const dd = segSegDist(E, W, lp, lq); if (dd < r) v += (r - dd) / r; }
+    return v;
   }
   torsoDepth(E, chestInv) { const t = this.torsoAt(E, chestInv); return t ? -(t.x * t.x + t.z * t.z) : -9; }
+  // v0.4.7.5 qp3: the arm (shoulder S, elbow E, wrist W) and the hand T against the torso and the head, when no elbow
+  // swing clears it: samples inside the torso's skin move the hand forward of the chest by ARM_CLEAR_STEP; samples
+  // inside the head move it away from the head's centre. Returns whether the target moved.
+  armClear(S, E, W, T, chestInv) {
+    const H = this.d.H, hd = this.pos[B.head], hr = ARM_HEAD_R * H;
+    const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
+    let worstT = 0, headPush = null, outDir = null;
+    const probe = (px, py, pz, thr) => {
+      const t = this.torsoAt([px, py, pz], chestInv);
+      if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr && thr - r2 > worstT) { worstT = thr - r2; outDir = t; } }
+      const dx = px - cx, dy = py - cy, dz = pz - cz, dd = Math.hypot(dx, dy, dz);
+      if (dd < hr - 0.005 * H && dd > 1e-5 && (!headPush || hr - dd > headPush[3])) headPush = [dx / dd, dy / dd, dz / dd, hr - dd];
+    };
+    for (const [k, thr] of ARM_PROBE_UPPER) probe(S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr);
+    for (const [k, thr] of ARM_PROBE_FORE) probe(E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr);
+    // a forearm or hand on a thigh or shin: the hand lifts away from the leg's line
+    let legPush = null;
+    for (const [lp, lq, r] of this.legCapsules()) {
+      const dd = segSegDist(E, W, lp, lq);
+      if (dd < r && (!legPush || r - dd > legPush[3])) {
+        // away from the leg: from the leg's nearest point to the hand, mostly upward
+        const lx = lq[0] - lp[0], ly = lq[1] - lp[1], lz = lq[2] - lp[2], ll = lx * lx + ly * ly + lz * lz || 1e-6;
+        const t = Math.max(0, Math.min(1, ((W[0] - lp[0]) * lx + (W[1] - lp[1]) * ly + (W[2] - lp[2]) * lz) / ll));
+        const nx = W[0] - (lp[0] + lx * t), ny = W[1] - (lp[1] + ly * t) + 0.02 * H, nz = W[2] - (lp[2] + lz * t), nl = Math.hypot(nx, ny, nz) || 1e-6;
+        legPush = [nx / nl, ny / nl, nz / nl, r - dd];
+      }
+    }
+    if (!worstT && !headPush && !legPush) return false;
+    if (legPush) { const step = legPush[3] + 0.01 * H; T[0] += legPush[0] * step; T[1] += legPush[1] * step; T[2] += legPush[2] * step; }
+    if (worstT) {
+      // out through the nearest skin: forward of the chest for an arm across the front, backward for one behind the
+      // back, sideways for one along the flank (the probe's own direction from the column's axis, chest frame)
+      const dl = Math.hypot(outDir.x, outDir.z) || 1, dir = dl < 0.2 ? [0, 0, 1] : [outDir.x / dl, 0, outDir.z / dl];
+      const f = qrot(this.rot[B.chest], dir), step = ARM_CLEAR_STEP * H * Math.min(1, 0.5 + worstT);
+      T[0] += f[0] * step; T[1] += f[1] * step; T[2] += f[2] * step;
+    }
+    if (headPush) { const step = headPush[3] + 0.01 * H; T[0] += headPush[0] * step; T[1] += headPush[1] * step; T[2] += headPush[2] * step; }
+    return true;
+  }
+  // the legs as capsules [from, to, radius + an arm's radius] for the arm clearance (the thigh and the shin of each side)
+  legCapsules() {
+    const H = this.d.H, p = this.pos;
+    return [[p[B.thighL], p[B.shinL], LEG_CLEAR_THIGH * H], [p[B.shinL], p[B.footL], LEG_CLEAR_SHIN * H], [p[B.thighR], p[B.shinR], LEG_CLEAR_THIGH * H], [p[B.shinR], p[B.footR], LEG_CLEAR_SHIN * H]];
+  }
   // a hand target inside the head is pushed out to its surface
   clearHead(T) {
     const H = this.d.H, hd = this.pos[B.head], r = 0.07 * H;

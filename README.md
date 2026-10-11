@@ -45,6 +45,7 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Celebrations work in games and none clip.
   - Posterizer only fires on a dunk that gets to the rim.
 - **The AI reacts faster:** off the catch, on the pass (closeouts while the ball's in the air), after a move that makes space, to open lanes and in transition.
+- **Threes:** the AI (and auto-play) takes fewer when the Three Point rating is under 70, fewer again at PF and C; a 60-rated big almost never fires an open one, an 80-rated guard still does.
 - **Stamina:** recovery is 1.2× faster, and standing still recovers 2× on top of that. Moving without sprint recovers a very little, and contesting with the arms up (feet on the floor) is neutral for the defender.
 - **Boosts:** stock up to 35 games per category (was 10).
 - **Thirty block animations as five Block Packages** (Animations → Blocks: Fundamentals free, then Swatter, Wiper, Hammer, Eraser by Block rating, a tier easier for the tall): the higher the package, the more emphatic the block, from a plain reach to a hammer, a thunder clap, a finger wag.
