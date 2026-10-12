@@ -1551,7 +1551,7 @@
   "name": "Size-Up Package: Basic",
   "slot": "sizeup",
   "price": 0,
-  "move_speed": 1.0,
+  "move_speed": 1,
   "style": "basic",
   "lvl": 0
  },
@@ -1829,7 +1829,7 @@
   "name": "Jumpshot Base: Wide Stance",
   "slot": "jumpshot",
   "price": 2280,
-  "set_height": 1.0,
+  "set_height": 1,
   "push": 0.12,
   "jump": 0.68,
   "style": "wide",
@@ -2553,6 +2553,335 @@
   "min_overall": 0,
   "rep_required": 0,
   "original_2k_asset": false,
+  "description": "The basics on the block: a back-down, a drop step, a spin, a baby hook and a turnaround. On every build.",
+  "id": "post_basic",
+  "name": "Post Move Package: Fundamentals",
+  "slot": "post",
+  "price": 0,
+  "style": "basic",
+  "tier": 1,
+  "emph": 1,
+  "sig": [],
+  "hook": "baby",
+  "fade": "lean",
+  "body": "smooth",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 0
+  },
+  "min_attr_tall": {
+   "post_control": 0
+  },
+  "min_attr_short": {
+   "post_control": 0
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "description": "Low, wide and physical: a back-down that leans on the man with the shoulder, and a drop step that goes through him.",
+  "id": "post_bully",
+  "name": "Post Move Package: Bully Ball",
+  "slot": "post",
+  "price": 2900,
+  "style": "bully",
+  "tier": 1,
+  "emph": 1.08,
+  "sig": [
+   "dropstep"
+  ],
+  "hook": "baby",
+  "fade": "lean",
+  "body": "bully",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 0
+  },
+  "min_attr_tall": {
+   "post_control": 0
+  },
+  "min_attr_short": {
+   "post_control": 55
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "description": "Quick feet on the block: a sharp drop step and an up-and-under with a fake the man has to honour. Requires 55 Post Control (6'11\"+: 0; 6'1\" and under: 65).",
+  "id": "post_footwork",
+  "name": "Post Move Package: Footwork",
+  "slot": "post",
+  "price": 5200,
+  "style": "footwork",
+  "tier": 2,
+  "emph": 1.15,
+  "sig": [
+   "upunder",
+   "dropstep"
+  ],
+  "hook": "baby",
+  "fade": "lean",
+  "body": "quick",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 55
+  },
+  "min_attr_tall": {
+   "post_control": 0
+  },
+  "min_attr_short": {
+   "post_control": 65
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "description": "A soft short hook off either shoulder, up before the help gets there. Requires 55 Post Control (6'11\"+: 0; 6'1\" and under: 65).",
+  "id": "post_babyhook",
+  "name": "Post Move Package: Baby Hook",
+  "slot": "post",
+  "price": 5800,
+  "style": "babyhook",
+  "tier": 2,
+  "emph": 1.15,
+  "sig": [
+   "hook"
+  ],
+  "hook": "baby",
+  "fade": "lean",
+  "body": "smooth",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 55
+  },
+  "min_attr_tall": {
+   "post_control": 0
+  },
+  "min_attr_short": {
+   "post_control": 65
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "description": "Feints and spins: the up-and-under sells the fake with the whole body, and the spin goes the other way from where the man leans. Requires 65 Post Control (6'11\"+: 55; 6'1\" and under: 78).",
+  "id": "post_dreamshake",
+  "name": "Post Move Package: Dream Shake",
+  "slot": "post",
+  "price": 8900,
+  "style": "dreamshake",
+  "tier": 3,
+  "emph": 1.25,
+  "sig": [
+   "upunder",
+   "postspin"
+  ],
+  "hook": "jump",
+  "fade": "high",
+  "body": "quick",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 65
+  },
+  "min_attr_tall": {
+   "post_control": 55
+  },
+  "min_attr_short": {
+   "post_control": 78
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "description": "The turnaround fade: up and back off the back-down, the ball held high, nobody gets a hand near it. Requires 65 Post Control (6'11\"+: 55; 6'1\" and under: 78).",
+  "id": "post_fadeaway",
+  "name": "Post Move Package: Fadeaway",
+  "slot": "post",
+  "price": 8900,
+  "style": "fadeaway",
+  "tier": 3,
+  "emph": 1.25,
+  "sig": [
+   "fade",
+   "turn"
+  ],
+  "hook": "jump",
+  "fade": "high",
+  "body": "smooth",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 65
+  },
+  "min_attr_tall": {
+   "post_control": 55
+  },
+  "min_attr_short": {
+   "post_control": 78
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 4,
+  "original_2k_asset": false,
+  "description": "The full sweep from the hip, up and over the top, the off arm out as a shield. Unblockable in its day. Requires 78 Post Control (6'11\"+: 65; 6'1\" and under: 90).",
+  "id": "post_skyhook",
+  "name": "Post Move Package: Sky Hook",
+  "slot": "post",
+  "price": 13500,
+  "style": "skyhook",
+  "tier": 4,
+  "emph": 1.36,
+  "sig": [
+   "hook"
+  ],
+  "hook": "sky",
+  "fade": "lean",
+  "body": "smooth",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 78
+  },
+  "min_attr_tall": {
+   "post_control": 65
+  },
+  "min_attr_short": {
+   "post_control": 90
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 4,
+  "original_2k_asset": false,
+  "description": "A back-down that moves the man, then a spin into the lane that leaves him behind, finished with a jump hook or a dunk. Requires 78 Post Control (6'11\"+: 65; 6'1\" and under: 90).",
+  "id": "post_powerspin",
+  "name": "Post Move Package: Power Spin",
+  "slot": "post",
+  "price": 13500,
+  "style": "powerspin",
+  "tier": 4,
+  "emph": 1.36,
+  "sig": [
+   "postspin",
+   "dropstep"
+  ],
+  "hook": "jump",
+  "fade": "lean",
+  "body": "bully",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 78
+  },
+  "min_attr_tall": {
+   "post_control": 65
+  },
+  "min_attr_short": {
+   "post_control": 90
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 85,
+  "rep_required": 8,
+  "original_2k_asset": false,
+  "description": "The whole repertoire at its best: every move and every shot out of the post is a signature. The top tier. Requires 90 Post Control (6'11\"+: 78; 6'1\" and under: 90).",
+  "id": "post_legend",
+  "name": "Post Move Package: Low Post Legend",
+  "slot": "post",
+  "price": 19900,
+  "style": "legend",
+  "tier": 5,
+  "emph": 1.5,
+  "sig": [
+   "dropstep",
+   "postspin",
+   "upunder",
+   "hook",
+   "fade"
+  ],
+  "hook": "sky",
+  "fade": "high",
+  "body": "smooth",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 90
+  },
+  "min_attr_tall": {
+   "post_control": 78
+  },
+  "min_attr_short": {
+   "post_control": 90
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 85,
+  "rep_required": 8,
+  "original_2k_asset": false,
+  "description": "Power at the top tier: a back-down nobody holds, a drop step into a dunk, a jump hook off the glass. The top tier. Requires 90 Post Control (6'11\"+: 78; 6'1\" and under: 90).",
+  "id": "post_backboard",
+  "name": "Post Move Package: Backboard Bully",
+  "slot": "post",
+  "price": 19900,
+  "style": "backboard",
+  "tier": 5,
+  "emph": 1.5,
+  "sig": [
+   "dropstep",
+   "postspin",
+   "turn",
+   "hook"
+  ],
+  "hook": "jump",
+  "fade": "lean",
+  "body": "bully",
+  "v0475qp3": true,
+  "min_attr": {
+   "post_control": 90
+  },
+  "min_attr_tall": {
+   "post_control": 78
+  },
+  "min_attr_short": {
+   "post_control": 90
+  },
+  "tall_height": 83,
+  "short_height": 73
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
   "id": "sizeup_pound",
   "name": "Size-Up Package: Pound",
   "slot": "sizeup",
@@ -3123,7 +3452,7 @@
   "name": "Jumpshot Base: Bounce",
   "slot": "jumpshot",
   "price": 2600,
-  "set_height": 1.0,
+  "set_height": 1,
   "push": 0.13,
   "jump": 0.68,
   "style": "bounce",
@@ -3139,7 +3468,7 @@
   "name": "Jumpshot Base: Whip",
   "slot": "jumpshot",
   "price": 4550,
-  "set_height": 1.0,
+  "set_height": 1,
   "push": 0.12,
   "jump": 0.7,
   "style": "whip",
@@ -3158,7 +3487,7 @@
   "name": "Jumpshot Base: Deep Dip",
   "slot": "jumpshot",
   "price": 1950,
-  "set_height": 1.0,
+  "set_height": 1,
   "push": 0.11,
   "jump": 0.86,
   "style": "dip",
@@ -3920,7 +4249,7 @@
   "name": "Size-Up Package: Swagger",
   "slot": "sizeup",
   "price": 2930,
-  "move_speed": 1.0,
+  "move_speed": 1,
   "style": "swagger",
   "lvl": 0,
   "v0475": true

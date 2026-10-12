@@ -13,7 +13,7 @@ import { playGreenSound } from '../core/greensound.js';
 export const CATS = [
   ['top', 'Tops', 'upper', 'Apparel'], ['bottom', 'Bottoms', 'full', 'Apparel'], ['shoes', 'Shoes', 'shoes', 'Apparel'], ['accessory', 'Accessories', 'full', 'Apparel'],
   ['jumpshot', 'Jumpshot Bases', 'wide', 'Animations'], ['release', 'Releases', 'wide', 'Animations'], ['dunk', 'Dunks', 'wide', 'Animations'], ['layup', 'Layups', 'wide', 'Animations'],
-  ['sizeup', 'Size-Ups', 'wide', 'Animations'], ['block', 'Blocks', 'wide', 'Animations'], ['celebration', 'Celebrations', 'upper', 'Animations'], ['movement', 'Movement', 'wide', 'Animations'], // (qp3: Block Packages)
+  ['sizeup', 'Size-Ups', 'wide', 'Animations'], ['post', 'Post Moves', 'wide', 'Animations'], ['block', 'Blocks', 'wide', 'Animations'], ['celebration', 'Celebrations', 'upper', 'Animations'], ['movement', 'Movement', 'wide', 'Animations'], // (qp3: Block Packages)
   // v0.4.7.5 green releases: the sound and the effect when your green goes in
   ['greensound', 'Green Sounds', 'green', 'Green Releases'], ['greenfx', 'Green FX', 'green', 'Green Releases'],
 ];
@@ -22,7 +22,7 @@ const ACC_SLOTS = new Set(['socks', 'headband', 'sleeve', 'leg_sleeve', 'wristba
 export const inCat = (i, cat) => cat === 'accessory' ? ACC_SLOTS.has(i.slot) : i.slot === cat;
 export const catOf = i => (ACC_SLOTS.has(i.slot) ? 'accessory' : i.slot);
 // the slots you can leave empty (everything else always has something on)
-export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup', 'block'].includes(i.slot) && !(i.category === 'green' && i.price === 0 && !i.exclusive);
+export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup', 'post', 'block'].includes(i.slot) && !(i.category === 'green' && i.price === 0 && !i.exclusive);
 
 // category tabs grouped (Apparel | Animations | Green Releases), with a count when `count` is given
 export function catTabs(cat, count = null) {
@@ -60,7 +60,7 @@ export function render(app, root, params = {}) {
 
 export function swatch(i) {
   if (i.category === 'green') return `<div class="sw-green ${i.exclusive ? 'gold' : ''}"><i>${i.slot === 'greensound' ? '♪' : '✦'}</i></div>`;
-  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'block' ? 'BLK' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : i.slot === 'movement' ? 'MOV' : 'JS'}</div>`;
+  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'block' ? 'BLK' : i.slot === 'post' ? 'PST' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : i.slot === 'movement' ? 'MOV' : 'JS'}</div>`;
   const a = i.color || '#888', b = i.trim || i.accent || i.secondary || '#fff';
   return `<div class="sw-item" style="--a:${a};--b:${b}"><i></i></div>`;
 }
@@ -79,6 +79,7 @@ function card(app, c, i, inv, sel) {
 }
 
 export function itemExtra(i) {
+  if (i.slot === 'post') return `Tier ${i.tier} · bite ×${i.emph.toFixed(2)}${i.sig?.length ? ' · signature: ' + i.sig.map(k => ({ dropstep: 'drop step', postspin: 'post spin', upunder: 'up-and-under', hook: 'hook', fade: 'fadeaway', turn: 'turnaround' })[k] || k).join(', ') : ''} · ${i.hook} hook · ${i.fade} fade`;
   return i.release_seconds ? `Release speed ${i.release_seconds < 0.66 ? 'Quick' : i.release_seconds > 0.8 ? 'Slow' : 'Normal'} · arc ${i.arc}°` : i.set_height ? `Set point ${i.set_height > 1.08 ? 'High' : i.set_height < 1 ? 'Low' : 'Medium'}` : i.styles ? `Styles: ${i.styles.map(st => hsName(st) || BLOCK_BY_ID[st]?.name || title(st)).join(', ')}` : i.move_speed ? `Move speed ×${i.move_speed}` : i.cut ? `${title(i.cut)}-top` : '';
 }
 
@@ -117,6 +118,7 @@ export function tryOn(app, c, item, cat) {
   else if (item.slot === 'sizeup') app.showroom.setPreview('moves', { style: item.style || 'basic', lvl: item.lvl ?? 0, speed: item.move_speed });
   else if (item.slot === 'celebration') app.showroom.setPreview('celebrate', { kind: item.anim });
   else if (item.slot === 'block') app.showroom.setPreview('block', { styles: item.styles }); // (qp3: the six blocks in turn)
+  else if (item.slot === 'post') { b.equipment.post = item.id; app.showroom.setCharacter(b, app.look(b)); app.showroom.setPreview('post', { pkg: item.id, sig: item.sig }); } // (qp3: the back-down, the moves, a hook and a fade)
   else if (item.slot === 'movement') { b.equipment.movement = item.id; app.showroom.setCharacter(b, app.look(b)); app.showroom.setPreview('gait'); }
   else app.showroom.setPreview('idle');
 }

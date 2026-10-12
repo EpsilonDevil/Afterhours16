@@ -128,6 +128,25 @@ export class Walker {
   dispose() { this.visual.dispose(); }
 }
 
+// v0.4.7.5 qp3 online: a friend in your room, walking this park on his own screen (his position comes ~5 times a second)
+export class FriendWalker extends Walker {
+  constructor(hub, entry, x, z, id) {
+    super(hub, entry, x, z);
+    this.id = id; this.username = entry.username || ''; this.target = { x, z, f: 0, m: 0 }; this.seen = performance.now();
+  }
+  update(dt) {
+    const p = this.p, it = p.intent, T = this.target;
+    it.mx = 0; it.mz = 0; it.sprint = false; it.face = null;
+    if (this.visual.pending) { p.setPos(T.x, T.z, T.f); return; }
+    const dx = T.x - p.x, dz = T.z - p.z, d = Math.hypot(dx, dz);
+    if (d > 6) p.setPos(T.x, T.z, T.f);
+    else if (d > 0.12) { const k = Math.min(1, d / 0.5); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = T.m > 4.5 && d > 0.4; }
+    else it.face = T.f;
+    p.move(dt * GAME_SPEED, false, 0);
+    p.stamina = 1;
+  }
+}
+
 // v0.4.5: people watching the games from the benches and sidelines. They react to what happens on the court
 // in front of them: a dunk, a poster or a deep three gets them up (or arms up on the bench), a block or an
 // ankle-breaker gets hands on heads, ordinary buckets get a clap. They animate only when you're close.
@@ -207,8 +226,10 @@ export class ParkHub {
     this.app = app; this.r = app.renderer; this.ui = ui;
     this.themeId = themeId;
     this.scene = new Scene();
-    this.venue = buildVenue(this.r, this.scene, themeId);
     this.theme = THEMES[themeId];
+    // v0.4.7.5 qp3: the Event Park hall's sign names the running event (or, at an event park, your home park)
+    const evOn = app.config?.event && EVENTS[app.config.event.id] ? EVENTS[app.config.event.id] : null, home = AFFILIATIONS[app.char()?.affiliation];
+    this.venue = buildVenue(this.r, this.scene, themeId, { eventName: evOn?.park, eventColor: evOn?.color, eventAccent: evOn?.accent, homeName: home?.park, homeColor: home?.color });
     this.aff = parkInfo(themeId) || AFFILIATIONS.harbor;
     this.cup = !!this.theme?.event; // v0.4.5 The King Tut Cup / v0.4.7.5 qp3 any park event: every game is an ante-up
     this.event = this.cup ? (EVENTS[themeId] || null) : null;
@@ -515,6 +536,7 @@ export class ParkHub {
     }
     this.updateSpectators(dt);
     for (const w of this.walkers) { w.update(dt); if (!w.gone) w.render(dt); }
+    this.friendsFrame(dt);
     if (this.walkers.some(w => w.gone)) { for (const w of this.walkers) if (w.gone) w.dispose(); this.walkers = this.walkers.filter(w => !w.gone); }
     this.updateStreakFX(dt);
     if (this.cup && (this.cupT -= dt) <= 0) { this.cupT = 60; this.refreshCup(); }
@@ -581,6 +603,12 @@ export class ParkHub {
       const cr = this.app.crew;
       this.prompt = `${promptGlyph(inp, 'E', 'A')} ${cr ? `Enter the Crew HQ · ${cr.tag}` : cr === null ? 'Crew HQ · start a crew' : 'Crew HQ'}`;
       if (inp.wasPressed('interact')) this.ui.openHQ(this);
+    }
+    else if (this.venue.hall && Math.hypot(me.x - this.venue.hall.x, me.z - this.venue.hall.z) < 2.6) {
+      // v0.4.7.5 qp3: the Event Park hall (or, at an event park, the Home Park hall)
+      const hl = this.venue.hall;
+      this.prompt = `${promptGlyph(inp, 'E', 'A')} ${hl.home ? `Home Park · ${hl.name || 'your home court'}` : hl.open ? `Event Park · ${hl.name}` : 'Event Park · no event running'}`;
+      if (inp.wasPressed('interact')) this.ui.openHall(this);
     }
     else if (wheel && Math.hypot(me.x - wheel.x, me.z - wheel.z) < 2.6) {
       const ready = (this.app.profile.daily_spin?.next_at || 0) * 1000 <= Date.now();
@@ -985,9 +1013,10 @@ export class ParkHub {
   async forfeitMyGame() {
     const s = this.mySession;
     if (!s) return;
+    if (this.onlineGame) this.app.net?.send({ t: 'leave' }); // (online: you leave the room; the AI plays your player for the rest)
     if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
     this.ui.toast('You left the game. Your win streak resets.');
-    this.leaveCourt(s, false);
+    if (this.onlineGame) this.leaveOnlineCourt(s); else this.leaveCourt(s, false);
   }
   deactivate() { }
   updateSpectators(dt) {
@@ -1003,8 +1032,106 @@ export class ParkHub {
     if (this.mySession) this.mySession.lastEvents = null;
   }
 
+  // ---------------- v0.4.7.5 qp3: online games with friends (ui/online.js) ----------------
+  // the room's members at this park, walking around (their positions from the service)
+  onFriendPos(m, net) {
+    if (m.park !== this.themeId) { this.dropFriend(m.from); return; }
+    if (!this.friendWalkers) this.friendWalkers = new Map();
+    let w = this.friendWalkers.get(m.from);
+    if (!w) {
+      const e = net.entries?.[m.from];
+      if (!e || !e.build) return;
+      const entry = { ...e, look: e.look || resolveLook({ ...e.build, name: e.name }, this.catalog) };
+      w = new FriendWalker(this, entry, +m.x || 0, +m.z || 0, m.from);
+      this.friendWalkers.set(m.from, w);
+    }
+    w.target = { x: +m.x || 0, z: +m.z || 0, f: +m.f || 0, m: +m.m || 0 };
+    w.seen = performance.now();
+  }
+  dropFriend(id) { const w = this.friendWalkers?.get(id); if (w) { w.dispose(); this.friendWalkers.delete(id); } }
+  clearFriends() { for (const id of [...(this.friendWalkers?.keys() || [])]) this.dropFriend(id); }
+  friendsFrame(dt) {
+    if (!this.friendWalkers?.size) return;
+    const now = performance.now(), room = new Set((this.app.net?.room?.members || []).map(x => x.id));
+    for (const [id, w] of this.friendWalkers) {
+      // (gone quiet, out of the room, or in a game with you right now: not walking about)
+      if (now - w.seen > 4000 || !room.has(id) || this.mode === 'match') { this.dropFriend(id); continue; }
+      w.update(dt); w.render(dt);
+    }
+  }
+
+  // the room's game, on one of this park's courts. Every client builds the same game from the host's setup; local is
+  // your player in it. The result counts for you like any park game when the service gives you a ticket (otherwise it's
+  // played for fun: see the results)
+  async startOnlineGame(setup, local) {
+    const app = this.app, c = this.courts[setup.court];
+    if (!c) throw new Error('That court is not at this park.');
+    const my = this.myLine(); if (my) this.unclaim(my.c);
+    this.clearFriends();
+    // whoever was on that court steps off for you (the game on it ends; anyone with next on it goes back to hanging out)
+    if (c.session) { c.session.dispose(); c.session = null; }
+    for (let i = 0; i < c.lines.length; i++) { const l = c.lines[i]; if (l) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } c.lines[i] = null; } }
+    c.mine = true; c.kingsStreak = 0;
+    this.myCourt = c; this.mode = 'starting'; this.onlineGame = setup; this.myMates = []; this.myOpp = []; this.myOppStreak = 0;
+    let ticket = null;
+    try {
+      ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: setup.format, target: setup.target, difficulty: setup.difficulty, ante: this.cup ? setup.ante : undefined });
+      if (ticket.meta.ante) app.setBalance((app.profile.balance || 0) - ticket.meta.ante);
+    } catch (e) { ticket = null; this.ui.toast(`This one won't count for you (${e.message}). Playing it anyway.`, 'error'); }
+    this.ticket = ticket;
+    if (ticket) consumeBoostsLocal(app, ticket);
+    if (this.disposed) return;
+    const rosters = structuredClone(setup.rosters);
+    for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
+    await this.pool.prebuild(rosters.flat().filter((e, i) => i !== local).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512 } })));
+    if (this.disposed) return;
+    this.lendMe();
+    this.mySession = new MatchSession(app, {
+      mode: 'park', full: !!setup.full, hub: true, pool: this.pool, scene: this.scene, venue: this.venue, court: c, rosters, teams: setup.teams, seed: setup.seed,
+      target: setup.target, difficulty: setup.difficulty,
+      online: { net: app.net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: s => this.onlineLost(s) },
+      onEnd: (summary, session) => this.onlineGameOver(summary, session),
+    });
+    this.mode = 'match'; app.mode = 'match';
+    music.duck(true);
+    this.ui.matchStarted(this);
+    app.hud.pushFeed(`Online game · ${Object.values(setup.names || {}).join(', ')}`, 'good');
+    if (ticket?.meta.ante) app.hud.pushFeed(`Ante-up: ${ticket.meta.ante.toLocaleString()} VC on the line`, 'good');
+  }
+  async onlineGameOver(summary, session) {
+    const app = this.app, won = summary.winner === summary.me.team;
+    const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates: [] }).catch(e => { this.ui.toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
+    await playOutro(app, { summary, session, result: saving });
+    const result = await saving;
+    if (result) { app.replaceChar(result.character); app.setBalance(result.balance); this.char = app.char(); }
+    if (this.cup) this.refreshCup();
+    if (this.mySession !== session) return; // (the host already started the next one)
+    this.ui.results(this, summary, result, won, { online: true, players: [], leave: () => this.leaveOnlineCourt(session) });
+  }
+  leaveOnlineCourt(session) {
+    const c = this.myCourt;
+    if (session) session.dispose();
+    this.mySession = null; this.onlineGame = null;
+    if (c) { c.mine = false; c.kingsStreak = 0; this.newBackgroundGame(c, null); this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2); }
+    this.rebuildMe();
+    this.syncSquad();
+    this.myCourt = null;
+    this.mode = 'roam'; this.app.mode = 'park';
+    this.rig.snap();
+    this.app.hud.show(false);
+    this.ui.backToRoam(this);
+  }
+  // the connection dropped mid-game: the others play on with the AI in your place; for you it's a forfeit
+  async onlineLost(session) {
+    if (this.mySession !== session) return;
+    if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
+    this.ui.toast('Lost the connection to the game service: you left the game.', 'error');
+    this.leaveOnlineCourt(session);
+  }
+
   dispose() {
     this.disposed = true;
+    this.clearFriends();
     for (const c of this.courts) if (c.fx) c.fx.dispose();
     for (const sp of this.spectators || []) sp.dispose();
     for (const w of this.walkers) w.dispose();

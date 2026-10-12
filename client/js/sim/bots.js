@@ -111,11 +111,11 @@ export function makeBot(rng, opts = {}) {
   const items = Object.values(cat);
   const bySlot = slot => items.filter(i => i.slot === slot && !i.exclusive && canEquip(i, attributes, ovr, rep, build.height));
   // pricier (flashier) gear and animations are more likely the more he plays and spends
-  const pick = (slot, fallback) => {
+  const pick = (slot, fallback, R = rng) => {
     const l = bySlot(slot);
     if (!l.length) return fallback;
     const w = l.map(i => 1 + Math.pow((i.price || 0) / 8000, 0.8) * flash * 2.2 + (i.rep_required || 0) * 0.08 * flash);
-    let r = rng.next() * w.reduce((a, b) => a + b, 0);
+    let r = R.next() * w.reduce((a, b) => a + b, 0);
     for (let i = 0; i < l.length; i++) { r -= w[i]; if (r <= 0) return l[i].id; }
     return l[l.length - 1].id;
   };
@@ -123,6 +123,8 @@ export function makeBot(rng, opts = {}) {
     top: pick('top', 'yard_teal'), bottom: pick('bottom', 'yard_shorts'), shoes: pick('shoes', 'yard_shoes'),
     release: pick('release', 'release_classic'), jumpshot: pick('jumpshot', 'js_base_standard'), dunk: pick('dunk', 'dunk_basic'),
     sizeup: pick('sizeup', 'sizeup_basic'), layup: pick('layup', 'layup_basic'), block: pick('block', 'block_basic'), // (qp3: Block Packages)
+    // (qp3 Post Move Packages: drawn from the build's own numbers, so adding the slot didn't reshuffle every AI hooper)
+    post: pick('post', 'post_basic', new RNG((((build.height || 78) * 977) ^ ((build.weight || 200) * 131) ^ ((attributes.post_control || 50) * 7919) ^ (ovr * 31)) >>> 0)),
   };
   // wheel exclusives: a few of the regulars have hit on the wheel
   const wheel = items.filter(i => i.exclusive === 'wheel' && ['jumpshot', 'release', 'dunk'].includes(i.slot));

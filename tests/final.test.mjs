@@ -204,5 +204,5 @@ test('past 35 ft it is luck: a slide down to half court, then 1% at most (a 99 t
   }
   // in a game a green past 35 ft is not a sure make
   const src = fs.readFileSync(new URL('../client/js/sim/game.js', import.meta.url), 'utf8');
-  assert.ok(src.includes("const sure = grade === 'excellent' && W.sure;") && src.includes('sure: d <= S.DEEP_D && !smothered'));
+  assert.ok(src.includes("const sure = grade === 'excellent' && W.sure;") && src.includes('const sure = d <= S.DEEP_D && !smothered'));
 });

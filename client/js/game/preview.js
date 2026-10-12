@@ -7,6 +7,7 @@ import { Game, MOVE_SNAP, posMoveK } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
 import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
 import { MOVES, MOVE_STYLE, switchesHand } from '../sim/moves.js';
+import { POST_MOVES, POST_SHOTS, POST_PACKAGES, POST_PKG_BY_ID } from '../sim/post.js';
 
 const holdPoint = Game.prototype.holdPoint;
 
@@ -167,6 +168,61 @@ export class PreviewSim {
       if (a && !a.jumped && a.t >= a.jumpAt) { a.jumped = true; p.jump(a.jumpH); }
       if (a && b && !b.swatted && a.t >= a.jumpAt + 0.34) { b.swatted = true; a.hit = true; a.hitAt = a.t; b.vx = 1.6; b.vy = 1.2; b.vz = 3.2; }
       if (a && a.t > a.dur) p.action = null;
+      return;
+    }
+    if (kind === 'post') {
+      // v0.4.7.5 qp3 Post Move Packages: back to the camera (the rim), the package's back-down, then one of its moves
+      // (signatures first), then a shot out of the post (hook, fade, turnaround; signatures first), and round again
+      const o = this.previewOpts || {}, pkg = POST_PKG_BY_ID[o.pkg] || POST_PACKAGES[0];
+      const movesList = [...new Set([...pkg.sig.filter(m => POST_MOVES[m]), 'dropstep', 'postspin', 'upunder'])];
+      const shotsList = [...new Set([...pkg.sig.filter(k => POST_SHOTS[k]), 'hook', 'turn', 'fade'])];
+      const total = 6.4;
+      if (this.loop(total, dt)) { const n = this.loopN || 0; this.loopN = n + 1; p.action = null; p.y = 0; p.vy = 0; p.airborne = false; this.ballFree = null; fb.holder = 0; fb.mode = 'dribble'; this.postStage = 0; this.postT = 0; }
+      this.postT = (this.postT || 0) + dt;
+      const n = (this.loopN || 1) - 1, mv = movesList[n % movesList.length], sk = shotsList[n % shotsList.length];
+      const a = p.action, st = this.postT;
+      if (fb.holder === 0 && fb.mode === 'dribble') p.dribble.phase = (p.dribble.phase + 1.4 * dt) % 1;
+      p.postPkg = pkg.id;
+      let yaw = Math.PI; // back to the rim
+      if (!a && this.postStage === 0) {
+        p.posting = 0.3; p.backing = 1;
+        if (st > 2.2) {
+          const M = POST_MOVES[mv], side = n % 2 ? -1 : 1;
+          p.startAction('post', M.dur / (0.9 + 0.2 * pkg.emph), { move: mv, side, beat: true, dirX: 0, dirZ: 1, step: M.step, f0: p.facing + Math.PI, faceRim: p.facing, body: pkg.body, emph: pkg.emph, fakeAt: M.fakeAt || 0, def: -1, pkg: pkg.id });
+          this.postStage = 1;
+        }
+      } else if (a && a.type === 'post') {
+        const q = Math.min(1, a.t / a.dur), e = q * q * (3 - 2 * q), fk = a.fakeAt || 0;
+        if (a.move === 'postspin') yaw = Math.PI - a.side * Math.PI * e;
+        else if (a.move === 'upunder') yaw = q < fk ? Math.PI * 0.5 : Math.PI * 0.5 * (1 - (q - fk) / (1 - fk));
+        else yaw = Math.PI * (1 - Math.min(1, Math.max(0, (q - 0.1) / 0.6)));
+        p.backing = 0;
+        if (a.t >= a.dur) { p.action = null; this.postStage = 2; this.postT2 = 0; }
+      } else if (this.postStage === 2) {
+        yaw = 0; this.postT2 = (this.postT2 || 0) + dt;
+        if (!a && this.postT2 > 0.45) {
+          const PS = POST_SHOTS[sk], tRel = PS.tRel, jumpH = p.phys.vertical * (sk === 'hook' ? 0.42 : 0.5), tk = Math.max(0.12, tRel - Math.sqrt(2 * jumpH / GRAVITY) * 0.9);
+          fb.mode = 'held';
+          p.startAction('shoot', tRel + 0.6, { post: sk, postBeat: true, pkg: pkg.id, hookShape: pkg.hook, fadeShape: pkg.fade, tRel, takeoff: tk, releaseAt: tRel, jumpH, dRim: 2.6, kind: sk === 'hook' ? 'close' : 'jumper', fade: sk === 'fade' });
+          this.postStage = 3;
+        }
+      } else if (this.postStage === 3) {
+        const sh = (p.shotPkg?.hand || 'R') === 'L' ? 1 : -1;
+        yaw = a && a.post === 'hook' ? -sh * Math.PI * 0.45 : 0;
+        if (a && !a.jumped && a.t >= a.takeoff) { a.jumped = true; p.jump(a.jumpH); }
+        if (a && !a.released && a.t >= a.tRel) {
+          a.released = true; this.greenNow = true;
+          p.facing += yaw; const bp = holdPoint.call(this.fake, p, {}); p.facing -= yaw;
+          const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
+          const th = (POST_SHOTS[a.post].arc || 52) * Math.PI / 180, dist = 2.6, dy = 3.05 - bp.y;
+          const v = Math.sqrt(GRAVITY * dist * dist / (2 * Math.cos(th) ** 2 * Math.max(0.5, dist * Math.tan(th) - dy)));
+          this.ballFree = { x: bp.x, y: bp.y + 0.12, z: bp.z, vx: fx * v * Math.cos(th), vy: v * Math.sin(th), vz: fz * v * Math.cos(th) };
+          fb.holder = -1;
+        }
+        if (a && a.t > a.dur + 0.5) { p.action = null; }
+        if (!a) yaw = 0;
+      }
+      p.facing += yaw;
       return;
     }
     if (kind === 'celebrate') {

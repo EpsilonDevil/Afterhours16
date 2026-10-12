@@ -27,6 +27,7 @@ import { hsName, hsCallout } from '../sim/hashsling.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 
+const esc2 = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
 
 // v0.4.5: auto-play (H) carries over from one game to the next (park, Pro-Am, the Pro Run, crew runs) until you
@@ -133,17 +134,26 @@ export class MatchSession {
     this.origin = this.court.origin;
     this.catalog = app.catalog;
     this.teams = opts.teams;
+    // v0.4.7.5 qp3 online play (lockstep): {net, local, delay, game, meter, names, onLost}. Every client runs this same
+    // game; each one sends its own player's input for a few ticks ahead (delay) and waits for everyone else's
+    this.online = opts.online || null;
     this.game = new Game({
       mode: opts.mode, full: !!opts.full, seed: opts.seed, rosters: opts.rosters, catalog: this.catalog, target: opts.target, winBy2: opts.winBy2,
       quarterLen: opts.quarterLen, quarters: opts.quarters, surface: this.venue.theme.court.surface === 'wood' ? 'wood' : 'asphalt',
       // v0.4.5: your auto-play choice carries over to every game you play (not the shootaround)
-      difficulty: opts.difficulty ?? 0.6, assist: startsOnAutoPlay(opts),
+      difficulty: opts.difficulty ?? 0.6, assist: this.online ? false : startsOnAutoPlay(opts),
       greenBonus: !opts.background && settings.shotMeter === false ? 1.1 : 1,
+      multi: !!this.online, inputDelay: this.online?.delay || 0,
     });
     this.game.teamsMeta = this.teams;
+    if (this.online) {
+      // (this.human is the player on this screen; every human's green window follows his own shot-meter setting)
+      this.game.human = this.game.players[this.online.local] || this.game.human;
+      for (const p of this.game.players) if (p.human) p.greenBonus = this.online.meter?.[p.id] ? 1.1 : 1;
+    }
     spreadGreens(this.game.players, this.catalog); // (v0.4.7.5: every AI player on the floor has his own green release)
     // (v0.4.7.5 quick patch: their sounds get rendered now, in the background, so no green ever waits on its sound)
-    if (!opts.background && (settings.greens || 'all') !== 'off') warmGreenSounds(audio, this.game.players.filter(p => settings.greens !== 'mine' || p.human).map(p => ({ id: p.greenSound || 'gsnd_basic', ...(p.greenVoice || {}) })));
+    if (!opts.background && (settings.greens || 'all') !== 'off') warmGreenSounds(audio, this.game.players.filter(p => settings.greens !== 'mine' || this.isMe(p)).map(p => ({ id: p.greenSound || 'gsnd_basic', ...(p.greenVoice || {}) })));
     audio.surface = this.game.ball.surface;
     audio.setIndoor(this.venue.theme.kind !== 'park');
     this.visuals = this.game.players.map((p, i) => {
@@ -154,7 +164,8 @@ export class MatchSession {
       // (your own games use the pool too, with athletes built ahead of time; see ParkHub.prebuild)
       const lod = opts.background ? { detail: 0.75, pool: opts.pool } : p.human ? { detail: 1, pool: opts.pool, now: true } : { detail: 1, faceRes: 512, pool: opts.pool, now: true };
       const pv = new PlayerVisual(this.r, this.scene, e.build, e.look || resolveLook(e.build, this.catalog), lod);
-      if (p.human) pv.addRing(this.r, '#ffd84a');
+      // (online: your ring is gold; the other people playing get blue rings with you, red against you)
+      if (p.human) pv.addRing(this.r, this.isMe(p) ? '#ffd84a' : p.team === this.game.human?.team ? '#4ac8ff' : '#ff5a6a');
       if (!opts.background) pv.addStatus(this.r);
       return pv;
     });
@@ -187,12 +198,16 @@ export class MatchSession {
     this.pend = {};
     this.basis = null;
     // v0.4.1 Locked-In (teammate) grade for the user's player, every mode
-    this.grade = !this.background && this.game.human ? new LockedInGrade(this.game, this.game.human.id) : null;
-    // v0.4.3: team intros before park and Pro-Am games
-    this.intro = !this.background && opts.intro !== false && (opts.mode === 'park' || opts.mode === 'proam') ? new GameIntro(this) : null;
+    // (online: the game grades every player itself, the people included; the HUD shows yours from there: see frameOnline)
+    this.grade = !this.background && this.game.human && !this.online ? new LockedInGrade(this.game, this.game.human.id) : null;
+    // v0.4.3: team intros before park and Pro-Am games (not online: nobody waits on anybody's skip)
+    this.intro = !this.background && !this.online && opts.intro !== false && (opts.mode === 'park' || opts.mode === 'proam') ? new GameIntro(this) : null;
+    if (this.online) this.initOnline();
     if (!this.background && this.game.assist && this.game.human) this.hud.pushFeed('Auto-play is ON (H to take over)');
   }
   get inIntro() { return !!(this.intro && !this.intro.done); }
+  // the user's own player (online, there are other people playing: p.human is true for them too)
+  isMe(p) { return !!p && (this.online ? p === this.game.human : !!p.human); }
 
   humanPlayer() { return this.game.human; }
 
@@ -202,18 +217,18 @@ export class MatchSession {
   captureInput() {
     const inp = this.input, g = this.game, me = g.human;
     if (!me || g.assist) { inp.ctx = 'offball'; return; }
+    const P = this.pend;
     const has = g.ball.holder === me.id;
     // v0.4.7.5 fix: you're on defense whenever an opponent has the ball, whatever the possession flag says (it lags
     // a change of possession, and X / Square then read as "shoot" = jump instead of steal)
     const holder = g.holder ? g.holder() : null;
     const offense = holder ? holder.team === me.team : g.possession === me.team;
     inp.ctx = has ? 'offense' : offense ? 'offball' : 'defense';
-    const P = this.pend;
     // v0.4.7.5 qp3: an alley-oop is in the air for you: the called face button decides it, and nothing else is read
     // from that press (so the shoot button doesn't also jump you)
     if (me.oopQte && !me.oopQte.result) {
       const f = inp.facePressed();
-      if (f != null) { g.oopInput(me, f); return; }
+      if (f != null) { if (this.online) P.oop = { f, ttl: 0.25 }; else g.oopInput(me, f); return; }
     }
     const mv = inp.moveVector();
     const basis = this.stickBasis();
@@ -237,7 +252,25 @@ export class MatchSession {
       if (inp.wasPressed('lob')) pass = { ...(pass || { dir }), type: 'lob' };
       if (inp.wasPressed('alley')) pass = { ...(pass || { dir }), type: 'alley' };
       if (pass) { if (has) P.pass = { ...pass, ttl: 0.3 }; else if (inp.wasPressed('pass')) P.call = { ttl: 0.05 }; }
-      if (has) {
+      if (has && inp.isDown('post')) {
+        // v0.4.7.5 qp3 post moves: with the post-up trigger held the right stick calls the post moves instead of
+        // dribble moves: left/right a drop step round that side, up a spin to the rim, down the up-and-under
+        const ps = inp.proStickInfo ? inp.proStickInfo() : (inp.proStick() ? { stick: inp.proStick(), slow: false } : null);
+        if (ps && !ps.slow && ps.stick !== 'spin') {
+          const st = ps.stick, horiz = st.endsWith('left') ? -1 : st.endsWith('right') ? 1 : 0;
+          let move = null, side = 1;
+          if (horiz) {
+            // the stick's side, in the court: which way round the man (his left or right, as he faces away from the rim)
+            const dx = basis.rx * horiz, dz = basis.rz * horiz, rim = g.rimFor(me.team), rx = rim.x - me.x, rz = rim.z - me.z, rl = Math.hypot(rx, rz) || 1;
+            const lat = (-dx * rz + dz * rx) / rl; // (+: to the left of the rim line)
+            move = 'dropstep'; side = lat >= 0 ? 1 : -1;
+          } else if (st === 'up') move = 'postspin';
+          else if (st === 'down') move = 'upunder';
+          if (move) P.post = { move, side, ttl: 0.4 };
+        }
+        if (ps && ps.stick === 'spin') P.post = { move: 'postspin', side: 1, ttl: 0.4 };
+        delete P.move;
+      } else if (has) {
         const ps = inp.proStickInfo ? inp.proStickInfo() : (inp.proStick() ? { stick: inp.proStick(), slow: false } : null);
         const btb = inp.wasPressed('btb');
         if (ps || btb) {
@@ -280,7 +313,11 @@ export class MatchSession {
     if (inp.wasPressed('celebrate')) this.celebrateReq = performance.now();
     if (this.celebrateReq != null) {
       if (performance.now() - this.celebrateReq > 2500) this.celebrateReq = null;
-      else if (this.canCelebrate(me)) { me.startAction('celebrate', 1.6, { kind: this.celebrationKind(me) }); this.celebrateReq = null; this.hud.setHint(''); }
+      else if (this.canCelebrate(me)) {
+        if (this.online) P.celebrate = { kind: this.celebrationKind(me), ttl: 0.1 }; // (online: it goes with your input)
+        else me.startAction('celebrate', 1.6, { kind: this.celebrationKind(me) });
+        this.celebrateReq = null; this.hud.setHint('');
+      }
     }
   }
   canCelebrate(me) {
@@ -326,8 +363,24 @@ export class MatchSession {
     }
     if (P.pass && has) it.pass = { ...P.pass };
     if (P.move && has) { it.move = P.move.move; if (P.move.mx != null) { it.mx = P.move.mx; it.mz = P.move.mz; } }
+    // qp3: the post-up trigger with the ball; the stick (before the post-up rescales it) picks the shot out of the post
+    if (has && inp.isDown('post')) { it.post = true; it.postStick = [wx, wz]; if (P.post) { it.postMove = { move: P.post.move, side: P.post.side }; } }
     if (P.steal) { it.steal = true; if (P.steal.dir) it.stealDir = P.steal.dir; if (P.steal.low) it.stealLow = true; }
     if (P.call) it.call = true;
+    if (this.online) {
+      // online: the one-off calls go with the input, and every press carries its number (Game.multiIntent drops it on
+      // the ticks after it was used)
+      if (P.oop) it.oop = P.oop.f;
+      if (P.celebrate) it.celebrate = P.celebrate.kind;
+      if (P.callScreen) it.callScreen = true;
+      const sq = {};
+      if (P.shoot && (it.shoot || it.jump)) sq.shoot = P.shoot.seq;
+      if (it.pass) sq.pass = P.pass.seq;
+      if (it.move) sq.move = P.move.seq;
+      if (it.steal) sq.steal = P.steal.seq;
+      if (it.postMove) sq.post = P.post.seq;
+      if (Object.keys(sq).length) it.seq = sq;
+    }
     if (!offense) {
       it.defense = inp.isDown('defense');
       it.handsUp = inp.isDown('handsUp') || !!this.defHands?.up;
@@ -355,9 +408,9 @@ export class MatchSession {
   }
 
   callScreen(me) {
-    const g = this.game;
-    const big = g.mates(me).filter(m => !m.human).sort((a, b) => (b.phys.H - a.phys.H) || (a.dist(me) - b.dist(me)))[0];
-    if (big) { const m = g.ai.m(big); m.plan = 'screen'; m.screenFor = me.id; m.screenT = 3.5; this.hud.pushFeed(`${big.name}: setting a screen`); }
+    if (this.online) { this.pend.callScreen = { ttl: 0.02 }; return; } // (online: it goes with your input; see 'screenCall')
+    const big = this.game.callScreenFor(me);
+    if (big) this.hud.pushFeed(`${big.name}: setting a screen`);
   }
 
   frame(dt) {
@@ -365,10 +418,12 @@ export class MatchSession {
     if (!this.background) {
       if (inp.wasPressed('camera')) this.hud.showCam(CAM_LABEL[this.rig.cycle()]);
       if (inp.wasPressed('assist')) {
-        toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)');
+        if (this.online) this.hud.pushFeed('Auto-play is off in online games');
+        else { toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)'); }
       }
       if (inp.wasPressed('help')) this.toggleHelp();
     }
+    if (this.online) { this.frameOnline(dt); return; }
     if (this.paused) { this.render(0); return; }
     // a background game whose players are still being built waits at the check (nobody plays invisible)
     if (this.background && this.visuals.some(v => v.pending)) { this.render(0); return; }
@@ -403,6 +458,125 @@ export class MatchSession {
     this.lastEvents = evs; // v0.4.5: park spectators read these after the frame
     if (this.ended) { this.endT += dt * rate; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }
     this.render(dt * rate); // a sped-up background game animates at its own pace (no foot sliding)
+  }
+
+  // ---------------- v0.4.7.5 qp3 online play: lockstep ----------------
+  // Tick k is simulated once every human's input for it is here. Each client sends its own for tick k + delay when it
+  // gets to tick k (so ticks 1..delay are blank for everybody), the service passes them on in order, and the game waits
+  // ("Waiting for ...") when one hasn't arrived. Everyone simulates the same thing; nothing else crosses the network.
+  initOnline() {
+    const o = this.online, g = this.game;
+    this.lk = { D: Math.max(1, o.delay | 0), sent: 0, mine: new Map(), theirs: new Map(), drops: new Map(), hashes: new Map(), peerHash: new Map(), waitT: 0, waiting: null, warned: false, lost: false, seq: 0 };
+    this.lk.humans = g.players.filter(p => p.human).map(p => p.id);
+    this.offNet = o.net.attachGame(o.game, m => this.netMessage(m));
+  }
+  netMessage(m) {
+    const lk = this.lk, g = this.game;
+    if (m.t === 'in') {
+      if (m.s === this.online.local || typeof m.k !== 'number') return;
+      let t = lk.theirs.get(m.k);
+      if (!t) lk.theirs.set(m.k, t = new Map());
+      t.set(m.s, m.i && typeof m.i === 'object' ? m.i : {});
+    } else if (m.t === 'left') {
+      // he's the AI's from the tick after the last input of his that went round (never inside the blank first ticks)
+      if (typeof m.slot === 'number' && g.players[m.slot]?.human && m.slot !== this.online.local) lk.drops.set(m.slot, Math.max(m.last | 0, lk.D) + 1);
+    } else if (m.t === 'hash') {
+      const mine = lk.hashes.get(m.k);
+      if (mine == null) lk.peerHash.set(m.k, m);
+      else if (mine !== m.h) this.desync(m);
+    } else if (m.t === 'closed') {
+      lk.lost = true;
+    }
+  }
+  desync(m) {
+    if (this.lk.warned) return;
+    this.lk.warned = true;
+    console.warn('[online] out of sync with', m.name || m.from, 'at tick', m.k);
+    this.hud.pushFeed(`Out of sync with ${m.name || 'a player'}: your screens may not match from here`, 'bad');
+    logGameEvent?.({ type: 'feed', text: `online desync at tick ${m.k}` }, this.game);
+  }
+  // the input for one tick ahead: yours (blank while the pause menu is up), as plain JSON
+  onlineIntent() {
+    const P = this.pend;
+    for (const k in P) if (P[k].seq == null) P[k].seq = ++this.lk.seq;
+    const it = this.paused || this.ended ? null : this.stepIntent();
+    return it ? JSON.parse(JSON.stringify(it)) : {};
+  }
+  // after a tick's input is sent: presses the game has used are gone, the rest age (as ageInput)
+  ageOnline(dt) {
+    const P = this.pend, used = this.game.human?.usedSeq || 0;
+    for (const k in P) { if (P[k].seq <= used) { delete P[k]; continue; } P[k].ttl -= dt; if (P[k].ttl <= 0) delete P[k]; }
+    delete P.call; delete P.callScreen; delete P.celebrate;
+  }
+  missingFor(k) {
+    const lk = this.lk, out = [];
+    if (k <= lk.D) return out;
+    const t = lk.theirs.get(k);
+    for (const id of lk.humans) {
+      if (id === this.online.local || !this.game.players[id].human) continue;
+      if (!t || !t.has(id)) out.push(id);
+    }
+    return out;
+  }
+  frameOnline(dt) {
+    const g = this.game, lk = this.lk, net = this.online.net;
+    if (this.visuals.some(v => v.pending)) { this.render(0); return; } // (everyone's athlete is built before the tip)
+    this.timeScale = 1; this.slowT = 0;
+    this.acc = Math.min(this.acc + Math.min(0.1, dt) * (g.speed || 1), DT * 12); // (after a wait: catch up, a few ticks a frame)
+    if (!this.paused) this.captureInput();
+    let steps = 0;
+    const evs = this.frameEvents = [];
+    let waiting = null;
+    while (this.acc >= DT && steps < 8 && !lk.lost) {
+      if (g.over) { // (after the final buzzer nobody's input counts: everyone just plays out the end on his own)
+        g.step(DT); this.handleEvents(g.events); for (const e of g.events) evs.push(e);
+        this.acc -= DT; steps++; continue;
+      }
+      const k = g.tick + 1;
+      // our input for tick k + delay goes out once, when we reach tick k
+      while (lk.sent < k + lk.D) {
+        const t = ++lk.sent, it = this.onlineIntent();
+        lk.mine.set(t, it);
+        net.send({ t: 'in', k: t, g: this.online.game, i: it });
+        this.ageOnline(DT);
+      }
+      for (const [id, at] of lk.drops) if (k >= at) { g.dropHuman(id); lk.drops.delete(id); }
+      const miss = this.missingFor(k);
+      if (miss.length) { waiting = miss; break; }
+      const theirs = lk.theirs.get(k);
+      for (const id of lk.humans) {
+        if (!g.players[id].human) continue;
+        g.humanIntents.set(id, k <= lk.D ? {} : id === this.online.local ? lk.mine.get(k) || {} : theirs.get(id));
+      }
+      lk.theirs.delete(k); lk.mine.delete(k);
+      g.step(DT);
+      this.handleEvents(g.events); for (const e of g.events) logGameEvent(e, g);
+      for (const e of g.events) evs.push(e);
+      if (!this.grade && g.human) this.grade = g.aiGrades.get(g.human.id) || null;
+      // every 2 s of game: compare the state with everyone else's
+      if (k % 120 === 0) {
+        const h = g.stateHash();
+        lk.hashes.set(k, h);
+        if (lk.hashes.size > 30) lk.hashes.delete(lk.hashes.keys().next().value);
+        net.send({ t: 'hash', k, h });
+        const ph = lk.peerHash.get(k);
+        if (ph) { lk.peerHash.delete(k); if (ph.h !== h) this.desync(ph); }
+      }
+      this.acc -= DT; steps++;
+    }
+    // waiting on somebody's input: say who after a moment (a slow connection, or still loading in)
+    if (waiting) lk.waitT += dt; else lk.waitT = 0;
+    const who = lk.lost ? 'Connection to the host lost' : waiting && lk.waitT > 0.35 ? `Waiting for ${waiting.map(id => this.online.names?.[id] || g.players[id].name).join(', ')}…` : '';
+    if (who !== (lk.waiting || '')) { lk.waiting = who; this.hud.setHint(who); }
+    if (lk.lost && !this.lostHandled) { this.lostHandled = true; this.hud.callout('CONNECTION LOST', 'bad'); setTimeout(() => this.online.onLost?.(this), 1800); }
+    if (g.over && !this.ended) {
+      this.ended = true; this.endT = 0;
+      if (this.grade) this.app.lastGrade = this.grade.result();
+      net.send({ t: 'end', g: this.online.game });
+    }
+    this.lastEvents = evs;
+    if (this.ended) { this.endT += dt; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }
+    this.render(dt);
   }
 
   render(dt) {
@@ -571,7 +745,7 @@ export class MatchSession {
     const g = this.game, hud = this.hud, [ox, , oz] = this.origin;
     for (const e of events) {
       const P = e.player != null ? g.players[e.player] : null;
-      const mine = P && P.human;
+      const mine = this.isMe(P);
       const myTeam = g.human ? g.human.team : 0;
       this.rumbleFor(e);
       // (qp3: an Icon badge's activation, the Hash-Slinging dunks, is the big one: hud.badge shows it 20% larger, with the
@@ -626,7 +800,7 @@ export class MatchSession {
           if (e.andOne) { audio.whistle(); hud.callout('AND ONE!', 'hot'); }
           // celebrations on big plays
           if (shooter && (big || e.swish) && !shooter.human && g.rng.next() < 0.6) shooter.pendingCelly = this.celebrationKind(shooter);
-          if (shooter && shooter.human && big) hud.setHint(`Press ${promptGlyph(this.input, 'G', 'UP')} to celebrate`);
+          if (this.isMe(shooter) && big) hud.setHint(`Press ${promptGlyph(this.input, 'G', 'UP')} to celebrate`);
           break;
         }
         case 'slam': {
@@ -643,7 +817,7 @@ export class MatchSession {
             if (flash || poster) audio.cheer(1.1);
             if (e.hs) { audio.cheer(1.4); this.rig.shake(0.12, 0.5); } // (qp3: the park loses it for a Hash-Slinging finish)
           }
-          if (P && (P.human || poster || (flash && e.made))) this.highlightAt(P, 0.9);
+          if (P && (this.isMe(P) || poster || (flash && e.made))) this.highlightAt(P, 0.9);
           break;
         }
         case 'hang': { const h = this.hoopFor(e.side); if (h) h.hang = 1; break; }
@@ -652,18 +826,18 @@ export class MatchSession {
           // v0.4.7.5 quick patch: a green blocked in flight: the record scratch cuts the green sound off.
           // qp3: every blocked dunk gets the record scratch, green or not
           const wasGreen = this.cutGreen(e.shooter);
-          if (!wasGreen && e.kind === 'dunk') { const S0 = g.players[e.shooter], sx = S0.x + ox; playRecordScratch(audio, { pan: this.pan(sx), vol: S0.human ? 1 : 0.7 * this.vol(sx, S0.z + oz) }); }
+          if (!wasGreen && e.kind === 'dunk') { const S0 = g.players[e.shooter], sx = S0.x + ox; playRecordScratch(audio, { pan: this.pan(sx), vol: this.isMe(S0) ? 1 : 0.7 * this.vol(sx, S0.z + oz) }); }
           audio.board(1.2); audio.ooh(); this.rig.shake(0.1, 0.25);
           const blk = g.players[e.player];
           const bst = e.style ? BLOCK_BY_ID[e.style] : null;
           hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}${bst ? ' · ' + bst.name : ''}`, blk.team === myTeam ? 'good' : 'bad');
-          if (blk.human || g.players[e.shooter].human) { hud.callout(e.chase ? 'CHASE-DOWN!' : (blk.human && blockCallout(e.style)) || 'REJECTED!', blk.human ? 'good' : 'bad'); this.slow(0.5); }
+          if (this.isMe(blk) || this.isMe(g.players[e.shooter])) { hud.callout(e.chase ? 'CHASE-DOWN!' : (this.isMe(blk) && blockCallout(e.style)) || 'REJECTED!', this.isMe(blk) ? 'good' : 'bad'); this.slow(0.5); }
           break;
         }
         case 'steal': {
           const st = g.players[e.player], vic = g.players[e.victim];
           hud.pushFeed(`${st.name} ${e.intercept ? 'picks off the pass' : e.bump ? 'strips' : 'steals from'} ${e.intercept ? '' : vic.name}`.trim(), st.team === myTeam ? 'good' : 'bad');
-          if (st.human) hud.callout('PICKPOCKET!', 'good');
+          if (this.isMe(st)) hud.callout('PICKPOCKET!', 'good');
           audio.ooh();
           break;
         }
@@ -680,11 +854,11 @@ export class MatchSession {
         // v0.4.7.5: box-outs you're part of, and the named dribble combos you pull off
         case 'boxout': {
           const bx = g.players[e.player], vc = g.players[e.victim];
-          if (bx.human) { hud.pushFeed(`You box out ${vc.name}`, 'good'); audio.board(0.25); }
-          else if (vc.human) { hud.pushFeed(`${bx.name} boxes you out`, 'bad'); audio.board(0.25); }
+          if (this.isMe(bx)) { hud.pushFeed(`You box out ${vc.name}`, 'good'); audio.board(0.25); }
+          else if (this.isMe(vc)) { hud.pushFeed(`${bx.name} boxes you out`, 'bad'); audio.board(0.25); }
           break;
         }
-        case 'move': if (e.combo && g.players[e.player].human) hud.pushFeed(`${e.combo}!`, 'good'); break;
+        case 'move': if (e.combo && this.isMe(g.players[e.player])) hud.pushFeed(`${e.combo}!`, 'good'); break;
         case 'turnover': case 'violation':
           if (e.type === 'violation' && e.what === 'Traveling') { if (P && P.team === myTeam) hud.callout('TRAVELING', 'bad'); break; } // the turnover event that follows whistles and posts it
           audio.whistle(); hud.pushFeed(e.why || e.what || 'Turnover', 'neutral'); break;
@@ -693,7 +867,7 @@ export class MatchSession {
         case 'feed': hud.pushFeed(e.text, 'neutral'); break;
         case 'oopPrompt': if (mine) { audio.cheer?.(0.3); this.rig.shake?.(0.04, 0.15); this.oopShow = null; } break; // (qp3) the prompt itself is drawn in updateHUD
         case 'oopQte': if (mine) this.oopShow = { t: 0.8, state: e.result === 'hit' ? 'hit' : 'miss', text: e.result === 'hit' ? 'OOP!' : e.result === 'wrong' ? 'WRONG BUTTON' : e.result === 'early' ? 'TOO EARLY' : 'TOO LATE' }; break;
-        case 'oopMiss': { const P2 = g.players[e.player]; if (P2?.human) hud.callout('OFF THE HANDS', 'bad'); else if (P2) hud.pushFeed(`${P2.name} can't handle the lob`, P2.team === myTeam ? 'bad' : 'good'); break; }
+        case 'oopMiss': { const P2 = g.players[e.player]; if (this.isMe(P2)) hud.callout('OFF THE HANDS', 'bad'); else if (P2) hud.pushFeed(`${P2.name} can't handle the lob`, P2.team === myTeam ? 'bad' : 'good'); break; }
         case 'check': hud.pushFeed(e.team === myTeam ? 'Your ball — check it up' : 'Defense — check ball', 'neutral'); this.rig.snap(); this.checkCelebrations(); break;
         case 'inbound': this.rig.snap(); this.checkCelebrations(); break;
         case 'cleared': if (e.team === myTeam) hud.pushFeed('Ball cleared', 'neutral'); break;
@@ -710,6 +884,9 @@ export class MatchSession {
           break;
         }
         case 'live': this.hud.setHint(''); break;
+        // qp3 online: a teammate's big answers your screen call; someone dropped out and the AI has his player
+        case 'screenCall': if (P === g.human) hud.pushFeed(`${g.players[e.big].name}: setting a screen`); break;
+        case 'dropped': if (P) hud.pushFeed(`${this.online?.names?.[e.player] || P.name} left · the AI has his player`, 'neutral'); break;
       }
     }
     // celebrations during dead balls
@@ -770,7 +947,7 @@ export class MatchSession {
     return hs.find(h => h.side === side) || hs[0];
   }
 
-  slow(t) { this.slowT = Math.max(this.slowT, t); }
+  slow(t) { if (!this.online) this.slowT = Math.max(this.slowT, t); } // (online: no slow motion; it would hold up everyone)
   highlightAt(p, dur) { const [ox, , oz] = this.origin; this.highlight = { x: p.x + ox, y: 1.2 + p.y, z: p.z + oz, t: dur, dur }; }
 
   screenOf(p, h = 2.2) { const [ox, , oz] = this.origin; return this.r.project(this.app.camera, [p.x + ox, p.y + h, p.z + oz]); }
@@ -806,7 +983,7 @@ export class MatchSession {
     if (this.background) return;
     hud.update(dt);
     // the shot-meter setting can change mid-game (pause → settings): keep the +10% green window in step
-    g.greenBonus = settings.shotMeter === false ? 1.1 : 1;
+    if (!this.online) g.greenBonus = settings.shotMeter === false ? 1.1 : 1; // (online: fixed for the game, the same on every screen)
     // score bug
     let clock, sub;
     if (g.mode === 'park') { clock = `FIRST TO ${g.target}`; sub = g.needsClear[g.possession] ? 'CLEAR IT' : '2s & 3s'; }
@@ -854,8 +1031,10 @@ export class MatchSession {
         const s = this.screenOf(p, p.phys.H + 0.32 + p.y);
         const icon = showIcons ? mates.indexOf(p) : -1;
         const team = this.teams[p.team];
-        const txt = p.human ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${p.name.split(' ').slice(-1)[0]}` : `${p.name.split(' ').slice(-1)[0]}`;
-        list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (p.human ? 'me ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
+ const mine = this.isMe(p), friend = !mine && p.human; // (online: the other people in the game, by their username)
+        const nm = friend ? (this.online?.names?.[p.id] || p.name.split(' ').slice(-1)[0]) : p.name.split(' ').slice(-1)[0];
+        const txt = mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm);
+        list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (mine ? 'me ' : friend ? 'friend ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
       }
       hud.setTags(list);
     }
@@ -870,5 +1049,6 @@ export class MatchSession {
     if (this.arrows) { this.scene.remove(this.arrows.mine); this.scene.remove(this.arrows.his); }
     this.r.ctx.disposeGeometry(this.ballMesh.geo);
     if (!this.background) { this.hud.clear(); const h = document.getElementById('help-overlay'); if (h) h.remove(); }
+    if (this.offNet) { this.offNet(); this.offNet = null; }
   }
 }

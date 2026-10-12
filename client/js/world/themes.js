@@ -148,6 +148,8 @@ export const PARK_COURTS = [
 // v0.4.5 Crews: the Crew HQ building on every park's plaza (center of its footprint), between two street lamps
 // west of the Daily Spin wheel; its door faces the courts
 export const PARK_HQ = { x: -26.5, z: -26.8 };
+// v0.4.7.5 qp3: the Event Park hall next door (east of the HQ, between the lamps at x -22 and -13), its door facing the courts
+export const PARK_HALL = { x: -17.6, z: -26.8 };
 // the floor area a court's game uses (walkers stay out while it's being played on)
 export function courtPlayRect(c, pad = 0.6) {
   const [ox, , oz] = c.origin, hw = COURT_W / 2 + pad, hl = COURT_L / 2 + pad;

@@ -2,7 +2,7 @@
 import { $, $$, esc, money, toast, modal, closeModal, heightStr, title } from './common.js';
 import { padGlyph, promptGlyph, KEYMAP, PADMAP, REMAP_KEYS, REMAP_PAD, PAD, PAD_BINDABLE } from '../core/input.js';
 import { lockin } from '../core/lockin.js';
-import { settings, saveSettings } from '../core/settings.js';
+import { settings, saveSettings, volumeGain } from '../core/settings.js';
 import { audio } from '../core/audio.js';
 import { music } from '../core/music.js';
 import { QUALITY } from '../gfx/renderer.js';
@@ -117,6 +117,7 @@ export function showAuth(app, mode = 'login') {
       <form id="auth-form" class="form">
         <label>Username<input name="username" required minlength="3" maxlength="24" autocomplete="username"></label>
         <label>Password<input name="password" type="password" required minlength="8" maxlength="128" autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}"></label>
+        ${mode === 'register' && app.config.online?.join_code ? '<label>Join code<input name="join_code" required maxlength="64" autocomplete="off" placeholder="from the host"></label>' : ''}
         <button class="btn wide" type="submit">${mode === 'register' ? 'Create account' : 'Sign in'}</button>
         <div class="form-error" id="auth-err"></div>
       </form>
@@ -127,7 +128,9 @@ export function showAuth(app, mode = 'login') {
   card.querySelector('#auth-form').onsubmit = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
-    try { app.profile = await app.api.post(mode === 'register' ? '/api/register' : '/api/login', { username: f.get('username'), password: f.get('password') }); app.afterLogin(); }
+    const body = { username: f.get('username'), password: f.get('password') };
+    if (mode === 'register' && f.get('join_code') != null) body.join_code = f.get('join_code'); // (qp3: a hosted game asks for its join code)
+    try { app.profile = await app.api.post(mode === 'register' ? '/api/register' : '/api/login', body); app.afterLogin(); }
     catch (err) { $('#auth-err').textContent = err.message; }
   };
 }
@@ -178,6 +181,12 @@ function home(app, root) {
 
 // v0.4.7.5 quick patch: the volume sliders in the pause menus (the park, a park game, Pro-Am and the Pro Run, the
 // Crew HQ). They work as you drag and are saved with the rest of the settings.
+// v0.4.7.5 qp3: one place turns a slider setting into the gains the buses play at (settings.js volumeGain)
+export function applyVolume(k) {
+  if (k === 'sfx') { audio.volume.sfx = volumeGain(settings.sfx); if (audio.sfx) audio.sfx.gain.value = audio.volume.sfx; }
+  if (k === 'crowd') audio.volume.crowd = volumeGain(settings.crowd);
+  if (k === 'musicVol') { audio.volume.music = volumeGain(settings.musicVol); if (audio.musicBus) audio.musicBus.gain.value = audio.volume.music; music.setVolume(audio.volume.music); }
+}
 export function volumeSliders() {
   const row = (k, l) => `<label class="pv-row"><span>${l}</span><input type="range" min="0" max="1" step="0.05" data-vol="${k}" value="${settings[k]}"><b data-volv="${k}">${Math.round(settings[k] * 100)}</b></label>`;
   return `<div class="pause-vol"><div class="eyebrow">VOLUME</div>${row('musicVol', 'Music')}${row('sfx', 'Effects')}${row('crowd', 'Crowd')}</div>`;
@@ -186,9 +195,7 @@ export function bindVolume(root) {
   root.querySelectorAll('[data-vol]').forEach(el => el.oninput = el.onchange = () => {
     const k = el.dataset.vol, v = +el.value;
     settings[k] = v; saveSettings();
-    if (k === 'sfx') audio.volume.sfx = v;
-    if (k === 'crowd') audio.volume.crowd = v;
-    if (k === 'musicVol') { audio.volume.music = v; if (audio.musicBus) audio.musicBus.gain.value = v; music.setVolume(v); }
+    applyVolume(k); // (qp3: through the perceptual curve, and the live effects bus too, which the pause sliders used to miss)
     const out = root.querySelector(`[data-volv="${k}"]`); if (out) out.textContent = Math.round(v * 100);
   });
 }
@@ -233,14 +240,12 @@ export function openSettings(app) {
     settings[k] = v; saveSettings();
     if (k === 'quality') app.renderer.setQuality(v);
     if (k === 'camera') app.cameraRig.mode = v;
-    if (k === 'sfx') audio.volume.sfx = v; if (k === 'crowd') audio.volume.crowd = v; if (k === 'musicVol') { audio.volume.music = v; if (audio.musicBus) audio.musicBus.gain.value = v; }
+    if (k === 'sfx' || k === 'crowd' || k === 'musicVol') applyVolume(k);
     if (k === 'music') { if (v) music.start(); else music.stop(); }
-    if (k === 'musicVol') music.setVolume(v);
     if (k === 'showFps' && !v) { const f = $('#fps'); if (f) f.remove(); }
     if (['vibration', 'deadzone', 'proStickShoot', 'invertY', 'prompts'].includes(k)) app.applyInputSettings();
     if (k === 'vibration' && v) app.input.rumble(0.4, 0.4, 150);
     if (k === 'lockIn') { if (v) lockin.enter(); else lockin.exit(); }
-    if (audio.sfx) audio.sfx.gain.value = audio.volume.sfx;
   });
   card.querySelector('[data-remap]').onclick = () => openRemap(app);
   card.querySelector('[data-logout]').onclick = async () => { try { await app.api.post('/api/logout', {}); } catch { /* ignore */ } location.reload(); };
@@ -266,6 +271,10 @@ export function controlsTable(app) {
     ['Hesitation · step-back', K('stickUp', 'stickDown'), `Flick ${G('RS')} up / down`],
     ['Spin · behind-the-back', K('spin', 'btb'), `Rotate ${G('RS')} / flick down while moving`],
     ['Call screen · call for the ball', `${K('screen')} · ${K('pass')} (no ball)`, `Tap ${P('mod')} · ${P('pass')} (no ball)`],
+    // v0.4.7.5 qp3: post moves
+    ['Post up with the ball — back to the basket; the stick toward the rim backs him down', `Hold ${K('post')}`, `Hold ${P('post')}`],
+    ['Post moves (posting): drop step left / right · spin · up-and-under', `${K('stickLeft')} / ${K('stickRight')} · ${K('stickUp')} · ${K('stickDown')}`, `${G('RS')} left / right · up · down`],
+    ['Shoot from the post: toward the rim a hook, away a fade, neutral a turnaround (right after a move: a power finish)', `${K('shoot')} while posting`, `${P('shoot')} while posting`],
     ['Defense', null, null],
     ['Defensive stance (slide)', `Hold ${K('defense')}`, `Hold ${P('defense')}`],
     ['Steal · block / rebound jump · hands up', K('steal', 'block', 'handsUp'), `${P('steal')} · ${P('block')} · ${G('RS')} up`],

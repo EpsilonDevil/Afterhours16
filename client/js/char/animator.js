@@ -6,6 +6,7 @@ import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
 import { BLOCK_BY_ID } from '../sim/blocks.js';
 import { isHS, hsHand, hsK } from '../sim/hashsling.js';
+import { postPackageOf } from '../sim/post.js';
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -538,13 +539,18 @@ export class Animator {
     }
     // v0.4.5: backing a defender down. Sexy Red (Icon badge) has its own low, wide back-down with shoulder bumps.
     if (p.posting > 0 && has && !a) {
-      const sexy = p.icon === 'sexy_red', w2 = this.time * (sexy ? 4.2 : 3) + p.id;
-      T[P.root + 1] -= sexy ? 0.11 : 0.07;
-      T[P.spine] = (sexy ? -0.2 : -0.12) - 0.05 * Math.sin(w2);
-      T[P.chest] = sexy ? -0.1 : -0.05;
-      set3(T, 'footL', sexy ? 0.3 : 0.24, 0.08, -0.08); set3(T, 'footR', sexy ? -0.3 : -0.24, 0.08, -0.14);
+      // v0.4.7.5 qp3: the package's back-down body. bully: low and wide, the shoulder leaning on the man; quick: short
+      // steps, the head turning to read the help; smooth: upright and patient. Backing (the stick toward the rim)
+      // rocks him into the man; the dribble stays on the far side
+      const body = postPackageOf(p).body, bully = body === 'bully' || p.icon === 'sexy_red', quick = body === 'quick', backing = p.backing > 0;
+      const sexy = p.icon === 'sexy_red', w2 = this.time * (bully ? 4.2 : quick ? 4.8 : 3) + p.id;
+      T[P.root + 1] -= bully ? 0.11 : quick ? 0.08 : 0.07;
+      T[P.spine] = (bully ? -0.2 : -0.12) - (backing ? 0.08 : 0.05) * Math.sin(w2);
+      T[P.chest] = bully ? -0.1 : -0.05;
+      set3(T, 'footL', bully ? 0.3 : 0.24, 0.08, -0.08 + (backing ? 0.04 * Math.sin(w2) : 0)); set3(T, 'footR', bully ? -0.3 : -0.24, 0.08, -0.14 - (backing ? 0.04 * Math.sin(w2) : 0));
       set3(T, 'kneeL', 0.4, 0, 1); set3(T, 'kneeR', -0.4, 0, 1);
-      if (sexy) { T[P.chest + 1] = Math.sin(w2) * 0.26; T[P.pelvis + 2] = Math.sin(w2 * 0.5) * 0.1; T[P.head + 1] = -Math.sin(w2) * 0.3; }
+      if (bully || backing) { T[P.chest + 1] = Math.sin(w2) * (bully ? 0.26 : 0.14); T[P.pelvis + 2] = Math.sin(w2 * 0.5) * 0.1; T[P.head + 1] = -Math.sin(w2) * (sexy ? 0.3 : 0.2); }
+      if (quick) { T[P.head + 1] = Math.sin(w2 * 0.6) * 0.5; }
     }
     // ---- actions ----
     const palm = this.palm; palm.L = null; palm.R = null;
@@ -813,6 +819,14 @@ export class Animator {
       set3(T, 'elbow' + sh, sgn(sh) * (est === 'push' ? 0.6 : est === 'high' ? 0.04 : 0.15), -1, 0.5);
       palm[sh] = { normal: [0, 0.85, 0.5], fingers: [0, 0.75, -0.6], w: 0.9 };
       this.liftShoulder(T, sh, b[1]);
+      if (a.post === 'hook') {
+        // (qp3: the hook is one-handed; the off arm is out between the man and the ball, at the shoulder)
+        set3(T, 'hand' + gh, sgn(gh) * 0.55, 1.35, 0.16); set3(T, 'elbow' + gh, sgn(gh) * 1, -0.2, -0.3);
+        palm[gh] = { normal: [sgn(gh), 0, 0.3], fingers: [0, 1, 0], w: 0.8 };
+        set3(T, 'elbow' + sh, sgn(sh) * 0.9, -0.2, -0.2);
+        palm[sh] = { normal: [-sgn(sh) * 0.5, 0.8, 0.2], fingers: [0, 0.6, -0.7], w: 0.9 };
+        return;
+      }
       set3(T, 'hand' + gh, b[0] + sgn(gh) * (r + 0.075), b[1] - 0.04, b[2] - 0.06);
       set3(T, 'elbow' + gh, sgn(gh) * 1, -0.4, 0.1);
       palm[gh] = { normal: [-sgn(gh), 0.1, 0.1], fingers: [0, 0.9, 0.3], w: 0.85 };
@@ -1059,6 +1073,16 @@ export class Animator {
           else if (a.hustle === 'prohop') { set3(T, 'footL', 0.13, 0.13, 0.03); set3(T, 'footR', -0.13, 0.13, 0.03); set3(T, 'kneeL', 0.25, 0.1, 1); set3(T, 'kneeR', -0.25, 0.1, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; T[P.spine] = 0.0; }
         } else { T[P.spine] = 0.08; T[P.chest] = 0.02; }
         T[P.head] = -0.12;
+        // v0.4.7.5 qp3 shots out of the post. The hook: turned sideways to the rim, the near knee driven up, the
+        // off arm out as a shield, the body leaning into the sweep (the sky hook arches). The fade: a deeper lean
+        // back, legs kicked forward. The turnaround: a tight twist up through the rise
+        if (a.post === 'hook') {
+          const k = Math.min(1, t / (a.tRel || 0.5)), up = p.airborne ? 1 : 0.5, shape = a.hookShape || 'baby', off = sh === 'L' ? 'R' : 'L';
+          set3(T, 'foot' + off, -sg * 0.1, 0.08 + 0.26 * up * k, 0.16 * k); set3(T, 'knee' + off, -sg * 0.1, 0.35 * k, 1);
+          set3(T, 'foot' + sh, sg * 0.14, 0.085 + 0.02 * up, -0.06); T[P['pitch' + sh]] = 0.5 * up;
+          T[P.spine + 2] = sg * (shape === 'sky' ? 0.22 : 0.12) * k; T[P.spine] = shape === 'sky' ? -0.08 : 0.02; T[P.chest + 1] = sg * 0.25 * k; T[P.head + 1] = sg * 0.5;
+        } else if (a.post === 'fade' && p.airborne) { T[P.spine] = (a.fadeShape === 'high' ? -0.2 : -0.26); T[P.chest] = -0.1; set3(T, 'footL', 0.13, 0.12, 0.16); set3(T, 'footR', -0.13, 0.13, 0.14); T[P.pitchL] = 0.5; T[P.pitchR] = 0.5; }
+        else if (a.post === 'turn' && !a.released) { const k = Math.min(1, t / (a.tRel || 0.5)); T[P.chest + 1] = sg * 0.2 * (1 - k); T[P.spine + 2] = sg * 0.06 * Math.sin(k * Math.PI); }
         // v0.4.5 Sharp Eye (Icon badge): an exaggerated high set with the off hand flared, and the legs
         // kicked together under him — the flashiest jumper in the game
         if (a.icon === 'sharpeye' && p.airborne) {
@@ -1067,6 +1091,32 @@ export class Animator {
           T[P.chest + 1] = sg * 0.12;
         }
         if (a.released) this.followThrough(T, a, p, t, style, true);
+        break;
+      }
+      case 'post': {
+        // v0.4.7.5 qp3 post moves. The drop step: a long low step round the man with the ball swung to the far hip,
+        // the shoulder dipped into him. The spin: a tight pivot, the ball tucked at the chest, the off arm out. The
+        // up-and-under: the fake (ball up, up on the toes, the head follows it) then a low long step through
+        const q = Math.min(1, t / a.dur), side = a.side || 1, e = a.emph || 1, fk = a.fakeAt || 0;
+        if (a.move === 'dropstep') {
+          const k = Math.sin(q * Math.PI);
+          T[P.root + 1] -= 0.12 * k * e; T[P.spine] = 0.12 + 0.1 * k; T[P.spine + 2] = -side * 0.18 * k; T[P.chest + 1] = -side * 0.3 * k;
+          set3(T, side > 0 ? 'footL' : 'footR', side * (0.2 + 0.34 * k), 0.08, 0.1 + 0.2 * k); set3(T, side > 0 ? 'footR' : 'footL', -side * 0.16, 0.08 + 0.06 * k, -0.2);
+          set3(T, side > 0 ? 'kneeL' : 'kneeR', side * 0.6, 0.1, 1); set3(T, side > 0 ? 'kneeR' : 'kneeL', -side * 0.3, 0, 1);
+          T[P.head + 1] = -side * 0.3 * k;
+        } else if (a.move === 'postspin') {
+          const k = Math.sin(q * Math.PI);
+          T[P.root + 1] -= 0.06 * k; T[P.spine] = 0.08; T[P.spine + 2] = side * 0.1 * k;
+          set3(T, 'footL', 0.12, 0.08 + (side > 0 ? 0.07 * k : 0), 0.04); set3(T, 'footR', -0.12, 0.08 + (side < 0 ? 0.07 * k : 0), -0.04);
+          set3(T, 'kneeL', 0.25, 0, 1); set3(T, 'kneeR', -0.25, 0, 1);
+          // the off arm out as the guard
+          const off = side > 0 ? 'handR' : 'handL';
+          mix3(T, off, (side > 0 ? -1 : 1) * 0.5, 1.25, 0.1, k); set3(T, side > 0 ? 'elbowR' : 'elbowL', side > 0 ? -1 : 1, -0.3, -0.2);
+          T[P.head + 1] = -side * 0.5 * k;
+        } else {
+          if (q < fk) { const w = Math.sin(q / fk * Math.PI); T[P.root + 1] += 0.03 * w; T[P.spine] = -0.1 * w; T[P.head] = -0.2 * w; set3(T, 'footL', 0.14, 0.08 + 0.03 * w, 0.02); set3(T, 'footR', -0.14, 0.08 + 0.03 * w, -0.02); T[P.pitchL] = 0.3 * w; T[P.pitchR] = 0.3 * w; }
+          else { const k = Math.sin(Math.min(1, (q - fk) / (1 - fk)) * Math.PI); T[P.root + 1] -= 0.14 * k * e; T[P.spine] = 0.2 * k; set3(T, side > 0 ? 'footL' : 'footR', side * 0.18, 0.08, 0.14 + 0.3 * k); set3(T, side > 0 ? 'footR' : 'footL', -side * 0.14, 0.08 + 0.04 * k, -0.24); set3(T, side > 0 ? 'kneeL' : 'kneeR', side * 0.4, 0.2, 1); T[P.head] = -0.1 * k; }
+        }
         break;
       }
       case 'pumpfake': {

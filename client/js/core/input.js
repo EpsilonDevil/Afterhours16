@@ -19,24 +19,25 @@ export const KEYMAP = {
   celebrate: ['KeyG'], fullscreen: ['F11'],
   social: ['KeyO'], // v0.4.4 social phone (LB + RB on a controller)
   dunk: ['KeyZ'], // v0.4.1: attack the rim (dunk if you can, else the best finish)
+  post: ['KeyX', 'Mouse2'], // v0.4.7.5 qp3: hold to post up with the ball (LT / L2 on a pad); the right stick then calls the post moves
 };
 
 // v0.4.1: remappable controller actions -> button names (Xbox layout names; the browser "standard" mapping)
 export const PADMAP = {
   shoot: 'X', pass: 'A', bounce: 'B', lob: 'Y', alleyMod: 'RB', mod: 'LB', sprint: 'RT', defense: 'LT',
-  steal: 'X', block: 'Y', celebrate: 'UP', camera: 'VIEW',
+  steal: 'X', block: 'Y', celebrate: 'UP', camera: 'VIEW', post: 'LT',
 };
 // what can be rebound, in the order the remap screen lists them
 export const REMAP_KEYS = [
   ['up', 'Move up'], ['down', 'Move down'], ['left', 'Move left'], ['right', 'Move right'], ['sprint', 'Sprint'],
   ['shoot', 'Shoot / pump fake'], ['dunk', 'Attack the rim (dunk)'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alley', 'Alley-oop'],
   ['stickLeft', 'Move: cross left'], ['stickRight', 'Move: cross right'], ['stickUp', 'Move: hesitation'], ['stickDown', 'Move: step-back'], ['spin', 'Move: spin'], ['btb', 'Move: behind the back'],
-  ['screen', 'Call screen'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'], ['handsUp', 'Hands up'],
+  ['post', 'Post up (hold)'], ['screen', 'Call screen'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'], ['handsUp', 'Hands up'],
   ['camera', 'Camera'], ['celebrate', 'Celebrate'], ['help', 'Show controls'], ['social', 'Social phone'],
 ];
 export const REMAP_PAD = [
   ['shoot', 'Shoot / pump fake'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alleyMod', 'Alley-oop modifier (+ lob)'],
-  ['mod', 'Icon pass modifier / call screen'], ['sprint', 'Sprint'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'],
+  ['mod', 'Icon pass modifier / call screen'], ['sprint', 'Sprint'], ['post', 'Post up (hold)'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'],
   ['celebrate', 'Celebrate'], ['camera', 'Camera'],
 ];
 export const PAD_BINDABLE = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'LS', 'UP', 'DOWN', 'LEFT', 'RIGHT'];
@@ -302,6 +303,7 @@ export class Input {
       case 'shoot': return !def && B('shoot');
       case 'block': return def && B('block');
       case 'defense': return B('defense');
+      case 'post': return this.ctx === 'offense' && B('post'); // (qp3: with the ball)
       case 'camera': return B('camera'); // (v0.4.7.5: held in the park for the court overview)
       // v0.4.4: on defense the right stick is your hands: hold up = hands up (flicks/holds sideways reach, see defStick)
       case 'handsUp': return def && this.gp.axes[3] < -0.55 && Math.abs(this.gp.axes[3]) > Math.abs(this.gp.axes[2]);

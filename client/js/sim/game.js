@@ -5,6 +5,8 @@ import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
+import { POST, POST_MOVES, POST_SHOTS, postPower, postResist, backdownSpeed, beatChance, postShotK, postPackageOf } from './post.js';
+import { DRIBBLE_SPEED_K } from './player.js';
 import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT, inLane, LANE } from './constants.js';
 import { Ball } from './ball.js';
 import { Player, toWorld, blankIntent } from './player.js';
@@ -259,6 +261,16 @@ export class Game {
     this.over = false; this.winner = -1;
     this.assist = !!cfg.assist;
     this.humanIntent = blankIntent();
+    // v0.4.7.5 qp3 online play (session.js, lockstep): several humans, each with his own intent per tick (humanIntents:
+    // player id -> intent). Every client runs this same game from the same seed and the same inputs, so nothing in the
+    // sim may depend on which of them is "the" user: this.human is just the local player, for the UI. inputDelay: the
+    // ticks every human's input waits before it's applied (the time to reach the other clients); a timed release is
+    // graded at the moment the player let go on his screen, that many ticks before it lands (lag)
+    this.multi = !!cfg.multi;
+    if (this.multi) this.assist = false;
+    this.lag = this.multi ? (cfg.inputDelay || 0) * DT : 0;
+    this.humanIntents = this.multi ? new Map() : null;
+    this.checkTurn = [0, 0];
     this.ftState = null;
     this.firstPossession = 0;
     this.difficulty = cfg.difficulty ?? 0.6;
@@ -379,29 +391,36 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const three = !this.practiceFT && isThree(a.startX, a.startZ, side);
     const d = Math.hypot(rim.x - a.startX, rim.z - a.startZ);
-    const corner = three && Math.abs(a.startX) > 6.2, key = three ? 'three_point' : 'mid_range';
+    const corner = three && Math.abs(a.startX) > 6.2, key = a.post ? 'post_control' : three ? 'three_point' : 'mid_range'; // (qp3: post shots on Post Control)
     // v0.4.7.5 quick patch: a non-shooter (anyone but a Sharpshooter or a Stretch Big) has a 10% smaller window, and
     // his green from three isn't a sure make (outlined on the meter). smothered: no window at all, whatever adds to it.
     // ghost: ignore the smother (the window he'd have had a hair less guarded: a release in it gets a record scratch).
     const nonShooter = !S.isShooterArch(p.archetype), smothered = !ghost && S.isSmothered(contest);
     const ctx = { contest: ghost ? Math.min(contest, S.SMOTHER - 1e-3) : contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p), hustle: a.hustle, nonShooter };
-    const k = this.speed * (p.human ? this.greenBonus : 1);
+    const k = this.speed * (p.human ? p.greenBonus ?? this.greenBonus : 1);
     const total = smothered ? 0 : S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
     const natural = smothered ? 0 : S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
-    return { total, natural: Math.min(total, natural), sure: d <= S.DEEP_D && !smothered && !(nonShooter && three), three, d, corner, smothered, nonShooter };
+    // (qp3: a shot out of the post is a sure make on a green only wide open, like a layup: any coverage keeps it outlined)
+    const sure = d <= S.DEEP_D && !smothered && !(nonShooter && three) && (!a.post || contest <= WIDE_OPEN);
+    return { total, natural: Math.min(total, natural), sure, three, d, corner, smothered, nonShooter };
   }
   // guard: how guarded the finish is on the jumper scale (shots.js insideGuard); smothered at the rim = no window
   layupWindow(p, a, contest, guard = S.insideGuard(contest), ghost = false) {
     const smothered = !ghost && S.isSmothered(guard);
-    const k = this.speed * (p.human ? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p), smothered };
+    const k = this.speed * (p.human ? p.greenBonus ?? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p), smothered };
     const total = S.layupWindowMs(p.ratings.layup, p.badges, ctx) * k;
     const natural = S.layupWindowMs(this.natural(p).layup, {}, { ...ctx, greenK: 1, natural: true }) * k;
-    return { total, natural: Math.min(total, natural), sure: false, smothered };
+    // v0.4.7.5 qp3: a wide-open layup (nobody within WIDE_OPEN of a contest) has a solid green window: a green goes
+    // in. Any coverage at all keeps the outlined window: a green is a boost, not a make
+    return { total, natural: Math.min(total, natural), sure: !smothered && contest <= WIDE_OPEN, smothered };
   }
   // v0.4.7.5 quick patch: a finish's contest (as the make chance uses it) and how guarded it is (the HUD's %, and
   // Smothered), with the space a Contact Finisher push-off made taking 8% per tier off both
   layupContest(p, a, y) {
-    const raw = S.contestRaw(p, this.opponents(p), this.rimFor(p.team), y), cf = 1 - 0.08 * (a.cfPush || 0);
+    // (qp3: the finish out of a post move that beat the man: he's a step behind it, the more so the better the package
+    // and the post player (post.js postShotK's beat shield); a move that didn't beat him leaves him right there)
+    const pf = a.postFinish ? postShotK(p, 'hook', !!a.postFinish.beat) : null, pk = pf && a.postFinish.beat ? 1 - Math.min(0.6, 0.25 + pf.shield * 0.45) : 1;
+    const raw = S.contestRaw(p, this.opponents(p), this.rimFor(p.team), y) * pk, cf = 1 - 0.08 * (a.cfPush || 0);
     return { contest: Math.min(1.25, raw) * cf, guard: S.insideGuard(raw * cf) };
   }
   // the contest a release on the next step would be graded with: releaseShot / releaseLayup measure it at the ball
@@ -415,7 +434,7 @@ export class Game {
     return y;
   }
   ftWindow(p) {
-    const k = this.speed * (p.human ? this.greenBonus : 1);
+    const k = this.speed * (p.human ? p.greenBonus ?? this.greenBonus : 1);
     const total = S.greenWindowMs(p.ratings.free_throw, p.badges, { ft: true, greenK: this.greenK(p) }) * k;
     const natural = S.greenWindowMs(this.natural(p).free_throw, {}, { ft: true }) * k;
     return { total, natural: Math.min(total, natural), sure: true };
@@ -513,10 +532,20 @@ export class Game {
     return order[0];
   }
 
+  // who takes the check: the user's player; online, the team's humans take turns (the same one on every client)
+  checkHandler(team) {
+    const offense = this.teams[team];
+    if (this.multi) {
+      const hs = offense.filter(p => p.human);
+      if (hs.length) return hs[(this.checkTurn[team]++) % hs.length];
+    } else if (this.human && this.human.team === team && !this.assist) return this.human;
+    return [...offense].sort((a, b) => posRank(a.position) - posRank(b.position))[0];
+  }
+
   startCheck(team, delay = 1.2) {
     const side = this.sideFor(team);
     const offense = this.teams[team];
-    const handler = (this.human && this.human.team === team && !this.assist) ? this.human : [...offense].sort((a, b) => posRank(a.position) - posRank(b.position))[0];
+    const handler = this.checkHandler(team);
     const check = CHECK_SPOT(side);
     this.placeFormation(team, side, { handler, check, variant: this.rng.int(0, 2) });
     this.giveBall(handler, 'held');
@@ -531,8 +560,9 @@ export class Game {
   startInbound(team, spotPos, kind = 'baseline', delay = 1.4) {
     const side = this.sideFor(team);
     const offense = this.teams[team];
-    // inbounder: bigs inbound after makes; human never forced to inbound unless alone
-    const cands = [...offense].filter(p => p !== this.human || this.assist || offense.length === 1).sort((a, b) => posRank(b.position) - posRank(a.position));
+    // inbounder: bigs inbound after makes; human never forced to inbound unless alone (qp3 online: unless they all are)
+    const allHuman = offense.every(p => p.human);
+    const cands = [...offense].filter(p => this.multi ? !p.human || allHuman : p !== this.human || this.assist || offense.length === 1).sort((a, b) => posRank(b.position) - posRank(a.position));
     const inb = cands[0] || offense[0];
     const backcourt = kind === 'baseline';
     // formation: if baseline after a make, team sets up in their backcourt
@@ -589,7 +619,7 @@ export class Game {
     if (this.over) { this.overT = (this.overT || 0) + dt; for (const p of this.players) { p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); return; }
     this.time += dt; this.tick++;
     for (const p of this.players) {
-      if (p.human && !this.assist) { p.intent = { ...this.humanIntent }; }
+      if (p.human && !this.assist) { p.intent = this.multi ? this.multiIntent(p) : { ...this.humanIntent }; }
       else p.intent = blankIntent();
       // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds. v0.4.7.5: every AI
       // player keeps a Lock-In grade of his own too (aiGrades), so good and bad play move their stamina as well
@@ -602,8 +632,10 @@ export class Game {
     this.ai.think(dt);
     this.updatePhase(dt);
     const hp = this.human, hpAct = hp && hp.action ? hp.action.id : 0;
+    const acts = this.multi ? this.multiPresses() : null;
     for (const p of this.players) this.applyIntent(p, dt);
     this.humanActed = !!hp && (hp.action ? hp.action.id : 0) !== hpAct;
+    if (acts) this.multiActed(acts);
     for (const p of this.players) this.tickAction(p, dt);
     for (const p of this.players) this.moveOne(p, dt);
     this.boxOuts(dt);
@@ -614,11 +646,78 @@ export class Game {
     this.updateAIGrades(dt);
   }
 
-  // v0.4.7.5: a Lock-In grade for every AI player, fed the same events the user's is
+  // ---------- v0.4.7.5 qp3 online: several humans ----------
+  // a human's intent for this tick, as every client got it. The presses in it (shoot, pass, a move, a steal...) are
+  // sent with every tick until they're used, like the single-player input buffer; seq numbers each one, and one already
+  // used (the player's action changed on a tick it was in: multiActed) is dropped from the ticks after
+  multiIntent(p) {
+    const it = { ...blankIntent(), ...(this.humanIntents.get(p.id) || {}) }, sq = it.seq, used = p.usedSeq || 0;
+    if (sq) {
+      if (sq.shoot && sq.shoot <= used) { it.shoot = null; it.attack = false; it.jump = false; }
+      if (sq.pass && sq.pass <= used) it.pass = null;
+      if (sq.move && sq.move <= used) it.move = null;
+      if (sq.steal && sq.steal <= used) { it.steal = false; it.stealDir = null; it.stealLow = false; }
+      if (sq.post && sq.post <= used) it.postMove = null;
+    }
+    return it;
+  }
+  // before the intents are applied: the one-off calls (the alley-oop button, a celebration, calling a screen), and every
+  // human's action as it was
+  multiPresses() {
+    const acts = new Map();
+    for (const p of this.players) {
+      if (!p.human) continue;
+      const it = p.intent;
+      acts.set(p.id, p.action ? p.action.id : 0);
+      if (it.oop != null && p.oopQte && !p.oopQte.result) this.oopInput(p, it.oop);
+      if (it.celebrate && this.canCelebrate(p)) p.startAction('celebrate', 1.6, { kind: it.celebrate });
+      if (it.callScreen) { const big = this.callScreenFor(p); if (big) this.emit({ type: 'screenCall', player: p.id, big: big.id }); }
+    }
+    return acts;
+  }
+  multiActed(acts) {
+    for (const [id, was] of acts) {
+      const p = this.players[id], sq = p.intent.seq;
+      if (sq && (p.action ? p.action.id : 0) !== was) p.usedSeq = Math.max(p.usedSeq || 0, ...Object.values(sq));
+    }
+  }
+  // (online: the checks the session makes for its own player, on the tick the press lands)
+  canCelebrate(p) {
+    if ((p.action && p.action.type !== 'catch') || p.airborne || this.over) return false;
+    return this.ball.holder !== p.id && !(this.phase === 'inbound' && this.inbounder === p);
+  }
+  // the user calls for a screen: the nearest big without a job comes to set it
+  callScreenFor(me) {
+    const big = this.mates(me).filter(m => !m.human).sort((a, b) => (b.phys.H - a.phys.H) || (a.dist(me) - b.dist(me)))[0];
+    if (big) { const m = this.ai.m(big); m.plan = 'screen'; m.screenFor = me.id; m.screenT = 3.5; }
+    return big || null;
+  }
+  // a human left the game: the AI plays him from the next tick on (every client calls this on the same tick)
+  dropHuman(id) {
+    const p = this.players[id];
+    if (!p || !p.human) return;
+    p.human = false;
+    this.humanIntents?.delete(id);
+    if (this.inbounder === p && this.phase === 'inbound') this.inboundT = 0;
+    this.emit({ type: 'dropped', player: id });
+  }
+  // a timed release (the shot button let go): online, graded at the moment it was let go on the player's screen
+  relAt(p, a) { return this.multi && p.human ? Math.max(0, a.t - this.lag) : a.t; }
+  // online: the game state boiled down to a number, compared between the clients now and then (a desync check)
+  stateHash() {
+    let h = 2166136261 >>> 0;
+    const mix = v => { h = Math.imul(h ^ (Math.round(v * 1000) | 0), 16777619) >>> 0; };
+    for (const p of this.players) { mix(p.x); mix(p.z); mix(p.y); mix(p.facing); mix(p.stamina); }
+    const b = this.ball; mix(b.x); mix(b.y); mix(b.z); mix(b.holder); mix(this.score[0]); mix(this.score[1]); mix(this.rng.s ?? this.rng.state ?? 0);
+    return h;
+  }
+
+  // v0.4.7.5: a Lock-In grade for every AI player, fed the same events the user's is (qp3 online: and every human; no
+  // client's own grade drives a player there)
   updateAIGrades(dt) {
     if (this.practice) return;
     for (const p of this.players) {
-      if (p.human && !this.assist) continue;
+      if (p.human && !this.assist && !this.multi) continue;
       if (!this.aiGrades.has(p.id)) this.aiGrades.set(p.id, new LockedInGrade(this, p.id));
     }
     for (const g of this.aiGrades.values()) {
@@ -723,13 +822,17 @@ export class Game {
         if (tl > 0.12) { const k = Math.min(1, tl / 0.6) * 0.3; it.mx = it.mx * (1 - k) + tx / tl * k; it.mz = it.mz * (1 - k) + tz / tl * k; }
       }
     }
+    // v0.4.7.5 qp3 post moves: the post-up trigger held with the ball (post.js). Back to the basket, the stick backs
+    // the man down, the right stick calls the moves, the shot button shoots out of the post
+    if (has && it.post && !p.airborne && this.phase === 'live' && (!p.action || p.action.type === 'post' || p.action.type === 'catch')) this.postUp(p, it, dt);
+    else if (p.postUp) { p.postUp = false; p.postDef = -1; }
     if (has) {
       const a = p.action;
-      if (a && a.type === 'shoot' && a.releaseAt == null && (it.shoot === 'release' || (p.human && !this.assist && !it.shootHeld && it.shoot !== 'press'))) a.releaseAt = a.t;
+      if (a && a.type === 'shoot' && a.releaseAt == null && (it.shoot === 'release' || (p.human && !this.assist && !it.shootHeld && it.shoot !== 'press'))) a.releaseAt = this.relAt(p, a);
       // v0.4.5 timed layups: every layup is timed. Let go of the button at the top; let go during the gather and
       // it's flipped up early, right off the floor
       if (a && a.type === 'layup' && !a.released && a.releaseAt == null && !a.untimed && p.human && !this.assist && !it.shootHeld && it.shoot !== 'press') {
-        a.releaseAt = a.t; a.timed = true;
+        a.releaseAt = this.relAt(p, a); a.timed = true;
       }
       // v0.4.2 bailout: pass out of a jumper any time before the release, on the floor or in the air
       if (a && a.type === 'shoot' && it.pass && !a.released && this.mates(p).length) { this.bailout(p, it.pass); return; }
@@ -741,6 +844,17 @@ export class Game {
         return;
       }
       if (this.phase === 'check') return;
+      if (p.postUp && it.postMove) { this.startPostMove(p, it.postMove.move, it.postMove.side); return; }
+      // (qp3) out of a post move he's facing the rim: the next press is the power finish (a dunk if he has one, else the
+      // layup), or from further out a face-up jumper. Otherwise, posting up, it's a shot out of the post
+      if (it.shoot === 'press' && this.postFaceUp(p)) {
+        const rim = this.rimFor(p.team), dR = Math.hypot(rim.x - p.x, rim.z - p.z), beat = !!p.postMoveBeat;
+        p.postMoveEnd = null; this.startShot(p, { ...it, attack: dR < 3.4, sprint: false, forceJumper: dR >= 3.4 });
+        const na = p.action; if (na && (na.type === 'layup' || na.type === 'dunk' || na.type === 'shoot')) { na.postFinish = { beat }; if (na.type === 'shoot') { na.post = 'turn'; na.postBeat = beat; } }
+        this.emit({ type: 'postfinish', player: p.id, kind: na?.type, beat });
+        return;
+      }
+      if (it.shoot === 'press' && p.postUp && !it.attack) { this.startPostShot(p, it.postShot || this.postShotFor(p, it)); return; }
       if (it.shoot === 'press') { this.startShot(p, it); return; }
       if (it.pass) { this.startPass(p, it.pass); return; }
       if (it.move && b.mode === 'dribble') { this.startMove(p, it.move); return; }
@@ -771,13 +885,14 @@ export class Game {
         case 'stumble': case 'hang': case 'ftshot': lock = 1; break;
         case 'block': case 'rebound': case 'tipjump': lock = p.airborne ? 1 : 0.5; break;
         case 'move': lock = 1; break;
+        case 'post': lock = 1; break; // (qp3: a post move drives him)
         case 'catch': lock = 0.12; break;
         case 'celebrate': lock = 0.0; break;
       }
     }
     if (has && this.ball.mode === 'held' && p.dribble.used) lock = Math.max(lock, 0.92); // picked up dribble: pivot only
     if (this.phase === 'ft') lock = 1;
-    if (a && (a.type === 'layup' || a.type === 'dunk' || a.type === 'oop' || a.type === 'move')) this.drive(p, a, dt);
+    if (a && (a.type === 'layup' || a.type === 'dunk' || a.type === 'oop' || a.type === 'move' || a.type === 'post')) this.drive(p, a, dt);
     if (a && a.type === 'pass' && a.face != null && !a.released) p.intent.face = a.face; // (turning to the receiver)
     if (a && a.type === 'shoot' && a.hopVX != null && !a.jumped) { const on = a.t < a.hopEnd; p.vx = on ? a.hopVX : p.vx * 0.6; p.vz = on ? a.hopVZ : p.vz * 0.6; }
     if (a && a.type === 'hang') { p.vx = p.vz = 0; }
@@ -809,6 +924,26 @@ export class Game {
 
   // velocity control during scripted moves (layups, dunks, dribble moves)
   drive(p, a, dt) {
+    // v0.4.7.5 qp3 post moves: the step round the man (a burst that eases out), the spin's arc, the up-and-under's
+    // fake (still) and step through. Facing: the drop step and the step-through turn to the rim as they go; the spin
+    // turns the long way round from back-to-basket to facing it
+    if (a.type === 'post') {
+      const q = Math.min(1, a.t / a.dur), fake = a.fakeAt || 0;
+      let k = 0;
+      if (a.move === 'upunder') { k = q < fake ? 0 : Math.sin(Math.min(1, (q - fake) / (1 - fake)) * Math.PI); }
+      else if (a.move === 'postspin') { k = Math.sin(q * Math.PI) * 1.1; }
+      else k = q < 0.15 ? q / 0.15 : Math.max(0, 1 - (q - 0.15) / 0.85);
+      // (the velocity is set outright: the body lock brakes it a little each frame, which the 1.2 covers)
+      const v = a.step / (a.dur * 0.62) * k * 1.2;
+      let dirX = a.dirX, dirZ = a.dirZ;
+      if (a.move === 'postspin') { const sw = (q - 0.5) * a.side * 0.9; dirX = a.dirX * Math.cos(sw) - a.dirZ * Math.sin(sw); dirZ = a.dirX * Math.sin(sw) + a.dirZ * Math.cos(sw); } // (the arc)
+      p.vx = dirX * v; p.vz = dirZ * v;
+      p.intent.mx = 0; p.intent.mz = 0;
+      if (a.move === 'postspin') { const u = Math.min(1, q / 0.85), e = u * u * (3 - 2 * u); p.intent.face = a.f0 - a.side * Math.PI * e + wrap(a.faceRim - (a.f0 - a.side * Math.PI)) * e; } // (the long way round, landing square to the rim)
+      else if (a.move === 'upunder' && q < fake) p.intent.face = a.f0 + wrap(a.faceRim - a.f0) * 0.5; // (the fake half turns him to the rim)
+      else p.intent.face = a.f0 + wrap(a.faceRim - a.f0) * Math.min(1, Math.max(0, (q - 0.1) / 0.6));
+      return;
+    }
     if (a.type === 'move') {
       const t = a.t / a.dur;
       const k = moveProfile(a.move, t);
@@ -845,6 +980,106 @@ export class Game {
   }
 
   // ---------- actions ----------
+  // ---------- v0.4.7.5 qp3: the post (post.js) ----------
+  // the man guarding the post-up: the nearest opponent between him and the rim, within reach
+  postDefender(p) {
+    const rim = this.rimFor(p.team), dx = rim.x - p.x, dz = rim.z - p.z, dr = Math.hypot(dx, dz) || 1;
+    let best = null, bd = 1.7;
+    for (const d of this.opponents(p)) { const dd = d.dist(p); if (dd < bd && ((d.x - p.x) * dx + (d.z - p.z) * dz) / (dd * dr || 1) > -0.2) { best = d; bd = dd; } }
+    return best;
+  }
+  // the second after a post move: facing up, the trigger doesn't turn him back round (postUp) and a press finishes
+  postFaceUp(p) { return p.postMoveEnd != null && this.time - p.postMoveEnd < 1.1; }
+  postUp(p, it, dt) {
+    const rim = this.rimFor(p.team), dx = rim.x - p.x, dz = rim.z - p.z, dr = Math.hypot(dx, dz) || 1, ux = dx / dr, uz = dz / dr;
+    if (this.postFaceUp(p)) { p.postUp = false; it.face = Math.atan2(ux, uz); return; } // (facing up out of the move)
+    if (dr > POST.range) { p.postUp = false; p.postDef = -1; return; } // too far from the rim: ordinary play
+    const d = this.postDefender(p);
+    p.postUp = true; p.posting = Math.max(p.posting || 0, POST.lean + 0.06); p.postDef = d ? d.id : -1;
+    if (d) d.postD = 0.3;
+    if (p.action?.type === 'post') return; // (the move drives him)
+    it.face = Math.atan2(-ux, -uz); it.stickFace = false; it.sprint = false; it.move = null;
+    if (this.ball.mode === 'held' && !p.dribble.used && Math.hypot(it.mx, it.mz) > 0.25) { this.ball.mode = 'dribble'; p.dribble.phase = 0; }
+    // the stick in rim terms: toward it is the back-down (slow, the defender gives ground by power), across a shuffle,
+    // away a step out. Speeds are absolute: the intent is scaled to the walking top speed
+    if (!it.postStick) it.postStick = [it.mx, it.mz]; // (the raw stick, for the shot pick: postShotFor)
+    const toward = it.mx * ux + it.mz * uz, lat = -it.mx * uz + it.mz * ux;
+    let vx = 0, vz = 0;
+    if (toward > 0.15) {
+      const sp = backdownSpeed(p, d) * Math.min(1, toward / 0.8); vx += ux * sp; vz += uz * sp;
+      // the man gives ground: he's walked back at the back-down's pace (the collision keeps the two apart)
+      if (d && d.dist(p) < 1.3 && !d.airborne && d.action?.type !== 'stumble') { const k = 0.8 * Math.min(1, toward / 0.8); d.x += ux * sp * dt * k; d.z += uz * sp * dt * k; d.vx = ux * sp * k; d.vz = uz * sp * k; d.backed = this.time; }
+    }
+    else if (toward < -0.15) { const sp = POST.out * Math.min(1, -toward / 0.8); vx -= ux * sp; vz -= uz * sp; }
+    if (Math.abs(lat) > 0.15) { const sp = POST.shuffle * Math.min(1, Math.abs(lat) / 0.8) * Math.sign(lat); vx += -uz * sp; vz += ux * sp; }
+    const top = p.phys.jog * 0.95 * DRIBBLE_SPEED_K * (0.78 + 0.22 * Math.min(1, p.stamina * 1.6)) || 1;
+    it.mx = vx / top; it.mz = vz / top;
+    p.backing = toward > 0.15 ? 1 : 0;
+  }
+  // which shot the stick asks for out of the post: toward the rim a hook, away a fadeaway, neutral a turnaround
+  postShotFor(p, it) {
+    const rim = this.rimFor(p.team), dx = rim.x - p.x, dz = rim.z - p.z, dr = Math.hypot(dx, dz) || 1;
+    const raw = it.postStick || [it.mx, it.mz], toward = (raw[0] * dx + raw[1] * dz) / dr;
+    return toward > 0.3 ? 'hook' : toward < -0.3 ? 'fade' : 'turn';
+  }
+  // a post move: the drop step round the man, the spin to the rim, the up-and-under (a fake, then the step through).
+  // Rolled against the man guarding him when it starts: beaten, he's a step behind (bumpT) and the finish is cleaner
+  startPostMove(p, move, side = 1) {
+    const M = POST_MOVES[move]; if (!M || p.cool.move > 0 || p.airborne) return;
+    const rim = this.rimFor(p.team), dx = rim.x - p.x, dz = rim.z - p.z, dr = Math.hypot(dx, dz) || 1, ux = dx / dr, uz = dz / dr;
+    const d = this.postDefender(p), pkg = postPackageOf(p);
+    // the drop step goes round the man on the side asked (or away from where he stands); the spin goes the other way
+    let sd = side || 1;
+    if (d && !side) { const lat = -(d.x - p.x) * uz + (d.z - p.z) * ux; sd = lat > 0 ? -1 : 1; }
+    const ang = M.ang * (move === 'postspin' ? -sd : sd);
+    const dirX = ux * Math.cos(ang) + (-uz) * Math.sin(ang), dirZ = uz * Math.cos(ang) + ux * Math.sin(ang); // toward the rim, swung round by ang
+    const beat = d ? this.rng.next() < beatChance(p, d, move) : true;
+    const dur = M.dur / (0.9 + 0.2 * pkg.emph) * (pkg.sig.includes(move) ? 0.94 : 1);
+    const step = M.step * (0.9 + 0.2 * pkg.emph) * (beat ? 1 : 0.8);
+    const a = p.startAction('post', dur, { move, side: sd, beat, dirX, dirZ, step, f0: p.facing, faceRim: Math.atan2(ux, uz), body: pkg.body, emph: pkg.emph, fakeAt: M.fakeAt || 0, def: d ? d.id : -1, pkg: pkg.id });
+    if (d) {
+      if (beat) { d.bumpT = Math.max(d.bumpT, 0.45 + 0.2 * pkg.emph); d.postBeat = this.time; }
+      else d.bumpT = Math.max(d.bumpT, 0.12);
+      if (move === 'upunder' && beat && !d.airborne && !d.action) { d.jump(0.22); d.bit = this.time; } // (he bit on the fake: up in the air as the step-through goes by)
+    }
+    this.ball.mode = 'dribble';
+    p.cool.move = dur * 0.8;
+    p.spend(COST.move * 0.8);
+    p.stats.postMoves = (p.stats.postMoves || 0) + 1;
+    this.emit({ type: 'postmove', player: p.id, move, beat, defender: d ? d.id : -1, pkg: pkg.id });
+    return a;
+  }
+  // a shot out of the post: the hook (close shot, off the far shoulder, up and over), the fadeaway (a mid-range
+  // jumper falling away) or the turnaround. Timed like a jumper, measured on Post Control
+  startPostShot(p, kind = 'turn') {
+    const PS = POST_SHOTS[kind] || POST_SHOTS.turn;
+    const rim = this.rimFor(p.team), dRim = Math.hypot(rim.x - p.x, rim.z - p.z), pkg = postPackageOf(p);
+    const d = this.postDefender(p), beat = !!(d && d.postBeat != null && this.time - d.postBeat < 1.2);
+    const rimA = Math.atan2(rim.x - p.x, rim.z - p.z);
+    this.endMoveChain(p);
+    p.spend(COST.shot);
+    const sh = (p.shotPkg?.hand || 'R') === 'L' ? 1 : -1; // (+1: the left hand)
+    const tRel = PS.tRel * (pkg.sig.includes(kind) ? 0.95 : 1), hookK = kind === 'hook';
+    const jumpH = p.phys.vertical * (hookK ? 0.42 : kind === 'fade' ? 0.5 : 0.48) * (0.85 + 0.15 * p.stamina);
+    const tUp = Math.sqrt(2 * jumpH / GRAVITY);
+    const a = p.startAction('shoot', tRel + 0.55, {
+      post: kind, postBeat: beat, pkg: pkg.id, hookShape: pkg.hook, fadeShape: pkg.fade,
+      tRel, takeoff: Math.max(0.12, tRel - tUp * 0.9), jumpH, dRim, kind: hookK ? 'close' : 'jumper', fade: kind === 'fade', stepback: false,
+      startX: p.x, startZ: p.z, moving: 0, hustle: null, catchShoot: false,
+    });
+    // the hook turns the far shoulder to the rim and sweeps the ball up over the top; the others square up (the
+    // turnaround spins to the rim on the rise); the fade drifts away from the rim
+    a.faceRim = hookK ? rimA - sh * Math.PI * 0.45 : rimA;
+    if (kind === 'fade') { const ux = (p.x - rim.x) / (dRim || 1), uz = (p.z - rim.z) / (dRim || 1); a.driftX = ux * 0.9; a.driftZ = uz * 0.9; }
+    if (kind === 'turn') a.turnFrom = p.facing;
+    p.facing += wrap(a.faceRim - p.facing) * (hookK ? 0.3 : 0.15);
+    this.ball.mode = 'held';
+    p.dribble.used = true;
+    p.postUp = false;
+    if (this.isAI(p)) { const r = this.ai.releaseTiming(p, tRel, false, { type: a.kind, d: dRim }); a.releaseAt = r.at; a.aiGrade = r.grade; a.aiContest = r.contest; }
+    this.emit({ type: 'shotStart', player: p.id, tRel, kind: a.kind, post: kind });
+    return a;
+  }
   startShot(p, it) {
     const rim = this.rimFor(p.team);
     const ctx = { sprint: it.sprint, forceJumper: it.forceJumper, attack: !!it.attack, defs: this.opponents(p) };
@@ -1400,6 +1635,11 @@ export class Game {
         if (a.t >= a.dur) p.action = null;
         break;
       }
+      case 'post': {
+        // v0.4.7.5 qp3: the post move ends square to the rim, still dribbling (the next press is the finish)
+        if (a.t >= a.dur) { p.action = null; p.intent.face = a.faceRim; p.facing += wrap(a.faceRim - p.facing) * 0.6; this.ball.mode = 'dribble'; p.postUp = false; p.postMoveEnd = this.time; p.postMoveBeat = a.beat; }
+        break;
+      }
       case 'move': {
         if (!a.switched && switchesHand(a.move) && a.t >= a.dur * MOVES[a.move].sw) { a.switched = true; p.dribble.hand = p.dribble.hand === 'R' ? 'L' : 'R'; }
         if (!a.checked && a.t >= a.dur * 0.55) { a.checked = true; this.ankleCheck(p, a); }
@@ -1477,12 +1717,15 @@ export class Game {
     const rim = this.rimFor(p.team), side = this.sideFor(p.team);
     const err = a.releaseAt - a.tRel;
     const P = this.holdPoint(p);
-    const raw = S.contestRaw(p, this.opponents(p), rim, P.gy), contest = Math.min(1.25, raw);
+    // v0.4.7.5 qp3: a shot out of the post is shielded from the man by the release (the hook off the far shoulder,
+    // the fade away from him), more with a better package and a beaten defender (post.js postShotK)
+    const pk = a.post ? postShotK(p, a.post, !!a.postBeat) : null;
+    const raw = S.contestRaw(p, this.opponents(p), rim, P.gy) * (pk ? 1 - pk.shield : 1), contest = Math.min(1.25, raw);
     // (v0.4.7.5 quick patch: guard is how guarded it was on the HUD's scale; a close shot is measured like a finish)
     const guard = S.guardFor(a.kind, raw), smothered = S.isSmothered(guard);
-    // (a close shot isn't timed: no window, no Excellent)
+    // (a close shot isn't timed: no window, no Excellent — except the hook, which is timed like a jumper)
     const W = this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
-    let grade = a.kind === 'close' ? 'none' : (a.aiGrade && this.isAI(p) ? this.aiGradeAtRelease(p, a, a.aiGrade, win, a.aiContest != null ? this.jumperWindow(p, a, a.aiContest).total : win) : S.gradeFromWindow(err, win));
+    let grade = a.kind === 'close' && !a.post ? 'none' : (a.aiGrade && this.isAI(p) ? this.aiGradeAtRelease(p, a, a.aiGrade, win, a.aiContest != null ? this.jumperWindow(p, a, a.aiContest).total : win) : S.gradeFromWindow(err, win));
     // no greens while smothered, and no makes: a release that would have been green gets a record scratch
     let scratch = false;
     if (smothered && a.kind !== 'close') {
@@ -1491,13 +1734,14 @@ export class Game {
     }
     const clutch = this.isClutch(p.team);
     let chance = S.finalChance({ type: a.kind === 'close' ? 'close' : 'jumper', d, a: p.ratings, three, grade, contest, moving: a.moving, fade: a.fade, stamina: p.stamina, badges: p.badges, catchShoot: a.catchShoot, corner, hot: p.hot, clutch, smothered });
+    if (pk && !smothered) chance = Math.min(0.97, chance * (1 + pk.bonus) + (grade === 'excellent' ? 0 : pk.bonus * 0.5)); // (the package and the power, on top of the rating)
     // greens always go in (unless blocked in flight), except past 35 ft, where it's mostly luck (shots.js DEEP_D),
     // and (v0.4.7.5 quick patch) a non-shooter's green from three, which is a boost
     const sure = grade === 'excellent' && W.sure;
     if (sure) chance = 1;
     const foul = this.checkShootingFoul(p, contest, 'jumper');
     const made = !smothered && (sure || this.rng.next() < chance);
-    const plan = S.planShot(this.rng, P, rim, side, made, a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: sure, guarantee: sure, bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' });
+    const plan = S.planShot(this.rng, P, rim, side, made, a.post ? POST_SHOTS[a.post].arc : a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: sure, guarantee: sure, bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' && (a.post !== 'hook' || Math.abs(p.x) > 0.6) });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three, type: a.kind, made: plan.made, grade, chance, side, contest, foul, released: this.time, d, putback: false, catchShoot: !!a.catchShoot, corner, clutch: clutch && !!p.badges.clutch });
     b.wx = plan.wx; b.wy = plan.wy; b.wz = plan.wz;
     b.ghost = !!plan.ghost;
@@ -1506,7 +1750,8 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three };
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
-    this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three, made: plan.made, kind: a.kind, closest: this.closestDef(p), ...(a.kind === 'close' ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
+    this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three, made: plan.made, kind: a.kind, post: a.post || null, closest: this.closestDef(p), ...(a.kind === 'close' && !a.post ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
+    if (a.post) p.stats.postShots = (p.stats.postShots || 0) + 1;
     if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
   }
 
@@ -1550,10 +1795,14 @@ export class Game {
         if (grade === 'excellent') grade = err < 0 ? 'early' : 'late';
       }
     }
-    const chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade, smothered });
+    let chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade, smothered });
+    if (a.postFinish && !smothered) { const pf = postShotK(p, 'hook', !!a.postFinish.beat); chance = Math.min(0.97, chance + pf.bonus * 0.6); } // (qp3: the power finish out of a post move)
+    // (qp3: a green on a wide-open layup is a make, like a green jumper inside 35 ft)
+    const sure = grade === 'excellent' && !!W?.sure;
+    if (sure) chance = 1;
     const foul = this.checkShootingFoul(p, contest, 'layup');
-    const made = !smothered && this.rng.next() < chance;
-    const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8 });
+    const made = !smothered && (sure || this.rng.next() < chance);
+    const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8, guarantee: sure });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three: false, type: 'layup', made: plan.made, chance, side, contest, foul, released: this.time, d, oop: !!a.oop });
     b.wx = plan.wx * 0.5; b.wz = plan.wz * 0.5;
     b.lastTouch = p.id; b.lastTeam = p.team;
@@ -1898,7 +2147,24 @@ export class Game {
     const H = p.phys.H, a = p.action, b = this.ball;
     const hs = p.dribble.hand === 'R' ? -1 : 1;
     let lx = hs * 0.12, ly = 0.53 * H, lz = 0.3, gdy = 0;
-    if (a && a.type === 'shoot') {
+    if (a && a.type === 'shoot' && a.post === 'hook') {
+      // v0.4.7.5 qp3 the hook: from the far hip, swept out wide to the side at the shoulder and up over the top, let
+      // go above the head toward the rim side. baby: short, from the chest; jump: up and over; sky: the full sweep
+      const sh = p.shotPkg.hand === 'L' ? 1 : -1, t = a.t, T = a.tRel, k = Math.min(1, t / T), e = k * k * (3 - 2 * k);
+      const shape = a.hookShape || 'baby', wide = shape === 'sky' ? 0.5 : shape === 'jump' ? 0.36 : 0.24, low = shape === 'sky' ? 0.42 : shape === 'baby' ? 0.66 : 0.56;
+      const top = Math.min(p.phys.reach * 0.97, this.reachTop(p, p.shotPkg.hand === 'L' ? 'L' : 'R', sh * 0.12, 0.08, 0));
+      const u = 1 - e;
+      lx = u * u * (sh * 0.22) + 2 * u * e * (sh * wide) + e * e * (-sh * 0.04 + sh * 0.12);
+      ly = u * u * (low * H) + 2 * u * e * (0.86 * H) + e * e * top;
+      lz = u * u * 0.08 + 2 * u * e * 0.04 + e * e * 0.16;
+      gdy = e * e * (p.phys.reach * 0.97 - top);
+    } else if (a && a.type === 'post') {
+      // v0.4.7.5 qp3 post moves: the ball kept low on the far side from the man through the step; the up-and-under
+      // pumps it up first, then sweeps it low through the step
+      const q = Math.min(1, a.t / a.dur), far = -(a.side || 1), fk = a.fakeAt || 0;
+      if (a.move === 'upunder' && q < fk) { const w = Math.sin(q / fk * Math.PI); lx = -0.06; ly = 0.6 * H + w * 0.42 * H; lz = 0.3 - w * 0.06; }
+      else { const w = Math.sin(Math.min(1, (q - fk) / (1 - fk)) * Math.PI); lx = far * (0.2 + 0.12 * w); ly = (0.46 - 0.06 * w) * H; lz = 0.1 + 0.16 * w; }
+    } else if (a && a.type === 'shoot') {
       const sh = p.shotPkg.hand === 'L' ? 1 : -1;
       const t = a.t, T = a.tRel;
       // v0.4.5 stage 7: every jump-shot base carries the ball on its own path (where it starts, where it sets,
@@ -2529,7 +2795,7 @@ export class Game {
   oopInput(p, btn) {
     const q = p.oopQte;
     if (!q || q.result) return null;
-    const t = this.time - q.t0;
+    const t = this.time - q.t0 - (this.multi && p.human ? this.lag : 0); // (online: when it was pressed on his screen)
     q.at = t;
     q.result = btn !== q.btn ? 'wrong' : t < q.open ? 'early' : t > q.close ? 'late' : 'hit';
     this.emit({ type: 'oopQte', player: p.id, result: q.result, t: +t.toFixed(2) });
@@ -2692,6 +2958,8 @@ export class Game {
       // v0.4.7.5 qp3: a set screener holds his ground (strength and Brick Wall), so the defender bounces off him
       // instead of pushing him off the spot
       if (a.team !== c.team) { if (this.isSetScreener(a, h)) ma *= this.screenAnchor(a); if (this.isSetScreener(c, h)) mc *= this.screenAnchor(c); }
+      // v0.4.7.5 qp3: a post player backing his man down moves him by his power against the man's resistance
+      if (a.team !== c.team && h && (h === a || h === c) && h.postUp && h.backing) { const d = h === a ? c : a, k = Math.max(0.6, Math.min(3.2, postPower(h) * (0.85 + 0.3 * h.phys.strength) / postResist(d) * 1.4)); if (h === a) ma *= k; else mc *= k; }
       const ka = mc / (ma + mc), kc = ma / (ma + mc);
       a.x -= nx * pen * ka; a.z -= nz * pen * ka;
       c.x += nx * pen * kc; c.z += nz * pen * kc;
@@ -3009,7 +3277,7 @@ export class Game {
     const a = p.action;
     if (a && a.type === 'ftshot') {
       if (!a.released) {
-        if (p.human && !this.assist && a.releaseAt == null && (p.intent.shoot === 'release' || !p.intent.shootHeld)) a.releaseAt = a.t;
+        if (p.human && !this.assist && a.releaseAt == null && (p.intent.shoot === 'release' || !p.intent.shootHeld)) a.releaseAt = this.relAt(p, a);
         if (p.human && !this.assist && a.releaseAt == null && a.t > a.tRel + 0.35) a.releaseAt = a.t;
         if (a.releaseAt != null && a.t >= a.releaseAt) {
           a.released = true;

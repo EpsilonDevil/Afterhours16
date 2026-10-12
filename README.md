@@ -2,7 +2,7 @@
 
 An original street-and-arena basketball game inspired by the feel of the 2015-era sim-arcade basketball games: weighty movement, timed jumpers, size-ups, posters, and a social hub where you walk up to a court and call next. You get a 3D WebGL2 client built from scratch for this version and a small Python/SQLite service that saves your players, VC wallet, Rep, badges and Pro-Am team.
 
-All art, names, courts, gear and animations are original and generated in code. There are no NBA or 2K assets, logos or trademarks, no online accounts and no real-money purchases. VC is fictional.
+All art, names, courts, gear and animations are original and generated in code. There are no NBA or 2K assets, logos or trademarks, no accounts anywhere but on your own PC, and no real-money purchases. VC is fictional. Since v0.4.7.5 quick patch 3 a few friends can play together online, connecting to the PC that hosts the game (see **Play online with friends**).
 
 ## New in v0.4.7.5
 
@@ -63,6 +63,14 @@ The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_
   - Volume sliders in the pause menus.
   - Your line (PTS REB AST / STL BLK TO) attached to the right of the Locked-In grade.
 
+**v0.4.7.5 quick patch 3, Oct 12** (also in the patch notes):
+
+- **Post moves:** hold **LT / L2** (X or right mouse on the keyboard) with the ball to post up. Back him down with the left stick, call a drop step, spin or up-and-under on the right stick, and shoot a hook, a fadeaway or a turnaround out of the post. Ten **Post Move Packages** are in the store (Animations → Post Moves) and the Inventory. They scale with Post Control, height and archetype, and Post Scorers get the most out of them.
+- **Event Park hall** next to the Crew HQ at every park: walk through it to the running park event. At the event park it's the **Home Park** hall back to your own court.
+- **Volume sliders** are perceptual: the first notch above silence is near-silent now.
+- **A wide-open layup gets a solid green window** (a green goes in). With any coverage at all it stays outlined.
+- **Play online with friends:** see the section below.
+
 ## Run it
 
 **v0.4.4 comes in five zips because the soundtrack is large:** `Afterhours16-v0.4.4.zip` (the game) and `Afterhours16-v0.4.4-music-1of4.zip` to `-4of4.zip`. Extract all five into the same place. The music zips fill in `Afterhours16/client/audio/music`. Without them the game still runs, just with no soundtrack.
@@ -83,6 +91,36 @@ You need **Python 3.10 or newer** and Microsoft Edge or Google Chrome (Firefox w
 **Lock-in.** Press **F11** (or turn on **Settings → Fullscreen lock-in**) and the game takes the whole screen *and* the keyboard: the right-click menu, Ctrl shortcuts and browser keys can't pull you out mid-game. Since v0.4.5 the game keeps running when you click out of the window; turn **Pause on focus loss** on in Settings if you want it to pause.
 
 Graphics quality is picked automatically from your GPU. To change it, open **⚙ Settings** and choose Low, Medium, High or Ultra. You can also turn on the FPS counter there.
+
+## Play online with friends
+
+Since quick patch 3 a few friends can play together: add each other on the social phone and play park games and Pro-Am, with each other against the AI or against each other with AI teammates. One PC hosts (it connects everyone). **Everyone plays from their own copy of the game and keeps their own save**: their players, VC, Rep, badges and rewards stay on their own PC, and every game they play online counts there, like any game. Friends without a copy can still join through the host's PC with `join.cmd` (with a new player made there).
+
+**You (the host):**
+1. Quit the game if it's running, then double-click **`host.cmd`**. The first time, it asks for a **join code**: your friends type it once, when they make their account. It's remembered in `%LocalAppData%\Afterhours16\join_code.txt`. The script starts the service for everyone, shows the addresses your friends can use, and opens your game window. You can also play from `Afterhours16.exe`, which uses the hosted service while it's running. Close the "Afterhours 16 online service" window to stop hosting.
+2. **The port opens itself:** the service asks your router to forward TCP port 8765 to this PC (UPnP, the way game consoles do it), keeps it open while you host, and closes it when you stop. host.cmd and your Online tab say whether it worked and give you the address for your friends. If your router has UPnP switched off (or another device already has the port), they say so: then **forward TCP 8765** on your router by hand to this PC's local address (host.cmd lists it, e.g. 192.168.1.20; TCP only). If it says there's another router or your internet provider's network in front of yours, friends outside your home can't reach you through it; use a VPN such as Tailscale instead (below).
+3. **Windows Firewall:** the first time, Windows asks whether Python may communicate on networks. Allow it (Private, and Public if your network is set to Public). If you missed the prompt, run this in an administrator Command Prompt: `netsh advfirewall firewall add rule name="Afterhours 16 online" dir=in action=allow protocol=TCP localport=8765`
+4. Give your friends the address host.cmd shows (your **public IP**, read from the router) and the **join code**. Friends on your own Wi-Fi use the local address instead. host.cmd also shows the game's **version** (e.g. `0.4.7.5 a45c9d4e435a`): friends playing from their own copy need exactly that.
+
+**Friends with their own copy (they keep their players):**
+1. Their copy has to be **the same version as yours**, the same files. Every screen runs the same game, so even a small difference would make the screens disagree. The easiest way is for everyone to pull the same commit from GitHub. Their Online tab says so if it isn't the same, with both versions.
+2. They start their game the usual way (`Afterhours16.exe`), open the social phone's **Online** tab, type your address and press **Connect**. The game reloads once and comes back to that tab.
+3. They **create an online account** on your game (username, password and your join code) or sign in to theirs. That's just their name for playing online; their players stay in their own save. Their game remembers it, so next time it connects by itself.
+4. Only you need the open port; they don't open anything. **Disconnect** (or Change host) in the Online tab takes them back to playing alone.
+
+**Friends without a copy** need only Chrome or Edge, not the game files. Send them **`join.cmd`**: it asks for your address once, remembers it, and opens the game in its own window. That window treats your address as secure, which controllers and full-screen keyboard lock need on a plain-http page. Or they can open `http://YOUR-IP:8765/` in Chrome or Edge. They create an account (username, password and your join code) and a player, both kept on your PC.
+
+**In the game:** open the social phone (**O**, or **LB + RB** on a controller; the park's pause menu also has **Play online with friends**) and go to the **Online** tab.
+- **Add friends** by username. Your own username is shown at the top; the local session's is `localplayer`. Requests show up there too, to accept or decline.
+- **Invite** a friend who's online, or press **Join** on a friend who's hosting a room. An invite pops up on the friend's screen wherever they are; joining takes them to your park. Room members see each other walking around the park, with their usernames over their heads.
+- **The host sets up the game:** a **park game** on any court at your park (1v1, 2v2 or 3v3, full or half court), or **Pro-Am 5v5** in the arena under your team's colours. Choose **Together vs the AI** or **Against each other**, then the score to play to or the quarter length. Up to 6 players per room; AI players fill every other spot.
+- **Start the game** when everyone's at your park, out of other games and ready. Everyone is moved onto the court together. After the game, everyone goes back to the park, and the host starts the next one from the room.
+- **Results count** like any park or Pro-Am game, for everyone, in each player's own save (or, for join.cmd friends, on your PC), through each player's own game ticket. The event park's ante-up applies there too. If a ticket can't be issued (a Pro-Am game for someone without a Pro-Am team, or an ante he can't afford), that player plays the game for fun and the results screen says it wasn't recorded.
+- **Leaving mid-game** (pause → Leave the game, a closed window or a lost connection) hands your player to the AI for the rest, on everyone's screen, and counts as a forfeit for you. Auto-play, slow motion and the team intros are off online, and pausing doesn't stop the game.
+
+**How it works:** every screen runs the same simulation from the same start, in lockstep. Each player's input is sent a few ticks ahead (about 45 ms on a LAN, more when someone is far away), and your PC's service passes it on to the others, so everyone sees the same game. Your PC only connects people: who's online, friends, invites, rooms and the inputs during a game. Each player's game, from their own copy, keeps their players and records their results. A shot or layup release is graded at the moment you let go on your screen, so the extra delay doesn't throw off your timing. If someone's connection lags, the game holds for a moment and shows **Waiting for…**.
+
+**Good to know:** the connection is plain HTTP, so use a password you don't use anywhere else. If you'd rather not open a port, a VPN such as Tailscale or ZeroTier works too: your friends use your VPN address. The local session (`Start local session`) is offered only on the host PC itself.
 
 ## Modes
 
@@ -117,13 +155,13 @@ Graphics quality is picked automatically from your GPU. To change it, open **⚙
 
 **The King Tut Cup (v0.4.5 park event; off the schedule since Oct 12, 2026).** A glow-in-the-dark park among the pyramids — neon court lines, sphinxes, obelisks, a mini-golf strip and laser-tag barriers — where every game is an ante-up. Pick a stake (500 to 10,000 VC) when you claim a spot: win and you take the other side's stake too, boosted by your Cup win streak, on top of the normal game VC; lose and the stake is gone. Each Cup runs for 48 hours and ranks the most VC won against the AI hoopers who entered it. The winner gets the glow-in-the-dark mo-cap suit, and the top finishers get exclusive shoes, a celebration, a headband and VC. In every park, a 3-game win streak lights a wall of fire around the court (it grows at 6, 9 and 12 wins); in the Cup it's green lasers instead. Since the v0.4.5 quick patch the fire is live and procedural: one continuous wall all the way round with no repeating picture, about 1.4 m tall at 3 wins, 2.2 m at 6, 3 m at 9 and 3.8 m at 12, brighter and fuller at each step, and it eases in as it grows.
 
-**Crews and the Crew HQ (v0.4.5).** Start a crew with up to 39 of your friends (name, tag and color), from the Crew HQ building on any park's plaza or the social phone's Crew tab. Crews level from 1 to 40 (level rewards are coming soon). Every game you play earns crew XP — about 30% of the Rep it pays, ×1.1 in the park, ×1.3 in Pro-Am, ×1.5 in park events, and doubled when a crew member runs with you — and your members earn it too whenever they play, even while you're away. Inside the HQ: a full court and a shootaround court in your crew's colors, your online members hanging out and getting shots up, the members and level boards, and practice 5-on-5 runs once four members are on. Interior customization is coming soon.
+**Crews and the Crew HQ (v0.4.5).** Start a crew with up to 39 of your friends (name, tag and color), from the Crew HQ building on any park's plaza or the social phone's Crew tab. Crews level from 1 to 40 (level rewards are coming soon). Every game you play earns crew XP — about 30% of the Rep it pays, ×1.1 in the park, ×1.3 in Pro-Am, ×1.5 in park events, and doubled when a crew member runs with you — and your members earn it too whenever they play, even while you're away. Inside the HQ: a full court and a shootaround court in your crew's colors, your online members hanging out and getting shots up, the members and level boards, and practice 5-on-5 runs once four members are on. Interior customization is coming soon. Since quick patch 3 the **Event Park** hall stands next door to the HQ on every park, with the running event's name on its sign: walk through its door and you come out of the same hall at the event park. At the event park it's the **Home Park** hall, back to the park you're loyal to.
 
 **The Pro Run (v0.4.5).** A career in the Afterhours Pro League. Pick a college and play three games — how you play sets your draft slot (two rounds of 32), and the team holding it takes you. Then an 82-game season against 31 other teams with full rosters, a play-in, four playoff rounds and the Finals, with awards at the end. Play your games in the arena or sim them, and set the sim your way: quarter length, difficulty, your minutes, playoff series length, play-in on/off, upsets and home court. Games you play pay VC and badge progress at 1.5x the park rate. No music, like Pro-Am.
 
 **Pro-Am.** The arena has announcers at the scorer's table who follow the ball and react to big plays, baseline photographers with flashes, a camera operator, subs on both benches and a courtside row. The crowd stands and throws its arms up on big plays, claps through dead balls and free throws, starts a wave now and then, and gives a standing ovation at the final buzzer. Your squad suits up with you, and open spots go to regulars from your AI world who fit the position. You build a team identity: name, abbreviation, colors, logo shape and floor wood. That branding is painted on the arena court, the LED boards, the jumbotron and your uniforms. You then play organized 5v5 with a tip-off, quarters of 2, 3 or 5 minutes, a shot clock, inbounds, fouls and free throws, and overtime if it's tied. Your team's record is saved.
 
-**VC Store.** The store has 397 original items (plus 16 Daily Spin exclusives, 7 King Tut Cup prizes, 7 Jungle Ballers prizes and the Hash-Slinging Icon package): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, releases, dunk packages, layup packages, size-up packages, block packages, celebrations and movement styles, plus green release sounds and effects. Since v0.4.7.5 you equip what you own in the **Inventory**, a separate screen. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
+**VC Store.** The store has 407 original items (plus 16 Daily Spin exclusives, 7 King Tut Cup prizes, 7 Jungle Ballers prizes and the Hash-Slinging Icon package): jerseys, tees, compression tops, hoodies, shorts, joggers, nine sneaker models (each with its own textured design), socks, headbands, sleeves, leg sleeves, knee pads, wristbands and chains. It also sells animations: jumpshot bases, releases, dunk packages, layup packages, size-up packages, block packages, post move packages, celebrations and movement styles, plus green release sounds and effects. Since v0.4.7.5 you equip what you own in the **Inventory**, a separate screen. You can try items on in the studio before buying. Some items need a certain overall, Rep tier or attribute, the way 2K16-era unlocks did (a windmill dunk package needs Driving Dunk 82, for example).
 
 v0.4.4 adds 16 animation packages.
 - **No requirements:** Kick Out and Wide Stance jumpshot bases, Feather, Dart and Rainbow releases, the Rim Rocker dunk package, the Rhythm size-up package, and Too Easy, Salute and Hand on Heart celebrations.
@@ -189,6 +227,9 @@ Controllers are first-class in v0.4. Any controller Chrome/Edge sees with the st
 | Icon pass to a teammate (the input shows over each teammate's head) | 1–4 | LB + face button |
 | Crossover · in-and-out / hesitation · step-back | ← → / ↑ ↓ | Flick right stick left/right / up/down |
 | Spin / behind-the-back | Q / F | Rotate right stick / flick down while moving |
+| Post up (with the ball): back to the basket, the left stick backs him down, sideways shuffles, away steps out | Hold X or right mouse | Hold LT (L2) |
+| Post moves (while posting): drop step to that side / post spin / up-and-under | ← → / ↑ / ↓ | Right stick left/right / up (or rotate) / down |
+| Shoot out of the post: stick toward the rim a hook, away a fadeaway, neutral a turnaround; right after a move it's a power finish at the rim (or a turnaround further out) | Space while posting | X while posting |
 | Call screen / call for ball | C / E without the ball | Tap LB / A |
 | Defensive stance | Hold Q or right mouse | Hold LT |
 | Steal / block or rebound / hands up | F / Space / R | X / Y / right stick up |
@@ -213,7 +254,7 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 **The shot meter** (v0.4.5 quick patch) is a slim bar next to your player that fills as you shoot. The window on it is drawn to scale from the same numbers that grade your release, so letting go anywhere inside it is an Excellent release and anywhere outside isn't, with the contest measured live:
 - **Solid green** in the middle is the window your ratings give you on their own.
 - **Fading out to yellow** around it is what boosts add: badges (Green Machine, Deadeye under a contest, Limitless Range from deep, Catch & Shoot, Corner Specialist, Contact Finisher on layups), your Icon badge, a Shooting Takeover and a forgiving jumpshot base or layup package. Releasing in the yellow is still a green.
-- **Solid** means a green there always goes in (jumpers inside 35 ft, free throws). **Outlined** means perfect timing, but not an automatic make: layups, and shots from past 35 ft.
+- **Solid** means a green there always goes in (jumpers inside 35 ft, free throws, and since quick patch 3 wide-open layups and wide-open shots out of the post). **Outlined** means perfect timing, but not an automatic make: layups and post shots with anyone on you, and shots from past 35 ft.
 - **Outside the window** a shot almost never goes in: 3% at most slightly early or late, half a percent badly off, whatever your rating.
 - **No window:** you're smothered (the bar turns red) or you're past half court. Close shots aren't timed, so they get no meter.
 - The middle of the window is the moment the ball leaves your player's hand, for every jump-shot base, release, layup package and build: the ball never floats up out of his hand.
@@ -270,6 +311,7 @@ On offense the right stick is for dribble moves and attacking the rim. There's n
 - **Shooting is timed, and greens are guaranteed.** An Excellent (green) release always goes in unless the shot is blocked. Difficulty doesn't lower that chance. It shrinks the green window instead: a hand in your face, shooting on the move, fading, or pulling up from deep all make the green harder to hit, and the meter shows the live window. When you're **smothered** (the meter outline turns red), there is no green at all, so pass out of it. Moving away from the hoop, your player turns and fades; otherwise he squares up to the rim before he rises. Early or late releases cost a lot, and Very Early or Very Late releases mostly miss. Every shot then flies as a real ball: drag, backspin, rim and backboard collisions, a cloth net, and bank shots near the glass. Makes and misses are decided first, then a matching trajectory is solved, so a miss rattles out and a make drops.
 - **Movement and animation follow real measurements.** Jump-shot depth, release height and hang time, running stride, cadence and ground-contact time, and landing absorption use numbers from published basketball and running biomechanics (see `docs/FIDELITY.md`).
 - **Blocks have styles (v0.4.7.5 quick patch 3):** thirty of them in five tiers set by your Block rating and height, picked for the moment (at the rim, a chase-down, a closeout), the swat firing from the contact, and the top tiers finishing with a gesture — a finger wag, a stare, a flex — that ends the moment you move.
+- **Post moves (v0.4.7.5 quick patch 3):** inside about 5.4 m of the rim, hold the post-up trigger with the ball and he turns his back to the basket. How fast he backs the man down, how often a drop step, spin or up-and-under beats him (he's a step behind the finish), and how much a hook, fade or turnaround out of the post shields the shot and adds to it all come from his **post power**: the package (Fundamentals up to Low Post Legend and Backboard Bully, each with its own signature moves and shots), Post Control, height and the archetype. Post Scorers count 1.35×, Glass Cleaners 1.02×, Stretch Bigs 0.88×, down to Sharpshooters at 0.6×. Measured against a 72 Interior D defender, releases within ±70 ms: a 90 Post Control 6'10" Post Scorer with Low Post Legend hits 75% of his hooks and finishes 63–69% after a move (he beats the man 81–86% of the time). An 80 Post Control Post Scorer with Fundamentals hits 64% and 54%, an 80 Glass Cleaner 59% and 49%, an 80 Slasher at 6'5" 55% and 46% (beating his man 5% of the time), and a 60 Post Control Sharpshooter at 6'3" 29% of his hooks. The AI posts up too: it backs down a smaller man, uses its package's moves, kicks it out of a double team, and averages about one post move a game in Pro-Am and the park.
 - **Finishing:** layups, finger-rolls, dunks (tomahawk, windmill and flight packages), alley-oops, putbacks, posters and chase-down blocks. Driving at the rim with the shoot button takes **the finish you're best at**: Driving Dunk, Layup, or a pull-up (Mid-Range) from a little further out. The defense adjusts it: a shot-blocker waiting at the rim favors a finesse layup, and a defender walling off the lane favors a pull-up. The separate **attack-the-rim** bind (Z, or right stick down while sprinting) takes the better of your dunk (Standing Dunk right under the rim) and your layup, as long as a dunk is physically possible. On an **exact tie**, your archetype decides: Slashers, Glass Cleaners and Post Scorers dunk; Playmakers, Sharpshooters, Stretch Bigs, Lockdowns and Two-Way players lay it in.
 - **Dunks are physical.** Your hands have to actually reach the rim. If a body stops you short, it becomes a flip at the rim instead of a teleport-dunk.
   - Finishing through contact depends on Driving or Standing Dunk plus Close Shot, against the defender's size, strength and Interior D.
@@ -310,7 +352,8 @@ On first launch v0.4.4 adds two small tables: locker code redemptions, and your 
 ## Tests and tools
 
 ```sh
-python -m unittest discover -s tests     # builds, caps parity with the client, save migration, rewards, launcher endpoints, full HTTP journey
+python -m unittest discover -s tests     # builds, caps parity with the client, save migration, rewards, launcher endpoints, full HTTP journey, online play
+node --test tests/                        # every game test (post moves and online lockstep: tests/v0475qp12.test.mjs)
 node --test tests/geometry.test.mjs tests/sim.test.mjs   # mesh winding, shot planning, full park and Pro-Am games
 node tools/sim_batch.mjs park 6          # balance report: FG%, 3P%, dunks, blocks, steals, turnovers per game
 node tools/sim_world.mjs tiers 6         # v0.4.4: skill-tier matchups from a persistent AI world (win rates, margins)
@@ -328,6 +371,9 @@ client/            WebGL2 game (ES modules, no dependencies)
   js/ui/           menus: home, builder, MyPLAYER, VC Store, Park, Pro-Am, Practice, Stats, Locker Codes, social phone
   audio/music/     the soundtrack (tracks.json lists titles / artists)
 server/            Python stdlib HTTP service + SQLite (accounts, wallet, store, progression, match tickets)
+  online.py        online play: friends, presence, invites, rooms, the lockstep input relay (a stdlib WebSocket)
+  upnp.py          hosting: asks the router to forward the port (UPnP), renews it, closes it on the way out
+host.cmd           host the game for friends (port 8765, join code); join.cmd: a friend's one-click way in
 launcher/          Afterhours16.exe source (Go, standard library only)
 tests/             Python and Node test suites
 tools/             simulation batch runner for balancing

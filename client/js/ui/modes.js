@@ -138,7 +138,7 @@ export function enterPark(app, themeId, opts = {}) {
   const ui = new ParkUI(app);
   $('#ui').innerHTML = ''; $('#ui').className = 'layer';
   ui.mount();
-  toast(opts.at === 'hq' ? 'Back to the park…' : 'Loading the park…');
+  toast(opts.at === 'hq' ? 'Back to the park…' : opts.at === 'hall' ? `Heading to ${THEMES[themeId]?.name || 'the park'}…` : 'Loading the park…');
   Crew.fetchCrew(app).catch(() => {}); // v0.4.5: the HQ door knows whether you have a crew
   setTimeout(() => {
     try {
@@ -148,6 +148,8 @@ export function enterPark(app, themeId, opts = {}) {
       app.setController(hub, hub.scene);
       // v0.4.5: coming out of the Crew HQ, you step out of its door onto the plaza
       if (opts.at === 'hq' && hub.venue.hq) { hub.me.setPos(hub.venue.hq.x, hub.venue.hq.z + 0.3, 0); hub.rig.roamYaw = 0; hub.rig.snap(); hub.syncSquad(true); }
+      // qp3: through the Event Park / Home Park hall, you step out of the hall's door in the other park
+      if (opts.at === 'hall' && hub.venue.hall) { hub.me.setPos(hub.venue.hall.x, hub.venue.hall.z + 0.3, 0); hub.rig.roamYaw = 0; hub.rig.snap(); hub.syncSquad(true); }
       ui.intro(hub, opts);
     } catch (e) { console.error(e); toast(e.message, 'error'); Screens.go(app, 'home'); }
   }, 30);
@@ -181,8 +183,21 @@ class ParkUI {
   mount() {
     $('#ui').innerHTML = `<div class="park-top" id="park-top"></div><div class="court-tags" id="court-tags"></div>
       <div class="ov-head" id="ov-head" hidden><b>COURT OVERVIEW</b><span class="live-dot"></span><small>LIVE</small><em id="ov-hint"></em></div>
-      <div class="gn-ticker" id="gn-ticker" hidden></div>`;
-    this.tagEls = new Map(); this.tagKey = new Map(); this.tickKey = null;
+      <div class="gn-ticker" id="gn-ticker" hidden></div><div class="friend-tags" id="friend-tags"></div>`;
+    this.tagEls = new Map(); this.tagKey = new Map(); this.tickKey = null; this.fTag = new Map();
+  }
+  // v0.4.7.5 qp3 online: the username over each friend from your room walking this park
+  friendTags(hub) {
+    const box = $('#friend-tags'); if (!box) return;
+    const ws = hub.friendWalkers && hub.mode === 'roam' && !hub.overview ? [...hub.friendWalkers.values()] : [];
+    for (const [id, el] of this.fTag) if (!ws.some(w => w.id === id)) { el.remove(); this.fTag.delete(id); }
+    for (const w of ws) {
+      let el = this.fTag.get(w.id);
+      if (!el) { el = document.createElement('div'); el.className = 'friend-tag'; el.textContent = w.username || w.entry.name; box.appendChild(el); this.fTag.set(w.id, el); }
+      const p = hub.r.project(this.app.camera, [w.p.x, (w.visual.view?.H || 1.95) + 0.3, w.p.z], this.tmpP);
+      el.hidden = !p.visible || p.depth > 70 || !!w.visual.pending;
+      if (!el.hidden) el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
   }
   // v0.4.7.5 the court overview (hold View / Share): the header, and every court's card (courtTags)
   overview(hub, on) {
@@ -237,6 +252,15 @@ class ParkUI {
     if (app.crew) { enterHQ(app, hub.themeId); return; }
     Crew.openCrew(app, { onChange: c => { if (c) toast(`Walk through the Crew HQ door to go in.`); } });
   }
+  // v0.4.7.5 qp3: the Event Park hall takes you to the running event; at an event park, the Home Park hall takes you home
+  openHall(hub) {
+    const app = this.app;
+    if (hub.venue.hall?.home) { const home = app.char()?.affiliation; if (home) enterPark(app, home, { at: 'hall' }); else toast('Pick your affiliation on the Park screen first.', 'error'); return; }
+    const ev = activeEvent(app);
+    if (!ev) { toast('No park event is running right now. The next one will open here.', 'error'); return; }
+    if (hub.mySession || hub.mode === 'starting') { toast('Finish your game first.', 'error'); return; }
+    enterPark(app, ev.id, { at: 'hall' });
+  }
   intro(hub, opts = {}) {
     const c = this.app.char();
     $('#park-top').innerHTML = `<div class="park-badge" style="--c:${hub.aff.color}"><b>${esc(hub.venue.theme.name)}</b><small>${esc(hub.aff.name)}</small></div>
@@ -266,6 +290,7 @@ class ParkUI {
     const top = $('#park-top'); if (top) top.hidden = hub.mode !== 'roam' || !!hub.overview;
     this.courtTags(hub);
     this.ticker(hub);
+    this.friendTags(hub);
   }
   pause(hub) {
     const card = modal(`<h2>${esc(hub.venue.theme.name)}</h2><div class="col gap">
@@ -276,6 +301,7 @@ class ParkUI {
       <button class="btn" data-mp>MyPlayer</button>
       ${hub.cup ? `<button class="btn" data-cupboard>${esc(hub.event?.name || 'Event')} leaderboard</button>` : ''}
       <button class="btn" data-phone>Social (${this.app.input?.usingPad ? 'LB + RB' : 'O'})</button>
+      <button class="btn" data-online>Play online with friends</button>
       <button class="btn" data-crew>Crew</button>
       <button class="btn" data-stats>Lifetime stats</button>
       <button class="btn" data-settings>Settings & controls</button>
@@ -291,6 +317,7 @@ class ParkUI {
     card.querySelector('[data-mp]').onclick = () => { closeModal(); Screens.go(this.app, 'myplayer'); };
     card.querySelector('[data-stats]').onclick = () => { closeModal(); Stats.openStatsModal(this.app); };
     card.querySelector('[data-phone]').onclick = () => { closeModal(); Phone.openPhone(this.app); };
+    card.querySelector('[data-online]').onclick = () => { closeModal(); Phone.openPhone(this.app, { tab: 'online' }); };
     card.querySelector('[data-crew]').onclick = () => { closeModal(); Crew.openCrew(this.app); };
     card.querySelector('[data-settings]').onclick = () => { closeModal(); Screens.openSettings(this.app); };
     card.querySelector('[data-bug]').onclick = () => { closeModal(); reportBug(this.app); };
@@ -339,6 +366,7 @@ class HQUI extends ParkUI {
       <button class="btn primary" data-close>Resume</button>
       <button class="btn" data-crew>Crew menu</button>
       <button class="btn" data-phone>Social (${this.app.input?.usingPad ? 'LB + RB' : 'O'})</button>
+      <button class="btn" data-online>Play online with friends</button>
       <button class="btn" data-stats>Lifetime stats</button>
       <button class="btn" data-settings>Settings & controls</button>
       <button class="btn" data-park>Back to the park</button>
@@ -347,6 +375,7 @@ class HQUI extends ParkUI {
     Screens.bindVolume(card);
     card.querySelector('[data-crew]').onclick = () => { closeModal(); this.openCrewMenu(hq); };
     card.querySelector('[data-phone]').onclick = () => { closeModal(); Phone.openPhone(this.app); };
+    card.querySelector('[data-online]').onclick = () => { closeModal(); Phone.openPhone(this.app, { tab: 'online' }); };
     card.querySelector('[data-stats]').onclick = () => { closeModal(); Stats.openStatsModal(this.app); };
     card.querySelector('[data-settings]').onclick = () => { closeModal(); Screens.openSettings(this.app); };
     card.querySelector('[data-park]').onclick = () => { closeModal(); this.exit(hq); };
@@ -422,13 +451,14 @@ export function showResults(app, summary, result, won, opts = {}) {
       <div class="stat-strip">${[['PTS', me.pts], ['REB', me.reb], ['AST', me.ast], ['STL', me.stl], ['BLK', me.blk], ['FG', pct(me.fgm, me.fga)], ['3PT', pct(me.tpm, me.tpa)], ['TO', me.tov]].map(([k, v]) => `<div><b>${v}</b><small>${k}</small></div>`).join('')}</div>
       ${r?.cup ? `<div class="cup-result ${won ? 'win' : 'loss'}">${won ? `<b>POT +${money(r.cup.pot)} VC</b><small>your ${money(r.cup.ante)} stake back + theirs${r.streak_mult > 1 ? ` ×${r.streak_mult.toFixed(2)}` : ''}</small>` : `<b>ANTE LOST −${money(r.cup.ante)} VC</b><small>the stake goes to the other side</small>`}<span>${esc(eventName(r.cup.event))}: <b>#${r.cup.rank}</b> of ${r.cup.field} · ${r.cup.net < 0 ? '−' : ''}${money(Math.abs(r.cup.net))} VC this event</span></div>` : ''}
       ${r?.bounty ? `<div class="bounty-result">${BOUNTY_SVG}<div><b>BOUNTY CLAIMED +${money(r.bounty)} VC</b><small>You broke the kings' streak (included in VC earned)</small></div></div>` : ''}
+      ${opts.online ? '<div class="muted small">Online game with friends · the host starts the next one from the room (social phone → Online).</div>' : ''}
       ${r ? `<div class="reward-row"><div class="reward"><b>+${money(r.vc)}</b><small>VC EARNED</small></div>${pro ? '<div class="reward"><b>×1.5</b><small>VC & BADGE PROGRESS</small></div>' : `<div class="reward"><b>+${money(r.rep)}</b><small>REP</small></div>`}${summary.mode === 'park' ? `<div class="reward"><b>${r.streak}</b><small>WIN STREAK</small></div>` : ''}${summary.mode === 'park' && r.streak_mult > 1 ? `<div class="reward"><b>×${r.streak_mult.toFixed(2)}</b><small>STREAK BONUS</small></div>` : ''}${r.proam_team ? `<div class="reward"><b>${r.proam_team.wins}-${r.proam_team.losses}</b><small>TEAM RECORD</small></div>` : ''}</div>
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}
         ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ffd84a' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
         ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag badge-up ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${badgeSVG(b.id, b.tier, 22)}${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
         ${Object.keys(r.badge_progress || {}).length ? `<div class="muted small">Badge progress: ${Object.entries(r.badge_progress).slice(0, 6).map(([k, v]) => `${esc(app.config.badges[k]?.name || k)} +${v}`).join(' · ')}</div>` : ''}` : '<p class="muted">This result was not recorded (see message).</p>'}
       ${peopleRow(app, opts.players)}
-      <div class="row gap end">${opts.park ? (won ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : `${r?.max_ovr_unlocked ? '<button class="btn ghost" data-upgrade>Upgrade attributes</button>' : ''}<button class="btn ghost" data-menu>${opts.menuLabel || 'Main menu'}</button>${opts.again ? '<button class="btn primary" data-again>Play again</button>' : ''}`}</div>
+      <div class="row gap end">${opts.online && opts.park ? '<button class="btn primary" data-leave>Back to the park</button>' : opts.park ? (won ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : `${r?.max_ovr_unlocked ? '<button class="btn ghost" data-upgrade>Upgrade attributes</button>' : ''}<button class="btn ghost" data-menu>${opts.menuLabel || 'Main menu'}</button>${opts.again ? '<button class="btn primary" data-again>Play again</button>' : ''}`}</div>
     </div>`, { close: false, cls: 'results-card' });
   // v0.4.5: a new Hall of Fame badge opens the cap breaker menu before moving on (v0.4.7.5: only once cap breakers
   // are unlocked at 90 max OVR; until then they're banked in MyPlayer → Attributes → Cap Breakers)
@@ -448,7 +478,7 @@ export function showResults(app, summary, result, won, opts = {}) {
   on('[data-again]', () => opts.again && opts.again());
   // v0.4.5: in the park the screen moves on by itself after 10 seconds (run it back after a win, back to the
   // park after a loss), unless you're placing new cap breakers or adding someone as a friend
-  const auto = opts.park && !hof ? card.querySelector(won ? '[data-stay]' : '[data-leave]') : null;
+  const auto = opts.park && !hof ? card.querySelector(won && !opts.online ? '[data-stay]' : '[data-leave]') : null;
   if (auto) {
     let left = 10; const label = auto.textContent;
     const tick = () => { if (!auto.isConnected) return stopCountdown(); auto.textContent = `${label} · ${left}`; if (left-- <= 0) { stopCountdown(); auto.click(); } };
@@ -593,6 +623,49 @@ export async function playProAm(app) {
   app.setController(world, scene);
 }
 
+// v0.4.7.5 qp3 online: the room's Pro-Am game in the arena, the host's team on the floor. Everyone builds the same game
+// from the host's setup; local is your player in it. It counts as a Pro-Am game for you if you have a Pro-Am team
+export async function playProAmOnline(app, setup, local) {
+  const c = app.char(), net = app.net;
+  let ticket = null;
+  try { ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: 'arena', format: 5, quarter_len: setup.quarterLen, difficulty: setup.difficulty }); }
+  catch (e) { ticket = null; toast(`This one won't count for you (${e.message}). Playing it anyway.`, 'error'); }
+  if (ticket) Rewards.consumeBoostsLocal(app, ticket);
+  leaveWorld(app);
+  $('#ui').innerHTML = ''; $('#ui').className = 'layer';
+  const scene = new Scene();
+  const b = setup.branding || {};
+  const venue = buildVenue(app.renderer, scene, 'arena', { team: { name: b.name, abbr: b.abbr, primary: b.primary, secondary: b.secondary, logo: b.logo, wood: WOOD_TONES[b.wood] || WOOD_TONES.natural } });
+  const rosters = structuredClone(setup.rosters);
+  for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, app.catalog);
+  const backHome = () => { world.backTo = 'home'; Screens.go(app, 'home'); };
+  const session = new MatchSession(app, {
+    mode: 'proam', scene, venue, court: venue.courts[0], rosters, teams: setup.teams, seed: setup.seed, quarterLen: setup.quarterLen, quarters: 4, difficulty: setup.difficulty,
+    online: { net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: async () => { if (ticket) { try { await app.api.post(`/api/matches/${ticket.id}/cancel`, {}); } catch { /* ignore */ } } toast('Lost the connection to the game service: you left the game.', 'error'); backHome(); } },
+    onEnd: async (summary, sess) => {
+      const saving = ticket ? app.api.mutate(`/api/matches/${ticket.id}/complete`, { summary, mates: [] }).catch(e => { toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
+      await playOutro(app, { summary, session: sess, result: saving });
+      const result = await saving;
+      if (result) { app.replaceChar(result.character); app.setBalance(result.balance); if (result.proam_team) app.profile.proam_team = result.proam_team; }
+      showResults(app, summary, result, summary.winner === summary.me.team, { online: true, players: [], menuLabel: 'Main menu', menu: () => Screens.go(app, 'home') });
+    },
+  });
+  const world = {
+    session, scene, ticket, backTo: 'home',
+    frame: dt => { if (app.input.wasPressed('pause') && !session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); session.frame(dt); },
+    onFocusLost: () => { if (!session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); },
+    dispose: () => session.dispose(),
+    online: true,
+  };
+  app.world = world;
+  app.mode = 'match';
+  app.renderer.prewarm(scene);
+  music.setSuppressed(true);
+  audio.surface = 'wood';
+  app.setController(world, scene);
+  app.hud.pushFeed(`Online Pro-Am · ${Object.values(setup.names || {}).join(', ')}`, 'good');
+}
+
 export function pauseMatch(app, world) {
   world.session.paused = true;
   const card = modal(`<h2>Paused</h2><div class="col gap"><button class="btn primary" data-close>Resume</button><button class="btn" data-stats>Lifetime stats</button><button class="btn" data-controls>Controls</button><button class="btn ghost" data-quit>Forfeit & leave</button></div>${Screens.volumeSliders()}`);
@@ -602,6 +675,7 @@ export function pauseMatch(app, world) {
   card.querySelector('[data-controls]').onclick = () => { world.session.paused = true; modal(`<h2>Controls</h2>${Screens.controlsTable(app)}`, { wide: true }); closeModal.onClose = () => { world.session.paused = false; }; };
   card.querySelector('[data-quit]').onclick = async () => {
     closeModal.onClose = null; closeModal();
+    if (world.online) app.net?.send({ t: 'leave' }); // (online: the AI plays your player for the rest)
     if (world.ticket) { try { await app.api.post(`/api/matches/${world.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
     Screens.go(app, world.backTo || (world.ticket?.mode === 'proam' ? 'proam' : 'home'));
   };

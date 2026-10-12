@@ -427,6 +427,39 @@ export function streetLamp(x, z, h = 5.5, color = '#25292d') {
 // double door in the north face (toward the courts), a crew-colored awning and lit windows. Returns
 // { parts, glow }: glow pieces are the lit windows and the light strip over the door (batched unlit).
 export const HQ_SIZE = { w: 7, d: 4.2, h: 4.4 };
+// v0.4.7.5 qp3: the Event Park hall next to the Crew HQ (the same shell in the event's colours, a ticket window instead
+// of lit windows, a marquee over the door). At an event park it's the Home Park hall, in the affiliation's colour.
+export const HALL_SIZE = { w: 5.6, d: 4.2, h: 4.4 };
+export function eventHall(x, z, color = '#ff8a1f', accent = '#2ec4ff') {
+  const parts = [], glow = [];
+  const { w: W, d: D, h: Hh } = HALL_SIZE, t = 0.22;
+  const put = (geo, dx, dy, dz, c, out = parts) => out.push({ geo, matrix: T(x + dx, dy, z + dz), color: col(c) });
+  const wall = '#2a2d33', trim = '#15171b', glass = '#1c2a33';
+  put(G.box(W, Hh, t), 0, Hh / 2, -D / 2 + t / 2, wall);
+  for (const sx of [-1, 1]) put(G.box(t, Hh, D), sx * (W / 2 - t / 2), Hh / 2, 0, wall);
+  put(G.box(W + 0.3, 0.3, D + 0.3), 0, Hh + 0.15, 0, trim);
+  put(G.box(W + 0.12, 0.35, D + 0.12), 0, 0.175, 0, '#3a3f45');
+  // the front: a wide glass door in the middle, a ticket window to its right, the event's colour on the piers
+  const door = 2.0, fz = D / 2 - t / 2;
+  for (const sx of [-1, 1]) put(G.box((W - door) / 2, Hh, t), sx * (door / 2 + (W - door) / 4), Hh / 2, fz, color);
+  put(G.box(door, Hh - 2.7, t), 0, 2.7 + (Hh - 2.7) / 2, fz, wall);
+  put(G.box(door, 2.7, 0.06), 0, 1.35, fz - 0.02, glass);
+  for (const dx of [-door / 2, 0, door / 2]) put(G.box(0.1, 2.7, 0.12), dx, 1.35, fz + 0.02, trim);
+  put(G.box(door + 0.1, 0.1, 0.12), 0, 2.7, fz + 0.02, trim);
+  for (const dx of [-0.18, 0.18]) put(G.box(0.04, 0.7, 0.06), dx, 1.2, fz + 0.1, '#c9cdd2');
+  const wx = door / 2 + (W - door) / 4;
+  put(G.box(1.1, 0.9, 0.04), wx, 1.7, D / 2 + 0.005, '#ffe9c0', glow); // the ticket window, lit
+  put(G.box(1.22, 0.08, 0.1), wx, 2.2, D / 2 + 0.03, trim); put(G.box(1.22, 0.08, 0.1), wx, 1.2, D / 2 + 0.03, trim);
+  put(G.box(1.3, 0.06, 0.5), wx, 1.22, D / 2 + 0.25, trim); // the counter
+  // the marquee: a lit box over the door with the accent trim, and chasing bulbs along its edge
+  put(G.box(W - 0.4, 0.9, 0.5), 0, 3.5, D / 2 + 0.2, trim);
+  put(G.box(W - 0.6, 0.62, 0.06), 0, 3.5, D / 2 + 0.46, '#fff6e0', glow);
+  for (let i = 0; i < 9; i++) put(G.box(0.1, 0.1, 0.08), -W / 2 + 0.5 + i * (W - 1) / 8, 4.05, D / 2 + 0.44, i % 2 ? accent : color, glow);
+  for (let i = 0; i < 9; i++) put(G.box(0.1, 0.1, 0.08), -W / 2 + 0.5 + i * (W - 1) / 8, 2.95, D / 2 + 0.44, i % 2 ? color : accent, glow);
+  put(G.box(W - 0.4, 0.06, 0.1), 0, 2.86, D / 2 + 0.42, '#fff2d6', glow);
+  return { parts, glow };
+}
+
 export function crewHQ(x, z, color = '#e0482f') {
   const parts = [], glow = [];
   const { w: W, d: D, h: Hh } = HQ_SIZE, t = 0.22;

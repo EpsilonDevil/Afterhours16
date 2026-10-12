@@ -7,7 +7,7 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import { buildCourt, buildHoop, cachedTexture } from './court.js';
 import * as PR from './props.js';
 import { createParkLife } from './parklife.js';
-import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, HQ } from './themes.js';
+import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, PARK_HALL, HQ } from './themes.js';
 import { COURT } from '../sim/constants.js';
 
 const lin = hex => M.hexLinear(hex);
@@ -179,6 +179,16 @@ function buildPark(r, scene, theme, opts) {
   const hqSign = new Mesh(ctx.geometry(G.quad(3.4, 0.85)), new Material({ map: cachedTexture(ctx, 'hqsign-' + theme.id, () => T.banner('CREW HQ', { bg: '#121418', color: '#f4f1ea', stripe: affColor, sub: 'MEMBERS ONLY · 5-ON-5 · SHOOTAROUND' }), {}), shading: 'unlit', color: [1.4, 1.4, 1.4], fog: false }), { castShadow: false });
   M.m4translation(hqSign.matrix, PARK_HQ.x, 3.75, PARK_HQ.z + HS.d / 2 + 0.03);
   scene.add(hqSign);
+  // v0.4.7.5 qp3: the Event Park hall next door (east of the HQ, between the next two lamps): walk through its door
+  // and you're at the running park event. At an event park it's the Home Park hall, back to your own court.
+  const hallInfo = theme.event ? { title: 'HOME PARK', sub: (opts.homeName || 'YOUR HOME COURT').toUpperCase(), color: opts.homeColor || affColor, accent: '#f4f1ea' }
+    : { title: 'EVENT PARK', sub: (opts.eventName ? opts.eventName : 'NO EVENT RUNNING').toUpperCase(), color: opts.eventColor || '#ff8a1f', accent: opts.eventAccent || '#2ec4ff' };
+  const hall = PR.eventHall(PARK_HALL.x, PARK_HALL.z, hallInfo.color, hallInfo.accent), HL = PR.HALL_SIZE;
+  matte.push(...hall.parts);
+  batch(ctx, scene, hall.glow, new Material({ color: [1.5, 1.5, 1.5], shading: 'unlit', fog: false }), { castShadow: false, reflect: false });
+  const hallSign = new Mesh(ctx.geometry(G.quad(3.4, 0.85)), new Material({ map: cachedTexture(ctx, 'hallsign-' + theme.id + '-' + hallInfo.sub, () => T.banner(hallInfo.title, { bg: '#121418', color: '#f4f1ea', stripe: hallInfo.color, sub: hallInfo.sub }), {}), shading: 'unlit', color: [1.4, 1.4, 1.4], fog: false }), { castShadow: false });
+  M.m4translation(hallSign.matrix, PARK_HALL.x, 4.55, PARK_HALL.z + HL.d / 2 + 0.03);
+  scene.add(hallSign);
   // perimeter scenery by style
   const lightsOut = [];
   let board = null;
@@ -194,6 +204,7 @@ function buildPark(r, scene, theme, opts) {
     if (Math.abs(x) > 38 && z > 18) continue; // annex courts / practice slab
     if (theme.style === 'tut' && (z > 18 || (x < -30 && z < -30))) continue; // mini-golf strip / leaderboard
     if (Math.abs(x - PARK_HQ.x) < 6.5 && z < -20) continue; // the Crew HQ
+    if (Math.abs(x - PARK_HALL.x) < 5.5 && z < -20) continue; // the Event Park hall
     if (theme.style === 'coast' || theme.style === 'tut') foliage.push(...PR.palm(x, z, theme.style === 'tut' ? 0.85 : 1, rng));
     else if (theme.style === 'jungle') foliage.push(...PR.rainTree(x, z, 0.42 + rng.next() * 0.2, rng, { leaf: '#2f7a3a', leaf2: '#4a8a3c' }), ...PR.fern(x + rng.range(-2.5, 2.5), z + rng.range(-2.5, 2.5), 0.9 + rng.next() * 0.5, rng)); // (a younger giant: 8-13 m)
     else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
@@ -230,8 +241,10 @@ function buildPark(r, scene, theme, opts) {
     theme, courts, hoops, practice: { origin: prOrigin, hoop: practiceHoop }, store: { x: storePos[0], z: storePos[1] + 2.4 }, gotNext, life,
     boosts: { x: boostPos[0], z: boostPos[1] + 2.4 }, wheel: { x: wheelPos[0], z: wheelPos[1] + 2.2, obj: wheel }, board,
     hq: { x: PARK_HQ.x, z: PARK_HQ.z + HS.d / 2 + 1.1 },
+    hall: { x: PARK_HALL.x, z: PARK_HALL.z + HL.d / 2 + 1.1, home: !!theme.event, open: theme.event ? true : !!opts.eventName, name: theme.event ? (opts.homeName || null) : (opts.eventName || null) },
     solids: [storePos, boostPos].map(q => ({ x0: q[0] - 2.9, x1: q[0] + 2.9, z0: q[1] - 1.75, z1: q[1] + 1.75, h: 3.3 })).concat([{ x0: wheelPos[0] - 1.6, x1: wheelPos[0] + 1.6, z0: wheelPos[1] - 0.8, z1: wheelPos[1] + 0.8, h: 4 }],
-      [{ x0: PARK_HQ.x - HS.w / 2 - 0.1, x1: PARK_HQ.x + HS.w / 2 + 0.1, z0: PARK_HQ.z - HS.d / 2 - 0.1, z1: PARK_HQ.z + HS.d / 2 + 0.05, h: HS.h + 0.3 }], board?.solids || []),
+      [{ x0: PARK_HQ.x - HS.w / 2 - 0.1, x1: PARK_HQ.x + HS.w / 2 + 0.1, z0: PARK_HQ.z - HS.d / 2 - 0.1, z1: PARK_HQ.z + HS.d / 2 + 0.05, h: HS.h + 0.3 },
+        { x0: PARK_HALL.x - HL.w / 2 - 0.1, x1: PARK_HALL.x + HL.w / 2 + 0.1, z0: PARK_HALL.z - HL.d / 2 - 0.1, z1: PARK_HALL.z + HL.d / 2 + 0.05, h: HL.h + 0.3 }], board?.solids || []),
     bounds: { x0: -63, x1: 63, z0: -34, z1: 32 },
     update(dt) {
       t += dt;

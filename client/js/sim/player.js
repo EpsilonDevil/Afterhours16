@@ -58,6 +58,9 @@ export class Player {
     this.dunkPkg = entry.build.equipment?.dunk || (this.icon === 'hash_slinging' && catalog?.[HS_PKG] ? HS_PKG : 'dunk_basic');
     // qp3: the Block Package he wears (sim/blocks.js: none → his tier's, by Block rating and height)
     this.blockPkg = entry.build.equipment?.block || null;
+    // qp3: the Post Move Package he wears (sim/post.js; none → Fundamentals). postUp: the trigger is held with the ball
+    this.postPkg = entry.build.equipment?.post || 'post_basic';
+    this.postUp = false; this.backing = 0; this.postDef = -1; this.heightIn = entry.build.height || 78;
     // v0.4.3 size-up package: 0 basic, 1 quick, 2 elite (stat-locked); speeds up and dresses up dribble moves
     const su = entry.build.equipment?.sizeup || 'sizeup_basic';
     // v0.4.5: a package's own lvl (from the catalog) decides how hard it sells the handle; `style` is its look
@@ -199,7 +202,7 @@ export class Player {
 }
 
 export function blankIntent() {
-  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null };
+  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null, post: false, postMove: null, postShot: null, postStick: null };
 }
 
 // Local (player-facing) → world offset

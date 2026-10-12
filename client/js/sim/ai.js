@@ -1,6 +1,7 @@
 // Basketball AI: spacing, drives, pick-and-roll, cuts, passing reads, man defense with help,
 // contests, box-outs, rebounding and transition. Uses the same intent interface as the human.
 import { COURT, GRAVITY, isThree, inLane, LANE } from './constants.js';
+import { postPackageOf, postPower } from './post.js';
 import { spotsFor, rimOf, spot } from './formation.js';
 import { tendenciesFor } from './bots.js';
 
@@ -542,7 +543,7 @@ export class AI {
     // v0.4.7.5 qp3: three seconds: a handler who has sat in the lane for most of the count goes up with it, or moves it
     if ((p.paintT || 0) > PAINT.handlerOut - (1 - IQ) * 0.4 && g.mode !== 'practice') {
       const dr = hyp(rim.x - p.x, rim.z - p.z);
-      if (dr < 3.4) { it.shoot = 'press'; o.plan = null; this.stats.laneShot = (this.stats.laneShot || 0) + 1; return; }
+      if (dr < 3.4) { it.shoot = 'press'; if (o.plan === 'post') { it.post = true; it.postShot = dr < 2.4 ? 'hook' : 'turn'; } o.plan = null; this.stats.laneShot = (this.stats.laneShot || 0) + 1; return; } // (posting up: it's a post shot)
       const r = this.bestPassTarget(p);
       if (r && this.passRisk(p, r) < 0.55) { it.pass = { target: r.id, type: 'chest' }; o.plan = null; this.stats.laneOut = (this.stats.laneOut || 0) + 1; return; }
       this.seek(p, Math.sign(p.x || 1) * (LANE.halfW + 1.0), p.z, { sprint: true, arrive: 0.5 }); o.plan = null; return;
@@ -582,7 +583,8 @@ export class AI {
     // v0.4.2: a teammate calling for the ball gets it almost instantly when he's open and the lane is clean;
     // with a clogged lane the handler holds it (keeps probing) and throws as soon as it clears
     {
-      const caller = g.mates(p).find(r => r.calling > 0 && r.action?.type !== 'stumble');
+      // (qp3: a post-up under way isn't given up for a call unless the caller is wide open)
+      const caller = g.mates(p).find(r => r.calling > 0 && r.action?.type !== 'stumble' && (o.plan !== 'post' || this.openness(r) > 3.2));
       // v0.4.5: ...unless I'm the one with the better look (an open shot in range, or the lane): a smart
       // handler doesn't give that up just because somebody is calling
       const myLook = caller && !p.human ? this.shotValue(p, p.x, p.z, defs).val * (1 - 0.5 * Math.min(1, this.estimateContest(p, defs, rim))) : 0;
@@ -606,16 +608,36 @@ export class AI {
     // it out if a second defender comes
     if (o.plan === 'post') {
       o.postT -= dt; p.posting = 0.3;
+      if (p.action?.type === 'post') return; // (a post move is driving him)
       const bx = rim.x + o.postSide * 1.3, bz = rim.z - side * 1.05;
       this.seek(p, bx, bz, { sprint: false, arrive: 0.4 });
-      it.mx *= 0.55; it.mz *= 0.55; // a slow, physical back-down
+      it.mx *= 0.55; it.mz *= 0.55; // a slow, physical back-down (game.postUp turns the stick into the back-down)
       it.face = Math.atan2(rim.x - p.x, rim.z - p.z);
-      const dbl = defs.filter(q => q.dist(p) < 1.7).length >= 2;
+      // v0.4.7.5 qp3: the AI posts up through the same system as the user (post.js): the trigger, a package move
+      // when the man is on him, and a shot out of the post picked by the package and the spot
+      const pkg = postPackageOf(p), man = g.postDefender(p), pw = postPower(p);
+      it.post = true;
+      // a real double team (a second man committed, not a paint defender at the lane line): kick it out, unless he's
+      // strong enough on the block to go up over it (a hook), which a Post Scorer often is
+      const dbl = defs.filter(q => q.dist(p) < 1.35).length >= 2 && o.postT < 3.0;
       if (dbl) {
+        if (pw > 1.15 && d < 2.6 && g.rng.next() < 0.5) { it.postShot = 'hook'; it.shoot = 'press'; o.plan = null; this.stats.postShot = (this.stats.postShot || 0) + 1; this.stats.postOverDouble = (this.stats.postOverDouble || 0) + 1; return; }
         const r = this.bestPassTarget(p);
-        if (r && this.openness(r) > 1.8 && this.passRisk(p, r) < 0.45) { it.pass = { target: r.id, type: 'chest' }; o.plan = null; return; }
+        if (r && this.openness(r) > 1.8 && this.passRisk(p, r) < 0.45) { it.pass = { target: r.id, type: 'chest' }; o.plan = null; this.stats.postKick = (this.stats.postKick || 0) + 1; return; }
       }
-      if (d < 1.85 || g.shotClock < 3 || (o.postT <= 0 && d < 2.8)) { it.shoot = 'press'; o.plan = null; this.stats.postShot = (this.stats.postShot || 0) + 1; }
+      if (man && !o.postMoved && d < 3.8 && d > 1.3 && o.postT < 2.6 && p.cool.move <= 0 && g.rng.next() < 0.3 + 0.3 * pw) {
+        const pool = ['dropstep', 'postspin', 'upunder'], sig = pkg.sig.filter(m => pool.includes(m));
+        const mv = sig.length && g.rng.next() < 0.6 ? sig[g.rng.int(0, sig.length - 1)] : pool[g.rng.int(0, 2)];
+        it.postMove = { move: mv, side: 0 }; o.postMoved = true; this.stats.postMoves = (this.stats.postMoves || 0) + 1;
+        return;
+      }
+      // out of the move he's facing up: the power finish now (game.postFaceUp turns the press into the dunk or layup)
+      if (o.postMoved && g.postFaceUp(p)) { it.shoot = 'press'; o.plan = null; this.stats.postFinish = (this.stats.postFinish || 0) + 1; return; }
+      if (d < 1.85 || g.shotClock < 3 || (o.postT <= 0 && d < 4.2)) {
+        const shots = ['hook', 'fade', 'turn'], sig = pkg.sig.filter(k => shots.includes(k));
+        it.postShot = d < 2.2 ? (sig.includes('fade') && g.rng.next() < 0.3 ? 'fade' : 'hook') : sig.includes('fade') ? 'fade' : sig.includes('hook') && d < 2.9 ? 'hook' : g.rng.next() < 0.5 ? 'turn' : 'fade';
+        it.shoot = 'press'; o.plan = null; this.stats.postShot = (this.stats.postShot || 0) + 1;
+      }
       else if (o.postT <= 0) { o.plan = null; o.next = 0; } // stalled: go back to reading the floor
       return;
     }
@@ -733,7 +755,7 @@ export class AI {
     shootVal -= IQ * tired * estC * 1.2;
     driveVal += (to === 'finishing' ? 0.3 * (0.5 + IQ) : 0) - IQ * tired * 1.4;
     // post scorers back down toward the block from the mid-post
-    const postVal = T.post > 0.4 && myDef && d < 6.8 && d > 2.6 && !sv.three ? 0.25 + T.post * 0.9 + n(p.ratings.post_control) * 0.45 + (p.phys.strength - myDef.phys.strength) * 0.6 - n(myDef.ratings.interior_d) * 0.3 : -9;
+    const postVal = T.post > 0.4 && myDef && d < 6.8 && d > 2.6 && !sv.three ? 0.25 + T.post * 0.9 + n(p.ratings.post_control) * 0.45 + (p.phys.strength - myDef.phys.strength) * 0.6 - n(myDef.ratings.interior_d) * 0.3 + 0.25 * (postPower(p) - 0.9) : -9; // (qp3: the package and the power weigh in)
     // v0.4.7.5: escape dribble. A shooter crowded inside his range makes the space himself (a stepback, a sidestep or
     // a retreat dribble) and gets the shot off the next read
     const handle = n(p.ratings.ball_handle);
@@ -768,7 +790,7 @@ export class AI {
     }
     if (pick === 'shoot' && ((sv.val > 0.9 - (1 - IQ) * 0.25 && estC < (sv.three ? 0.45 : 0.55) + (T.shoot - 0.5) * 0.08 + bk(p.badges, 'deadeye') * 0.03 + (1 - IQ) * 0.2) || g.shotClock < 5)) { it.shoot = 'press'; const k = g.shotClock < 5 ? 'lateClock' : 'chosen'; this.stats[k] = (this.stats[k] || 0) + 1; return; }
     if (pick === 'drive') { o.plan = 'drive'; this.stats.drives = (this.stats.drives || 0) + 1; this.seek(p, rim.x, rim.z, { sprint: true }); return; }
-    if (pick === 'post') { o.plan = 'post'; o.postT = 2.6; o.postSide = p.x >= 0 ? 1 : -1; this.stats.posts = (this.stats.posts || 0) + 1; return; }
+    if (pick === 'post') { o.plan = 'post'; o.postT = 3.4 + 0.8 * postPower(p); o.postSide = p.x >= 0 ? 1 : -1; o.postMoved = false; this.stats.posts = (this.stats.posts || 0) + 1; return; }
     if (pick === 'pass' && passTarget) {
       const lob = passTarget.position === 'C' || passTarget.position === 'PF';
       // (v0.4.7.5 qp3: the human can be thrown an alley too; he has to hit the button in the air, game.oopQte)

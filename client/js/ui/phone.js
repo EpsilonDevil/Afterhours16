@@ -6,8 +6,10 @@ import { ARCHETYPES, capBadges } from '../sim/builds.js';
 import { badgeChip } from './badgeart.js';
 import { PARK_NAMES } from '../sim/world.js';
 import * as Crew from './crew.js';
+import * as Online from './online.js';
 
-const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['crew', 'Crew'], ['recent', 'Recent']];
+// (v0.4.7.5 qp3: Online = real people on this game service: your friends there, invites and the room you play in)
+const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['crew', 'Crew'], ['recent', 'Recent'], ['online', 'Online']];
 const ago = t => { const m = (Date.now() - t) / 60000; return m < 2 ? 'just now' : m < 60 ? `${Math.round(m)} min ago` : m < 1440 ? `${Math.round(m / 60)} hr ago` : `${Math.round(m / 1440)} d ago`; };
 const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -27,6 +29,8 @@ export function openPhone(app, opts = {}) {
   const prevClose = closeModal.onClose;
   closeModal.onClose = () => { open = null; if (prevClose) prevClose(); if (opts.onClose) opts.onClose(); };
   const off = w.onChange(() => { if (phoneOpen()) draw(); else off(); });
+  // the Online tab follows the service: friends coming on, requests, the room
+  const netOff = app.net ? ['friends', 'room', 'state', 'entries', 'autherror'].map(k => app.net.on(k, () => { if (!phoneOpen()) { netOff.forEach(f => f()); return; } if (st.tab === 'online' && !st.who && !document.activeElement?.closest?.('[data-oadd]')) draw(); })) : []; // (not while you type a friend's name)
 
   // presence: someone physically at this park counts as online, and we can say what he's doing
   let where = new Map();
@@ -132,11 +136,11 @@ export function openPhone(app, opts = {}) {
   function draw() {
     where = hub ? new Map(hub.parkList().map(x => [x.id, x.where])) : new Map();
     const online = w.onlineCount();
-    const body = st.who ? profile(st.who) : st.tab === 'park' ? listPark() : st.tab === 'friends' ? listFriends() : st.tab === 'squad' ? listSquad() : st.tab === 'crew' ? listCrew() : listRecent();
+    const body = st.who ? profile(st.who) : st.tab === 'park' ? listPark() : st.tab === 'friends' ? listFriends() : st.tab === 'squad' ? listSquad() : st.tab === 'crew' ? listCrew() : st.tab === 'online' ? Online.phoneTab(app) : listRecent();
     const scroll = host.querySelector('.ph-body')?.scrollTop || 0;
     host.innerHTML = `<div class="ph-status"><span>${clock()}</span><b>AH16</b><span><i class="ph-dot on"></i> ${online} online</span></div>
       <div class="ph-head"><b>Social</b><small>${hub ? esc(PARK_NAMES[hub.themeId] || '') : 'Not at a park'} · ${w.friends.length} friends · squad ${w.squad.length}/4</small></div>
-      ${st.who ? '' : `<nav class="tabs-inner ph-tabs">${TABS.map(([k, l]) => `<button class="${st.tab === k ? 'on' : ''}" data-tab="${k}">${l === 'Park' && !hub ? 'Online' : l}</button>`).join('')}</nav>`}
+      ${st.who ? '' : `<nav class="tabs-inner ph-tabs">${TABS.map(([k, l]) => `<button class="${st.tab === k ? 'on' : ''}" data-tab="${k}">${l === 'Park' && !hub ? 'Parks' : l}</button>`).join('')}</nav>`}
       <div class="ph-body">${body}</div>
       <div class="ph-foot muted small">${app.input?.usingPad ? 'LB + RB to put the phone away' : 'O or Esc to put the phone away'}</div>`;
     const b = host.querySelector('.ph-body'); if (b) b.scrollTop = st.whoScroll != null && !st.who ? st.whoScroll : scroll;
@@ -153,6 +157,7 @@ export function openPhone(app, opts = {}) {
       if (r.ok) { app.audio?.ui?.('buy'); hub?.syncSquad(); }
     });
     $$('[data-kick]', host).forEach(x => x.onclick = ev => { ev.stopPropagation(); w.kick(x.dataset.kick); hub?.syncSquad(); });
+    if (st.tab === 'online' && !st.who) Online.bindPhoneTab(app, host, draw);
     $$('[data-crewmenu]', host).forEach(x => x.onclick = () => { closeModal(); Crew.openCrew(app, { onChange: c => { if (app.world?.crew && c) { app.world.crew = c; app.world.refreshBoards?.(); } } }); });
   }
   draw();

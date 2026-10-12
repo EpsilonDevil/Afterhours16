@@ -6,7 +6,7 @@ import { PadNav, modalOpen } from './ui/padnav.js';
 import { audio } from './core/audio.js';
 import { music } from './core/music.js';
 import { API } from './core/api.js';
-import { settings, saveSettings, autoQuality } from './core/settings.js';
+import { settings, saveSettings, autoQuality, volumeGain } from './core/settings.js';
 import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
@@ -16,6 +16,7 @@ import { $, toast, modal, closeModal, esc } from './ui/common.js';
 import * as Screens from './ui/screens.js';
 import { togglePhone, phoneOpen } from './ui/phone.js';
 import { installErrorCapture, reportBug } from './ui/bugreport.js';
+import { initOnline } from './ui/online.js';
 
 installErrorCapture(); // v0.4.7.5: errors go along with bug reports
 
@@ -56,7 +57,7 @@ async function boot() {
   window.addEventListener('pointerdown', firstGesture, true);
   window.addEventListener('keydown', firstGesture, true);
   app.hud = new HUD($('#hud'));
-  audio.volume.sfx = settings.sfx; audio.volume.crowd = settings.crowd; audio.volume.music = settings.musicVol;
+  audio.volume.sfx = volumeGain(settings.sfx); audio.volume.crowd = volumeGain(settings.crowd); audio.volume.music = volumeGain(settings.musicVol); // (qp3: perceptual sliders)
   bootMsg('Connecting to the local game service…', 0.3);
   try {
     app.config = await app.api.get('/api/config');
@@ -92,6 +93,7 @@ app.afterLogin = afterLogin;
 function afterLogin() {
   closeModal();
   initWorld(app); // v0.4.4: this account's persistent AI population (friends, squad, who you've played with)
+  initOnline(app).catch(e => console.error(e)); // v0.4.7.5 qp3: real friends, invites and online games (from your own copy too)
   const chars = app.profile.characters;
   if (!chars.length) { app.selectedId = null; Screens.go(app, 'create'); return; }
   app.selectedId = chars.find(c => c.id === settings.character)?.id || chars[0].id;

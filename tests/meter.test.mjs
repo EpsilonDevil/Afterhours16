@@ -102,7 +102,9 @@ test('the solid core is the build\'s own ratings; badges, Icon badge, takeover a
   const lay = { lstyle: 'scoop' };
   p.badges = { contact_finisher: 3 };
   const lw = g.layupWindow(p, lay, 0.8);
-  assert.ok(lw.total > lw.natural && lw.sure === false, 'a green layup is a boost, not automatic: outlined');
+  assert.ok(lw.total > lw.natural && lw.sure === false, 'a green layup under coverage is a boost, not automatic: outlined');
+  assert.equal(g.layupWindow(p, lay, 0.05).sure, true, 'qp3: wide open, the window is solid: a green goes in');
+  assert.equal(g.layupWindow(p, lay, 0.12).sure, false, 'any coverage at all keeps it outlined');
   p.badges = { green_machine: 2 };
   const fw = g.ftWindow(p);
   assert.ok(fw.total > fw.natural && fw.sure === true);
@@ -151,7 +153,7 @@ function layupAt(lstyle, def, k) {
   return { shown, ev, a };
 }
 
-test('layups too: the meter\'s window is the graded window, frame for frame, and it\'s outlined', () => {
+test('layups too: the meter\'s window is the graded window, frame for frame; solid wide open, outlined under coverage', () => {
   let checked = 0, greens = 0;
   for (const lstyle of ['basic', 'euro', 'finger', 'scoop']) for (const def of [false, true]) {
     for (let k = 4; k <= 50; k++) {
@@ -159,7 +161,10 @@ test('layups too: the meter\'s window is the graded window, frame for frame, and
       if (!r.shown || !r.ev || r.ev.grade === 'none') continue;
       checked++;
       assert.equal(r.ev.grade === 'excellent', inGreen(r.shown), `${lstyle}${def ? ' vs a rim protector' : ''}, frame ${k}: fill ${r.shown.fill.toFixed(3)} vs ±${r.shown.half.toFixed(3)} → ${r.ev.grade}`);
-      assert.equal(r.shown.sure, false);
+      // (qp3: wide open the window is solid and a green is a make; against the rim protector it stays outlined)
+      if (!def) assert.equal(r.shown.sure, true, `${lstyle} frame ${k}: wide open: solid`);
+      else if (r.ev.sure != null) assert.equal(r.ev.sure, false, `${lstyle} frame ${k}: covered at the release: outlined`);
+      if (!def && r.ev.grade === 'excellent') assert.equal(r.ev.made, true, 'a wide-open green layup goes in');
       if (r.ev.grade === 'excellent') greens++;
     }
   }

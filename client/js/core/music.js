@@ -2,7 +2,7 @@
 // shuffled through the menus, the park, park games and practice. They fade out for Pro-Am (the arena has its
 // own crowd) and pick up where they left off afterwards. Each new track gets an early-2000s style
 // "now playing" ticker in the bottom-left corner for its first few seconds.
-import { settings } from './settings.js';
+import { settings, volumeGain } from './settings.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -24,7 +24,7 @@ export class Soundtrack {
     return this.loaded;
   }
 
-  target() { return this.wanted && !this.suppressed ? (settings.musicVol ?? 0.35) * (this.ducked ? 0.65 : 1) : 0; }
+  target() { return this.wanted && !this.suppressed ? volumeGain(settings.musicVol ?? 0.35) * (this.ducked ? 0.65 : 1) : 0; } // (qp3: the perceptual curve)
 
   element() {
     if (!this.el) {

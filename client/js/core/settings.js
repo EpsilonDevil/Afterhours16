@@ -1,7 +1,7 @@
 // Per-browser presentation preferences (never authoritative game data).
 const KEY = 'afterhours16.settings.v3';
 const DEFAULTS = {
-  quality: 'high', music: true, sfx: 0.9, crowd: 0.6, musicVol: 0.35, camera: '2k', difficulty: 0.6, tags: true, showFps: false, parkTarget: 21, quarterLen: 180, lastPark: null, character: null,
+  quality: 'high', music: true, sfx: 0.95, crowd: 0.8, musicVol: 0.65, camera: '2k', difficulty: 0.6, tags: true, showFps: false, parkTarget: 21, quarterLen: 180, lastPark: null, character: null,
   // v0.4: controller & focus
   vibration: true, deadzone: 0.15, proStickShoot: true, invertY: false, prompts: 'auto', lockIn: true, pauseOnBlur: false,
   // v0.4.1: button remapping overrides {key: {action: code}, pad: {action: 'X'}} and the Locked-In grade HUD
@@ -22,6 +22,13 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } 
 // v0.4.5: the game keeps running when you click out of the window (one-time switch for saved settings; you can
 // turn pause-on-focus-loss back on in Settings)
 if (!settings.v045) { settings.pauseOnBlur = false; settings.v045 = true; try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* ignore */ } }
+// v0.4.7.5 qp3: the volume sliders are perceptual. A slider at s plays at gain s^VOLUME_CURVE: the steps near the
+// bottom are much bigger than they were (5 on the slider is 0.1% of full, 25 is 4%, 50 is 18%, 75 is 53%), so the
+// quietest setting before silence is quiet, and a notch at the top still does something
+export const VOLUME_CURVE = 2.4;
+export const volumeGain = s => (s <= 0 ? 0 : Math.pow(Math.min(1, s), VOLUME_CURVE));
+// (saved sliders from before the curve are moved so they play at the same loudness they did: v → v^(1/curve))
+if (!settings.v0475qp3vol) { for (const k of ['sfx', 'crowd', 'musicVol']) if (typeof settings[k] === 'number') settings[k] = Math.round(Math.pow(Math.max(0, Math.min(1, settings[k])), 1 / VOLUME_CURVE) * 20) / 20; settings.v0475qp3vol = true; try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* ignore */ } }
 export function saveSettings() { try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* ignore */ } }
 export function autoQuality(renderer) {
   // pick a starting preset from the GPU description when the user hasn't chosen one
