@@ -48,31 +48,37 @@ export function parkEntry(app, root) {
   }
   const home = AFFILIATIONS[c.affiliation];
   const pk = c.progression?.park || {};
+  const ev = activeEvent(app); // v0.4.7.5 qp3: whichever park event the schedule has on (the Cup, the Jungle...)
   root.innerHTML = `<section class="panel wide-panel"><div class="eyebrow">THE PARK · ${esc(home.name.toUpperCase())}</div><h1>${esc(home.park)}</h1>
     <p class="muted">Walk the park, stand on a <b>Got Next</b> circle to claim the next game, and hold the court as long as you can. Winners stay on.</p>
     <div class="stat-strip"><div><b>${pk.wins || 0}-${(pk.games || 0) - (pk.wins || 0)}</b><small>PARK RECORD</small></div><div><b>${pk.streak || 0}</b><small>CURRENT STREAK</small></div><div><b>${pk.best_streak || 0}</b><small>BEST STREAK</small></div><div><b>${esc(c.rep.label)}</b><small>REP</small></div></div>
     <div class="aff-grid small">${Object.values(AFFILIATIONS).map(a => `<button class="aff ${a.id === c.affiliation ? 'home' : ''}" data-park="${a.id}" style="--c:${a.color};--d:${a.accent}"><span class="aff-k">${a.id === c.affiliation ? 'HOME PARK' : 'VISIT'}</span><b>${esc(a.park)}</b><small>${esc(a.name)}</small></button>`).join('')}</div>
-    <div class="event-card" data-cup><div class="ev-k">PARK EVENT · LIVE</div><b>THE KING TUT CUP</b><small>${esc(EVENTS.kingtut.blurb)} Every game is an ante-up; the most VC won in 48 hours takes the glow-in-the-dark mo-cap suit.</small>
-      <div class="ev-row"><span class="ev-stat" data-cup-left>…</span><span class="ev-stat" data-cup-rank></span><button class="btn ghost small" data-cup-board>Leaderboard</button><button class="btn primary small" data-park="kingtut">Enter the Cup</button></div></div>
+    ${ev ? `<div class="event-card" data-cup style="--c:${ev.color};--d:${ev.accent}"><div class="ev-k">PARK EVENT · LIVE</div><b>${esc(ev.park.toUpperCase())}</b><small>${esc(ev.blurb)} Every game is an ante-up; the most VC won in 48 hours takes ${esc(ev.prize)}.</small>
+      <div class="ev-row"><span class="ev-stat" data-cup-left>…</span><span class="ev-stat" data-cup-rank></span><button class="btn ghost small" data-cup-board>Leaderboard</button><button class="btn primary small" data-park="${ev.id}">${esc(ev.enter)}</button></div></div>` : '<div class="event-card off" data-cup><div class="ev-k">PARK EVENT</div><b>NO EVENT RUNNING</b><small>The next park event will show up here.</small></div>'}
     <div class="row gap"><label class="muted small">Games to <select data-target>${[11, 15, 21].map(t => `<option ${settings.parkTarget === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
     <div class="row gap end"><button class="btn primary big" data-park="${c.affiliation}">Enter ${esc(home.park)}</button></div></section>`;
   $('[data-target]', root).onchange = e => { settings.parkTarget = +e.target.value; saveSettings(); };
   $$('[data-park]', root).forEach(b => b.onclick = () => enterPark(app, b.dataset.park));
-  $('[data-cup-board]', root).onclick = () => openCupBoard(app);
+  const bb = $('[data-cup-board]', root); if (bb) bb.onclick = () => openCupBoard(app);
   // v0.4.5: time left and your place in the running Cup (and a nudge when last Cup's prizes are waiting)
   app.api.get('/api/cup').then(st => {
+    // v0.4.7.5 qp3: the schedule may have moved on since the config was loaded (the Cup ended, the Jungle began)
+    if ((st.event?.id || null) !== (app.config.event?.id || null)) { app.config.event = st.event; parkEntry(app, root); return; }
     const left = $('[data-cup-left]', root), rank = $('[data-cup-rank]', root);
     if (left) left.textContent = `Ends in ${cupTimeLeft(st)}`;
     if (rank) rank.textContent = st.me.rank ? `You: #${st.me.rank} of ${st.field} · ${money(st.me.net)} VC` : `${st.field} hoopers entered`;
     if (st.previous && !st.previous.claimed && st.previous.prize) {
       const card = $('[data-cup]', root);
-      card?.insertAdjacentHTML('beforeend', `<div class="ev-claim">Last Cup: you finished #${st.previous.rank}. <button class="btn primary small" data-cup-claim>Claim ${esc(st.previous.prize.label)} prizes</button></div>`);
+      card?.insertAdjacentHTML('beforeend', `<div class="ev-claim">Last ${esc(eventName(st.previous.event))}: you finished #${st.previous.rank}. <button class="btn primary small" data-cup-claim>Claim ${esc(st.previous.prize.label)} prizes</button></div>`);
       $('[data-cup-claim]', root).onclick = () => openCupBoard(app);
     }
   }).catch(() => {});
 }
 
-// ---------------- v0.4.5 The King Tut Cup ----------------
+// ---------------- v0.4.5 The King Tut Cup / v0.4.7.5 qp3 park events ----------------
+// the event that is on, as the client knows it (the server's schedule through /api/config, refreshed by /api/cup)
+export const activeEvent = app => (app.config?.event && EVENTS[app.config.event.id]) || null;
+const eventName = e => (e && EVENTS[e.id || e]?.name) || 'King Tut Cup';
 export function cupTimeLeft(st) {
   const s = Math.max(0, st.end - Date.now() / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
   return h >= 1 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
@@ -85,13 +91,14 @@ export async function openCupBoard(app) {
   try { st = await app.api.get('/api/cup'); } catch (e) { toast(e.message, 'error'); return; }
   const row = r => `<tr class="${r.id === 'me' ? 'me' : ''}"><td>${r.rank}</td><td>${esc(cupName(app, r.id))}<small>${esc(cupTier(app, r.id))}</small></td><td>${r.games}</td><td>${r.wins}</td><td>${r.best_streak}</td><td class="num">${r.net < 0 ? '−' : ''}${money(Math.abs(r.net))}</td></tr>`;
   const items = ids => ids.map(i => esc(app.catalog[i]?.name || i)).join(', ');
-  const prev = st.previous;
+  const prev = st.previous, ev = (st.event && EVENTS[st.event.id]) || null, evName = ev ? ev.name : 'park event', prevName = prev ? eventName(prev.event) : evName;
+  if (st.event && (st.event.id || null) !== (app.config.event?.id || null)) app.config.event = st.event;
   const card = modal(`<div class="cup-board">
-    <div class="eyebrow">THE KING TUT CUP · 48-HOUR LEADERBOARD</div>
+    <div class="eyebrow">${ev ? esc(ev.park.toUpperCase()) : 'PARK EVENT'} · 48-HOUR LEADERBOARD</div>
     <h2>Most VC won <span class="muted small">· ends in ${cupTimeLeft(st)} · ${st.field} on the board</span></h2>
-    ${prev ? `<div class="cup-prev ${prev.claimed ? '' : 'ready'}"><b>Last Cup:</b> you finished #${prev.rank} of ${prev.field} with ${money(prev.net)} VC. ${prev.winner ? `Won by ${esc(cupName(app, prev.winner.id))} (${money(prev.winner.net)} VC). ` : ''}
+    ${prev ? `<div class="cup-prev ${prev.claimed ? '' : 'ready'}"><b>Last ${esc(prevName)}:</b> you finished #${prev.rank} of ${prev.field} with ${money(prev.net)} VC. ${prev.winner ? `Won by ${esc(cupName(app, prev.winner.id))} (${money(prev.winner.net)} VC). ` : ''}
       ${prev.prize ? (prev.claimed ? '<span class="muted">Prizes claimed.</span>' : `<button class="btn primary small" data-claim="${prev.window}">Claim: ${esc(prev.prize.label)} · ${money(prev.prize.vc)} VC${prev.prize.items.length ? ' + ' + items(prev.prize.items) : ''}</button>`) : ''}</div>` : ''}
-    <div class="cup-me">${st.me.rank ? `You: <b>#${st.me.rank}</b> · ${money(st.me.net)} VC · ${st.me.games} games · ${st.me.wins} wins · best streak ${st.me.best_streak}` : 'You haven\'t played this Cup yet. Every game is an ante-up: win and you take the other side\'s stake (boosted by your Cup streak); lose and your stake is gone.'}</div>
+    <div class="cup-me">${st.me.rank ? `You: <b>#${st.me.rank}</b> · ${money(st.me.net)} VC · ${st.me.games} games · ${st.me.wins} wins · best streak ${st.me.best_streak}` : 'You haven\'t played this ${esc(evName)} yet. Every game is an ante-up: win and you take the other side\'s stake (boosted by your event streak); lose and your stake is gone.'}</div>
     <table class="cup-table"><thead><tr><th>#</th><th>Hooper</th><th>GP</th><th>W</th><th>Best streak</th><th class="num">Net VC</th></tr></thead>
       <tbody>${st.board.map(row).join('')}${st.around?.length ? `<tr class="gap"><td colspan="6">…</td></tr>${st.around.map(row).join('')}` : ''}</tbody></table>
     <div class="cup-prizes"><b>Final-standings prizes</b>${st.prizes.map(p => `<div><span>${p.best ? (p.best === 1 ? '1st' : 'Top ' + p.best) : esc(p.label)}</span><span>${money(p.vc)} VC${p.items.length ? ' + ' + items(p.items) : ''}</span></div>`).join('')}</div>
@@ -104,7 +111,7 @@ export async function openCupBoard(app) {
       app.setBalance(r.balance);
       for (const id of r.items) if (!app.profile.inventory.includes(id)) app.profile.inventory.push(id);
       audio.ui('buy');
-      toast(`Cup prizes claimed: ${money(r.prize.vc)} VC${r.items.length ? ' + ' + items(r.items) : ''}.`);
+      toast(`${prevName} prizes claimed: ${money(r.prize.vc)} VC${r.items.length ? ' + ' + items(r.items) : ''}.`);
       closeModal(); openCupBoard(app);
     } catch (e) { toast(e.message, 'error'); cb.disabled = false; }
   };
@@ -115,8 +122,8 @@ export function pickAnte(app, hub, cb) {
   const bal = app.profile?.balance || 0, streak = hub.myStreak(), mult = Math.round((1 + 0.3 * Math.min(10, streak)) * 100) / 100;
   const antes = hub.cupState?.antes || [500, 1000, 2500, 5000, 10000];
   let done = false;
-  const card = modal(`<div class="ante-pick"><div class="eyebrow">THE KING TUT CUP · ANTE-UP</div><h2>Put VC on the line</h2>
-    <p class="muted">Your stake comes out when the game starts. Win and you get it back plus the other side's stake${streak ? `, boosted ×${mult.toFixed(2)} by your ${streak}-game Cup streak` : ''} — on top of the normal game VC. Lose (or leave) and the stake is gone. Run it back keeps the same ante.</p>
+  const card = modal(`<div class="ante-pick"><div class="eyebrow">${esc((hub.event?.park || 'PARK EVENT').toUpperCase())} · ANTE-UP</div><h2>Put VC on the line</h2>
+    <p class="muted">Your stake comes out when the game starts. Win and you get it back plus the other side's stake${streak ? `, boosted ×${mult.toFixed(2)} by your ${streak}-game ${esc(hub.event?.name || 'event')} streak` : ''} — on top of the normal game VC. Lose (or leave) and the stake is gone. Run it back keeps the same ante.</p>
     <div class="ante-grid">${antes.map(a => `<button class="btn ${a === hub.ante ? 'primary' : ''}" data-ante="${a}" ${a > bal ? 'disabled' : ''}><b>${money(a)}</b><small>win +${money(Math.round(a * mult))}</small></button>`).join('')}</div>
     <p class="muted small">Balance: ${money(bal)} VC</p></div>`);
   const prevClose = closeModal.onClose;
@@ -125,6 +132,8 @@ export function pickAnte(app, hub, cb) {
 }
 
 export function enterPark(app, themeId, opts = {}) {
+  // v0.4.7.5 qp3: an event park that isn't on the schedule is closed (its code is all still here for when it comes back)
+  if (THEMES[themeId]?.event && activeEvent(app)?.id !== themeId) { toast(`${THEMES[themeId].name} isn't running right now.`, 'error'); return; }
   leaveWorld(app);
   const ui = new ParkUI(app);
   $('#ui').innerHTML = ''; $('#ui').className = 'layer';
@@ -232,10 +241,10 @@ class ParkUI {
     const c = this.app.char();
     $('#park-top').innerHTML = `<div class="park-badge" style="--c:${hub.aff.color}"><b>${esc(hub.venue.theme.name)}</b><small>${esc(hub.aff.name)}</small></div>
       <div class="park-rep"><span>${esc(c.rep.label)}</span><span class="bar rep-bar"><i style="width:${c.rep.next ? Math.round((c.rep.points - c.rep.floor) / (c.rep.next - c.rep.floor) * 100) : 100}%"></i></span></div>
-      ${hub.cup ? '<div class="cup-chip" id="cup-chip">King Tut Cup</div>' : ''}
+      ${hub.cup ? `<div class="cup-chip" id="cup-chip" style="--c:${hub.event?.color || '#39ff88'}">${esc(hub.event?.name || 'Park event')}</div>` : ''}
       <div class="park-keys muted small" id="park-keys"></div>`;
     this.keysFor = null;
-    if (opts.at !== 'hq') this.toast(hub.cup ? 'Welcome to the King Tut Cup. Every game is an ante-up — claim a GOT NEXT spot and name your stake.' : `Welcome to ${hub.venue.theme.name}. Find a Got Next circle by a court.`);
+    if (opts.at !== 'hq') this.toast(hub.cup ? `Welcome to ${hub.event?.park || hub.venue.theme.name}. Every game is an ante-up — claim a GOT NEXT spot and name your stake.` : `Welcome to ${hub.venue.theme.name}. Find a Got Next circle by a court.`);
   }
   cupInfo(hub, st) {
     const el = $('#cup-chip'); if (!el) return;
@@ -265,7 +274,7 @@ class ParkUI {
       <button class="btn" data-inv>Inventory</button>
       <button class="btn" data-boosts>Boosts</button>
       <button class="btn" data-mp>MyPlayer</button>
-      ${hub.cup ? '<button class="btn" data-cupboard>Cup leaderboard</button>' : ''}
+      ${hub.cup ? `<button class="btn" data-cupboard>${esc(hub.event?.name || 'Event')} leaderboard</button>` : ''}
       <button class="btn" data-phone>Social (${this.app.input?.usingPad ? 'LB + RB' : 'O'})</button>
       <button class="btn" data-crew>Crew</button>
       <button class="btn" data-stats>Lifetime stats</button>
@@ -407,11 +416,11 @@ export function showResults(app, summary, result, won, opts = {}) {
   const pro = summary.mode === 'prorun'; // v0.4.5 The Pro Run: 1.5x VC and badge progress, no Rep
   const card = modal(`
     <div class="results ${won ? 'win' : 'loss'}">
-      <div class="eyebrow">${r?.cup ? 'KING TUT CUP · ANTE-UP' : summary.mode === 'park' ? 'PARK GAME' : summary.mode === 'proam' ? 'PRO-AM' : pro ? 'THE PRO RUN' : 'GAME'} · FINAL</div>
+      <div class="eyebrow">${r?.cup ? esc(eventName(r.cup.event).toUpperCase()) + ' · ANTE-UP' : summary.mode === 'park' ? 'PARK GAME' : summary.mode === 'proam' ? 'PRO-AM' : pro ? 'THE PRO RUN' : 'GAME'} · FINAL</div>
       <h1>${won ? 'Victory' : 'Defeat'} <span class="score">${summary.score[summary.me.team]}–${summary.score[1 - summary.me.team]}</span></h1>
       ${lg ? `<div class="lg-final" data-tier="${lg.tier}"><small>LOCKED-IN GRADE</small><b>${esc(lg.letter)}</b><span class="muted small">${lg.good} smart plays · ${lg.bad} costly ones</span></div>` : ''}
       <div class="stat-strip">${[['PTS', me.pts], ['REB', me.reb], ['AST', me.ast], ['STL', me.stl], ['BLK', me.blk], ['FG', pct(me.fgm, me.fga)], ['3PT', pct(me.tpm, me.tpa)], ['TO', me.tov]].map(([k, v]) => `<div><b>${v}</b><small>${k}</small></div>`).join('')}</div>
-      ${r?.cup ? `<div class="cup-result ${won ? 'win' : 'loss'}">${won ? `<b>POT +${money(r.cup.pot)} VC</b><small>your ${money(r.cup.ante)} stake back + theirs${r.streak_mult > 1 ? ` ×${r.streak_mult.toFixed(2)}` : ''}</small>` : `<b>ANTE LOST −${money(r.cup.ante)} VC</b><small>the stake goes to the other side</small>`}<span>King Tut Cup: <b>#${r.cup.rank}</b> of ${r.cup.field} · ${r.cup.net < 0 ? '−' : ''}${money(Math.abs(r.cup.net))} VC this Cup</span></div>` : ''}
+      ${r?.cup ? `<div class="cup-result ${won ? 'win' : 'loss'}">${won ? `<b>POT +${money(r.cup.pot)} VC</b><small>your ${money(r.cup.ante)} stake back + theirs${r.streak_mult > 1 ? ` ×${r.streak_mult.toFixed(2)}` : ''}</small>` : `<b>ANTE LOST −${money(r.cup.ante)} VC</b><small>the stake goes to the other side</small>`}<span>${esc(eventName(r.cup.event))}: <b>#${r.cup.rank}</b> of ${r.cup.field} · ${r.cup.net < 0 ? '−' : ''}${money(Math.abs(r.cup.net))} VC this event</span></div>` : ''}
       ${r?.bounty ? `<div class="bounty-result">${BOUNTY_SVG}<div><b>BOUNTY CLAIMED +${money(r.bounty)} VC</b><small>You broke the kings' streak (included in VC earned)</small></div></div>` : ''}
       ${r ? `<div class="reward-row"><div class="reward"><b>+${money(r.vc)}</b><small>VC EARNED</small></div>${pro ? '<div class="reward"><b>×1.5</b><small>VC & BADGE PROGRESS</small></div>' : `<div class="reward"><b>+${money(r.rep)}</b><small>REP</small></div>`}${summary.mode === 'park' ? `<div class="reward"><b>${r.streak}</b><small>WIN STREAK</small></div>` : ''}${summary.mode === 'park' && r.streak_mult > 1 ? `<div class="reward"><b>×${r.streak_mult.toFixed(2)}</b><small>STREAK BONUS</small></div>` : ''}${r.proam_team ? `<div class="reward"><b>${r.proam_team.wins}-${r.proam_team.losses}</b><small>TEAM RECORD</small></div>` : ''}</div>
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}

@@ -7,7 +7,7 @@ import { music } from '../core/music.js';
 import { promptGlyph } from '../core/input.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
-import { AFFILIATIONS, THEMES, courtPlayRect, SQUAD_ROWS, parkInfo } from '../world/themes.js';
+import { AFFILIATIONS, THEMES, EVENTS, courtPlayRect, SQUAD_ROWS, parkInfo } from '../world/themes.js';
 import { StreakFX, streakLevel } from '../world/streakfx.js';
 import { boostedBuild } from '../sim/ratings.js';
 import { consumeBoostsLocal } from '../ui/rewards.js';
@@ -210,7 +210,8 @@ export class ParkHub {
     this.venue = buildVenue(this.r, this.scene, themeId);
     this.theme = THEMES[themeId];
     this.aff = parkInfo(themeId) || AFFILIATIONS.harbor;
-    this.cup = themeId === 'kingtut'; // v0.4.5 The King Tut Cup: every game is an ante-up
+    this.cup = !!this.theme?.event; // v0.4.5 The King Tut Cup / v0.4.7.5 qp3 any park event: every game is an ante-up
+    this.event = this.cup ? (EVENTS[themeId] || null) : null;
     this.ante = null; this.cupState = null; this.cupT = 0;
     this.rng = new RNG((Date.now() & 0xffff) ^ 0x5a5a);
     this.mode = 'roam';
@@ -244,7 +245,7 @@ export class ParkHub {
     this.spectators = this.spawnSpectators();
     // v0.4.5 stage 7: every court's streak effect is built now (hidden until a 3-game streak) so its geometry
     // and shaders are ready, instead of being built in the middle of somebody's game
-    for (const c of this.courts) c.fx = new StreakFX(this.r.ctx, this.scene, c, this.cup ? 'laser' : 'flame');
+    for (const c of this.courts) c.fx = new StreakFX(this.r.ctx, this.scene, c, this.theme?.streakFx || (this.cup ? 'laser' : 'flame'));
     this.pool.flush(); // (we're loading: everybody who's here at the start is here on the first frame)
     this.rig = app.cameraRig;
     this.rig.roamYaw = 0; this.rig.snap();

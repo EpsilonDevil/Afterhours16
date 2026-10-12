@@ -26,6 +26,7 @@ export const GREEN_SOUNDS = {
   gsnd_splash: 'Cannonball',
   gsnd_slide: 'Slide Whistle',
   cup_gsnd_pharaoh: "Pharaoh's Horn",
+  jb_gsnd_bongos: 'Jungle Bongos',
   // v0.4.7.5 quick patch
   gsnd_owl: 'Night Owl',
   gsnd_wolf: 'Wolf Howl',
@@ -418,6 +419,37 @@ const RECIPES = {
     }
     D.modes(0.58, twin(D, [[73.4, 0.5, 0.9], [73.4 * 1.47, 0.3, 0.7], [73.4 * 2.09, 0.22, 0.55], [73.4 * 2.56, 0.15, 0.45], [73.4 * 3.4, 0.08, 0.3, 0.1]]), 1, 0.35);
     D.room = { decay: 2.4, damp: 0.3, wet: 0.9 };
+  },
+
+  // v0.4.7.5 qp3 The Jungle Ballers exclusive: four quick bongo taps (a high drum and a low one, hand-struck: a
+  // pitched membrane that drops as it rings, the slap of the palm on top) under a rainforest: cicadas pulsing
+  // high up, a toucan croak, drips off the leaves, a far-off bird, all in a wet, leafy room
+  jb_gsnd_bongos(D) {
+    const bongo = (t0, f, g, slap = 1) => {
+      // the membrane: a fundamental that pitch-bends down from the strike and its stretched partials
+      const o = D.osc(0);
+      D.play(t0, 0.3, t => o.sin(f * (1 + 0.18 * Math.exp(-t / 0.02))) * Math.exp(-t / 0.09) * Math.min(1, t * 2500), 0.95 * g, 0.3);
+      D.modes(t0, [[f * 1.59, 0.35 * g, 0.045], [f * 2.14, 0.22 * g, 0.03], [f * 2.65, 0.12 * g, 0.02], [f * 3.4, 0.06 * g, 0.012]], 1, 0.3);
+      // the hand: a short bright slap
+      burst(D, t0, { f: 1800, q: 0.9, tau: 0.0025, hp: 500, gain: 0.5 * g * slap, rev: 0.2 });
+    };
+    // "ta-ka ta-KA": high, low, high, low (the last one harder), tight and quick
+    bongo(0.0, 365, 0.85); bongo(0.095, 212, 0.8); bongo(0.19, 365, 0.85); bongo(0.3, 212, 1.05, 1.3);
+    // cicadas: a buzzing pulse (a 4.9 kHz band of noise, 60 Hz amplitude pulse), swelling and fading, two of them
+    for (const [t0, len, f, g] of [[0, 1.6, 4900, 0.045], [0.25, 1.4, 5600, 0.03]]) {
+      const bp = D.svf(f, 9), o = D.osc(0);
+      D.play(t0, len, t => { const a = t < 0.3 ? t / 0.3 : t < len - 0.5 ? 1 : Math.max(0, (len - t) / 0.5); return bp.bp(D.white()) * (0.55 + 0.45 * Math.max(0, o.sin(58))) * a; }, g, 0.35);
+    }
+    // a toucan's croak: a rough "krrk" (a low pulse train through a nasal band), twice
+    for (const t0 of [0.55, 0.78]) {
+      const o = D.osc(), n1 = D.svf(1100, 3), n2 = D.svf(2300, 4);
+      D.play(t0, 0.13, t => { const a = Math.sin(Math.PI * Math.min(1, t / 0.13)); const x = o.pulse(118 * (1 - 0.15 * t / 0.13), 0.12); return (n1.bp(x) + 0.6 * n2.bp(x)) * a; }, 0.22, 0.45);
+    }
+    // drips off the leaves into a pool (bubbles), scattered through
+    for (let i = 0; i < 6; i++) bubble(D, 0.4 + i * 0.26 + D.rnd(0, 0.12), D.rnd(1500, 3200), 0.07, 0.5, 0.25);
+    // a far-off bird: two rising whistles
+    for (const t0 of [1.05, 1.22]) { const o = D.osc(); D.play(t0, 0.11, t => o.sin(2600 + 900 * (t / 0.11)) * Math.sin(Math.PI * Math.min(1, t / 0.11)), 0.035, 0.6); }
+    D.room = { decay: 1.7, damp: 0.5, wet: 0.85, lp: 7000 };
   },
 
   // ---- v0.4.7.5 quick patch: sixteen more ----

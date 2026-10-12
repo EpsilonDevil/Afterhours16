@@ -2,7 +2,7 @@
 // 40. Opened from the social phone (Crew tab), from the board in the Crew HQ, and from the HQ door in any park.
 // The server keeps the crew and its XP (your games, and your AI members' play while you're away).
 import { $, $$, esc, modal, closeModal, toast, money } from './common.js';
-import { PARK_NAMES } from '../sim/world.js';
+import { PARK_NAMES, EVENT_PARKS } from '../sim/world.js';
 
 // readable text on a crew color (dark ink on the light ones)
 export function inkFor(hex) {
@@ -23,7 +23,7 @@ export async function fetchCrew(app) {
 export function memberStatus(app, id) {
   const w = app.ai, t = Date.now();
   const s = w.status(id, t);
-  if (s) return { online: true, park: s.park, text: `Online · ${PARK_NAMES[s.park] || 'a park'}${s.park !== 'kingtut' && w.playingElsewhere(id, t) ? ' · in a game' : ''}` };
+  if (s) return { online: true, park: s.park, text: `Online · ${PARK_NAMES[s.park] || 'a park'}${!EVENT_PARKS.has(s.park) && w.playingElsewhere(id, t) ? ' · in a game' : ''}` };
   const nx = w.nextOnline(id, t);
   if (!nx) return { online: false, text: 'Offline' };
   const h = (nx.start - t) / 3600000;

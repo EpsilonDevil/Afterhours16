@@ -29,6 +29,10 @@ uniform vec4 uCrowd; // v0.4.3 crowd: x = wave strength, y = clap, z = wave spee
 // the skin under them)
 uniform vec3 uCamPos;
 uniform float uViewBias;
+// v0.4.7.5 qp3 rain (The Jungle Ballers streak): each drop is a camera-facing streak. aPos = the drop's column and
+// its start height, aUV.x = -1/+1 (the streak's two sides), aUV.y = 0/1 (bottom/top), aNormal = (length, width, 0).
+// uRain = [fall height m, fall speed m/s, slant x, slant z]: the drop falls with time and wraps within the height
+uniform vec4 uRain;
 out vec3 vWorld;
 out vec3 vNormal;
 out vec2 vUV;
@@ -44,6 +48,19 @@ void main() {
 #endif
   mat4 model = uModel;
   vColor = aColor;
+#ifdef RAIN
+  {
+    float y = mod(aPos.y - uTime * uRain.y, max(0.01, uRain.x));
+    vec3 base = (model * vec4(aPos.x, 0.0, aPos.z, 1.0)).xyz;
+    vec3 toCam = uCamPos - base;
+    vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), normalize(vec3(toCam.x, 0.0, toCam.z) + vec3(1e-4, 0.0, 0.0))));
+    vec3 along = normalize(vec3(uRain.z, 1.0, uRain.w));
+    vec3 p = vec3(aPos.x, y, aPos.z) + along * aNormal.x * aUV.y + right * aNormal.y * aUV.x * 0.5;
+    pos = vec4(p, 1.0);
+    // a streak fades toward its tail and thins when it is far from the camera
+    vColor.a *= (0.35 + 0.65 * (1.0 - aUV.y)) * clamp(1.0 - y / max(0.01, uRain.x) * 0.25, 0.0, 1.0);
+  }
+#endif
 #ifdef INSTANCED
   model = model * mat4(aI0, aI1, aI2, aI3);
   vColor *= aIColor;

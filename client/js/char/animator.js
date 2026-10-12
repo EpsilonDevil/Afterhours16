@@ -1657,6 +1657,22 @@ export class Animator {
 
 // v0.4.7.5 celebrations (t: seconds in; k: blend in/out; an: the animator, for palms)
 const CELEB2 = {
+  // v0.4.7.5 qp3 The Jungle Ballers: the chest beat. Both fists drum the chest, alternating, elbows out wide and
+  // the head thrown back; then the arms go up and out in a roar, chest out, up on the toes
+  chestbeat: (T, t, k, an) => {
+    if (t < 1.0) {
+      const b = Math.sin(t * 22), hitL = Math.max(0, b), hitR = Math.max(0, -b);
+      mix3(T, 'handL', 0.13, 1.44, 0.34 - 0.13 * hitL, k); mix3(T, 'handR', -0.13, 1.4, 0.34 - 0.13 * hitR, k);
+      set3(T, 'elbowL', 1, 0.1, -0.2); set3(T, 'elbowR', -1, 0.1, -0.2);
+      an.palm.L = { normal: [0, 0, -1], fingers: [0, -1, 0], w: k }; an.palm.R = { normal: [0, 0, -1], fingers: [0, -1, 0], w: k };
+      T[P.spine] = -0.14 * k; T[P.chest] = -0.08 * k; T[P.head] = -0.3 * k; T[P.root + 1] = -0.04 * k; T[P.chest + 1] = b * 0.05 * k;
+    } else {
+      const q = Math.min(1, (t - 1.0) / 0.25), sh = Math.sin(t * 18) * 0.02;
+      mix3(T, 'handL', 0.3 + 0.36 * q, 1.5 + 0.55 * q, 0.2 - 0.1 * q, k); mix3(T, 'handR', -0.3 - 0.36 * q + sh, 1.5 + 0.55 * q, 0.2 - 0.1 * q, k);
+      set3(T, 'elbowL', 1, 0.2, -0.4); set3(T, 'elbowR', -1, 0.2, -0.4);
+      T[P.spine] = -0.22 * k; T[P.chest] = -0.12 * k; T[P.head] = -0.38 * k; T[P.pitchL] = 0.35 * q * k; T[P.pitchR] = 0.35 * q * k; T[P.root + 1] = 0.03 * q * k;
+    }
+  },
   // swings a big hammer down overhead, twice
   hammer: (T, t, k) => { const ph = (t * 1.6) % 1, sw = ph < 0.6 ? ph / 0.6 : 1 - (ph - 0.6) / 0.4, y = 2.3 - 1.3 * sw * sw; mix3(T, 'handR', -0.1, y, 0.2 + 0.4 * sw, k); mix3(T, 'handL', -0.02, y - 0.12, 0.2 + 0.4 * sw, k); T[P.spine] = (0.35 * sw - 0.15) * k; T[P.root + 1] = -0.08 * sw * k; },
   // holds up three fingers, shaking them at the crowd

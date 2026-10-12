@@ -122,6 +122,114 @@ export function palm(x, z, s = 1, rng = new RNG(2)) {
 }
 
 // Chain-link fence run between two points (posts + rails); mesh part separately (alpha texture)
+// ---------------- v0.4.7.5 qp3 The Jungle Ballers ----------------
+// A rainforest giant: a tall, slightly leaning trunk with buttress roots flaring at the base, a few big limbs
+// high up, an umbrella of leaf clumps (dark under, lit on top) and lianas hanging off the limbs. s scales the
+// whole thing; the trunk is 18-30 m at s = 1, so the canopy stands well over the light poles.
+export function rainTree(x, z, s = 1, rng = new RNG(3), opts = {}) {
+  const parts = [], leafA = opts.leaf || '#2f6b33', leafB = opts.leaf2 || '#4a8a3c', bark = opts.bark || '#4a3a2c';
+  const H = (18 + rng.next() * 12) * s, lean = rng.range(-0.08, 0.08), leanZ = rng.range(-0.08, 0.08);
+  const at = t => [x + lean * H * t * t, H * t, z + leanZ * H * t * t];
+  const path = []; for (let i = 0; i <= 8; i++) path.push(at(i / 8));
+  const R = (0.55 + rng.next() * 0.35) * s;
+  parts.push({ geo: G.tube(path, t => R * (1.05 - 0.6 * t), 9), color: col(bark) });
+  // buttress roots: tall thin wedges leaning out from the base
+  const nr = 4 + rng.int(0, 3);
+  for (let i = 0; i < nr; i++) {
+    const a = i / nr * Math.PI * 2 + rng.range(0, 0.6), out = (1.6 + rng.next() * 1.4) * s, h = (2.2 + rng.next() * 1.8) * s;
+    const rp = [[x + Math.sin(a) * R * 0.5, h, z + Math.cos(a) * R * 0.5], [x + Math.sin(a) * (R + out * 0.55), h * 0.35, z + Math.cos(a) * (R + out * 0.55)], [x + Math.sin(a) * (R + out), 0.05, z + Math.cos(a) * (R + out)]];
+    parts.push({ geo: G.tube(rp, t => (0.32 - 0.14 * t) * s, 5), color: col(bark) });
+  }
+  // limbs from the upper trunk, each ending in a clump; the crown clump on top
+  const clumps = [], nl = 3 + rng.int(0, 2);
+  for (let b = 0; b < nl; b++) {
+    const a = b / nl * Math.PI * 2 + rng.range(0, 1.0), t0 = 0.62 + rng.range(0, 0.2), from = at(t0);
+    const reach = (4 + rng.next() * 4) * s, rise = (2 + rng.next() * 3) * s;
+    const bp = [from, [from[0] + Math.sin(a) * reach * 0.5, from[1] + rise * 0.6, from[2] + Math.cos(a) * reach * 0.5], [from[0] + Math.sin(a) * reach, from[1] + rise, from[2] + Math.cos(a) * reach]];
+    parts.push({ geo: G.tube(bp, t => (0.3 - 0.18 * t) * s, 6), color: col(bark) });
+    clumps.push([bp[2][0], bp[2][1], bp[2][2], (3.2 + rng.next() * 1.8) * s]);
+    // lianas: a vine or two hanging off the limb, swinging a little off the vertical
+    if (rng.next() < 0.7) {
+      const vx = bp[1][0] + rng.range(-0.5, 0.5), vz = bp[1][2] + rng.range(-0.5, 0.5), top = bp[1][1], len = (6 + rng.next() * 9) * s, sway = rng.range(-1.2, 1.2);
+      const vp = []; for (let i = 0; i <= 5; i++) { const t = i / 5; vp.push([vx + sway * t * t, top - len * t, vz + sway * 0.6 * t]); }
+      parts.push({ geo: G.tube(vp, t => (0.06 - 0.025 * t) * s, 4), color: col('#5a6a2a') });
+    }
+  }
+  clumps.push([at(1)[0], H + 1.5 * s, at(1)[2], (4.5 + rng.next() * 2) * s]);
+  const A = M.hexLinear(leafA), B = M.hexLinear(leafB);
+  for (const [cx, cy, cz, r] of clumps) {
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const ox = rng.range(-0.5, 0.5) * r, oy = rng.range(-0.25, 0.3) * r, oz = rng.range(-0.5, 0.5) * r, rr = r * (0.6 + rng.next() * 0.45);
+      const shade = 0.55 + 0.55 * Math.max(0, (oy + rr * 0.5) / r) + rng.range(-0.05, 0.05);
+      const c = i % 2 ? A : B;
+      // flattened lobes read as spreading foliage rather than balloons
+      parts.push({ geo: G.sphere(rr, 8, 6), matrix: TS(cx + ox, cy + oy, cz + oz, 1.15, 0.62, 1.15, rng.range(0, 3)), color: [...c.map(v => v * shade), 1] });
+    }
+  }
+  return parts;
+}
+
+// a far tree for the forest wall on the horizon: a trunk and two lobes, cheap (the detail is in the fog anyway)
+export function farTree(x, z, s = 1, rng = new RNG(8), leaf = '#2f6b33') {
+  const H = (16 + rng.next() * 12) * s, base = M.hexLinear(leaf);
+  const parts = [{ geo: G.tube([[x, 0, z], [x + rng.range(-1, 1), H * 0.5, z + rng.range(-1, 1)], [x + rng.range(-2, 2), H, z + rng.range(-2, 2)]], t => (0.7 - 0.4 * t) * s, 5), color: col('#4a3a2c') }];
+  for (let i = 0; i < 2; i++) parts.push({ geo: G.sphere((4 + rng.next() * 3) * s, 6, 4), matrix: TS(x + rng.range(-3, 3), H + rng.range(-2, 2), z + rng.range(-3, 3), 1.2, 0.6, 1.2), color: [...base.map(v => v * rng.range(0.6, 1.0)), 1] });
+  return parts;
+}
+// an undergrowth bush: a few dark lobes
+export function bush(x, z, s = 1, rng = new RNG(9), leaf = '#2a5a2a') {
+  const parts = [], base = M.hexLinear(leaf), n = 2 + rng.int(0, 2);
+  for (let i = 0; i < n; i++) parts.push({ geo: G.sphere((0.8 + rng.next() * 0.8) * s, 7, 5), matrix: TS(x + rng.range(-1, 1) * s, 0.3 * s, z + rng.range(-1, 1) * s, 1.3, 0.7, 1.1, rng.range(0, 3)), color: [...base.map(v => v * rng.range(0.55, 1.0)), 1] });
+  return parts;
+}
+
+// a big leaf cluster hanging in the canopy: a few long drooping fronds (flattened lobes) from one point
+export function canopyLeaves(x, y, z, s = 1, rng = new RNG(4), leaf = '#3a7a3a') {
+  const parts = [], base = M.hexLinear(leaf), n = 4 + rng.int(0, 4);
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + rng.range(0, 0.7), L = (3 + rng.next() * 3) * s, droop = (0.8 + rng.next() * 1.4) * s;
+    const pts = []; for (let k = 0; k <= 4; k++) { const t = k / 4; pts.push([x + Math.sin(a) * L * t, y - droop * t * t, z + Math.cos(a) * L * t]); }
+    const shade = 0.5 + rng.next() * 0.6;
+    parts.push({ geo: G.tube(pts, t => (0.35 + 0.55 * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.05))) * s, 5), color: [...base.map(v => v * shade), 1] });
+  }
+  return parts;
+}
+
+// a liana hanging from (x, top, z) down to y1, sagging sideways; a few leaves along it
+export function vine(x, top, z, y1, rng = new RNG(5), opts = {}) {
+  const parts = [], sway = opts.sway ?? rng.range(-2, 2), swayZ = opts.swayZ ?? rng.range(-2, 2), n = 6;
+  const pts = []; for (let i = 0; i <= n; i++) { const t = i / n; pts.push([x + sway * Math.sin(t * Math.PI) * 0.5 + sway * t * t * 0.3, top + (y1 - top) * t, z + swayZ * Math.sin(t * Math.PI) * 0.5]); }
+  parts.push({ geo: G.tube(pts, t => 0.07 + 0.03 * (1 - t), 4), color: col(opts.color || '#56662a') });
+  const leaf = M.hexLinear(opts.leaf || '#3f8a3a');
+  for (let i = 1; i < n; i++) if (rng.next() < 0.75) {
+    const p = pts[i], a = rng.range(0, 6.3);
+    parts.push({ geo: G.sphere(0.32, 6, 4), matrix: TS(p[0] + Math.sin(a) * 0.3, p[1], p[2] + Math.cos(a) * 0.3, 1.6, 0.35, 0.9, a), color: [...leaf.map(v => v * rng.range(0.6, 1.1)), 1] });
+  }
+  return parts;
+}
+
+// a vine swag between two canopy points (a catenary), with leaves
+export function vineSwag(a, b, rng = new RNG(6), sag = 3) {
+  const parts = [], n = 8, pts = [];
+  for (let i = 0; i <= n; i++) { const t = i / n; pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - sag * Math.sin(t * Math.PI), a[2] + (b[2] - a[2]) * t]); }
+  parts.push({ geo: G.tube(pts, 0.09, 4), color: col('#56662a') });
+  const leaf = M.hexLinear('#3f8a3a');
+  for (let i = 1; i < n; i++) if (rng.next() < 0.6) { const p = pts[i]; parts.push({ geo: G.sphere(0.4, 6, 4), matrix: TS(p[0], p[1] - 0.2, p[2], 1.6, 0.3, 0.9, rng.range(0, 6.3)), color: [...leaf.map(v => v * rng.range(0.6, 1.1)), 1] }); }
+  return parts;
+}
+
+// a fern: a fan of drooping fronds from the ground
+export function fern(x, z, s = 1, rng = new RNG(7), leaf = '#3f8a3a') {
+  const parts = [], base = M.hexLinear(leaf), n = 6 + rng.int(0, 4);
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + rng.range(0, 0.5), L = (0.9 + rng.next() * 0.7) * s;
+    const pts = []; for (let k = 0; k <= 3; k++) { const t = k / 3; pts.push([x + Math.sin(a) * L * t, 0.1 + (0.9 * Math.sin(t * Math.PI * 0.6)) * s - t * t * 0.3 * s, z + Math.cos(a) * L * t]); }
+    parts.push({ geo: G.tube(pts, t => (0.04 + 0.16 * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.05))) * s, 4), color: [...base.map(v => v * rng.range(0.55, 1.05)), 1] });
+  }
+  return parts;
+}
+
 export function fenceFrame(x0, z0, x1, z1, h = 3.6, color = '#59636b') {
   const parts = [];
   const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 3));

@@ -1,0 +1,7 @@
+{
+  "_": "Park event schedule (v0.4.7.5 qp3). The entries are checked in order; the first whose [from, until) holds the moment wins. Times are Unix seconds (UTC). To bring an event back, add an entry for it: {\"event\": \"kingtut\", \"from\": <when>, \"until\": null}. 1791763200 = 2026-10-12 00:00 UTC, the end of the King Tut Cup's last window (141). The 48-hour windows run back to back from cup.EPOCH whatever event is on.",
+  "schedule": [
+    {"event": "kingtut", "from": null, "until": 1791763200},
+    {"event": "jungle", "from": 1791763200, "until": null}
+  ]
+}

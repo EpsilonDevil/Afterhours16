@@ -16,7 +16,7 @@ import math
 import re
 import time
 
-from .cup import Mulberry, fnv
+from .cup import Mulberry, fnv, EVENT_VENUES
 
 LEVELS = 40
 MAX_MEMBERS = 39
@@ -43,7 +43,7 @@ def level_info(xp):
 
 
 def game_xp(rep, mode, venue=None, with_crew=False):
-    weight = MODE_WEIGHT["event"] if venue == "kingtut" else MODE_WEIGHT.get(mode, 0)
+    weight = MODE_WEIGHT["event"] if venue in EVENT_VENUES else MODE_WEIGHT.get(mode, 0)  # (v0.4.7.5 qp3: every park event)
     return int(round(max(0, rep) * CREW_SHARE * weight * (MATES_BONUS if with_crew else 1)))
 
 

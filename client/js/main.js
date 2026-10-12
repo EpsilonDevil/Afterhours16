@@ -11,7 +11,7 @@ import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
 import { resolveLook } from './sim/bots.js';
-import { initWorld } from './sim/world.js';
+import { initWorld, setEventVenue } from './sim/world.js';
 import { $, toast, modal, closeModal, esc } from './ui/common.js';
 import * as Screens from './ui/screens.js';
 import { togglePhone, phoneOpen } from './ui/phone.js';
@@ -65,6 +65,7 @@ async function boot() {
     return;
   }
   app.catalog = Object.fromEntries(app.config.catalog.map(i => [i.id, i]));
+  setEventVenue(app.config.event?.venue || null); // v0.4.7.5 qp3: which park event is on (the AI world sends its entrants there)
   bootMsg('Building the studio…', 0.6);
   app.showroom = new Showroom(app);
   app.scene = app.showroom.scene;

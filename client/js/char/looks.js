@@ -417,6 +417,58 @@ export function paintMocap(spec, kind, mask = false) {
   return c;
 }
 
+// v0.4.7.5 qp3 The Jungle Ballers gorilla costume: shaggy black-brown fur painted as thousands of short hair strokes
+// over a dark base, with longer tufts, a silver saddle across the back of the top (spec.trim, lighter), and a bare
+// leather chest panel (spec.chest) down the front. The legs are all fur. The same UV layout as the mo-cap suit.
+export function paintGorilla(spec, kind) {
+  const W = 512, c = canvas(W, W), g = c.getContext('2d');
+  const base = hexToRgb(spec.color || '#1d1715'), noise = makeNoise2D(31), rng = new RNG(kind === 'top' ? 77 : 78);
+  const img = g.createImageData(W, W), d = img.data;
+  for (let i = 0, y = 0; y < W; y++) for (let x = 0; x < W; x++, i += 4) {
+    const k = 0.8 + noise(x * 0.35, y * 0.35) * 0.4 + noise(x * 3, y * 3) * 0.12;
+    d[i] = Math.min(255, base[0] * k * 255); d[i + 1] = Math.min(255, base[1] * k * 255); d[i + 2] = Math.min(255, base[2] * k * 255); d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // fur: short strokes, all leaning the way the hair lies (down the body, down the arms and legs), lit and shaded
+  const hair = (n, x0, y0, x1, y1, len, w, light) => {
+    for (let i = 0; i < n; i++) {
+      const x = x0 + rng.next() * (x1 - x0), y = y0 + rng.next() * (y1 - y0), a = Math.PI / 2 + (rng.next() - 0.5) * 0.9, l = len * (0.6 + rng.next() * 0.8);
+      const t = rng.next();
+      g.strokeStyle = t < 0.35 ? `rgba(0,0,0,${0.25 + rng.next() * 0.3})` : t < 0.7 ? `rgba(${light},${light * 0.8 | 0},${light * 0.65 | 0},${0.12 + rng.next() * 0.2})` : `rgba(90,70,55,${0.1 + rng.next() * 0.2})`;
+      g.lineWidth = w * (0.6 + rng.next() * 0.8); g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x * W, y * W); g.lineTo(x * W + Math.cos(a) * l, y * W + Math.sin(a) * l); g.stroke();
+    }
+  };
+  if (kind === 'top') {
+    hair(9000, 0, 0, 1, 0.76, 11, 1.6, 120);     // torso
+    hair(5000, 0, 0.78, 1, 1.0, 10, 1.5, 120);   // sleeves
+    // the silver saddle: a band of pale, longer hair across the back (u .5-1 is the back half)
+    g.save(); g.beginPath(); g.rect(0.52 * W, 0.2 * W, 0.46 * W, 0.34 * W); g.clip();
+    const sg = g.createLinearGradient(0, 0.2 * W, 0, 0.54 * W); sg.addColorStop(0, 'rgba(150,140,125,0.0)'); sg.addColorStop(0.3, 'rgba(165,155,140,0.75)'); sg.addColorStop(0.75, 'rgba(165,155,140,0.75)'); sg.addColorStop(1, 'rgba(150,140,125,0.0)');
+    g.fillStyle = sg; g.fillRect(0.52 * W, 0.2 * W, 0.46 * W, 0.34 * W);
+    hair(3600, 0.52, 0.2, 0.98, 0.54, 14, 1.8, 225);
+    g.restore();
+    // the bare chest: a leather panel down the front centre (u ~.25), lighter at the top, no fur over it
+    const chest = spec.chest || '#5a4a40';
+    g.save(); g.translate(0.25 * W, 0.06 * W);
+    g.beginPath(); g.moveTo(-0.075 * W, 0); g.quadraticCurveTo(-0.1 * W, 0.26 * W, -0.05 * W, 0.5 * W); g.lineTo(0.05 * W, 0.5 * W); g.quadraticCurveTo(0.1 * W, 0.26 * W, 0.075 * W, 0); g.closePath();
+    const grd = g.createLinearGradient(0, 0, 0, 0.5 * W); grd.addColorStop(0, chest); grd.addColorStop(1, '#2a221e');
+    g.fillStyle = grd; g.fill();
+    // the pecs and the belly's crease, drawn soft
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 0.08 * W); g.lineTo(0, 0.46 * W); g.stroke();
+    g.beginPath(); g.moveTo(-0.06 * W, 0.16 * W); g.quadraticCurveTo(-0.02 * W, 0.2 * W, 0, 0.17 * W); g.quadraticCurveTo(0.02 * W, 0.2 * W, 0.06 * W, 0.16 * W); g.stroke();
+    g.restore();
+    // a fringe of longer hair round the panel's edge
+    g.save(); g.beginPath(); g.rect(0.14 * W, 0.04 * W, 0.22 * W, 0.56 * W); g.clip(); hair(900, 0.14, 0.04, 0.36, 0.6, 16, 1.4, 70); g.restore();
+  } else {
+    hair(4000, 0, 0, 1, 0.5, 11, 1.6, 120);      // waist
+    hair(9000, 0, 0.5, 1, 1.0, 12, 1.6, 120);    // legs
+    // the fur thins to skin at the ankles (the bottom 4% of each leg)
+    g.fillStyle = 'rgba(40,30,26,0.55)'; g.fillRect(0, 0.965 * W, W, 0.035 * W);
+  }
+  return c;
+}
+
 export function paintShorts(spec) {
   const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#202833'), trim = hexToRgb(spec.trim || '#ffffff'), stripe = hexToRgb(spec.stripe || spec.trim || '#ffffff');

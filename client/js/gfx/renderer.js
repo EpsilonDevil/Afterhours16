@@ -43,11 +43,13 @@ export class Material {
     // and [time s, seed, density, 0]
     this.flame = o.flame || null;
     this.flameT = o.flameT || [0, 0, 0, 0];
+    // v0.4.7.5 qp3: rain streaks (shaders.js RAIN): [fall height m, speed m/s, slant x, slant z]
+    this.rain = o.rain || null;
   }
   defines(ldr) {
     return {
       HAS_MAP: !!this.map, HAS_NORMALMAP: !!this.normalMap, HAS_RMAP: !!this.roughMap, HAS_EMAP: !!this.emissiveMap, HAS_DETAIL: !!this.detailMap,
-      ALPHA_MASK: this.alphaTest > 0, ALPHA_BLEND: !!this.blend, UNLIT: this.shading === 'unlit' || !!this.flame, FLAME: !!this.flame,
+      ALPHA_MASK: this.alphaTest > 0, ALPHA_BLEND: !!this.blend, UNLIT: this.shading === 'unlit' || !!this.flame, FLAME: !!this.flame, RAIN: !!this.rain,
       SKIN: this.shading === 'skin', CLOTH: this.shading === 'cloth', FLOOR: !!this.floor,
       REFLECTIVE: this.reflective, CHARACTER: this.character, CROWD: this.crowd, LDR: ldr,
     };
@@ -316,6 +318,7 @@ export class Renderer {
     if (m.reflective) c.set(p, 'uReflectStrength', this.reflRT && this.reflOn ? m.reflectStrength : 0);
     c.set(p, 'uFogDensity', m.fog ? this.fogDensity : 0);
     if (m.flame) { c.set(p, 'uFlame', m.flame); c.set(p, 'uFlameT', m.flameT); }
+    if (m.rain) c.set(p, 'uRain', m.rain);
   }
 
   drawList(list, scene, cam, pass) {

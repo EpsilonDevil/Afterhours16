@@ -49,11 +49,11 @@ const rms = (x, t0, t1) => { let s = 0, n = 0; for (let i = Math.round(t0 * SR);
 const R = {};
 const sound = id => (R[id] || (R[id] = { x: renderGreen(id), st: renderGreen.stats }));
 
-test('twice the green releases: 32 sounds and 28 effects, in the code and in the store', () => {
-  assert.equal(GREEN_SOUND_IDS.length, 32);
-  assert.equal(GREEN_FX_IDS.length, 28);
+test('twice the green releases: 32 sounds and 28 effects, in the code and in the store (+ the Jungle Ballers pair)', () => {
+  assert.equal(GREEN_SOUND_IDS.length, 33);
+  assert.equal(GREEN_FX_IDS.length, 29);
   const snd = greens.filter(i => i.slot === 'greensound'), fx = greens.filter(i => i.slot === 'greenfx');
-  assert.equal(snd.length, 32); assert.equal(fx.length, 28);
+  assert.equal(snd.length, 33); assert.equal(fx.length, 29);
   for (const i of snd) { assert.equal(GREEN_SOUNDS[i.id], i.name, i.id); assert.ok(greenRecipe(i.id), i.id); }
   for (const i of fx) assert.equal(GREEN_FX[i.id], i.name, i.id);
   const fresh = greens.filter(i => i.v0475qp);

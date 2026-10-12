@@ -61,7 +61,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   };
 
   // ---------- ambient traffic / boats / machinery (always running) ----------
-  const movers = [];
+  const movers = [], updExtra = [];
   const carParts = (body, cabin) => [
     { geo: G.box(1.8, 0.62, 4.3), matrix: T(0, 0.62, 0), color: col(body) },
     { geo: G.box(1.62, 0.55, 2.3), matrix: T(0, 1.2, -0.2), color: col(cabin) },
@@ -120,6 +120,76 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       const m = add(geoOf([{ geo: G.cylinder(0.35, 0.5, 0.9, 8, { y0: true }), matrix: T(0, 0, 0), color: [...lin(hue).map(v => v * 2.4), 1] }], 'lantern' + hue), lantern);
       movers.push({ meshes: [m], x: rng.range(-110, 110), z: rng.range(-70, 80), y: rng.range(14, 30), dir: rng.next() < 0.5 ? 1 : -1, v: rng.range(0.6, 1.4), boat: true, ph: rng.range(0, 6) });
     }
+  } else if (theme.style === 'jungle') {
+    // v0.4.7.5 qp3 The Jungle Ballers: animals roaming the forest floor round the park. Each one is a body mesh and
+    // two leg meshes (opposite pairs) that swing as it walks; they wander a ring of waypoints outside the fences,
+    // stopping now and then. A sloth hangs from a liana by the east annex and barely moves.
+    const skin = new Material({ color: [1, 1, 1], roughness: 0.85, shading: 'cloth', sheen: [0.06, 0.05, 0.04] });
+    const Q = (yaw, swing) => M.qmul(M.q4(), M.qaxis(M.q4(), 0, 1, 0, yaw), M.qaxis(M.q4(), 1, 0, 0, swing));
+    // waypoints: a ring just outside the fences, jittered; the waterfall pool (north middle) is skipped
+    const ring = [];
+    for (let i = 0; i < 10; i++) ring.push([-76 + i * 17, -44 + rng.range(-3, 3)]);
+    for (let i = 1; i < 5; i++) ring.push([78 + rng.range(-3, 3), -44 + i * 17.6]);
+    for (let i = 0; i < 10; i++) { const x = 76 - i * 17; ring.push([x, (Math.abs(x) < 22 ? 40 : 44) + rng.range(-2, 2)]); }
+    for (let i = 1; i < 5; i++) ring.push([-78 + rng.range(-3, 3), 44 - i * 17.6]);
+    const creature = (spec, k = 1) => {
+      const body = add(geoOf(() => spec.body.map(q => ({ ...q, matrix: M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [k, k, k]), q.matrix || M.m4()) })), 'cr-' + spec.key + k), skin);
+      const legGeo = (dz, s2) => geoOf(() => spec.legs.map(([x, z]) => ({ geo: G.box(spec.legW * k, spec.legH * k, spec.legW * k), matrix: T(x * k * s2, -spec.legH * k / 2, (z + dz) * k), color: col(spec.legColor) })), 'legs-' + spec.key + k + dz + s2);
+      // pair A: front-left + back-right; pair B: front-right + back-left (they swing opposite ways)
+      const legsA = add(legGeo(0, 1), skin), legsB = add(legGeo(0, -1), skin);
+      return { body, legsA, legsB, hip: spec.hip * k, k, speed: spec.speed, bob: spec.bob ?? 0.03, stride: spec.stride ?? 7, swing: spec.swing ?? 0.55, i: rng.int(0, ring.length - 1), dir: rng.next() < 0.5 ? 1 : -1, x: 0, z: 0, yaw: 0, ph: rng.range(0, 6), pause: rng.range(0, 4), t: 0 };
+    };
+    const JAGUAR = { key: 'jaguar', speed: 1.5, hip: 0.72, legW: 0.11, legH: 0.7, legColor: '#c9962f', stride: 8, swing: 0.6,
+      body: [{ geo: G.box(0.46, 0.42, 1.5), matrix: T(0, 0.9, 0), color: col('#d2a23a') }, { geo: G.box(0.34, 0.3, 0.5), matrix: T(0, 1.1, 0.9), color: col('#d2a23a') }, { geo: G.box(0.3, 0.2, 0.26), matrix: T(0, 1.02, 1.18), color: col('#e8d8b0') },
+        ...[-0.11, 0.11].map(x => ({ geo: G.box(0.08, 0.08, 0.06), matrix: T(x, 1.26, 1.08), color: col('#2a2018') })),
+        ...Array.from({ length: 14 }, (_, i) => ({ geo: G.box(0.07, 0.07, 0.07), matrix: T((i % 2 ? 0.2 : -0.2) + rng.range(-0.05, 0.05), 0.85 + rng.range(0, 0.25), -0.6 + i * 0.1), color: col('#3a2a14') })),
+        { geo: G.tube([[0, 0.95, -0.75], [0, 1.0, -1.2], [0.1, 0.8, -1.55]], 0.04, 4), color: col('#c9962f') }],
+      legs: [[-0.16, 0.55], [0.16, -0.55]] };
+    const CAPY = { key: 'capy', speed: 0.6, hip: 0.42, legW: 0.1, legH: 0.4, legColor: '#5a4330', stride: 6, swing: 0.4,
+      body: [{ geo: G.box(0.5, 0.48, 1.0), matrix: T(0, 0.65, 0), color: col('#7a5a3c') }, { geo: G.box(0.34, 0.34, 0.5), matrix: T(0, 0.7, 0.62), color: col('#7a5a3c') }, ...[-0.1, 0.1].map(x => ({ geo: G.box(0.06, 0.1, 0.04), matrix: T(x, 0.92, 0.5), color: col('#5a4330') })), { geo: G.box(0.2, 0.14, 0.12), matrix: T(0, 0.6, 0.9), color: col('#4a3324') }],
+      legs: [[-0.18, 0.35], [0.18, -0.35]] };
+    const TAPIR = { key: 'tapir', speed: 0.85, hip: 0.68, legW: 0.13, legH: 0.66, legColor: '#2a2624', stride: 6, swing: 0.45,
+      body: [{ geo: G.box(0.66, 0.6, 1.5), matrix: T(0, 0.98, 0), color: col('#2e2a28') }, { geo: G.box(0.64, 0.5, 0.9), matrix: T(0, 1.06, -0.2), color: col('#d8d2c8') }, { geo: G.box(0.4, 0.4, 0.6), matrix: T(0, 1.05, 0.95), color: col('#2e2a28') }, { geo: G.tube([[0, 1.0, 1.25], [0, 0.9, 1.5], [0, 0.72, 1.6]], 0.08, 5), color: col('#2e2a28') }, ...[-0.14, 0.14].map(x => ({ geo: G.box(0.08, 0.14, 0.05), matrix: T(x, 1.32, 0.85), color: col('#2e2a28') }))],
+      legs: [[-0.22, 0.55], [0.22, -0.55]] };
+    const MONKEY = { key: 'monkey', speed: 1.3, hip: 0.4, legW: 0.07, legH: 0.38, legColor: '#4a3a2a', stride: 10, swing: 0.7, bob: 0.08,
+      body: [{ geo: G.box(0.26, 0.3, 0.5), matrix: T(0, 0.55, 0), color: col('#5a4632') }, { geo: G.sphere(0.13, 7, 6), matrix: T(0, 0.72, 0.3), color: col('#5a4632') }, { geo: G.box(0.16, 0.12, 0.08), matrix: T(0, 0.69, 0.42), color: col('#d8c8a8') }, { geo: G.tube([[0, 0.6, -0.25], [0, 0.95, -0.5], [0.1, 1.15, -0.3]], 0.025, 4), color: col('#5a4632') }],
+      legs: [[-0.1, 0.18], [0.1, -0.18]] };
+    const animals = [creature(JAGUAR), creature(TAPIR), creature(MONKEY), creature(MONKEY, 0.9), creature(MONKEY, 1.1)];
+    const herd = [creature(CAPY), creature(CAPY, 0.85), creature(CAPY, 0.7)];
+    herd[1].follow = herd[0]; herd[2].follow = herd[0]; herd[1].off = [1.4, -0.6]; herd[2].off = [-1.2, -1.1];
+    animals.push(...herd);
+    for (const a of animals) { const w = ring[a.i]; a.x = w[0]; a.z = w[1]; }
+    // the sloth: hanging under a liana by the east annex, turning its head now and then
+    const slothY = 6.2;
+    const sloth = add(geoOf(() => [{ geo: G.box(0.34, 0.3, 0.7), matrix: T(0, -0.3, 0), color: col('#6a6048') }, { geo: G.sphere(0.16, 7, 6), matrix: T(0, -0.2, 0.42), color: col('#7a7058') }, { geo: G.box(0.1, 0.05, 0.03), matrix: T(0, -0.22, 0.58), color: col('#2a2018') },
+      ...[[-0.14, 0.25], [0.14, 0.25], [-0.14, -0.25], [0.14, -0.25]].map(([x, z]) => ({ geo: G.box(0.06, 0.5, 0.06), matrix: T(x, 0.1, z), color: col('#5a5040') })),
+      { geo: G.tube([[0, 0.3, -0.6], [0, 6, -0.6]], 0.05, 4), color: col('#56662a') }, { geo: G.tube([[0, 0.3, 0.6], [0, 6, 0.6]], 0.05, 4), color: col('#56662a') }], 'sloth'), skin);
+    movers.push({ meshes: [sloth], x: 70, z: 18, y: slothY, dir: 1, v: 0, boat: true, ph: 0, sloth: true });
+    const updAnimals = dt => {
+      for (const a of animals) {
+        a.t += dt;
+        if (a.follow) {
+          // a follower keeps its place beside the leader
+          const L = a.follow, tx = L.x + Math.cos(L.yaw) * a.off[0] - Math.sin(L.yaw) * a.off[1], tz = L.z - Math.sin(L.yaw) * a.off[0] - Math.cos(L.yaw) * a.off[1];
+          const dx = tx - a.x, dz = tz - a.z, d = Math.hypot(dx, dz);
+          const moving = d > 0.3;
+          if (moving) { const v = Math.min(a.speed * 1.3, d) * dt; a.x += dx / d * v; a.z += dz / d * v; a.yaw = Math.atan2(dx, dz); }
+          a.ph += dt * (moving ? a.stride : 0);
+        } else if (a.pause > 0) { a.pause -= dt; }
+        else {
+          const w = ring[a.i], dx = w[0] - a.x, dz = w[1] - a.z, d = Math.hypot(dx, dz);
+          if (d < 0.5) { a.i = (a.i + a.dir + ring.length) % ring.length; if (rng.next() < 0.35) a.pause = rng.range(2, 8); if (rng.next() < 0.1) a.dir = -a.dir; }
+          else { a.x += dx / d * a.speed * dt; a.z += dz / d * a.speed * dt; let want = Math.atan2(dx, dz), dd = want - a.yaw; while (dd > Math.PI) dd -= Math.PI * 2; while (dd < -Math.PI) dd += Math.PI * 2; a.yaw += dd * Math.min(1, dt * 4); }
+          a.ph += dt * a.stride;
+        }
+        const walking = a.follow ? true : a.pause <= 0;
+        const sw = walking ? Math.sin(a.ph) * a.swing : 0, bob = walking ? Math.abs(Math.sin(a.ph)) * a.bob : 0;
+        M.m4fromYaw(a.body.matrix, a.x, bob, a.z, a.yaw, a.k);
+        M.m4compose(a.legsA.matrix, [a.x, a.hip + bob, a.z], Q(a.yaw, sw), [1, 1, 1]);
+        M.m4compose(a.legsB.matrix, [a.x, a.hip + bob, a.z], Q(a.yaw, -sw), [1, 1, 1]);
+      }
+    };
+    updExtra.push(updAnimals);
   } else {
     // industrial: a forklift shuttling along the container yard, and the crane trolley working
     const fork = add(geoOf([
@@ -146,6 +216,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       else if (m.shuttle) { if (m.x > m.x1 || m.x < m.x0) m.dir = -m.dir; }
       else m.x = wrapX(m.x, -110, 110);
       const yaw = m.axis === 'z' ? (m.dir > 0 ? 0 : Math.PI) : m.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+      if (m.sloth) { m.ph += dt * 0.25; M.m4fromYaw(m.meshes[0].matrix, m.x, m.y + Math.sin(m.ph) * 0.05, m.z, Math.PI / 2 + Math.sin(m.ph * 0.7) * 0.25); continue; }
       const y = m.boat ? m.y + Math.sin((m.ph += dt * 1.3)) * 0.12 : 0;
       for (const mesh of m.meshes) M.m4fromYaw(mesh.matrix, m.x, y, m.z, yaw);
       if (m.boat) { const roll = Math.sin(m.ph * 0.8) * 0.04; for (const mesh of m.meshes) mesh.matrix[1] = roll; }
@@ -165,8 +236,10 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   const events = [];
   const birds = (kind) => {
     // a flock crosses the park, wheeling once over the courts
-    const n = 9 + rng.int(0, 6), c = kind === 'gull' ? '#f4f2ec' : kind === 'crow' ? '#141416' : '#7d8088';
-    const geo = geoOf(() => [{ geo: G.box(0.5, 0.03, 0.12), matrix: T(0, 0, 0), color: col(c) }, { geo: G.box(0.08, 0.08, 0.3), matrix: T(0, 0, 0.02), color: col(c) }], 'bird' + kind);
+    const n = kind === 'toucan' ? 3 + rng.int(0, 3) : kind === 'macaw' ? 2 + rng.int(0, 3) : 9 + rng.int(0, 6), c = kind === 'gull' ? '#f4f2ec' : kind === 'crow' || kind === 'toucan' ? '#141416' : kind === 'macaw' ? '#d8302a' : '#7d8088';
+    // v0.4.7.5 qp3: toucans (black, a cream bib, the big orange beak) and macaws (red, blue wings, a long tail)
+    const geo = geoOf(() => [{ geo: G.box(kind === 'macaw' ? 0.7 : 0.5, 0.03, 0.14), matrix: T(0, 0, 0), color: col(kind === 'macaw' ? '#2457c5' : c) }, { geo: G.box(0.08, 0.08, kind === 'macaw' ? 0.34 : 0.3), matrix: T(0, 0, 0.02), color: col(c) },
+      ...(kind === 'toucan' ? [{ geo: G.box(0.05, 0.05, 0.2), matrix: T(0, -0.01, 0.26), color: col('#ff8a1f') }, { geo: G.box(0.07, 0.04, 0.1), matrix: T(0, -0.05, 0.1), color: col('#fff3d0') }] : kind === 'macaw' ? [{ geo: G.box(0.04, 0.03, 0.3), matrix: T(0, 0, -0.3), color: col('#2457c5') }, { geo: G.box(0.05, 0.05, 0.08), matrix: T(0, 0, 0.22), color: col('#f4f2ec') }] : [])], 'bird' + kind);
     const flock = [], side = rng.next() < 0.5 ? -1 : 1, z0 = rng.range(-20, 20);
     for (let i = 0; i < n; i++) flock.push({ m: add(geo, vmat), o: [rng.range(-3, 3), rng.range(-1, 1.5), rng.range(-3, 3)], ph: rng.range(0, 6) });
     let t = 0; const dur = 16;
@@ -300,8 +373,36 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       return true;
     };
   };
+  // v0.4.7.5 qp3 The Jungle Ballers: mist rolling off the forest floor, fireflies in the trees, butterflies over the
+  // ferns; the toucans and macaws fly low through the canopy (birds)
+  const mist = () => {
+    const x0 = rng.pick([-1, 1]) * rng.range(60, 80), z0 = rng.range(-40, 40); let t = 0;
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 6) r.particles.burst(x0 + rng.range(-12, 12), 0.4, z0 + rng.range(-12, 12), 3, { color: [0.55, 0.62, 0.55], speed: 0.4, up: 0.3, life: 6, size: 2.2, gravity: 0.02, drag: 0.4 });
+      return t < 14;
+    };
+  };
+  const fireflies = () => {
+    const x0 = rng.pick([-1, 1]) * rng.range(66, 90), z0 = rng.range(-44, 44); let t = 0;
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 9) r.particles.burst(x0 + rng.range(-10, 10), rng.range(1, 6), z0 + rng.range(-10, 10), 1, { color: [2.2, 3.2, 0.8], speed: 0.5, up: 0.2, life: 2.4, size: 0.09, gravity: 0, drag: 0.8, flick: 1 });
+      return t < 16;
+    };
+  };
+  const butterflies = () => {
+    const x0 = rng.range(-60, 60), z0 = rng.pick([-35, 33]); let t = 0;
+    const hue = rng.pick([[2.6, 1.2, 0.3], [0.6, 1.4, 2.8], [2.8, 2.4, 0.5], [2.4, 0.6, 1.8]]);
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 5) r.particles.burst(x0 + rng.range(-6, 6), rng.range(0.6, 2.4), z0 + rng.range(-2, 2), 1, { color: hue, speed: 0.6, up: 0.4, life: 3, size: 0.12, gravity: -0.1, drag: 0.5, flick: 1 });
+      return t < 12;
+    };
+  };
   const EVENTS = {
     coast: [() => birds('gull'), () => birds('gull'), speedboat, speedboat, plane],
+    jungle: [() => birds('toucan'), () => birds('toucan'), () => birds('macaw'), mist, fireflies, butterflies],
     city: [() => train('el'), heli, () => birds('pigeon'), fireworksOrLights, plane],
     industrial: [() => train('freight'), () => train('freight'), sparks, steam, () => birds('crow')],
     tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
@@ -315,7 +416,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   return {
     update(dt) {
       dt = Math.min(dt, 0.1);
-      updPeople(dt); updMovers(dt);
+      updPeople(dt); updMovers(dt); for (const f of updExtra) f(dt);
       for (let i = events.length - 1; i >= 0; i--) {
         if (events[i].fn(dt)) continue;
         for (const m of events[i].meshes) scene.remove(m); // geometry stays cached for the next time

@@ -1,11 +1,17 @@
-"""v0.4.5 The King Tut Cup: a glow-in-the-dark park event that runs in back-to-back 48-hour windows.
+"""v0.4.5 The King Tut Cup, generalised in v0.4.7.5 (qp3) into park EVENTS that run in back-to-back 48-hour windows.
 
-Every game in the Cup is an ante-up. You put VC on the line when the game starts; a win pays your stake back
-plus the other side's stake (boosted by your Cup win streak, the same multiplier the park uses), on top of
+Every game in an event is an ante-up. You put VC on the line when the game starts; a win pays your stake back
+plus the other side's stake (boosted by your event win streak, the same multiplier the park uses), on top of
 the normal game VC. A loss or a quit keeps nothing of the stake. The leaderboard ranks the net VC earned in
-the Cup during the window (everything the games paid out, minus every stake), against the AI hoopers of
-your account's AI world who entered this window's Cup. When a window closes, the final standings pay out
-prizes once: the top spot wins the glow-in-the-dark motion-capture suit, plus exclusive gear and VC.
+the event during the window (everything the games paid out, minus every stake), against the AI hoopers of
+your account's AI world who entered this window. When a window closes, the final standings pay out prizes
+once: the top spot wins the event's grand-prize costume, plus exclusive gear and VC.
+
+Which event is on is a schedule (server/events.json): the King Tut Cup until the end of its last window, then
+The Jungle Ballers. An event that is off the schedule is disabled in the game (its park can't be entered, its
+venue refuses games) but nothing of it is deleted: put it back on the schedule and it runs again. The window
+numbers keep counting whatever event is on, so a window's standings and prizes belong to the event that was
+running when it started (event_for_window).
 
 The AI field is computed here, on the server, from the AI world's seed. Who enters, their skill tier and how
 much they play are deterministic, so the board is the same every time you look, it fills in as the 48 hours
@@ -13,6 +19,8 @@ go by, and the standings that decide the prizes can't be edited on the client. T
 is derived exactly as the client derives it (mulberry32 + FNV-1a, see client/js/sim/world.js), so the board
 and the park agree on who is a Park Legend.
 """
+import json
+import os
 import math
 import time
 
@@ -21,7 +29,6 @@ EPOCH = 1767225600  # 2026-01-01 00:00 UTC; windows run back to back from here
 POOL = 900          # AI world size (client/js/sim/world.js POOL_SIZE)
 ENTRY_PCT = 22      # share of the AI world that enters any given Cup
 ANTES = (500, 1000, 2500, 5000, 10000)
-VENUE = "kingtut"
 
 # same shares and order as SKILL_TIERS in client/js/sim/world.js
 TIER_SHARES = (0.2, 0.33, 0.26, 0.16, 0.05)
@@ -29,8 +36,9 @@ TIER_IDS = ("casual", "regular", "hooper", "elite", "legend")
 TIER_SKILL = (0.2, 0.42, 0.62, 0.8, 0.94)
 TIER_ANTE = ((0, 1), (0, 2), (1, 3), (2, 4), (3, 4))  # index range into ANTES
 
-# final-standings prizes: (best rank, label, VC, items)
-PRIZES = (
+# final-standings prizes per event: (best rank, label, VC, items). The VC ladder is the same for every event;
+# the cosmetics and animations are each event's own (nothing from one event is handed out by another)
+PRIZES_KINGTUT = (
     (1, "King of the Cup", 150000, ("cup_mocap_top", "cup_mocap_tights", "cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab",
                                     "cup_gfx_ankh", "cup_gsnd_pharaoh")),
     (3, "Top 3", 60000, ("cup_shoes_pharaoh", "cup_celly_pharaoh", "cup_band_scarab", "cup_gfx_ankh", "cup_gsnd_pharaoh")),
@@ -38,6 +46,59 @@ PRIZES = (
     (10, "Top 10", 25000, ("cup_celly_pharaoh", "cup_band_scarab", "cup_gsnd_pharaoh")),
     (25, "Top 25", 10000, ("cup_band_scarab",)),
 )
+# v0.4.7.5 qp3 The Jungle Ballers: the gorilla costume for the winner, Toucan kicks, the Chest Beat, the Toucan
+# feather band, the Banana Peel green release and the Jungle Bongos
+PRIZES_JUNGLE = (
+    (1, "King of the Jungle", 150000, ("jb_gorilla_top", "jb_gorilla_legs", "jb_shoes_toucan", "jb_celly_chestbeat", "jb_band_toucan",
+                                       "jb_gfx_banana", "jb_gsnd_bongos")),
+    (3, "Top 3", 60000, ("jb_shoes_toucan", "jb_celly_chestbeat", "jb_band_toucan", "jb_gfx_banana", "jb_gsnd_bongos")),
+    (10, "Top 10", 25000, ("jb_celly_chestbeat", "jb_band_toucan", "jb_gsnd_bongos")),
+    (25, "Top 25", 10000, ("jb_band_toucan",)),
+)
+PRIZES = PRIZES_KINGTUT  # (the original table; kept for the tests and for anything that still reads it)
+EVENTS = {
+    "kingtut": {"id": "kingtut", "venue": "kingtut", "name": "The King Tut Cup", "short": "King Tut Cup", "exclusive": "cup",
+                "prizes": PRIZES_KINGTUT, "played": "Played the Cup", "blurb": "Glow-in-the-dark ante-ups among the pyramids."},
+    "jungle": {"id": "jungle", "venue": "jungle", "name": "The Jungle Ballers", "short": "Jungle Ballers", "exclusive": "jungle",
+               "prizes": PRIZES_JUNGLE, "played": "Played the Jungle", "blurb": "Ante-ups under the rainforest canopy, rain on every streak."},
+}
+EVENT_VENUES = {e["venue"] for e in EVENTS.values()}
+EVENT_BY_VENUE = {e["venue"]: e for e in EVENTS.values()}
+SCHEDULE_FILE = os.path.join(os.path.dirname(__file__), "events.json")
+
+
+def load_schedule(path=SCHEDULE_FILE):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)["schedule"]
+
+
+SCHEDULE = load_schedule()
+
+
+def active_event(t=None, schedule=None):
+    """The event on at time t (an EVENTS entry) or None when nothing is scheduled."""
+    t = time.time() if t is None else t
+    for row in (SCHEDULE if schedule is None else schedule):
+        lo, hi = row.get("from"), row.get("until")
+        if (lo is None or t >= lo) and (hi is None or t < hi) and row["event"] in EVENTS:
+            return EVENTS[row["event"]]
+    return None
+
+
+def event_for_window(w, schedule=None):
+    """The event a window's standings and prizes belong to: the one on when the window started."""
+    return active_event(window_bounds(w)[0] + 1, schedule)
+
+
+def public_event(ev, w=None):
+    """What the client gets to know about an event (id, venue, name) with the window it is in."""
+    if not ev:
+        return None
+    w = window_at() if w is None else w
+    start, end = window_bounds(w)
+    return {"id": ev["id"], "venue": ev["venue"], "name": ev["name"], "short": ev["short"], "exclusive": ev["exclusive"], "window": w, "start": start, "end": end}
+
+
 TOP_HALF_VC = 3000
 PLAYED_VC = 1000
 
@@ -152,17 +213,24 @@ def standings(seed, w, me=None, until=None):
     return rows
 
 
-def prize_for(rank, field):
+def prize_for(rank, field, event=None):
     """VC and items for a final rank in a field of `field` players (None when nothing is due)."""
     if rank is None:
         return None
-    for best, label, vc, items in PRIZES:
+    ev = event or EVENTS["kingtut"]
+    for best, label, vc, items in ev["prizes"]:
         if rank <= best:
             return {"label": label, "vc": vc, "items": list(items)}
     if rank <= max(1, math.ceil(field / 2)):
         return {"label": "Top half", "vc": TOP_HALF_VC, "items": []}
-    return {"label": "Played the Cup", "vc": PLAYED_VC, "items": []}
+    return {"label": ev["played"], "vc": PLAYED_VC, "items": []}
+
+
+def prize_table(event):
+    ev = event or EVENTS["kingtut"]
+    return [{"best": b, "label": lab, "vc": vc, "items": list(it)} for b, lab, vc, it in ev["prizes"]] + [
+        {"best": None, "label": "Top half", "vc": TOP_HALF_VC, "items": []}, {"best": None, "label": ev["played"], "vc": PLAYED_VC, "items": []}]
 
 
 def blank_entry():
-    return {"games": 0, "wins": 0, "net": 0, "staked": 0, "won_vc": 0, "streak": 0, "best_streak": 0, "claimed": False}
+    return {"games": 0, "wins": 0, "net": 0, "staked": 0, "won_vc": 0, "streak": 0, "best_streak": 0, "claimed": False, "event": None}

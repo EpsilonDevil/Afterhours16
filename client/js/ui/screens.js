@@ -6,7 +6,7 @@ import { settings, saveSettings } from '../core/settings.js';
 import { audio } from '../core/audio.js';
 import { music } from '../core/music.js';
 import { QUALITY } from '../gfx/renderer.js';
-import { AFFILIATIONS } from '../world/themes.js';
+import { AFFILIATIONS, EVENTS } from '../world/themes.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import * as Builder from './builder.js';
 import * as MyPlayer from './myplayer.js';
@@ -159,7 +159,7 @@ function home(app, root) {
         <div><b>${pr.park?.best_streak || 0}</b><small>BEST STREAK</small></div>
       </div>
       <nav class="hub" aria-label="Main menu">
-        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ffd84a'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small><span class="tile-event">KING TUT CUP · LIVE</span></button>
+        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ffd84a'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small>${app.config?.event && EVENTS[app.config.event.id] ? `<span class="tile-event" style="--c:${EVENTS[app.config.event.id].color}">${esc(EVENTS[app.config.event.id].eyebrow)} · LIVE</span>` : ''}</button>
         <button class="tile t-prorun" data-go="prorun"><span class="tile-k">THE PRO RUN</span><b>${pro ? esc(pro) : 'College → Draft → League'}</b><small>${pro ? 'Your career' : '82 games · playoffs · Finals'}</small></button>
         <button class="tile t-proam" data-go="proam"><span class="tile-k">PRO-AM</span><b>${team ? esc(team.name) : '5v5 Arena'}</b><small>${team ? `${team.wins}-${team.losses} · 5v5` : 'Build your team'}</small></button>
         <button class="tile t-mp" data-go="myplayer"><span class="tile-k">MYPLAYER</span><b>Upgrades</b><small>${c.cap_breakers_available ? `${c.cap_breakers_available} cap breakers to place` : `Max upgrade ${money(c.max_upgrade_cost)} VC`}</small></button>

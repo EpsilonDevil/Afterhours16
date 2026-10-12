@@ -1,6 +1,6 @@
 // Live match: fixed-step simulation + interpolated rendering + input + presentation (audio, HUD, camera).
 import { Game } from '../sim/game.js';
-import { DT, COURT, BALL_R } from '../sim/constants.js';
+import { DT, COURT, BALL_R, GRAVITY } from '../sim/constants.js';
 import { AthleteView } from '../char/view.js';
 import { Animator } from '../char/animator.js';
 import { resolveLook, spreadGreens } from '../sim/bots.js';
@@ -514,7 +514,9 @@ export class MatchSession {
     const g = this.game, big = e.three || (g.isClutch && g.isClutch(P.team));
     const power = big ? 1.22 : 1;
     const o = this.origin, head = () => [P.x + o[0], P.y + P.phys.H + 0.1, P.z + o[2]], feet = () => [P.x + o[0], 0, P.z + o[2]];
-    greenFxFor(this.r, this.app.camera).play(P.greenFx || 'gfx_basic', head, feet, power);
+    // (qp3: the ball's time to the rim, for effects timed to the make: a jumper ~1 s, a layup ~0.4 s)
+    const b = g.ball, flight = b.mode === 'flight' ? (b.vy + Math.sqrt(Math.max(0, b.vy * b.vy + 2 * GRAVITY * (b.y - COURT.rimY)))) / GRAVITY : 0;
+    greenFxFor(this.r, this.app.camera).play(P.greenFx || 'gfx_basic', head, feet, power, { flight });
     const x = P.x + o[0], z = P.z + o[2];
     const vol = far != null ? far * 0.5 : mine ? 1 : 0.62 * this.vol(x, z);
     const h = playGreenSound(audio, P.greenSound || 'gsnd_basic', { ...(P.greenVoice || {}), power, pan: this.pan(x), vol });

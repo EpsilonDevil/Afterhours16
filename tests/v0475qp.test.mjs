@@ -286,8 +286,9 @@ test('jersey straps go up over the shoulders, and the game actually draws them',
 test('twice the apparel, Daily Spin exclusives too', () => {
   const by = k => list.filter(i => i.category === k);
   const slot = (k, s) => by(k).filter(i => i.slot === s).length;
-  assert.equal(slot('apparel', 'top'), 62); assert.equal(slot('apparel', 'bottom'), 36); assert.equal(by('shoes').length, 36);
-  for (const [s, n] of [['headband', 16], ['sleeve', 12], ['socks', 10], ['wristband', 8], ['leg_sleeve', 4], ['knee_pad', 2], ['chain', 4]]) assert.equal(slot('accessory', s), n, s);
+  // (qp3: + the Jungle Ballers' gorilla costume top and legs, Toucan shoes and Toucan band, event exclusives)
+  assert.equal(slot('apparel', 'top'), 63); assert.equal(slot('apparel', 'bottom'), 37); assert.equal(by('shoes').length, 37);
+  for (const [s, n] of [['headband', 17], ['sleeve', 12], ['socks', 10], ['wristband', 8], ['leg_sleeve', 4], ['knee_pad', 2], ['chain', 4]]) assert.equal(slot('accessory', s), n, s);
   assert.equal(list.filter(i => i.exclusive === 'wheel' && i.category !== 'animation').length, 12);
   for (const i of list.filter(x => x.v0475qp)) { assert.equal(i.original_2k_asset, false); assert.ok(i.name && i.description && i.color, i.id); }
   assert.equal(new Set(list.map(i => i.id)).size, list.length, 'ids unique');

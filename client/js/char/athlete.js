@@ -934,7 +934,7 @@ export class AthleteModel {
     const gb = new GB();
     const waist = 0.6;
     // v0.4.5: tights (the King Tut Cup mo-cap suit) hug the body: no drape over the hips, legs just over the skin
-    const tight = bot.pattern === 'mocap' || fam === 'tights';
+    const tight = bot.pattern === 'mocap' || bot.pattern === 'gorilla' || fam === 'tights'; // (qp3: the gorilla's fur legs hug too)
     const baggy = tight ? 0.002 : fam === 'joggers' ? 0.011 : 0.0165; // v0.4.5: a trimmer short (the old one read as a tube on a bent knee)
     this.loftTorso(gb, {
       y0: 0.452, y1: waist, cols: Math.round(40 * this.detail) + 8, hang: tight ? 0 : 0.3,
@@ -1023,6 +1023,17 @@ export class AthleteModel {
         const o = Math.max(0.03, this.hairOffsetAt(n) + 0.02); // on top of the hair, whatever the style
         return { p: [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R], col: hc, w: [[B.head, 1]] };
       });
+      // v0.4.7.5 qp3 The Jungle Ballers Toucan band: a feather stitched over the right ear, sweeping up and back,
+      // flat (a wide, thin tube), the band's trim colour with a dark tip and a pale quill
+      if (gear.headband.feather) {
+        const th = -Math.PI / 2, n = norm([Math.sin(th), 0.44, Math.cos(th)]), sh = this.headShape(n, { skullOnly: true }), ln = Math.hypot(...sh), o = Math.max(0.03, this.hairOffsetAt(n) + 0.03);
+        const base = [c[0] + (sh[0] + sh[0] / ln * o) * R, c[1] + (sh[1] + sh[1] / ln * o) * R, c[2] + (sh[2] + sh[2] / ln * o) * R];
+        const fc = [...hexLinear(gear.headband.feather), 1], tip = [0.06, 0.05, 0.05, 1], quill = [0.9, 0.86, 0.75, 1];
+        const L = R * 1.55, pts = [], radii = [];
+        for (let i = 0; i <= 6; i++) { const t = i / 6; pts.push([base[0] - 0.02 * R * t, base[1] + L * t * 0.95, base[2] - L * t * 0.55 - L * t * t * 0.25]); const wdt = R * (0.04 + 0.2 * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.02))); radii.push([wdt, R * 0.025]); }
+        gb.tube(pts, radii, [0, 0, 1], { cols: 8, col: t => (t > 0.86 ? tip : fc), w: () => [[B.head, 1]], capStart: true });
+        gb.tube(pts, radii.map(() => [R * 0.02, R * 0.02]), [0, 0, 1], { cols: 5, col: () => quill, w: () => [[B.head, 1]] });
+      }
     }
     // v0.4.4: chains are their own textured meshes (link tube + pendant), draped over whatever top is worn
     this.chainGeo = gear.chain ? this.buildChain(gear.chain) : null;

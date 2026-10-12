@@ -182,8 +182,8 @@ export class AIWorld {
     if (x && x.until > t) return x;
     const d = dayIndex(t);
     for (const day of [d, d - 1]) for (const s of this.sessions(id, day)) if (t >= s.start && t < s.end) {
-      // v0.4.5: entrants of the running King Tut Cup spend about half their online hours at the Cup
-      if (cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: 'kingtut', until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000) };
+      // v0.4.5: entrants of the running park event (the Cup, the Jungle...) spend about half their online hours there
+      if (EVENT_VENUE && cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: EVENT_VENUE, until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000) };
       return { park: s.park, until: s.end };
     }
     return null;
@@ -230,7 +230,7 @@ export class AIWorld {
       if (exclude.has(id) || this.status(id, t)) continue;
       const a = this.account(id);
       // the Cup is topped up from its own entrants; a park from its regulars (and people with no home park)
-      if (park === 'kingtut' ? !cupEntrant(id, cupWindow(t)) : (a.home && a.home !== park)) continue;
+      if (EVENT_PARKS.has(park) ? !cupEntrant(id, cupWindow(t)) : (a.home && a.home !== park)) continue;
       const nx = this.nextOnline(id, t);
       cands.push([id, nx ? nx.start - t : 1e12]);
     }
@@ -301,7 +301,12 @@ export class AIWorld {
 export const BOUNTY_MIN = 7;
 export const bountyFor = streak => (streak >= BOUNTY_MIN ? Math.min(15000, 2500 + 750 * (streak - BOUNTY_MIN)) : 0);
 
-export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup' };
+export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup', jungle: 'The Jungle Ballers' };
+// v0.4.7.5 qp3: the park events, and which one is on (the server's schedule, set from /api/config `event` by main.js;
+// the AI world sends the event's entrants there). null between events: entrants stay in their home parks.
+export const EVENT_PARKS = new Set(['kingtut', 'jungle']);
+export let EVENT_VENUE = 'kingtut';
+export const setEventVenue = v => { EVENT_VENUE = v && EVENT_PARKS.has(v) ? v : null; };
 
 // v0.4.5 King Tut Cup windows and entrants — the same rules as server/cup.py (48-hour windows from
 // 2026-01-01 00:00 UTC; an AI hooper entered window w when FNV("ai-N|cup|w") % 100 < 22)

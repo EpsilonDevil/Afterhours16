@@ -6,8 +6,11 @@ export const AFFILIATIONS = {
 };
 
 // v0.4.5 park events. Not an affiliation (nobody calls it home), but a park in every other way.
+// v0.4.7.5 qp3: more than one event exists now; the server's schedule (server/events.json, read through /api/config
+// `event` and /api/cup `event`) says which one is on. An event off the schedule is still here, just closed.
 export const EVENTS = {
-  kingtut: { id: 'kingtut', name: 'King Tut Cup', park: 'The King Tut Cup', color: '#39ff88', accent: '#b14dff', blurb: 'Glow-in-the-dark ante-ups among the pyramids. 48-hour leaderboard.', event: true },
+  kingtut: { id: 'kingtut', name: 'King Tut Cup', park: 'The King Tut Cup', color: '#39ff88', accent: '#b14dff', blurb: 'Glow-in-the-dark ante-ups among the pyramids. 48-hour leaderboard.', event: true, exclusive: 'cup', prize: 'the glow-in-the-dark mo-cap suit', enter: 'Enter the Cup', eyebrow: 'KING TUT CUP' },
+  jungle: { id: 'jungle', name: 'Jungle Ballers', park: 'The Jungle Ballers', color: '#ff8a1f', accent: '#2ec4ff', blurb: 'Ante-ups under the rainforest canopy, rain on every streak. 48-hour leaderboard.', event: true, exclusive: 'jungle', prize: 'the gorilla costume', enter: 'Enter the Jungle', eyebrow: 'JUNGLE BALLERS' },
 };
 // name/colors for any park id, affiliation or event
 export const parkInfo = id => AFFILIATIONS[id] || EVENTS[id] || null;
@@ -62,6 +65,21 @@ export const THEMES = {
     env: { top: '#06030f', horizon: '#2a0f45', ground: '#0c0816', skyline: '#08050f', lights: [{ u: 0.25, v: 0.42, r: 0.03, color: 'rgba(120,255,170,1)' }, { u: 0.75, v: 0.42, r: 0.03, color: 'rgba(190,110,255,1)' }] },
     exposure: 1.2, bloom: { strength: 0.32, threshold: 0.85, radius: 1.3 }, grade: { saturation: 1.18, contrast: 1.1, vignette: 0.75 },
     floodlights: true, lightColor: [0.62, 0.42, 1.0], envIntensity: 0.55,
+  },
+  // v0.4.7.5 qp3 The Jungle Ballers: the same park layout deep in a rainforest — giant trees ringing the park, a
+  // canopy of leaves and vines overhead, mist, animals roaming the background, toucans on every court, and rain
+  // over a court on a streak (lightning at the top tier)
+  jungle: {
+    id: 'jungle', kind: 'park', name: 'The Jungle Ballers', style: 'jungle', event: true, streakFx: 'rain',
+    court: { surface: 'asphalt', court: '#2f5a3a', apron: '#4a3b2a', paint: '#ff8a1f', lines: '#f6efd8', arcTint: 'rgba(255,255,255,0.04)', wear: 0.6, logo: { shape: 'toucan', color: '#141414', accent: '#ff8a1f', size: 1.5, inHalf: true }, baselineText: 'JUNGLE BALLERS', asphaltTint: '#8a9a74' },
+    ground: '#6e7a4a',
+    sky: { top: [0.12, 0.2, 0.18], horizon: [0.46, 0.56, 0.44], ground: [0.1, 0.14, 0.08], stars: 0 },
+    sun: { dir: [-0.35, 1, 0.3], color: [0.86, 0.98, 0.78], intensity: 2.6 },
+    ambient: { sky: [0.34, 0.44, 0.34], ground: [0.16, 0.2, 0.1] },
+    fog: { color: [0.3, 0.4, 0.3], density: 0.0042 },
+    env: { top: '#1a2e22', horizon: '#8fae8a', horizonLow: '#6a8a5a', ground: '#2a3a1e', lights: [{ u: 0.5, v: 0.3, r: 0.08, color: 'rgba(230,255,200,1)' }] },
+    exposure: 1.16, bloom: { strength: 0.1, threshold: 1.05, radius: 1 }, grade: { saturation: 1.12, contrast: 1.06, vignette: 0.55 },
+    floodlights: true, lightColor: [0.92, 1.0, 0.82], envIntensity: 0.75,
   },
   arena: {
     id: 'arena', kind: 'arena', name: 'Afterhours Arena', style: 'arena',

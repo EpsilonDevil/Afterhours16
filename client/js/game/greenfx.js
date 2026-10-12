@@ -25,6 +25,7 @@ export const GREEN_FX = {
   gfx_comet: 'Comet',
   gfx_tornado: 'Twister',
   cup_gfx_ankh: 'Golden Ankh',
+  jb_gfx_banana: 'Banana Peel',
   // v0.4.7.5 quick patch
   gfx_phoenix: 'Phoenix',
   gfx_cash: 'Make It Rain',
@@ -279,6 +280,58 @@ const EFFECTS = {
       for (let i = 0; i < 6; i++) { const [gx, gy] = pick(pts), p = place(gx, gy, lift); fx.emit({ x: p[0], y: p[1], z: p[2], vx: rnd(-0.2, 0.2), vy: 0.4, vz: rnd(-0.2, 0.2), life: 0.3, size: 0.02, color: [0.6, 3, 1.1], flick: 20, gravity: 0 }); }
     });
     fx.at(dur, () => { for (const [gx, gy] of pts) { const p = place(gx, gy, 0.4); fx.emit({ x: p[0], y: p[1], z: p[2], vx: rnd(-0.5, 0.5), vy: rnd(0.5, 1.5), vz: rnd(-0.5, 0.5), life: 0.7, size: 0.025, color: GOLD, flick: 16, gravity: -1 }); } });
+  },
+  // v0.4.7.5 qp3 The Jungle Ballers exclusive: a banana hangs over his head from the release and peels open, four
+  // ways, the moment the shot drops (fx.flight: the ball's time to the rim), showing the fruit; then it all drifts off
+  jb_gfx_banana(fx) {
+    const peelAt = Math.max(0.3, Math.min(1.8, fx.flight || 1.0)), dur = peelAt + 1.0;
+    const SKIN = [2.4, 1.95, 0.35], TIP = [0.55, 0.32, 0.1], FRUIT = [2.2, 2.0, 1.5], STEM = [0.6, 0.45, 0.2];
+    const N = 12, STRIPS = 4, R = 0.3;
+    // the banana's crescent in the camera plane: s = 0 at the stem (top), 1 at the tip
+    const arc = s => { const a = -0.55 + s * 1.5; return [Math.sin(a) * R - 0.15, 0.46 - (1 - Math.cos(a)) * R * 1.0 - s * 0.05]; };
+    const place = (gx, gy, gz = 0, lift = 0) => { const [r, u] = fx.basis(), f = [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2], r[0] * u[1] - r[1] * u[0]], c = add(fx.head(), 0, 0.2 + lift); return [c[0] + r[0] * gx + u[0] * gy + f[0] * gz, c[1] + r[1] * gx + u[1] * gy + f[1] * gz, c[2] + r[2] * gx + u[2] * gy + f[2] * gz]; };
+    const sway = t => Math.sin(t * 2.6) * 0.03;
+    // strips: four skins round the fruit (two beside it in the plane, two in depth); each peels outward from the stem
+    const n = STRIPS * N + N + 3;
+    fx.hold(n, dur, i => ({ size: i < STRIPS * N ? 0.055 : i < STRIPS * N + N ? 0.0 : 0.035, color: i < STRIPS * N ? (i % N >= N - 2 ? TIP : SKIN) : i < STRIPS * N + N ? FRUIT : STEM }), (i, k, p) => {
+      const t = k * dur, peel = Math.max(0, Math.min(1, (t - peelAt) / 0.38)), e = peel * peel * (3 - 2 * peel), gone = Math.max(0, (t - peelAt - 0.55) / 0.45);
+      const lift = gone * 0.9, sw = sway(t);
+      const top = arc(0);
+      if (i < STRIPS * N) {
+        const j = Math.floor(i / N), s = (i % N) / (N - 1), [ax, ay] = arc(s);
+        // the strip's own outward direction: left, right (in the plane), front, back (in depth)
+        const o = j === 0 ? [-1, 0, 0] : j === 1 ? [1, 0, 0] : j === 2 ? [0, 0, 1] : [0, 0, -1];
+        const off = 0.045;
+        // the skin is wrapped round the fruit: offset the point off the crescent's centre line in its direction
+        let gx = ax + o[0] * off, gy = ay, gz = o[2] * off;
+        if (e > 0) {
+          // peel: rotate the strip about the stem, outward and up, curling more toward the tip
+          const phi = e * (1.6 + 1.2 * s), vx = gx - top[0], vy = gy - top[1];
+          const along = Math.hypot(vx, vy) || 1e-6, dx = vx / along, dy = vy / along;
+          const cx = Math.cos(phi), sx = Math.sin(phi);
+          gx = top[0] + along * (dx * cx + o[0] * sx * 0.9) + o[0] * off * (1 + e);
+          gy = top[1] + along * (dy * cx + 0.35 * sx);
+          gz = along * o[2] * sx * 0.9 + o[2] * off * (1 + e);
+        }
+        const P = place(gx + sw, gy, gz, lift);
+        p.x = P[0]; p.y = P[1]; p.z = P[2]; p.size = 0.055 * (1 - gone * 0.8);
+      } else if (i < STRIPS * N + N) {
+        const s = ((i - STRIPS * N) % N) / (N - 1), [ax, ay] = arc(s), P = place(ax + sw, ay, 0, lift);
+        p.x = P[0]; p.y = P[1]; p.z = P[2]; p.size = 0.05 * e * (1 - gone * 0.8);
+      } else {
+        const q = (i - STRIPS * N - N) / 2, P = place(top[0] - 0.02 * q + sw, top[1] + 0.03 + 0.05 * q, 0, lift);
+        p.x = P[0]; p.y = P[1]; p.z = P[2]; p.size = 0.035 * (1 - gone * 0.8);
+      }
+    });
+    // a soft green shimmer round it while it hangs
+    fx.every(0.05, peelAt, () => { const [ax, ay] = arc(rnd(0, 1)), P = place(ax + rnd(-0.08, 0.08), ay + rnd(-0.08, 0.08), rnd(-0.06, 0.06)); fx.emit({ x: P[0], y: P[1], z: P[2], vx: rnd(-0.1, 0.1), vy: 0.25, vz: rnd(-0.1, 0.1), life: 0.4, size: 0.018, color: G, flick: 16, gravity: 0 }); });
+    // the peel: a pop of sparkle at the stem, and a few bits of skin falling
+    fx.at(peelAt, () => {
+      const P = place(arc(0)[0], arc(0)[1]);
+      fx.burst(P, 26 * fx.power, { color: GW, speed: 1.6, life: 0.5, size: 0.03, gravity: -1.5, drag: 1.2 });
+      for (let i = 0; i < 10; i++) { const [ax, ay] = arc(rnd(0.3, 1)), Q = place(ax, ay, rnd(-0.05, 0.05)); fx.emit({ x: Q[0], y: Q[1], z: Q[2], vx: rnd(-0.6, 0.6), vy: rnd(0.2, 0.9), vz: rnd(-0.6, 0.6), life: 0.9, size: 0.03, color: SKIN, gravity: -4, drag: 0.8 }); }
+    });
+    fx.at(dur - 0.05, () => { for (let i = 0; i < 30; i++) { const [ax, ay] = arc(rnd(0, 1)), P = place(ax, ay, rnd(-0.1, 0.1), 0.9); fx.emit({ x: P[0], y: P[1], z: P[2], vx: rnd(-0.4, 0.4), vy: rnd(0.6, 1.4), vz: rnd(-0.4, 0.4), life: 0.6, size: 0.025, color: i % 3 ? SKIN : FRUIT, flick: 12, gravity: -0.5 }); } });
   },
   // ---- v0.4.7.5 quick patch: fourteen more ----
 
@@ -555,11 +608,12 @@ export class GreenFxRunner {
     this.jobs = this.jobs.filter(j => !j.done);
   }
   // id: the effect; anchor(): the player's head [x, y, z]; feet(): the floor under him; power: show size
-  play(id, anchor, feet, power = 1) {
+  // opts.flight: seconds until the ball reaches the rim (qp3: the banana peels on the make)
+  play(id, anchor, feet, power = 1, opts = {}) {
     const run = EFFECTS[id] || EFFECTS.gfx_basic;
     const self = this, ps = this.ps;
     const fx = {
-      power,
+      power, flight: opts.flight || 0,
       head: () => anchor(),
       feet: () => (feet ? feet() : (p => [p[0], 0, p[2]])(anchor())),
       at(s, fn) { self.jobs.push({ at: self.now + s, fn }); },

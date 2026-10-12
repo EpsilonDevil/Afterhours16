@@ -178,6 +178,7 @@ class Service:
             now = time.time()
             w = cup.window_at(now)
             start, end = cup.window_bounds(w)
+            ev = cup.active_event(now)  # (v0.4.7.5 qp3: which park event is on; None between events)
             rows, me, mine = self.cup_board(conn, account_id, w)
             top = rows[:25]
             around = []
@@ -189,13 +190,16 @@ class Service:
             pw = w - 1
             pentry = self.cup_entry(conn, account_id, pw)
             if pentry["games"] > 0:
+                pev = cup.event_for_window(pw)
                 prows, _, pmine = self.cup_board(conn, account_id, pw)
-                prize = cup.prize_for(pmine["rank"] if pmine else None, len(prows))
+                prize = cup.prize_for(pmine["rank"] if pmine else None, len(prows), pev)
                 prev = {"window": pw, "rank": pmine["rank"] if pmine else None, "field": len(prows), "net": pentry["net"], "games": pentry["games"],
-                        "wins": pentry["wins"], "prize": prize, "claimed": bool(pentry.get("claimed")), "winner": prows[0] if prows else None}
+                        "wins": pentry["wins"], "prize": prize, "claimed": bool(pentry.get("claimed")), "winner": prows[0] if prows else None,
+                        "event": cup.public_event(pev, pw)}
             return {"window": w, "start": start, "end": end, "now": now, "antes": list(cup.ANTES), "field": len(rows),
+                    "event": cup.public_event(ev, w),
                     "board": top, "around": around, "me": {**me, "rank": mine["rank"] if mine else None},
-                    "prizes": [{"best": b, "label": lab, "vc": vc, "items": list(it)} for b, lab, vc, it in cup.PRIZES] + [{"best": None, "label": "Top half", "vc": cup.TOP_HALF_VC, "items": []}, {"best": None, "label": "Played the Cup", "vc": cup.PLAYED_VC, "items": []}],
+                    "prizes": cup.prize_table(ev),
                     "previous": prev}
 
     def rate_limit(self, ip, category):
@@ -342,6 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                     "skin": builds.SKIN, "hair": builds.HAIR, "hair_colors": builds.HAIR_COLORS, "faces": builds.FACES, "beards": builds.BEARDS, "eyes": builds.EYES,
                     "equip_slots": builds.EQUIP_SLOTS, "default_equipment": builds.DEFAULT_EQUIPMENT,
                     "venues": VENUES, "affiliations": progression.AFFILIATIONS, "catalog": list(CATALOG.values()),
+                    "event": cup.public_event(cup.active_event()), "event_venues": sorted(cup.EVENT_VENUES),
                     "badges": progression.BADGES, "rep_thresholds": progression.REP_THRESHOLDS, "rep_tiers": progression.REP_TIERS,
                     "logos": progression.LOGOS, "woods": progression.WOODS, "dev_accounts": s.dev_accounts,
                     "wheel": {"segments": progression.WHEEL_SEGMENTS, "odds": progression.WHEEL_ODDS, "vc": progression.WHEEL_VC, "cooldown": progression.SPIN_COOLDOWN},
@@ -536,6 +541,8 @@ class Handler(BaseHTTPRequestHandler):
                         return {"item_id": item["id"], "cost": 0, "already_owned": True, "balance": c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]}
                     if item.get("exclusive") == "cup":
                         raise builds.Invalid("King Tut Cup exclusive. Win it in the Cup.")
+                    if item.get("exclusive") == "jungle":
+                        raise builds.Invalid("Jungle Ballers exclusive. Win it in the Jungle.")
                     if item.get("exclusive") == "icon":
                         raise builds.Invalid("Icon badge exclusive. It comes with the Icon badge; it cannot be bought.")
                     if item.get("exclusive"):
@@ -723,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
             if entry.get("claimed"):
                 raise builds.Invalid("Prizes for that Cup were already claimed.")
             rows, _, mine = s.cup_board(c, aid, w)
-            prize = cup.prize_for(mine["rank"] if mine else None, len(rows))
+            prize = cup.prize_for(mine["rank"] if mine else None, len(rows), cup.event_for_window(w))
             if not prize:
                 raise builds.Invalid("No prize for that Cup.")
             granted = []
@@ -840,16 +847,21 @@ class Handler(BaseHTTPRequestHandler):
                 if progression.bounty_for(bs):
                     meta["bounty"] = progression.bounty_for(bs)
                     meta["bounty_streak"] = bs
-            if venue == cup.VENUE:
-                # v0.4.5 King Tut Cup: every game is an ante-up, and the Cup keeps its own streak
+            if venue in cup.EVENT_VENUES:
+                # v0.4.5 King Tut Cup / v0.4.7.5 qp3 park events: every game is an ante-up, and the event keeps its own
+                # streak. An event that isn't on the schedule is closed: its park takes no games
+                ev = cup.active_event()
+                if not ev or ev["venue"] != venue:
+                    raise builds.Invalid(cup.EVENT_BY_VENUE[venue]["name"] + " isn't running right now.")
                 ante = data.get("ante")
                 if ante not in cup.ANTES:
                     raise builds.Invalid("Choose an ante: " + ", ".join(f"{a:,}" for a in cup.ANTES) + " VC.")
                 meta["ante"] = ante
                 meta["cup_window"] = cup.window_at()
+                meta["event"] = ev["id"]
                 meta["streak"] = char.get("progression", {}).get("cup", {}).get("streak", 0)
-        elif venue == cup.VENUE:
-            raise builds.Invalid("The King Tut Cup only runs park games.")
+        elif venue in cup.EVENT_VENUES:
+            raise builds.Invalid(cup.EVENT_BY_VENUE[venue]["name"] + " only runs park games.")
         elif mode == "prorun":
             # v0.4.5 The Pro Run: college and pro games, 3- to 12-minute quarters
             if venue != "arena":
@@ -872,12 +884,13 @@ class Handler(BaseHTTPRequestHandler):
             # abandoning an unfinished game forfeits it (no reward, resets park streak)
             for old in c.execute("SELECT id, mode, character_id, venue FROM matches WHERE account_id=? AND status='running'", (aid,)).fetchall():
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "abandoned", "reward": 0}), time.time(), old["id"]))
-                if old["venue"] == cup.VENUE:
+                if old["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, old["character_id"])
             # v0.4.5: the Cup stake comes out of the wallet now; it's only paid back on a win
             if meta.get("ante"):
                 db.change_wallet(c, aid, -meta["ante"], "cup_ante", "ante:" + data["key"])
                 entry = s.cup_entry(c, aid, meta["cup_window"])
+                entry["event"] = meta.get("event")
                 entry["games"] += 1
                 entry["staked"] += meta["ante"]
                 entry["net"] -= meta["ante"]
@@ -935,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
                 if row["status"] != "running":
                     return self.respond(200, {"status": row["status"], "result": json.loads(row["result"] or "null")})
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "player_left", "reward": 0}), time.time(), match_id))
-                if row["mode"] == "park" and row["venue"] == cup.VENUE:
+                if row["mode"] == "park" and row["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, row["character_id"])  # the stake is already gone
                 elif row["mode"] == "park":
                     crow = c.execute("SELECT data FROM characters WHERE id=?", (row["character_id"],)).fetchone()

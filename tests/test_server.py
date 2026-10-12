@@ -258,6 +258,42 @@ class CupTests(unittest.TestCase):
                 self.assertIn(i, server_app.CATALOG)
                 self.assertEqual(server_app.CATALOG[i].get("exclusive"), "cup")
 
+    # v0.4.7.5 qp3: the event schedule (the King Tut Cup until the end of its last window, then The Jungle Ballers)
+    def test_event_schedule_and_the_jungle_prizes(self):
+        sched = cup.load_schedule()
+        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle"])
+        cut = sched[0]["until"]
+        self.assertEqual(sched[1]["from"], cut)
+        self.assertEqual((cut - cup.EPOCH) % cup.WINDOW, 0)  # the handover is on a window boundary
+        self.assertEqual(cup.active_event(cut - 1, sched)["id"], "kingtut")
+        self.assertEqual(cup.active_event(cut, sched)["id"], "jungle")
+        self.assertEqual(cup.active_event(cut + 365 * 86400, sched)["id"], "jungle")
+        w = (cut - cup.EPOCH) // cup.WINDOW
+        self.assertEqual(cup.event_for_window(w - 1, sched)["id"], "kingtut")
+        self.assertEqual(cup.event_for_window(w, sched)["id"], "jungle")
+        self.assertIsNone(cup.active_event(5, [{"event": "kingtut", "from": 10, "until": 20}]))  # off the schedule = closed
+        # the Jungle's prizes: the same VC ladder, every cosmetic its own (nothing shared with the Cup)
+        jungle, tut = cup.EVENTS["jungle"], cup.EVENTS["kingtut"]
+        self.assertEqual([p[:3] for p in jungle["prizes"]], [(1, "King of the Jungle", 150000), (3, "Top 3", 60000), (10, "Top 10", 25000), (25, "Top 25", 10000)])
+        j_items = {i for p in jungle["prizes"] for i in p[3]}
+        t_items = {i for p in tut["prizes"] for i in p[3]}
+        self.assertEqual(j_items & t_items, set())
+        self.assertEqual(len(j_items), 7)
+        slots = {server_app.CATALOG[i]["slot"] for i in j_items}
+        self.assertEqual(slots, {"top", "bottom", "shoes", "celebration", "headband", "greenfx", "greensound"})
+        for i in j_items:
+            self.assertEqual(server_app.CATALOG[i].get("exclusive"), "jungle")
+            self.assertEqual(server_app.CATALOG[i].get("price"), 0)
+        self.assertIn("jb_gorilla_top", cup.prize_for(1, 200, jungle)["items"])
+        self.assertNotIn("jb_gorilla_top", cup.prize_for(2, 200, jungle)["items"])
+        self.assertIn("jb_gfx_banana", cup.prize_for(3, 200, jungle)["items"])
+        self.assertNotIn("jb_gfx_banana", cup.prize_for(4, 200, jungle)["items"])
+        self.assertIn("jb_gsnd_bongos", cup.prize_for(10, 200, jungle)["items"])
+        self.assertEqual(cup.prize_for(25, 200, jungle)["items"], ["jb_band_toucan"])
+        self.assertEqual(cup.prize_for(150, 200, jungle)["label"], "Played the Jungle")
+        self.assertEqual(cup.prize_table(jungle)[-1]["label"], "Played the Jungle")
+        self.assertEqual({v["id"] for v in server_app.VENUES if v.get("event")}, cup.EVENT_VENUES)
+
 
 class CrewTests(unittest.TestCase):
     def test_schedules_match_the_client(self):
@@ -620,6 +656,7 @@ class ApiTests(unittest.TestCase):
     def test_king_tut_cup_ante_up_and_prizes(self):
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         prev, self.opener = self.opener, opener
+        old_sched, cup.SCHEDULE = cup.SCHEDULE, [{"event": "kingtut", "from": None, "until": None}]  # (the Cup, whatever today's schedule says)
         try:
             prof = self.call("/api/register", {"username": "tut_" + uuid.uuid4().hex[:6], "password": "longpassword1"})
             self.call("/api/ai-world", {"key": self.key(), "world": {"seed": 4242, "friends": [], "squad": [], "met": {}}})
@@ -692,6 +729,70 @@ class ApiTests(unittest.TestCase):
             # Cup gear is never sold
             self.call("/api/store/purchase", {"key": self.key(), "item_id": "cup_mocap_top", "character_id": cid}, expect=400)
         finally:
+            cup.SCHEDULE = old_sched
+            self.opener = prev
+
+    # v0.4.7.5 qp3 The Jungle Ballers: the Cup's park is closed once the schedule moves on, the Jungle takes the
+    # ante-ups and its own prizes, and last window's Cup prizes are still the Cup's
+    def test_jungle_ballers_replaces_the_cup(self):
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        prev, self.opener = self.opener, opener
+        w = cup.window_at()
+        cut = cup.window_bounds(w)[0]
+        old_sched, cup.SCHEDULE = cup.SCHEDULE, [{"event": "kingtut", "from": None, "until": cut}, {"event": "jungle", "from": cut, "until": None}]
+        try:
+            self.call("/api/register", {"username": "jb_" + uuid.uuid4().hex[:6], "password": "longpassword1"})
+            self.call("/api/ai-world", {"key": self.key(), "world": {"seed": 4242, "friends": [], "squad": [], "met": {}}})
+            build = {"name": "Jungle Guy", "position": "PF", "archetype": "slasher", "height": 80, "weight": 230, "wingspan": 86}
+            cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
+            cfg = self.call("/api/config")
+            self.assertEqual(cfg["event"]["id"], "jungle")
+            self.assertEqual(cfg["event"]["venue"], "jungle")
+            self.assertEqual(sorted(cfg["event_venues"]), ["jungle", "kingtut"])
+            st = self.call("/api/cup")
+            self.assertEqual(st["event"]["id"], "jungle")
+            self.assertEqual(st["prizes"][0]["label"], "King of the Jungle")
+            self.assertIn("jb_gorilla_top", st["prizes"][0]["items"])
+            self.assertEqual(st["prizes"][-1]["label"], "Played the Jungle")
+            # the King Tut Cup's park takes no games while it is off the schedule; the Jungle does
+            tut = {"character_id": cid, "mode": "park", "venue": "kingtut", "format": 3, "target": 21, "ante": 500}
+            r = self.call("/api/matches", {"key": self.key(), **tut}, expect=400)
+            self.assertIn("isn't running", r["error"])
+            base = {"character_id": cid, "mode": "park", "venue": "jungle", "format": 3, "target": 21}
+            self.call("/api/matches", {"key": self.key(), **base}, expect=400)  # (no ante)
+            self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "proam", "venue": "jungle", "format": 5}, expect=400)
+            bal0 = self.call("/api/me")["balance"]
+            t = self.call("/api/matches", {"key": self.key(), **base, "ante": 1000})
+            self.assertEqual(t["meta"]["event"], "jungle")
+            self.assertEqual(self.call("/api/me")["balance"], bal0 - 1000)
+            old_slack = server_app.TIME_SLACK
+            server_app.TIME_SLACK = 10_000
+            try:
+                res = self.call(f"/api/matches/{t['id']}/complete", {"key": self.key(), "summary": summary(pts=11, fgm=4, fga=9, tpm=3, tpa=5, ast=2, reb=3, duration=420)})
+                self.assertTrue(res["won"])
+                self.assertEqual(res["cup"]["event"], "jungle")
+                self.assertEqual(res["cup"]["pot"], 2000)
+                self.assertEqual(res["character"]["progression"]["cup"]["streak"], 1)  # the event streak (shared across events)
+            finally:
+                server_app.TIME_SLACK = old_slack
+            st = self.call("/api/cup")
+            self.assertEqual(st["me"]["games"], 1)
+            self.assertEqual(st["me"]["event"], "jungle")
+            # a Cup played last window (before the handover) still pays the Cup's prizes, and the Jungle's can't be bought
+            aid = self.service.db.query("SELECT id FROM accounts WHERE username LIKE 'jb_%'")[0][0]
+            with self.service.db.transaction() as c:
+                c.execute("UPDATE cup_entries SET window=window-1 WHERE account_id=?", (aid,))
+            st = self.call("/api/cup")
+            self.assertEqual(st["previous"]["event"]["id"], "kingtut")
+            self.assertTrue(all(i.startswith("cup_") for i in st["previous"]["prize"]["items"]))
+            got = self.call("/api/cup/claim", {"key": self.key(), "window": st["window"] - 1})
+            self.assertEqual(got["prize"], st["previous"]["prize"])
+            for item in ("jb_gorilla_top", "jb_gsnd_bongos"):
+                r = self.call("/api/store/purchase", {"key": self.key(), "item_id": item, "character_id": cid}, expect=400)
+                self.assertIn("Jungle Ballers exclusive", r["error"])
+            self.assertEqual(crew.game_xp(200, "park", "jungle"), 90)  # park events weigh 1.5x for crew XP, this one too
+        finally:
+            cup.SCHEDULE = old_sched
             self.opener = prev
 
     def test_crews(self):

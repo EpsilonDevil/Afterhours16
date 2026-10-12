@@ -463,18 +463,20 @@ table.controls tr.sec td { color: var(--accent); font-size: 11px; letter-spacing
 
 
 /* ---------- v0.4.5 The King Tut Cup ---------- */
-.tile-event { position: absolute; top: 10px; right: 12px; font: 800 10px/1 var(--display); letter-spacing: .14em; color: #39ff88; padding: 5px 8px; border-radius: 6px; background: rgba(10,6,20,.78); border: 1px solid rgba(57,255,136,.55); box-shadow: 0 0 12px rgba(57,255,136,.35); }
+.tile-event { --c: #39ff88; position: absolute; top: 10px; right: 12px; font: 800 10px/1 var(--display); letter-spacing: .14em; color: var(--c); padding: 5px 8px; border-radius: 6px; background: rgba(10,6,20,.78); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 35%, transparent); }
 .tile.park { position: relative; }
-.event-card { margin: 14px 0 6px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(120deg, rgba(20,10,40,.95), rgba(12,30,24,.92)); border: 1px solid rgba(57,255,136,.45); box-shadow: 0 0 22px rgba(177,77,255,.18), inset 0 0 30px rgba(57,255,136,.06); display: flex; flex-direction: column; gap: 4px; }
-.event-card .ev-k { font: 800 11px/1 var(--display); letter-spacing: .16em; color: #b14dff; }
+/* v0.4.7.5 qp3: the card takes the event's colors (--c main, --d accent); the King Tut Cup's are the defaults */
+.event-card { --c: #39ff88; --d: #b14dff; margin: 14px 0 6px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(120deg, rgba(20,10,40,.95), rgba(12,30,24,.92)); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); box-shadow: 0 0 22px color-mix(in srgb, var(--d) 18%, transparent), inset 0 0 30px color-mix(in srgb, var(--c) 6%, transparent); display: flex; flex-direction: column; gap: 4px; }
+.event-card.off { --c: #8a8a8a; --d: #6a6a6a; opacity: .75; }
+.event-card .ev-k { font: 800 11px/1 var(--display); letter-spacing: .16em; color: var(--d); }
 .event-card b { font-family: var(--display); font-size: 24px; color: #e8c15a; text-shadow: 0 0 12px rgba(232,193,90,.4); }
 .event-card small { color: #cfc6e8; }
 .event-card .ev-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-.event-card .ev-stat { font: 700 13px var(--display); color: #39ff88; padding: 5px 9px; border-radius: 8px; background: rgba(57,255,136,.08); }
+.event-card .ev-stat { font: 700 13px var(--display); color: var(--c); padding: 5px 9px; border-radius: 8px; background: color-mix(in srgb, var(--c) 8%, transparent); }
 .event-card .ev-row .btn:first-of-type { margin-left: auto; }
 .event-card .ev-claim { margin-top: 8px; color: #e8c15a; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.cup-chip { padding: 9px 14px; border-radius: 12px; background: rgba(10,6,20,.8); border: 1px solid rgba(57,255,136,.5); display: flex; flex-direction: column; font-family: var(--display); }
-.cup-chip b { color: #39ff88; font-size: 20px; } .cup-chip small { color: #cfc6e8; font-size: 11px; letter-spacing: .06em; }
+.cup-chip { --c: #39ff88; padding: 9px 14px; border-radius: 12px; background: rgba(10,6,20,.8); border: 1px solid color-mix(in srgb, var(--c) 50%, transparent); display: flex; flex-direction: column; font-family: var(--display); }
+.cup-chip b { color: var(--c); font-size: 20px; } .cup-chip small { color: #cfc6e8; font-size: 11px; letter-spacing: .06em; }
 .cup-board h2 small { font-weight: 600; }
 .cup-board .cup-me { margin: 8px 0 10px; padding: 10px 12px; border-radius: 10px; background: rgba(57,255,136,.08); border: 1px solid rgba(57,255,136,.25); }
 .cup-board .cup-prev { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: rgba(232,193,90,.08); border: 1px solid rgba(232,193,90,.3); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

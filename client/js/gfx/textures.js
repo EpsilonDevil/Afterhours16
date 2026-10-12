@@ -298,10 +298,47 @@ function drawSphinx(g, logo, size) {
   g.restore();
 }
 
+// v0.4.7.5 qp3 The Jungle Ballers court logo: a toco toucan in profile on a branch inside a medallion. The body is
+// logo.color (black), the beak logo.accent (orange) with a yellow blaze and a black tip, a cream bib, a sky-blue eye
+// ring, a red undertail and two leaves on the branch. Unit space (radius 1).
+export function drawToucan(g, logo, size) {
+  const body = logo.color || '#141414', beak = logo.accent || '#ff8a1f';
+  g.save(); g.scale(size, size);
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fillStyle = '#1d4a2e'; g.globalAlpha = logo.alpha ?? 0.92; g.fill(); g.globalAlpha = 1;
+  g.strokeStyle = beak; g.lineWidth = 0.06; g.stroke();
+  g.beginPath(); g.arc(0, 0, 0.88, 0, Math.PI * 2); g.strokeStyle = '#f6efd8'; g.lineWidth = 0.02; g.stroke();
+  // the branch, with two leaves
+  g.strokeStyle = '#6b4a2a'; g.lineWidth = 0.09; g.beginPath(); g.moveTo(-0.78, 0.55); g.quadraticCurveTo(-0.1, 0.42, 0.72, 0.6); g.stroke();
+  g.fillStyle = '#3f8a3a';
+  for (const [lx, ly, a] of [[-0.55, 0.5, -0.5], [0.5, 0.55, 2.4]]) { g.save(); g.translate(lx, ly); g.rotate(a); g.beginPath(); g.ellipse(0.14, 0, 0.16, 0.07, 0, 0, Math.PI * 2); g.fill(); g.restore(); }
+  // tail, body, wing
+  g.fillStyle = body;
+  g.beginPath(); g.moveTo(-0.3, 0.1); g.lineTo(-0.72, 0.3); g.lineTo(-0.66, 0.42); g.lineTo(-0.28, 0.3); g.closePath(); g.fill();
+  g.fillStyle = '#d8302a'; g.beginPath(); g.moveTo(-0.42, 0.3); g.lineTo(-0.66, 0.42); g.lineTo(-0.5, 0.44); g.closePath(); g.fill(); // red undertail
+  g.fillStyle = body; g.beginPath(); g.ellipse(-0.12, 0.08, 0.36, 0.3, -0.35, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(0.06, -0.3, 0.22, 0.2, 0, 0, Math.PI * 2); g.fill(); // head
+  g.fillStyle = '#0a0a0a'; g.beginPath(); g.ellipse(-0.22, 0.12, 0.26, 0.14, -0.5, 0, Math.PI * 2); g.fill(); // wing
+  // the bib: cream from the throat down the chest
+  g.fillStyle = '#fff3d0'; g.beginPath(); g.moveTo(0.2, -0.3); g.quadraticCurveTo(0.3, 0.05, 0.08, 0.3); g.quadraticCurveTo(-0.02, 0.0, 0.1, -0.28); g.closePath(); g.fill();
+  // the beak: a long banana curve, yellow on top, orange below, black tip
+  g.fillStyle = beak; g.beginPath(); g.moveTo(0.22, -0.42); g.quadraticCurveTo(0.6, -0.5, 0.86, -0.25); g.quadraticCurveTo(0.9, -0.14, 0.8, -0.1); g.quadraticCurveTo(0.6, -0.1, 0.24, -0.22); g.closePath(); g.fill();
+  g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(0.24, -0.42); g.quadraticCurveTo(0.6, -0.5, 0.84, -0.27); g.quadraticCurveTo(0.6, -0.34, 0.26, -0.33); g.closePath(); g.fill();
+  g.fillStyle = '#0a0a0a'; g.beginPath(); g.moveTo(0.8, -0.3); g.quadraticCurveTo(0.9, -0.2, 0.8, -0.1); g.quadraticCurveTo(0.75, -0.15, 0.74, -0.27); g.closePath(); g.fill();
+  g.strokeStyle = '#0a0a0a'; g.lineWidth = 0.015; g.beginPath(); g.moveTo(0.26, -0.33); g.quadraticCurveTo(0.55, -0.32, 0.78, -0.26); g.stroke();
+  // eye: a sky-blue ring and a black eye
+  g.fillStyle = '#2ec4ff'; g.beginPath(); g.arc(0.1, -0.33, 0.06, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#0a0a0a'; g.beginPath(); g.arc(0.11, -0.33, 0.03, 0, Math.PI * 2); g.fill();
+  // feet on the branch
+  g.strokeStyle = '#2ec4ff'; g.lineWidth = 0.035; for (const fx of [-0.16, -0.04]) { g.beginPath(); g.moveTo(fx, 0.34); g.lineTo(fx - 0.03, 0.47); g.moveTo(fx, 0.34); g.lineTo(fx + 0.05, 0.47); g.stroke(); }
+  g.restore();
+}
+
 export function drawLogo(g, logo, x, y, size) {
   g.save(); g.translate(x, y);
   const shape = logo.shape || 'circle';
   if (shape === 'sphinx') { if (logo.rotate) g.rotate(logo.rotate); drawSphinx(g, logo, size); g.restore(); return; }
+  if (shape === 'toucan') { if (logo.rotate) g.rotate(logo.rotate); drawToucan(g, logo, size); g.restore(); return; }
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);

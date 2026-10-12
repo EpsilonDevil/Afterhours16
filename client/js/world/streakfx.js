@@ -3,10 +3,17 @@
 //     wins (3, 6, 9, 12) and stops growing at 12; the streak itself can keep going.
 //   * The King Tut Cup: green lasers instead — beams that slide up and down the court sides and fade in and
 //     out (phase), with more beams and brighter ones every three wins, also capped at 12.
+//   * The Jungle Ballers (v0.4.7.5 qp3): rain over the court — a drizzle at 3 wins, heavier and slanting at 6
+//     and 9, a downpour with lightning (a bolt over the court, the flash on everything, the thunder) at 12.
 import * as G from '../gfx/geometry.js';
 import * as M from '../core/math.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { COURT } from '../sim/constants.js';
+import { audio } from '../core/audio.js';
+
+// the rain, per level: drops added at that level, their fall speed, the slant of the fall (m sideways per m down)
+const RAINS = new WeakMap(); // scene -> the rain effects in it (the lightning flash is shared)
+export const RAIN = { height: 11, drops: [420, 520, 700, 900], speed: [8, 9.5, 11, 13], slant: [0.02, 0.08, 0.16, 0.24], len: [0.3, 0.38, 0.46, 0.55], bolt: { every: [5, 11], hold: 0.16, flashes: 3 } };
 
 export const streakLevel = streak => Math.min(4, Math.floor(Math.max(0, streak || 0) / 3));
 // the fire shader's noise: cells per metre along the edge, and how often its motion loops (shaders.js FLAME_SPEED)
@@ -27,7 +34,55 @@ export class StreakFX {
     this.meshes = [];
     const pts = outline(court);
     this.sides = pts.map((p, i) => [p, pts[(i + 1) % 4]]);
-    if (kind === 'flame') this.buildFlames(court); else this.buildLasers();
+    if (kind === 'flame') this.buildFlames(court); else if (kind === 'rain') this.buildRain(court); else this.buildLasers();
+  }
+
+  // v0.4.7.5 qp3: rain over the court. Four layers of streaks (one per level) over the court and its apron, each a
+  // static geometry the vertex shader rains down (shaders.js RAIN): no per-frame uploads. Level 4 adds the bolts.
+  buildRain(court) {
+    const [ox, , oz] = court.origin, W = COURT.width / 2 + 2.6, L = COURT.length / 2 + 3.0;
+    const z0 = court.full ? oz - L : oz - 3.6, z1 = oz + L, H = RAIN.height;
+    const rng = (seed => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; })((court.seed ?? hashStr(court.id)) + 11);
+    this.rainMat = [];
+    this.rain = RAIN.drops.map((n, lv) => {
+      const pos = [], nrm = [], uv = [], idx = [];
+      for (let i = 0; i < n; i++) {
+        const x = ox + (rng() * 2 - 1) * W, z = z0 + rng() * (z1 - z0), y = rng() * H, len = RAIN.len[lv] * (0.7 + 0.6 * rng()), w = 0.005 + 0.006 * rng();
+        const k = i * 4;
+        for (const [sx, sy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) { pos.push(x, y, z); nrm.push(len, w, 0); uv.push(sx, sy); }
+        idx.push(k, k + 1, k + 2, k, k + 2, k + 3);
+      }
+      const geo = this.ctx.geometry({ position: new Float32Array(pos), normal: new Float32Array(nrm), uv: new Float32Array(uv), index: new Uint16Array(idx) });
+      const mat = new Material({ color: [0.55, 0.62, 0.7], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true, rain: [H, RAIN.speed[lv], RAIN.slant[lv], RAIN.slant[lv] * 0.4] });
+      this.rainMat.push(mat);
+      const m = new Mesh(geo, mat, { castShadow: false, reflect: false });
+      m.order = 6; m.visible = false; this.scene.add(m); this.meshes.push(m);
+      return m;
+    });
+    // the bolt: a jagged bright line from high over the court down to a point on the apron; rebuilt per strike
+    this.boltMat = new Material({ color: [8, 8.5, 10], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true });
+    this.bolt = null; this.boltT = 0; this.nextBolt = RAIN.bolt.every[0] + rng() * (RAIN.bolt.every[1] - RAIN.bolt.every[0]); this.flash = 0;
+    this.rng = rng; this.rect = { x0: ox - W, x1: ox + W, z0, z1 };
+    this.baseExposure = null;
+    if (!RAINS.has(this.scene)) RAINS.set(this.scene, new Set());
+    RAINS.get(this.scene).add(this);
+  }
+
+  strike() {
+    const r = this.rng, { x0, x1, z0, z1 } = this.rect;
+    const tx = x0 + r() * (x1 - x0), tz = z0 + r() * (z1 - z0), top = [tx + (r() - 0.5) * 14, 46, tz + (r() - 0.5) * 14];
+    const path = [top];
+    for (let i = 1; i <= 9; i++) { const t = i / 9; path.push([top[0] + (tx - top[0]) * t + (r() - 0.5) * 3 * (1 - t), 46 * (1 - t) + 0.2, top[2] + (tz - top[2]) * t + (r() - 0.5) * 3 * (1 - t)]); }
+    const parts = [{ geo: G.tube(path, t => 0.22 - 0.15 * t, 5) }];
+    // a fork off the middle
+    const k = 3 + Math.floor(r() * 3), f0 = path[k], fork = [f0, [f0[0] + (r() - 0.5) * 6, f0[1] - 6 - r() * 6, f0[2] + (r() - 0.5) * 6]];
+    fork.push([fork[1][0] + (r() - 0.5) * 5, fork[1][1] - 5 - r() * 5, fork[1][2] + (r() - 0.5) * 5]);
+    parts.push({ geo: G.tube(fork, t => 0.07 - 0.05 * t, 4) });
+    if (this.bolt) { this.scene.remove(this.bolt); const i = this.meshes.indexOf(this.bolt); if (i >= 0) this.meshes.splice(i, 1); }
+    this.bolt = new Mesh(this.ctx.geometry(G.merge(parts, false)), this.boltMat, { castShadow: false, reflect: false });
+    this.bolt.order = 7; this.scene.add(this.bolt); this.meshes.push(this.bolt);
+    this.boltT = RAIN.bolt.hold * RAIN.bolt.flashes; this.flash = 1;
+    audio.rumble?.(0.6);
   }
 
   // v0.4.5 quick patch: one continuous wall of procedural fire all the way round the court (shaders.js FLAME). It
@@ -93,6 +148,26 @@ export class StreakFX {
       T[0] = this.flameT; T[2] = 0.02 * lv;
       return;
     }
+    if (this.kind === 'rain') {
+      const on = lv > 0.02;
+      // each level's layer fades in as the level eases up to it
+      this.rain.forEach((m, i) => { const k = Math.max(0, Math.min(1, lv - i)); m.visible = on && k > 0.02; const c = 0.55 * k * (0.7 + 0.1 * lv); this.rainMat[i].color[0] = c; this.rainMat[i].color[1] = c * 1.12; this.rainMat[i].color[2] = c * 1.3; });
+      // the storm: bolts over the court at the top tier
+      const scene = this.scene;
+      if (this.baseExposure == null) this.baseExposure = scene.exposure;
+      if (this.level >= 4 && lv > 3.5) { if ((this.nextBolt -= dt) <= 0) { this.strike(); this.nextBolt = RAIN.bolt.every[0] + this.rng() * (RAIN.bolt.every[1] - RAIN.bolt.every[0]); } }
+      if (this.bolt) {
+        this.boltT -= dt;
+        const ph = Math.max(0, this.boltT) / RAIN.bolt.hold;
+        this.bolt.visible = this.boltT > 0 && (ph % 1) > 0.35;
+        this.flash = this.boltT > 0 ? (this.bolt.visible ? 1 : 0.35) : M.damp(this.flash, 0, 12, dt);
+        if (this.boltT <= 0 && this.flash < 0.02) { this.scene.remove(this.bolt); const i = this.meshes.indexOf(this.bolt); if (i >= 0) this.meshes.splice(i, 1); this.bolt = null; this.flash = 0; }
+      }
+      // (every court's rain shares the scene: the flash that shows is the brightest of all of them right now)
+      let fl = 0; for (const o of RAINS.get(scene) || []) fl = Math.max(fl, o.flash || 0);
+      scene.exposure = this.baseExposure * (1 + 1.4 * fl);
+      return;
+    }
     const on = lv > 0.02, n = Math.round(Math.max(this.level, lv));
     const bright = 0.5 + 0.28 * lv;
     this.beamMat.color[0] = 0.35 * bright; this.beamMat.color[1] = 2.6 * bright; this.beamMat.color[2] = 1.1 * bright;
@@ -115,5 +190,5 @@ export class StreakFX {
     });
   }
 
-  dispose() { for (const m of this.meshes) this.scene.remove(m); this.meshes = []; }
+  dispose() { for (const m of this.meshes) this.scene.remove(m); this.meshes = []; if (this.kind === 'rain') { RAINS.get(this.scene)?.delete(this); if (this.baseExposure != null) this.scene.exposure = this.baseExposure; } }
 }

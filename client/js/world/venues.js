@@ -73,8 +73,8 @@ function buildPark(r, scene, theme, opts) {
     if (c.format === 1) spec.logo = { ...spec.logo, size: 0.9 };
     const built = buildCourt(ctx, spec, c.origin);
     built.meshes.forEach(m => scene.add(m));
-    const tut = theme.style === 'tut';
-    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: tut ? '#e8c15a' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: tut ? '#1c1428' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: tut ? '#b8ffd8' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
+    const tut = theme.style === 'tut', jungle = theme.style === 'jungle';
+    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: tut ? '#e8c15a' : jungle ? '#ff8a1f' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: tut ? '#1c1428' : jungle ? '#3a2d26' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: tut ? '#b8ffd8' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
     // v0.4.5 King Tut Cup: the lines glow (an additive neon copy of the markings laid over the court)
     if (theme.court.neon) {
       const nz = theme.court.neon;
@@ -112,7 +112,7 @@ function buildPark(r, scene, theme, opts) {
     }
     // benches on the west sideline and by the Got Next line (east)
     const nb = full ? 3 : 1;
-    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : '#8a5f3a', tut ? '#1c1428' : undefined));
+    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : jungle ? '#6b4a2a' : '#8a5f3a', tut ? '#1c1428' : jungle ? '#3a2d26' : undefined));
     if (tut) {
       // neon strips along the fence bottoms (laser-tag arena trim)
       for (const [x0, z0, x1, z1] of runs) {
@@ -185,6 +185,7 @@ function buildPark(r, scene, theme, opts) {
   if (theme.style === 'coast') coastScenery(ctx, scene, rng, matte, metal, foliage);
   else if (theme.style === 'city') cityScenery(ctx, scene, rng, matte, metal, theme);
   else if (theme.style === 'tut') board = tutScenery(ctx, scene, rng, matte, metal, neon, foliage);
+  else if (theme.style === 'jungle') board = jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps);
   else industrialScenery(ctx, scene, rng, matte, metal, theme);
   // trees/palms scattered around plaza
   for (let i = 0; i < 14; i++) {
@@ -193,11 +194,13 @@ function buildPark(r, scene, theme, opts) {
     if (Math.abs(x) > 38 && z > 18) continue; // annex courts / practice slab
     if (theme.style === 'tut' && (z > 18 || (x < -30 && z < -30))) continue; // mini-golf strip / leaderboard
     if (Math.abs(x - PARK_HQ.x) < 6.5 && z < -20) continue; // the Crew HQ
-    if (theme.style === 'coast' || theme.style === 'tut') foliage.push(...PR.palm(x, z, theme.style === 'tut' ? 0.85 : 1, rng)); else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
+    if (theme.style === 'coast' || theme.style === 'tut') foliage.push(...PR.palm(x, z, theme.style === 'tut' ? 0.85 : 1, rng));
+    else if (theme.style === 'jungle') foliage.push(...PR.rainTree(x, z, 0.42 + rng.next() * 0.2, rng, { leaf: '#2f7a3a', leaf2: '#4a8a3c' }), ...PR.fern(x + rng.range(-2.5, 2.5), z + rng.range(-2.5, 2.5), 0.9 + rng.next() * 0.5, rng)); // (a younger giant: 8-13 m)
+    else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
   }
-  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : undefined));
+  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : undefined));
   // murals on a wall behind the west court
-  const muralTex = cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
+  const muralTex = cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
   const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1] }));
   M.m4mul(wall.matrix, M.m4translation(M.m4(), -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
   scene.add(wall);
@@ -378,11 +381,28 @@ function tutScenery(ctx, scene, rng, matte, metal, neon, foliage) {
     for (const sx of [-1, 1]) glow(G.box(0.8, 0.012, 0.08), M.m4fromYaw(M.m4(), sx * 0.27, 0.012, z, sx * 0.9), NEON.green);
   }
   // the leaderboard billboard behind the plaza (canvas texture; park.js feeds it the standings)
-  const bw = 9, bh = 4.6, bx = -38, bz = -33.6;
-  metal.push({ geo: G.box(0.3, 3.2, 0.3), matrix: M.m4translation(M.m4(), bx - 3.5, 0, bz), color: c4('#1c1428') });
-  metal.push({ geo: G.box(0.3, 3.2, 0.3), matrix: M.m4translation(M.m4(), bx + 3.5, 0, bz), color: c4('#1c1428') });
-  matte.push({ geo: G.box(bw + 0.5, bh + 0.5, 0.3), matrix: M.m4translation(M.m4(), bx, 3.2 + bh / 2, bz - 0.2), color: c4('#0d0a14') });
-  for (const [a, b] of [[[-1, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [-1, 1]], [[-1, 1], [-1, 0]]]) edge([bx + a[0] * (bw / 2 + 0.25), 3.2 - 0.25 + a[1] * (bh + 0.5), bz - 0.02], [bx + b[0] * (bw / 2 + 0.25), 3.2 - 0.25 + b[1] * (bh + 0.5), bz - 0.02], NEON.gold, 0.06);
+  const board = eventBoard(ctx, scene, {
+    title: 'KING TUT CUP', bg: '#07050d', titleColor: NEON.gold, subColor: NEON.green, rowColor: '#d9d0f2', meColor: NEON.green, meBg: 'rgba(57,255,136,0.18)', barColor: NEON.purple,
+    frame(bx, bz, bw, bh) {
+      metal.push({ geo: G.box(0.3, 3.2, 0.3), matrix: M.m4translation(M.m4(), bx - 3.5, 0, bz), color: c4('#1c1428') });
+      metal.push({ geo: G.box(0.3, 3.2, 0.3), matrix: M.m4translation(M.m4(), bx + 3.5, 0, bz), color: c4('#1c1428') });
+      matte.push({ geo: G.box(bw + 0.5, bh + 0.5, 0.3), matrix: M.m4translation(M.m4(), bx, 3.2 + bh / 2, bz - 0.2), color: c4('#0d0a14') });
+      for (const [a, b] of [[[-1, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [-1, 1]], [[-1, 1], [-1, 0]]]) edge([bx + a[0] * (bw / 2 + 0.25), 3.2 - 0.25 + a[1] * (bh + 0.5), bz - 0.02], [bx + b[0] * (bw / 2 + 0.25), 3.2 - 0.25 + b[1] * (bh + 0.5), bz - 0.02], NEON.gold, 0.06);
+    },
+  });
+  return {
+    // the mini-golf pyramids and the billboard posts are solid (nobody walks through them)
+    solids: [-45, -15, 15, 45].map(x => ({ x0: x - 1.5 - 0.7, x1: x - 1.5 + 0.7, z0: 25.5 - 0.7, z1: 25.5 + 0.7, h: 1.1 })),
+    set: board.set, update: board.update,
+  };
+}
+
+// v0.4.7.5 qp3: the plaza leaderboard, shared by the park events (the King Tut Cup's neon billboard, the Jungle
+// Ballers' carved board). A canvas texture on a quad at (-38, -33.6); park.js feeds it the standings through set().
+// opts.frame(bx, bz, bw, bh) adds the event's own posts and surround.
+function eventBoard(ctx, scene, opts) {
+  const bw = 9, bh = 4.6, bx = -38, bz = -33.6, C = opts;
+  C.frame?.(bx, bz, bw, bh);
   const cvs = T.canvas(1024, 520);
   const tex = ctx.texture(cvs, { wrap: 'clamp' });
   const screen = new Mesh(ctx.geometry(G.quad(bw, bh)), new Material({ map: tex, color: [1.5, 1.5, 1.5], shading: 'unlit', fog: false }), { castShadow: false, reflect: false });
@@ -391,31 +411,151 @@ function tutScenery(ctx, scene, rng, matte, metal, neon, foliage) {
   let data = null, dirty = true, tick = 0;
   const draw = () => {
     const g = cvs.getContext('2d'), W = cvs.width, H = cvs.height;
-    g.fillStyle = '#07050d'; g.fillRect(0, 0, W, H);
-    g.fillStyle = NEON.gold; g.font = '900 54px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('KING TUT CUP', W / 2, 46);
-    g.font = '700 24px Arial, sans-serif'; g.fillStyle = NEON.green;
+    g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+    if (C.bgDraw) C.bgDraw(g, W, H);
+    g.fillStyle = C.titleColor; g.font = '900 54px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(C.title, W / 2, 46);
+    g.font = '700 24px Arial, sans-serif'; g.fillStyle = C.subColor;
     const left = data ? Math.max(0, (data.end - Date.now()) / 1000) : 0; // data.end is in ms
     g.fillText(data ? `LEADERBOARD · NET VC WON · ENDS IN ${Math.floor(left / 3600)}h ${String(Math.floor(left % 3600 / 60)).padStart(2, '0')}m` : 'LEADERBOARD', W / 2, 96);
     const rows = data?.rows || [];
     g.textAlign = 'left'; g.font = '700 30px Arial, sans-serif';
     rows.slice(0, 6).forEach((r, i) => {
       const y = 150 + i * 52, me = r.me;
-      if (me) { g.fillStyle = 'rgba(57,255,136,0.18)'; g.fillRect(40, y - 24, W - 80, 48); }
-      g.fillStyle = i === 0 ? NEON.gold : me ? NEON.green : '#d9d0f2';
+      if (me) { g.fillStyle = C.meBg; g.fillRect(40, y - 24, W - 80, 48); }
+      g.fillStyle = i === 0 ? C.titleColor : me ? C.meColor : C.rowColor;
       g.fillText(`${r.rank}`, 60, y); g.fillText(r.name.slice(0, 22), 140, y);
       g.textAlign = 'right'; g.fillText(`${r.net >= 0 ? '' : '−'}${Math.abs(r.net).toLocaleString()} VC`, W - 60, y); g.textAlign = 'left';
     });
-    if (!rows.length) { g.textAlign = 'center'; g.fillStyle = '#d9d0f2'; g.fillText('Loading the standings…', W / 2, 260); }
-    g.fillStyle = NEON.purple; g.fillRect(0, H - 10, W, 10);
+    if (!rows.length) { g.textAlign = 'center'; g.fillStyle = C.rowColor; g.fillText('Loading the standings…', W / 2, 260); }
+    g.fillStyle = C.barColor; g.fillRect(0, H - 10, W, 10);
     ctx.updateTexture(tex, cvs);
   };
   return {
-    // the mini-golf pyramids and the billboard posts are solid (nobody walks through them)
-    solids: [-45, -15, 15, 45].map(x => ({ x0: x - 1.5 - 0.7, x1: x - 1.5 + 0.7, z0: 25.5 - 0.7, z1: 25.5 + 0.7, h: 1.1 })),
+    solids: [],
     set(d) { data = d; dirty = true; },
     update(dt) { tick += dt; if (dirty || tick > 30) { dirty = false; tick = 0; draw(); } },
   };
+}
+
+// ---------------- v0.4.7.5 qp3 The Jungle Ballers ----------------
+// The park deep in a rainforest: giant trees with buttress roots ringing it, a canopy of leaf clusters, lianas and
+// vine swags overhead (the hanging fringe sits low enough at the park's edges to show at the top of the frame
+// during a game), ferns along every fence, a waterfall and its pool on the north edge, bamboo torches on the
+// plaza, and a carved leaderboard. The animals are park life (parklife.js); the rain is the streak (streakfx.js).
+function jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps) {
+  const c4 = h => [...lin(h), 1];
+  // the forest floor beyond the park's own slab
+  matte.push({ geo: G.box(520, 0.3, 520), matrix: M.m4translation(M.m4(), 0, -0.2, 0), color: c4('#2c3a1e') });
+  // giant trees: an inner ring just outside the fences and the plaza, then denser bands out to the fog
+  const trees = [], ok = (x, z) => !(Math.abs(x) < 66 && z > -38 && z < 36) && !(Math.abs(x + 66) < 6 && Math.abs(z + 4) < 12) && !(Math.abs(x + 38) < 7 && Math.abs(z + 33.6) < 4) && !(Math.abs(x) < 36 && z > 44 && z < 72);
+  const place = (n, x0, x1, z0, z1, s0, s1) => { let tries = 0; while (n > 0 && tries++ < 400) { const x = rng.range(x0, x1), z = rng.range(z0, z1); if (!ok(x, z) || trees.some(t => Math.hypot(t[0] - x, t[1] - z) < 9)) continue; trees.push([x, z, rng.range(s0, s1)]); n--; } };
+  place(10, -78, 78, 37, 52, 0.85, 1.2);      // north fringe (behind the far baselines)
+  place(10, -78, 78, -54, -39, 0.85, 1.2);    // south, behind the plaza
+  place(7, -84, -67, -40, 40, 0.9, 1.3);      // west
+  place(7, 67, 84, -40, 40, 0.9, 1.3);        // east
+  place(26, -140, 140, 52, 110, 1.0, 1.5);    // the deep forest
+  place(18, -140, 140, -110, -54, 1.0, 1.5);
+  place(12, -140, -86, -50, 50, 1.0, 1.4);
+  place(12, 86, 140, -50, 50, 1.0, 1.4);
+  for (const [x, z, sc] of trees) foliage.push(...PR.rainTree(x, z, sc, rng, { leaf: rng.next() < 0.5 ? '#2f6b33' : '#386f2e', leaf2: rng.next() < 0.5 ? '#4a8a3c' : '#5a9a44' }));
+  // the forest wall: a dense ring of cheaper trees out at the fog, and undergrowth over the forest floor between
+  for (let i = 0; i < 150; i++) {
+    const a = i / 150 * Math.PI * 2 + rng.range(0, 0.04), d = rng.range(96, 175), x = Math.cos(a) * d * 1.15, z = Math.sin(a) * d * 0.8;
+    foliage.push(...PR.farTree(x, z, rng.range(0.9, 1.6), rng, rng.next() < 0.5 ? '#2f6b33' : '#3a7a38'));
+  }
+  for (let i = 0; i < 110; i++) {
+    const x = rng.range(-150, 150), z = rng.range(-120, 120);
+    if (!ok(x, z) || (Math.abs(x) < 84 && z > -54 && z < 52 && !(Math.abs(x) > 66 || z > 36 || z < -38))) continue;
+    foliage.push(...PR.bush(x, z, rng.range(1, 2.2), rng, rng.next() < 0.5 ? '#2a5a2a' : '#34663a'));
+  }
+  // the canopy over the park: leaf clusters hanging at 13-24 m, thicker toward the edges, with vine swags between
+  // them, and the hanging fringe of lianas round the edge, down to 4.5-9 m (the top of the game camera's frame)
+  const canopy = [];
+  for (let i = 0; i < 120; i++) {
+    const x = rng.range(-84, 84), z = rng.range(-50, 50), edge = Math.max(Math.abs(x) / 84, Math.abs(z) / 50);
+    if (edge < 0.45 && rng.next() < 0.55) continue; // thinner straight over the courts
+    const y = rng.range(13, 25) - edge * 3;
+    canopy.push(...PR.canopyLeaves(x, y, z, rng.range(1.0, 1.8), rng, rng.next() < 0.5 ? '#2f7a3a' : '#3f8a3a'));
+    if (i % 3 === 0) { const x2 = x + rng.range(-28, 28), z2 = z + rng.range(-18, 18); canopy.push(...PR.vineSwag([x, y, z], [x2, y + rng.range(-3, 3), z2], rng, rng.range(2, 5))); }
+  }
+  for (let i = 0; i < 54; i++) {
+    const side = rng.next() < 0.5, x = side ? rng.pick([-1, 1]) * rng.range(62, 84) : rng.range(-84, 84), z = side ? rng.range(-46, 46) : rng.pick([-1, 1]) * rng.range(36, 50);
+    if (Math.abs(x + 38) < 6 && z < -30) continue; // the leaderboard
+    canopy.push(...PR.vine(x, rng.range(16, 24), z, rng.range(4.5, 9), rng));
+  }
+  // the low fringe: leaf clusters and short lianas hanging 5-9 m up round the park's edge, beyond the fences. From
+  // the game camera (8.6 m up, looking down the floor) these are what shows along the top of the frame
+  for (let i = 0; i < 40; i++) {
+    const side = rng.next() < 0.4, x = side ? rng.pick([-1, 1]) * rng.range(66, 80) : rng.range(-70, 70), z = side ? rng.range(-44, 44) : rng.pick([-1, 1]) * rng.range(37, 47);
+    if (Math.abs(x + 38) < 7 && z < -30) continue; if (Math.abs(x) < 10 && z < -18 && z > -30) continue;
+    canopy.push(...PR.canopyLeaves(x, rng.range(6, 9.5), z, rng.range(0.7, 1.1), rng, rng.next() < 0.5 ? '#2f7a3a' : '#4a8a3c'));
+    if (rng.next() < 0.6) canopy.push(...PR.vine(x + rng.range(-3, 3), rng.range(9, 13), z + rng.range(-2, 2), rng.range(3.4, 5.5), rng));
+  }
+  // ferns along the fences, the plaza and the annexes
+  for (let i = 0; i < 70; i++) {
+    const x = rng.range(-64, 64), z = rng.pick([rng.range(-37, -33), rng.range(31, 35)]);
+    if (Math.abs(x) < 10 && z < -30) continue; if (Math.abs(x + 38) < 6 && z < -30) continue;
+    foliage.push(...PR.fern(x, z, rng.range(0.7, 1.4), rng, rng.next() < 0.3 ? '#5a9a44' : '#3f8a3a'));
+  }
+  for (let i = 0; i < 24; i++) foliage.push(...PR.fern(rng.pick([-1, 1]) * rng.range(64, 70), rng.range(-30, 30), rng.range(0.8, 1.5), rng));
+  // mossy boulders here and there
+  for (let i = 0; i < 16; i++) {
+    const x = rng.pick([-1, 1]) * rng.range(66, 110), z = rng.range(-60, 60);
+    if (!ok(x, z)) continue;
+    matte.push({ geo: G.sphere(1, 9, 6), matrix: M.m4compose(M.m4(), [x, -0.3, z], M.q4(), [rng.range(1.2, 3), rng.range(0.8, 1.8), rng.range(1.2, 2.6)]), color: c4(rng.pick(['#56604a', '#4a5a3e', '#5e5a4e'])) });
+  }
+  // the waterfall on the north edge: a dark cliff, the falling water (a scrolling sheet), the pool it lands in
+  // (the cliff is a pile of mossy boulders, big ones at the back, so it reads as rock and not as a building)
+  for (let i = 0; i < 26; i++) {
+    const x = rng.range(-36, 36), z = 60 + rng.range(-1, 6) + Math.abs(x) * 0.08, big = Math.abs(x) < 9;
+    if (Math.abs(x) < 4.5) continue; // the water comes down the gap
+    const sx = rng.range(4, 8) * (big ? 1.3 : 1), sy = rng.range(3.5, 7) * (big ? 1.5 : 1), sz = rng.range(3, 6);
+    matte.push({ geo: G.sphere(1, 10, 7), matrix: M.m4compose(M.m4(), [x, rng.range(0, 9) + (big ? 3 : 0), z], M.qaxis(M.q4(), 0, 1, 0, rng.range(0, 3)), [sx, sy, sz]), color: c4(rng.pick(['#4e5546', '#43493c', '#56604a', '#3e4a3a'])) });
+  }
+  matte.push({ geo: G.sphere(1, 10, 7), matrix: M.m4compose(M.m4(), [0, 10, 64], M.q4(), [12, 10, 6]), color: c4('#43493c') }); // the lip the water pours over
+  matte.push({ geo: G.box(9, 2.5, 5), matrix: M.m4translation(M.m4(), 0, 13.5, 60.5), color: c4('#4e5546') });
+  // ivy over the rocks
+  for (let i = 0; i < 18; i++) canopy.push(...PR.canopyLeaves(rng.range(-30, 30), rng.range(6, 15), rng.range(55, 62), rng.range(0.6, 1.0), rng, '#3f8a3a'));
+  const wn = cachedTexture(ctx, 'waterN2', () => T.waterNormal({ seed: 41 }), { srgb: false });
+  const fallGeo = G.quad(5.5, 14.2);
+  for (let i = 0; i < fallGeo.uv.length; i += 2) { fallGeo.uv[i] *= 2; fallGeo.uv[i + 1] *= 5; }
+  const fallMat = new Material({ color: [0.85, 0.95, 1.0], normalMap: wn, normalScale: 0.5, roughness: 0.12, specular: 1.4, blend: 'alpha', opacity: 0.72, depthWrite: false, doubleSided: true });
+  const fall = new Mesh(ctx.geometry(fallGeo), fallMat, { castShadow: false, reflect: false });
+  M.m4mul(fall.matrix, M.m4translation(M.m4(), 0, 7.4, 57.6), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI));
+  fall.order = 2; scene.add(fall);
+  water_anim.push([fallMat, 0.0, -0.9]);
+  const poolGeo = G.plane(30, 12, 1, 1);
+  for (let i = 0; i < poolGeo.uv.length; i += 2) { poolGeo.uv[i] *= 6; poolGeo.uv[i + 1] *= 2.5; }
+  const poolMat = new Material({ color: lin('#1f4a4a'), normalMap: wn, normalScale: 0.6, roughness: 0.08, specular: 1.5, metalness: 0.05 });
+  const pool = new Mesh(ctx.geometry(poolGeo), poolMat, { castShadow: false, reflect: false });
+  M.m4translation(pool.matrix, 0, 0.03, 51.5); pool.order = 1; scene.add(pool);
+  water_anim.push([poolMat, 0.02, 0.035]);
+  for (let i = 0; i < 14; i++) matte.push({ geo: G.sphere(1, 8, 6), matrix: M.m4compose(M.m4(), [-16 + i * 2.5 + rng.range(-0.5, 0.5), -0.2, 45 + rng.range(-0.6, 0.6)], M.q4(), [rng.range(1.0, 1.8), rng.range(0.5, 0.9), rng.range(0.8, 1.4)]), color: c4(rng.pick(['#56604a', '#4a5a3e'])) }); // the pool's near bank: stones
+  const canopyMesh = new Mesh(ctx.geometry(G.merge(canopy)), new Material({ color: [1, 1, 1], roughness: 0.9, shading: 'cloth', sheen: [0.05, 0.08, 0.04] }), { castShadow: false, reflect: false });
+  scene.add(canopyMesh);
+  // bamboo torches round the plaza and at the Got Next ends: the flames are unlit and bright enough to bloom
+  const flames = [];
+  for (const [x, z] of [[-18, -33], [18, -33], [-33, 31], [33, 31], [-66, 14], [66, 14], [-66, -14], [66, -14], [-12, -33.5], [12, -33.5]]) {
+    metal.push({ geo: G.cylinder(0.07, 0.09, 2.3, 7, { y0: true }), matrix: M.m4translation(M.m4(), x, 0, z), color: c4('#b8a060') });
+    for (let k = 1; k < 4; k++) metal.push({ geo: G.cylinder(0.095, 0.095, 0.05, 7, { y0: true }), matrix: M.m4translation(M.m4(), x, k * 0.6, z), color: c4('#8a7a40') });
+    matte.push({ geo: G.cylinder(0.18, 0.12, 0.4, 8, { y0: true }), matrix: M.m4translation(M.m4(), x, 2.3, z), color: c4('#3a2d26') });
+    flames.push({ geo: G.cylinder(0.03, 0.16, 0.55, 7, { y0: true }), matrix: M.m4translation(M.m4(), x, 2.65, z), color: [1, 0.55, 0.18, 1] });
+    flames.push({ geo: G.cylinder(0.02, 0.08, 0.3, 6, { y0: true }), matrix: M.m4translation(M.m4(), x, 2.8, z), color: [1, 0.85, 0.5, 1] });
+  }
+  batch(ctx, scene, flames, new Material({ color: [3.2, 3.2, 3.2], shading: 'unlit', fog: false }), { castShadow: false, reflect: false });
+  // the leaderboard: a carved board between two bamboo posts, with a thatch over it
+  const board = eventBoard(ctx, scene, {
+    title: 'JUNGLE BALLERS', bg: '#1b2a14', titleColor: '#ffd23f', subColor: '#ff8a1f', rowColor: '#e8f0d8', meColor: '#2ec4ff', meBg: 'rgba(46,196,255,0.18)', barColor: '#ff8a1f',
+    bgDraw(g, W, H) { g.strokeStyle = 'rgba(255,255,255,0.06)'; g.lineWidth = 3; for (let i = 0; i < 12; i++) { g.beginPath(); g.moveTo(0, 20 + i * 42); g.lineTo(W, 24 + i * 42); g.stroke(); } },
+    frame(bx, bz, bw, bh) {
+      for (const sx of [-1, 1]) { metal.push({ geo: G.cylinder(0.18, 0.2, 8.4, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, 0, bz), color: c4('#b8a060') }); for (let k = 1; k < 7; k++) metal.push({ geo: G.cylinder(0.205, 0.205, 0.06, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, k * 1.2, bz), color: c4('#8a7a40') }); }
+      matte.push({ geo: G.box(bw + 0.6, bh + 0.6, 0.35), matrix: M.m4translation(M.m4(), bx, 3.2 + bh / 2, bz - 0.22), color: c4('#5a3f26') });
+      matte.push({ geo: G.box(bw + 1.6, 0.5, 2.4), matrix: M.m4translation(M.m4(), bx, 8.3, bz - 0.4), color: c4('#8a7a40') }); // thatch
+      matte.push({ geo: G.box(bw + 1.2, 0.3, 2.0), matrix: M.m4translation(M.m4(), bx, 8.7, bz - 0.4), color: c4('#a08a4a') });
+    },
+  });
+  return { solids: [], set: board.set, update: board.update };
 }
 
 function cityScenery(ctx, scene, rng, matte, metal, theme) {

@@ -6,6 +6,7 @@ anything. Rewards, Rep and badges are computed here, never trusted from the clie
 """
 import re
 import time
+from .cup import EVENT_VENUES
 from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K, LEGEND_GAMES_PER_OVR, legend_raise
 
 VC_K = 1.35  # v0.4.5: every game pays 35% more VC
@@ -184,8 +185,8 @@ def rewards(summary, ticket, char):
     if mode == "park":
         out["streak_mult"] = streak_multiplier(streak) if won else 1.0
         out["bounty"] = int(ticket["meta"].get("bounty") or 0) if won else 0
-        if ticket["meta"].get("venue") == "kingtut":
-            out["cup"] = {"ante": int(ticket["meta"].get("ante") or 0), "pot": pot}
+        if ticket["meta"].get("venue") in EVENT_VENUES:  # (v0.4.7.5 qp3: any park event, not only the Cup)
+            out["cup"] = {"ante": int(ticket["meta"].get("ante") or 0), "pot": pot, "event": ticket["meta"].get("event")}
     return out
 
 

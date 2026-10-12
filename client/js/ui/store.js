@@ -75,7 +75,7 @@ export function lockReason(app, c, i) {
 function card(app, c, i, inv, sel) {
   const owned = inv.has(i.id), equipped = c.equipment[i.slot] === i.id, lock = lockReason(app, c, i);
   return `<button class="item ${sel === i.id ? 'on' : ''} ${owned ? 'owned' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
 }
 
 export function itemExtra(i) {
@@ -89,9 +89,9 @@ function detail(app, c, i, inv) {
     <div class="eyebrow">${esc((CATS.find(x => x[0] === catOf(i)) || [, title(i.slot)])[1])}</div><h2>${esc(i.name)}</h2>
     <p class="muted">${esc(i.description || '')}</p>${extra ? `<p class="small">${esc(extra)}</p>` : ''}
     ${lock && !owned ? `<p class="lock">🔒 Requires ${esc(lock)}</p>` : ''}
-    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive === 'icon' ? '★ Icon badge exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
+    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive === 'jungle' ? '★ Jungle Ballers exclusive' : i.exclusive === 'icon' ? '★ Icon badge exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
     ${i.slot === 'greensound' ? '<button class="btn ghost small" data-hear>▶ Hear it</button>' : ''}
-    <div class="row gap">${owned ? `<span class="owned-tag">${equipped ? '✓ Equipped' : '✓ Owned'}</span><button class="btn" data-inventory>${equipped ? 'In your Inventory' : 'Equip in Inventory'} →</button>` : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive === 'icon' ? `<button class="btn ghost" disabled>Comes with the ${esc(app.config.icon_badges?.[i.icon]?.name || 'Icon')} Icon badge</button>` : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy · ${money(i.price)} VC</button>`}</div>
+    <div class="row gap">${owned ? `<span class="owned-tag">${equipped ? '✓ Equipped' : '✓ Owned'}</span><button class="btn" data-inventory>${equipped ? 'In your Inventory' : 'Equip in Inventory'} →</button>` : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive === 'jungle' ? '<button class="btn ghost" disabled>Win it in the Jungle Ballers</button>' : i.exclusive === 'icon' ? `<button class="btn ghost" disabled>Comes with the ${esc(app.config.icon_badges?.[i.icon]?.name || 'Icon')} Icon badge</button>` : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy · ${money(i.price)} VC</button>`}</div>
   </aside>`;
 }
 
