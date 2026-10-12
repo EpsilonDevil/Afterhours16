@@ -6,6 +6,9 @@
 // Two ways in: the game the host's PC serves (join.cmd: same origin, the sign-in cookie), or your own copy of the game
 // linked to a friend's hosted one (configure({ hub, token, build })): the socket goes to his PC and signs in on itself
 // with a token, or your online account there (login / register), and his service checks the game's build first.
+// the socket of a friend's hosted game ('host:port', plain) or an online server with HTTPS ('https://host[:port]': wss)
+export const hubSocketUrl = hub => (/^https:\/\//i.test(hub) ? `wss://${hub.slice(8)}` : `ws://${hub}`) + '/api/ws';
+
 export class Net {
   constructor() {
     this.ws = null; this.on_ = new Map();
@@ -23,7 +26,8 @@ export class Net {
     this.crew = null;
     this.watchFns = new Map(); this.watchBox = new Map(); // game id -> fn / held messages (games you watch)
   }
-  // your own copy, playing online through a friend's hosted game ('host:port'); null = this page's own service
+  // your own copy, playing online through a friend's hosted game ('host:port') or an online server ('https://host');
+  // null = this page's own service
   configure({ hub = null, token = null, build = null } = {}) { this.hub = hub; this.token = token; this.build = build; this.authError = null; }
   get remote() { return !!this.hub; }
   // (from your own copy, before the token: the sign-in form sends one of these on the open socket)
@@ -37,7 +41,7 @@ export class Net {
   open() {
     if (!this.want || (this.ws && this.ws.readyState <= 1)) return;
     let ws;
-    try { ws = new WebSocket(this.hub ? `ws://${this.hub}/api/ws` : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws`); }
+    try { ws = new WebSocket(this.hub ? hubSocketUrl(this.hub) : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws`); }
     catch { this.later(); return; }
     this.ws = ws; this.state = 'connecting'; this.emit('state');
     ws.onopen = () => {

@@ -115,3 +115,11 @@ test('online: presence says where you are (a park, a crew HQ) and your round tri
   for (const t of ['"claim"', '"court"', '"release"', '"challenge"', '"crew-sync"', '"crewxp"', 'def offer_watch']) assert.ok(hub.includes(t), t);
   assert.match(src('server/migrations/011_v0475_online_crews.sql'), /CREATE TABLE online_crews/);
 });
+
+test('online server: an https:// address is reached over wss (a friend\'s PC stays ws on its port)', async () => {
+  const { hubSocketUrl } = await import('../client/js/core/netplay.js');
+  assert.equal(hubSocketUrl('https://203-0-113-7.sslip.io'), 'wss://203-0-113-7.sslip.io/api/ws');
+  assert.equal(hubSocketUrl('https://game.example.com:8443'), 'wss://game.example.com:8443/api/ws');
+  assert.equal(hubSocketUrl('203.0.113.7:8765'), 'ws://203.0.113.7:8765/api/ws');
+  assert.match(src('client/js/core/netplay.js'), /new WebSocket\(this\.hub \? hubSocketUrl\(this\.hub\)/);
+});

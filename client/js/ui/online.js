@@ -344,10 +344,10 @@ export function bindPhoneTab(app, host, redraw) {
 // ---------------- your own copy, linked to a friend's hosted game ----------------
 function linkForm() {
   return `<div class="ph-sec">Play online with your friends</div>
-    <p class="ph-note">Play from this game: your players, VC and progress stay in your own save, and the friend who hosts
-      (he runs <b>host.cmd</b>) just connects everyone. Type the address he gives you. You need the same version of the game as him.</p>
-    <form class="ol-add" data-olink><input class="text" name="hub" maxlength="80" placeholder="Host's address, e.g. 203.0.113.7" autocomplete="off"><button class="btn small primary" type="submit">Connect</button></form>
-    <p class="ph-note">Hosting yourself? Quit the game and run <b>host.cmd</b>.</p>`;
+    <p class="ph-note">Play from this game: your players, VC and progress stay in your own save, and the online server (or the
+      friend who hosts with <b>host.cmd</b>) just connects everyone. Type the address you were given. You need the same version of the game as the server.</p>
+    <form class="ol-add" data-olink><input class="text" name="hub" maxlength="80" placeholder="Address, e.g. https://203-0-113-7.sslip.io" autocomplete="off"><button class="btn small primary" type="submit">Connect</button></form>
+    <p class="ph-note">Hosting on your own PC instead? Quit the game and run <b>host.cmd</b>. (Your own online server: README, <i>Host on a server</i>.)</p>`;
 }
 function signInForm(net) {
   const e = net.authError;
@@ -356,7 +356,7 @@ function signInForm(net) {
   return `<div class="ph-sec">Online through ${esc(net.hub)}</div>
     ${e ? `<div class="ol-host warn">${esc(e.text)}</div>` : ''}
     ${version ? '<p class="ph-note">Update this copy of the game to the host\'s (the same files he has), restart it, and open this tab again.</p>'
-      : waiting ? `<p class="ph-note">Connecting to ${esc(net.hub)}… (is your friend's game running, and his port open?)</p>`
+      : waiting ? `<p class="ph-note">Connecting to ${esc(net.hub)}… ${/^https:/i.test(net.hub) ? '(is the server up? Its status: README, <i>Host on a server</i>)' : '(is your friend\'s game running, and his port open?)'}</p>`
       : `<p class="ph-note">Sign in with your online account on your friend's game, or make one: he gives you the join code. Your players stay in your own game either way.</p>
       <form class="ol-signin" data-osignin>
         <input class="text" name="u" maxlength="24" placeholder="Online username" autocomplete="username">
@@ -364,7 +364,7 @@ function signInForm(net) {
         <input class="text" name="c" maxlength="64" placeholder="Join code (new accounts)" autocomplete="off">
         <div class="ph-acts"><button class="btn small primary" data-omode="login" type="submit">Sign in</button><button class="btn small" data-omode="register" type="submit">Create account</button></div>
       </form>`}
-    <div class="ph-acts"><button class="btn small ghost" data-ounlink>Change host</button></div>`;
+    <div class="ph-acts"><button class="btn small ghost" data-ounlink>Change server</button></div>`;
 }
 function bindLink(app, host) {
   const net = app.net;

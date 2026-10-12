@@ -1,0 +1,9 @@
+# Afterhours 16: follow the game on GitHub (deploy/afterhours16.sh update --auto; run by afterhours16-update.timer)
+[Unit]
+Description=Afterhours 16 online server: update from GitHub when no games are on
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/afterhours16 update --auto

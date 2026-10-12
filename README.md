@@ -125,6 +125,26 @@ Since quick patch 3 a few friends can play together in the game itself: everyone
 
 **Good to know:** the connection is plain HTTP, so use a password you don't use anywhere else. If you'd rather not open a port, a VPN such as Tailscale or ZeroTier works too: your friends use your VPN address. The local session (`Start local session`) is offered only on the host PC itself.
 
+## Host on a server (DigitalOcean)
+
+Instead of hosting on your PC (host.cmd and a forwarded port), you can rent a small server that hosts the online game around the clock: no router settings, nothing running on your PC, and the connection is encrypted (HTTPS). A $6/month DigitalOcean Droplet is plenty: the server only connects people and passes inputs on, and every game is still simulated on the players' own PCs. Everyone, you included, plays from their own copy and keeps their own save; the server keeps only the online accounts (and the players of friends who come in through join.cmd).
+
+**Set it up (about 10 minutes):**
+1. Push the game to GitHub (GitHub Desktop: Commit, then Push). The server installs the game from `github.com/EpsilonDevil/Afterhours16`, and follows it from then on.
+2. Make a DigitalOcean account and add a card or PayPal.
+3. **Create → Droplets.** Region: the one closest to the middle of where you and your friends live (the further the server, the more input delay). Image: **Ubuntu 24.04 (LTS) x64**. Size: **Basic → Regular, $6/mo** (1 GB / 1 CPU). Authentication: **Password** (a long one you don't use anywhere else).
+4. **Advanced options → Add initialization scripts (Startup scripts):** paste all of [`deploy/digitalocean-startup.sh`](deploy/digitalocean-startup.sh), and change the join code on its `JOIN_CODE=` line.
+5. Hostname: `afterhours16`. **Create Droplet.**
+6. Wait about 5 minutes, then open the Droplet's **Console** (its page, top right) and type `afterhours16 status`. It shows the server's address, like **`https://203-0-113-7.sslip.io`**, and the join code. (The address is made from the server's IP by sslip.io, so it works with no domain; Let's Encrypt gives it a certificate, renewed by itself.)
+
+**Playing:** everyone starts their game as usual (`Afterhours16.exe`), opens the social phone's **Online** tab, types the server's address and presses **Connect**, then makes an online account there with the join code (once). Friends without a copy double-click `join.cmd` and type the same address. You don't need host.cmd any more (and you can remove the port forward from your router).
+
+**Keeping it up to date:** the server checks GitHub every 10 minutes and installs a new version by itself, restarting only when no games are being played. Everyone's copy has to match the server's, so when you push an update, your friends pull it too (their Online tab says so when they're behind). To update the server straight away: `afterhours16 update` in the Droplet Console.
+
+**In the Droplet Console:** `afterhours16 status` (address, join code, version, who's on, HTTPS), `afterhours16 update`, `afterhours16 joincode NEWCODE`, `afterhours16 autoupdate on|off`, `afterhours16 logs`, `afterhours16 restart`, `afterhours16 backup` (the database is also copied every night; the last 14 are kept in `/var/lib/afterhours16/backups`). If the setup itself went wrong: `cat /var/log/afterhours16-setup.log`, then run it again with `JOIN_CODE=yourcode bash /opt/afterhours16/deploy/install.sh`.
+
+**What's on it:** Ubuntu with its automatic security updates, a firewall that lets in only SSH, HTTP and HTTPS, Caddy in front (HTTPS, with the certificate), and the game service (`python3 -m server.app --server`) on the server itself only, run as its own user. `deploy/install.sh` sets it all up and can be run again at any time; it also works on any other Ubuntu 24.04 server (give it `PUBLIC_IP=` if it can't find its address, and `DOMAIN=game.example.com` for a domain of your own pointed at the server).
+
 ## Modes
 
 **MyPLAYER.** You create a player by picking a position, one of 8 archetypes (Sharpshooter, Slasher, Playmaker, Lockdown, Two-Way, Glass Cleaner, Stretch Big, Post Scorer), height, weight, wingspan, shooting hand and looks. Your build sets a cap for each of the 22 attributes, and you spend VC to raise attributes up to those caps. Badges (18 of them, Bronze → Hall of Fame) level up from what you do in games, for example contested makes, dunks, assists, ankle-breakers and blocks. You can save up to four players per account. Since v0.4.7.5 a new build upgrades to **80 OVR** with VC, and every 3 Pro Run games you play to the end raise its max by 1, up to **90 OVR**. Each of your first 5 Hall of Fame badges brings **5 cap breakers** (+1 each to a maxed-out attribute, past the cap); they unlock at 90 max OVR and are banked in MyPlayer → Attributes → Cap Breakers until then. A build holds up to **7** Hall of Fame badges, and the 7th (or every Hall of Fame the build can reach, if fewer) unlocks your archetype's **Icon badge**. Since v0.4.7.5 every badge has a highest tier your build can reach, set by your archetype and height. Each badge tier is a big step up from the last, and a stat with none of its badges plays 10% weaker.

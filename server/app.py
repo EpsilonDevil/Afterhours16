@@ -61,15 +61,31 @@ HUB_RE = re.compile(r"(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+(?::\d{1,5})?|\[[0-9A-Fa-
 
 
 def normalize_hub(text):
-    """'203.0.113.7', 'http://friend.example:8765/' -> 'host:port' (port 8765 when none is given), or None."""
+    """'203.0.113.7', 'http://friend.example:8765/' -> 'host:port' (port 8765 when none is given), or None.
+    An online server with HTTPS (deploy/install.sh): 'https://203-0-113-7.sslip.io/' -> 'https://203-0-113-7.sslip.io'
+    (its socket is wss://, on the port given or 443)."""
     t = (text or "").strip()
+    secure = bool(re.match(r"^(?:https|wss)://", t, flags=re.I))
     t = re.sub(r"^(?:https?|wss?)://", "", t, flags=re.I).split("/")[0].strip()
     if not t or not HUB_RE.fullmatch(t):
         return None
+    if secure:
+        port = int(t.rsplit(":", 1)[1]) if re.search(r"(?<!:):\d{1,5}$", t) and not t.endswith("]") else 443
+        if not 0 < port < 65536:
+            return None
+        return "https://" + (t[:-4] if t.endswith(":443") else t).lower()
     if not re.search(r":\d{1,5}$", t) or (t.startswith("[") and t.endswith("]")):
         t += ":8765"
     port = int(t.rsplit(":", 1)[1])
     return t if 0 < port < 65536 else None
+
+
+def hub_socket_sources(hub):
+    """The CSP connect-src entries a page needs to reach this hub's socket."""
+    if hub.startswith("https://"):
+        h = hub[8:]
+        return [f"wss://{h}"] if HUB_RE.fullmatch(h) else []
+    return [f"ws://{hub}", f"wss://{hub}"] if HUB_RE.fullmatch(hub) else []
 
 
 class HTTPError(Exception):
@@ -90,6 +106,9 @@ class Service:
         # v0.4.7.5 qp3: playing online with friends (online.py). hosting: started with --online (reachable from other
         # machines); join_code: new accounts need it (--join-code)
         self.hosting, self.join_code = False, None
+        # an online server (--server, deploy/install.sh): behind its own HTTPS proxy on the same machine, which forwards
+        # each player's address (X-Forwarded-For); public_url is the address players use
+        self.behind_proxy, self.public_url = False, None
         self.upnp = None  # upnp.PortMapper while hosting: the router forwards the port to this PC by itself
         self.build = compute_build()  # (qp3: the game's fingerprint, for the online version check)
         self.hub = online.Hub(self.db, self.online_auth)
@@ -319,7 +338,7 @@ class Service:
             raise online.AuthError("auth", "Password must be 8-128 characters.")
         if t == "register":
             if self.join_code and not hmac.compare_digest(str(msg.get("join_code") or "").strip().encode(), self.join_code.encode()):
-                raise online.AuthError("auth", "That join code isn't right: ask the host for it.")
+                raise online.AuthError("auth", "That join code isn't right: ask whoever hosts the game for it.")
             try:
                 aid = self.db.create_account(username, password, [])
             except sqlite3.IntegrityError:
@@ -350,6 +369,22 @@ class Handler(BaseHTTPRequestHandler):
             return
         super().log_message(fmt, *args)
 
+    def client_ip(self):
+        """The player's address. On an online server (--server) the requests come through its own proxy on this
+        machine, which passes the player's address on in X-Forwarded-For (the last one is the one it saw)."""
+        peer = self.client_address[0]
+        if self.service.behind_proxy and peer in ("127.0.0.1", "::1") and getattr(self, "headers", None):
+            fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+            if fwd:
+                return fwd
+        return peer
+
+    def is_local(self):
+        return self.client_ip() in ("127.0.0.1", "::1")
+
+    def address_string(self):
+        return self.client_ip()  # (the log shows the player's address, not the proxy's)
+
     def headers_common(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -357,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
         # (qp3: the online socket, /api/ws, on this same host; a WebSocket isn't covered by 'self' in every browser)
         host = self.headers.get("Host", "") if self.headers else ""
         ws = f" ws://{host} wss://{host}" if re.fullmatch(r"[A-Za-z0-9.\-]+(:\d{1,5})?|\[[0-9A-Fa-f:.]+\](:\d{1,5})?", host) else ""
-        ws += "".join(f" ws://{h} wss://{h}" for h in sorted(self.service.hub_hosts) if HUB_RE.fullmatch(h))  # (your friends' hosted games)
+        ws += "".join(" " + src for h in sorted(self.service.hub_hosts) for src in hub_socket_sources(h))  # (your friends' hosted games)
         self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'{ws}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
     def respond(self, status, payload, cookie=None):
@@ -443,7 +478,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         conn = online.WSConn(self.rfile, self.wfile, self.connection, aid, username)
-        conn.ip = self.client_address[0]
+        conn.ip = self.client_ip()
         self.service.hub.serve(conn)
 
     # ---------------- GET ----------------
@@ -466,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
                     "badges": progression.BADGES, "rep_thresholds": progression.REP_THRESHOLDS, "rep_tiers": progression.REP_TIERS,
                     "logos": progression.LOGOS, "woods": progression.WOODS,
                     # (qp3: the local account is only offered on the PC running the service)
-                    "dev_accounts": s.dev_accounts and self.client_address[0] in ("127.0.0.1", "::1"),
+                    "dev_accounts": s.dev_accounts and self.is_local(),
                     "wheel": {"segments": progression.WHEEL_SEGMENTS, "odds": progression.WHEEL_ODDS, "vc": progression.WHEEL_VC, "cooldown": progression.SPIN_COOLDOWN},
                     "icon_badges": progression.ICON_BADGES, "badge_rules": {"hof_limit": builds.HOF_LIMIT, "cap_breakers_per_hof": builds.CAP_BREAKERS_PER_HOF, "cap_breaker_hof_limit": builds.CAP_BREAKER_HOF_LIMIT, "ovr_cap": builds.OVR_CAP, "base_ovr_cap": builds.BASE_OVR_CAP, "prorun_games_per_ovr": builds.PRORUN_GAMES_PER_OVR, "legend_games_per_ovr": builds.LEGEND_GAMES_PER_OVR, "legend_ovr_cap": builds.LEGEND_OVR_CAP},
                     "boosts": {"categories": {k: {"name": v["name"], "attrs": v["attrs"]} for k, v in progression.BOOSTS.items()}, "amount": progression.BOOST_AMOUNT, "packs": progression.BOOST_PACKS, "max_games": progression.BOOST_MAX_GAMES},
@@ -480,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/online":
                 aid = self.account()
                 me = s.db.query("SELECT username FROM accounts WHERE id=?", (aid,))[0][0]
-                local = self.client_address[0] in ("127.0.0.1", "::1")
+                local = self.is_local()
                 return self.respond(200, {"you": {"id": aid, "username": me}, "friends": s.hub.friends_payload(aid), "hosting": s.hosting,
                                           "players_on": sum(1 for c in list(s.hub.conns.values()) if c.alive),
                                           # (the host's own screen: whether the router opened the port, and the address for friends)
@@ -491,10 +526,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"link": dict(rows[0]) if rows else None, "build": s.build})
             if path == "/api/hosting.txt":
                 # qp3: host.cmd's "your friends open ..." lines (this PC only; waits for the router's answer)
-                if self.client_address[0] not in ("127.0.0.1", "::1"):
+                if not self.is_local():
                     raise HTTPError(403, "Only on the hosting PC.")
-                text = s.upnp.summary() if s.upnp else ("NO Hosting without opening the port automatically (--no-upnp).\n" if s.hosting else "NO Not hosting.\n")
+                if s.public_url:
+                    text = f"SERVER {s.public_url}\n"
+                else:
+                    text = s.upnp.summary() if s.upnp else ("NO Hosting without opening the port automatically (--no-upnp).\n" if s.hosting else "NO Not hosting.\n")
                 text += f"BUILD {VERSION} {s.build}\n"  # (friends playing from their own copy need this same game)
+                # (who's on, and the games being played: deploy/update.sh waits for no games before it restarts)
+                text += f"ONLINE {sum(1 for c in list(s.hub.conns.values()) if c.alive)}\nGAMES {len(s.hub.games)}\n"
                 data = text.encode()
                 self.send_response(200)
                 self.headers_common()
@@ -603,7 +643,7 @@ class Handler(BaseHTTPRequestHandler):
             s, db = self.service, self.service.db
             if path == "/api/quit":
                 builds.strict_keys(data, ())
-                if not s.quit_allowed or self.client_address[0] not in ("127.0.0.1", "::1"):
+                if not s.quit_allowed or not self.is_local():
                     raise HTTPError(403, "Quit is only available when the game was started from Afterhours16.exe.")
                 s.quit_requested = True
                 threading.Timer(0.4, self.server.shutdown).start()
@@ -611,7 +651,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"ok": True})
             if path in ("/api/register", "/api/login"):
                 builds.strict_keys(data, ("username", "password", "join_code"))
-                s.rate_limit(self.client_address[0], "register" if path.endswith("register") else "login")
+                s.rate_limit(self.client_ip(), "register" if path.endswith("register") else "login")
                 username, password = data.get("username"), data.get("password")
                 if not isinstance(username, str) or not re.fullmatch(r"[a-zA-Z0-9_]{3,24}", username) or username.lower() == "localplayer":
                     raise builds.Invalid("Username: 3-24 letters, numbers, or underscores. localplayer is reserved.")
@@ -621,7 +661,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path.endswith("register"):
                     # qp3: a hosted service (--join-code) only lets in the friends who have the code
                     if s.join_code and not hmac.compare_digest(str(data.get("join_code") or "").strip().encode(), s.join_code.encode()):
-                        raise HTTPError(403, "This server needs the host's join code to make an account.")
+                        raise HTTPError(403, "This server needs its join code to make an account (ask whoever runs it).")
                     try:
                         aid = db.create_account(username, password, self.starter_items())
                     except sqlite3.IntegrityError:
@@ -637,7 +677,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, s.profile(aid), self.session_cookie(db.session(aid)))
             if path == "/api/dev-account":
                 builds.strict_keys(data, ())
-                if not s.dev_accounts or self.client_address[0] not in ("127.0.0.1", "::1"):
+                if not s.dev_accounts or not self.is_local():
                     raise HTTPError(403, "Local account flow is disabled.")
                 aid = db.create_account("localplayer", secrets.token_urlsafe(32), self.starter_items(), local=True)
                 self.ensure_starters(aid)
@@ -645,7 +685,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/bug-report":
                 # v0.4.7.5: works signed in or not (a bug on the sign-in screen is still a bug)
                 builds.strict_keys(data, ("key", "category", "what", "expected", "steps", "context"))
-                s.rate_limit(self.client_address[0], "bug")
+                s.rate_limit(self.client_ip(), "bug")
                 try:
                     out = bugs.write_report(s.bug_root, data, VERSION)
                 except bugs.BadReport as e:
@@ -666,7 +706,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, {"link": None})
                 hub = normalize_hub(data.get("hub") if isinstance(data.get("hub"), str) else "")
                 if not hub:
-                    raise builds.Invalid("Type the host's address: an IP like 203.0.113.7, or a name, with :port if it isn't 8765.")
+                    raise builds.Invalid("Type the server's address: like https://203-0-113-7.sslip.io, or an IP like 203.0.113.7 (with :port if it isn't 8765).")
                 user, tok = data.get("username"), data.get("token")
                 if user is not None and (not isinstance(user, str) or not re.fullmatch(r"[a-zA-Z0-9_]{3,24}", user)):
                     raise builds.Invalid("Invalid online username.")
@@ -679,7 +719,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"link": {"hub": hub, "username": user, "token": tok}})
             if path == "/api/online/friend":
                 builds.strict_keys(data, ("username", "action"))
-                s.rate_limit(self.client_address[0], "friend")
+                s.rate_limit(self.client_ip(), "friend")
                 if data.get("action") not in ("add", "accept", "decline", "remove") or not isinstance(data.get("username"), str):
                     raise builds.Invalid("Choose add, accept, decline or remove, and a username.")
                 try:
@@ -1231,10 +1271,18 @@ def main():
     p.add_argument("--join-code", default=os.environ.get("AFTERHOURS16_JOIN_CODE") or None, metavar="CODE",
                    help="New accounts need this code (share it with your friends)")
     p.add_argument("--no-upnp", action="store_true", help="With --online: don't ask the router to forward the port (UPnP)")
+    p.add_argument("--server", action="store_true",
+                   help="An online server (deploy/install.sh): hosts for everyone from behind its own HTTPS proxy on this machine "
+                        "(Caddy, which passes each player's address on); no local session, no UPnP, secure cookies")
+    p.add_argument("--public-url", default=os.environ.get("AFTERHOURS16_PUBLIC_URL") or None, metavar="URL",
+                   help="With --server: the address players use, e.g. https://203-0-113-7.sslip.io")
     args = p.parse_args()
+    if args.server:
+        args.online, args.no_upnp, args.no_dev_account = True, True, True
+        args.secure_cookies = args.secure_cookies or (args.public_url or "").startswith("https://")
     host = args.host
-    if args.online and "--host" not in sys.argv:
-        host = "0.0.0.0"
+    if args.online and "--host" not in sys.argv and not args.server:
+        host = "0.0.0.0"  # (an online server listens on this machine only: its proxy is the one players reach)
     # qp3: one service per port. (Windows can let a second one bind the same port: hosting while the game's own local
     # service is still up, your game would talk to one and your friends to the other, and you'd never see each other)
     try:
@@ -1248,6 +1296,8 @@ def main():
     service = Service(args.db, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc))
     service.hosting = bool(args.online)
     service.join_code = (args.join_code or "").strip() or None
+    service.behind_proxy = bool(args.server)
+    service.public_url = (args.public_url or "").strip().rstrip("/") or None if args.server else None
     server = ThreadingHTTPServer((host, args.port), Handler)
     server.daemon_threads = True
     server.service = service
@@ -1275,7 +1325,10 @@ def main():
                 ctypes.windll.kernel32.SetConsoleCtrlHandler(service.console_handler, True)
             except Exception:  # noqa: BLE001  (best effort: the lease runs out on its own within the hour)
                 pass
-    if args.online:
+    if args.server:
+        print(f"Online server for {service.public_url or '(no --public-url given)'}, behind its proxy (this machine, port {server.server_address[1]})"
+              + (f"\nJoin code for new accounts: {service.join_code}" if service.join_code else "\nNo join code set: anyone can make an account (set one with --join-code)."), flush=True)
+    elif args.online:
         print(f"Hosting online on port {server.server_address[1]} (every network interface). Friends open http://<your public IP>:{server.server_address[1]}/"
               + (f"\nJoin code for new accounts: {service.join_code}" if service.join_code else "\nNo join code set: anyone who can reach this port can make an account (use --join-code)."), flush=True)
     if args.open:

@@ -1,0 +1,24 @@
+# Afterhours 16 online server: the game service (deploy/install.sh). Players reach it through Caddy (HTTPS).
+[Unit]
+Description=Afterhours 16 online server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=afterhours
+Group=afterhours
+WorkingDirectory=/opt/afterhours16
+EnvironmentFile=/etc/afterhours16.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m server.app --server --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=3
+# (it only needs its own folder and its database)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/afterhours16 /var/lib/afterhours16
+
+[Install]
+WantedBy=multi-user.target

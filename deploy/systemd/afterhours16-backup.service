@@ -1,0 +1,7 @@
+# Afterhours 16: a copy of the database (deploy/afterhours16.sh backup; run by afterhours16-backup.timer)
+[Unit]
+Description=Afterhours 16 online server: back up the database
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/afterhours16 backup
