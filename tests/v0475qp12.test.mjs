@@ -238,7 +238,7 @@ test('online: the socket client holds a game\'s inputs until the game takes them
 test('online: the pieces are wired: the phone tab, the session lockstep, the park and arena games, host.cmd / join.cmd', () => {
   assert.match(src('client/js/ui/phone.js'), /\['online', 'Online'\]/);
   const ses = src('client/js/game/session.js');
-  assert.match(ses, /frameOnline\(dt\)/); assert.match(ses, /net\.send\(\{ t: 'in', k: t, g: this\.online\.game, i: it \}\)/);
+  assert.match(ses, /frameOnline\(dt\)/); assert.match(ses, /this\.online\.net\.send\(\{ t: 'in', k: k0, g: this\.online\.game, b \}\)/); // (qp3 perf: a frame's ticks, as changes)
   assert.match(ses, /Waiting for/);
   assert.match(src('client/js/game/park.js'), /async startOnlineGame\(setup, local\)/);
   assert.match(src('client/js/ui/modes.js'), /export async function playProAmOnline/);

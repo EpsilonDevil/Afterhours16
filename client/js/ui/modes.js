@@ -672,7 +672,8 @@ function onlineSquadNote(app) {
   if (!net?.connected) return '';
   const sq = net.squad, mates = Online.freeSquad(app);
   if (!sq) return '<p class="muted small">Online: put a squad together with friends (social phone → Online) and run Pro-Am as one team, or challenge another squad. <button class="linkish" data-pachal>Online</button></p>';
-  return `<p class="muted small"><b>Online squad:</b> ${sq.members.filter(m => m.id !== net.myId).map(m => esc(m.name || m.username) + (mates.some(x => x.id === m.id) ? '' : ' (busy)')).join(', ')} suit up with you. ${net.isLeader() ? 'You lead: Play starts it for all of you.' : 'Your squad leader starts the game.'} <button class="linkish" data-pachal>Challenge a squad</button></p>`;
+  const ai = sq.members.flatMap(m => m.ai || []).map(a => esc(a.name));
+  return `<p class="muted small"><b>Online squad:</b> ${sq.members.filter(m => m.id !== net.myId).map(m => esc(m.name || m.username) + (mates.some(x => x.id === m.id) ? '' : ' (busy)')).join(', ')}${ai.length ? ` and the squad's AI (${ai.join(', ')})` : ''} suit up with you. ${net.isLeader() ? 'You lead: Play starts it for all of you.' : 'Your squad leader starts the game.'} <button class="linkish" data-pachal>Challenge a squad</button></p>`;
 }
 
 const ORDER5 = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -684,16 +685,18 @@ export function proAmOnlineSetup(app, opp = null) {
   const mineP = [Online.personOf(app, net.myId), ...Online.freeSquad(app).map(m => Online.personOf(app, m.id))].filter(p => p?.entry).slice(0, 5);
   const theirsP = opp ? opp.members.map(id => ({ id, username: opp.usernames?.[id] || '?', entry: opp.entries?.[id], rtt: opp.rtts?.[id] ?? null })).filter(p => p.entry).slice(0, 5) : [];
   const human = p => { const e = Online.setupEntry(app, p.entry, true, p.username); people.set(e, p); return e; };
-  // open spots: your AI squad first (on your side), then regulars who fit the position
-  const fill = (list, level, key, squadFirst) => {
-    if (squadFirst) for (const id of w.activeSquad()) { if (list.length >= 5) break; used.add(id); list.push(Online.setupEntry(app, w.gameEntry(id), false)); }
+  // open spots: the squads' AI squad mates first (each player's own, from his game: yours from yours), then regulars who
+  // fit the position
+  const fill = (list, level, key, squadAI) => {
+    for (const x of squadAI) { if (list.length >= 5) break; if (x.entry.sq?.owner === net.myId) used.add(x.entry.sq.id); list.push(Online.setupEntry(app, x.entry, false)); }
     const open = ORDER5.filter(p => !list.some(x => x.build.position === p));
     while (list.length < 5) { const position = open.shift() || ORDER5[list.length % 5]; const id = w.pick({ position, level, exclude: used, key: key + list.length }); used.add(id); list.push(Online.setupEntry(app, w.gameEntry(id), false)); }
     return list;
   };
   const level = Math.min(0.95, 0.55 + ((t.wins || 0) - (t.losses || 0) * 0.5) * 0.02 + (settings.difficulty ?? 0.6) * 0.1);
-  const r0 = fill(mineP.map(human), 0.62, `pa${seed}-0-`, true);
-  const r1 = opp ? fill(theirsP.map(human), 0.64, `pa${seed}-1-`, false) : proamOpponents(app, level, seed).map(e => Online.setupEntry(app, e, false));
+  const r0 = fill(mineP.map(human), 0.62, `pa${seed}-0-`, Online.squadAIPlayers(app, mineP.map(p => p.id)));
+  const oppAI = opp ? theirsP.flatMap(p => (opp.ai?.[p.id] || []).map(a => ({ entry: { ...a.entry, sq: { owner: p.id, id: a.id } } }))) : [];
+  const r1 = opp ? fill(theirsP.map(human), 0.64, `pa${seed}-1-`, oppAI) : proamOpponents(app, level, seed).map(e => Online.setupEntry(app, e, false));
   const brand = { name: t.name || `${net.you.username}'s team`, abbr: t.abbr || net.you.username.slice(0, 3).toUpperCase(), primary: t.primary || '#2457c5', secondary: t.secondary || '#f2c14e', logo: t.logo || 'bolt', wood: t.wood || 'natural' };
   const oppUser = opp ? opp.usernames?.[opp.leader] || 'Rivals' : null;
   const other = opp ? { name: `${oppUser}'s team`, abbr: oppUser.slice(0, 3).toUpperCase(), primary: '#c8322f', secondary: '#111111' }
@@ -747,7 +750,10 @@ export async function playProAmOnline(app, setup, local) {
     onEnd: async (summary, sess) => {
       const teamAids = Object.entries(setup.slots).filter(([, s]) => sess.game.players[s]?.team === summary.me.team).map(([a]) => a);
       const crewMates = Online.crewMatesIn(app, teamAids);
-      const saving = ticket ? app.api.mutate(`/api/matches/${ticket.id}/complete`, { summary, mates: [], crew_mates: Math.min(4, crewMates) }).catch(e => { toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
+      // (your AI squad mates ran with you: remembered, and a crew member among them counts for crew XP)
+      const mine = setup.rosters.flat().filter(e => e.sq?.owner === net.myId).map(e => e.sq.id).slice(0, 4);
+      app.ai?.recordGame?.(mine, [], summary.winner === summary.me.team);
+      const saving = ticket ? app.api.mutate(`/api/matches/${ticket.id}/complete`, { summary, mates: mine, crew_mates: Math.min(4, crewMates) }).catch(e => { toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
       await playOutro(app, { summary, session: sess, result: saving });
       const result = await saving;
       if (result) { app.replaceChar(result.character); app.setBalance(result.balance); if (result.proam_team) app.profile.proam_team = result.proam_team; Online.reportCrewXP(app, result, { mode: 'proam', venue: 'arena', mates: crewMates }); }

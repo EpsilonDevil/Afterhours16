@@ -18,6 +18,8 @@
 #                              games are being played (everyone's copy must match the server's, so it follows GitHub)
 #   afterhours16-backup.timer  a copy of the database every night (the last 14 kept)
 #   the firewall               SSH, HTTP and HTTPS only
+#   network settings           tuned for many small messages that can't wait (deploy/sysctl-afterhours16.conf: the
+#                              service applies them each time it starts, afterhours16 tune)
 #   afterhours16 (command)     status, update, joincode, logs, restart, backup, autoupdate
 set -euo pipefail
 
@@ -120,6 +122,7 @@ umask 022
 # ---- services ----
 say "Services"
 install -m 755 "$APP/deploy/afterhours16.sh" /usr/local/bin/afterhours16
+afterhours16 tune  # (the network settings; the service also applies them each time it starts)
 for u in afterhours16.service afterhours16-update.service afterhours16-update.timer afterhours16-backup.service afterhours16-backup.timer; do
   install -m 644 "$APP/deploy/systemd/$u" "/etc/systemd/system/$u"
 done

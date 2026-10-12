@@ -67,13 +67,16 @@ export async function initOnline(app) {
   if (link || app.config?.online?.hosting) net.start();
   // (just linked: the page reloaded so it may reach the host; back to the Online tab)
   try { if (sessionStorage.getItem('ah16.openOnline')) { sessionStorage.removeItem('ah16.openOnline'); setTimeout(() => import('./phone.js').then(P => P.openPhone(app, { tab: 'online' })), 700); } } catch { /* private mode */ }
-  let lastChar = null;
+  let lastChar = null, lastAI = null;
   setInterval(() => {
-    if (!net.connected) { lastChar = null; return; }
+    if (!net.connected) { lastChar = null; lastAI = null; return; }
     net.where(whereNow(app));
     // (another player picked, or a new look: the people where you are see you with it)
     const c = app.char(), key = c ? `${c.id}|${c.overall}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}` : null;
     if (key !== lastChar) { lastChar = key; net.sendEntry(); }
+    // (your AI squad mates: they walk with you on everyone's screen and run in your online squad)
+    const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}`).join(',');
+    if (aiKey !== lastAI) { lastAI = aiKey; net.send({ t: 'aisquad', members: ai }); }
   }, 1000);
   // where you're walking, for the others at the same park or HQ to see you there (5 times a second)
   setInterval(() => {
@@ -129,6 +132,9 @@ export function personOf(app, id) {
 // a roster entry as it goes into a setup: his look resolved (the same on every screen), human or not
 export function setupEntry(app, e, human, username = null) {
   const out = { build: e.build, name: e.name, look: e.look || resolveLook({ ...e.build, name: e.name }, app.catalog), badges: e.badges || {}, human: !!human };
+  // (an AI player plays with his own basketball IQ, jersey number and Icon badge, the same as in his owner's games)
+  for (const k of ['iq', 'number', 'icon']) if (e[k] != null) out[k] = e[k];
+  if (e.sq) out.sq = e.sq; // (an AI squad mate: whose, and who he is in his owner's game)
   if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; }
   return out;
 }
@@ -150,6 +156,29 @@ export function freeSquad(app, here = false) {
   return (net.squad?.members || []).filter(m => m.id !== net.myId && !m.inGame && m.status !== 'game' && (!here || (m.park && m.park === net.place)));
 }
 export const netOn = app => !!app.net?.connected;
+
+// Your AI squad mates (the friends from your own game's world who run with you): in the online squad they're your
+// squad's too, so they go to the hosted game with you: [{id, name, entry}] (entry without your world's ids)
+export function myAISquad(app) {
+  const w = app.ai;
+  if (!w?.activeSquad) return [];
+  return w.activeSquad().slice(0, 4).map(id => {
+    const e = w.gameEntry(id);
+    const entry = { build: e.build, name: e.name, badges: e.badges || {} };
+    for (const k of ['iq', 'number', 'icon']) if (e[k] != null) entry[k] = e[k];
+    return { id, name: e.name, entry };
+  });
+}
+// AI squad mates as setup players ({entry} tagged with whose they are): yours from your own world, the others' as the
+// hosted game has them
+export function squadAIPlayers(app, ownerIds) {
+  const net = app.net, out = [];
+  for (const owner of ownerIds) {
+    const list = owner === net.myId ? myAISquad(app) : net.aiOf(owner);
+    for (const a of list) out.push({ entry: { ...a.entry, sq: { owner, id: a.id } } });
+  }
+  return out;
+}
 
 // ---------------- popups: squad / Pro-Am / crew invites ----------------
 function popInvite(app, kind, o) {
@@ -292,8 +321,11 @@ export function squadHTML(app) {
   const net = app.net, sq = net.squad;
   if (!sq) return `<div class="ol-room"><div class="ph-sec">Squad</div><p class="ph-note">Invite friends to your squad (Squad on a friend below). A squad of up to ${MAX_SQUAD} goes everywhere together: it calls Got Next as one, runs Pro-Am as one team, and follows its leader from park to park.</p></div>`;
   const lead = net.isLeader();
-  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>`).join('');
-  return `<div class="ol-room"><div class="ph-sec">Your squad · ${sq.members.length}/${MAX_SQUAD}</div>${rows}
+  // (each member's AI squad mates from his own game run in the squad too)
+  const aiRows = m => (m.ai || []).map(a => `<div class="ol-mem ol-ai"><span class="ol-av ai">${esc(String(a.name || '?').slice(0, 1))}</span><span class="ph-who"><b>${esc(a.name)}</b><small>AI · ${a.ovr ?? ''} ${esc(a.pos || '')} · with ${esc(m.name || m.username)}</small></span></div>`).join('');
+  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>${aiRows(m)}`).join('');
+  const nAI = sq.members.reduce((s, m) => s + (m.ai?.length || 0), 0);
+  return `<div class="ol-room"><div class="ph-sec">Your squad · ${sq.members.length}/${MAX_SQUAD}${nAI ? ` · ${nAI} AI` : ''}</div>${rows}
     <p class="ph-note">${lead ? 'You lead: you call Got Next for the squad, and Pro-Am games start when you start one.' : `${esc(sq.members.find(m => m.id === sq.leader)?.name || 'Your leader')} leads: you go where he goes, and play when he starts a game.`}</p>
     <div class="ph-acts"><button class="btn small ghost" data-osqleave>Leave squad</button></div></div>`;
 }

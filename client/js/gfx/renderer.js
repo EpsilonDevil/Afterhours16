@@ -118,11 +118,14 @@ export class Scene {
   remove(mesh) { const i = this.meshes.indexOf(mesh); if (i >= 0) this.meshes.splice(i, 1); }
 }
 
+// lod (v0.4.7.5 qp3 perf): past this many metres from the camera, people are drawn with their far model (a third of
+// the triangles or less; see AthleteView). Side by side at 8-10 m nobody could tell them apart; the players in your
+// own game switch half as far again out
 export const QUALITY = {
-  low: { scale: 0.75, dpr: 1, msaa: 0, shadow: 1024, bloom: false, reflections: false, fxaa: true, label: 'Performance' },
-  medium: { scale: 1, dpr: 1, msaa: 4, shadow: 2048, bloom: true, reflections: false, fxaa: false, label: 'Balanced' },
-  high: { scale: 1, dpr: 1.5, msaa: 4, shadow: 2048, bloom: true, reflections: true, fxaa: false, label: 'High' },
-  ultra: { scale: 1, dpr: 2, msaa: 4, shadow: 4096, bloom: true, reflections: true, fxaa: false, label: 'Ultra' },
+  low: { scale: 0.75, dpr: 1, msaa: 0, shadow: 1024, bloom: false, reflections: false, fxaa: true, lod: 10, label: 'Performance' },
+  medium: { scale: 1, dpr: 1, msaa: 4, shadow: 2048, bloom: true, reflections: false, fxaa: false, lod: 14, label: 'Balanced' },
+  high: { scale: 1, dpr: 1.5, msaa: 4, shadow: 2048, bloom: true, reflections: true, fxaa: false, lod: 18, label: 'High' },
+  ultra: { scale: 1, dpr: 2, msaa: 4, shadow: 4096, bloom: true, reflections: true, fxaa: false, lod: 26, label: 'Ultra' },
 };
 
 const PROGRAM_LOG = 'afterhours16.programs.v1';
@@ -185,6 +188,30 @@ export class Renderer {
     this.w = 0; // force resize
   }
 
+  // ---- v0.4.7.5 qp3 perf: an online game keeps its frame rate ----
+  // In lockstep everyone waits on the slowest screen, so a PC whose frames run slow (the slowest one in ten over a
+  // second past 22 ms) draws a little lighter, a step a second: the far models first (lodScale), then the picture at a
+  // lower resolution, down to 60% of the preset's. Once its frames are quick again for four seconds it goes back up
+  // the same way, and every game starts from the preset (resetGovern). Returns true on the first step down.
+  govern(dt) {
+    const g = this.gov || (this.gov = { f: [], fast: 0, level: 0, told: false });
+    g.f.push(dt * 1000);
+    if (g.f.length < 60) return false;
+    const s = g.f.sort((a, b) => a - b), p90 = s[Math.floor(s.length * 0.9)];
+    g.f = [];
+    if (p90 > 22 && g.level < 5) { g.level++; g.fast = 0; this.applyGovern(); if (!g.told) { g.told = true; return true; } }
+    else if (p90 < 15 && g.level > 0) { if (++g.fast >= 4) { g.level--; g.fast = 0; this.applyGovern(); } }
+    else g.fast = 0;
+    return false;
+  }
+  applyGovern() {
+    const L = this.gov?.level || 0;
+    this.lodScale = L >= 1 ? 0.6 : 1;
+    const sc = [1, 1, 0.85, 0.75, 0.66, 0.6][L];
+    if (sc !== (this.dynScale || 1)) { this.dynScale = sc; this.w = 0; } // (the targets are made again at the new size)
+  }
+  resetGovern() { this.gov = null; this.applyGovern(); }
+
   // Can half-float textures generate mipmaps here? (some drivers refuse)
   floatMips() {
     if (this._floatMips != null) return this._floatMips;
@@ -207,7 +234,8 @@ export class Renderer {
     if (cw === this.w && ch === this.h) return;
     this.w = cw; this.h = ch;
     this.canvas.width = cw; this.canvas.height = ch;
-    const iw = Math.max(1, Math.floor(cw * this.q.scale)), ih = Math.max(1, Math.floor(ch * this.q.scale));
+    const sc = this.q.scale * (this.dynScale || 1); // (qp3 perf: govern() lowers it in an online game running slow)
+    const iw = Math.max(1, Math.floor(cw * sc)), ih = Math.max(1, Math.floor(ch * sc));
     this.iw = iw; this.ih = ih;
     const c = this.ctx;
     for (const rt of [this.mainRT, this.msaaRT, this.reflRT, ...(this.bloomRTs || [])]) c.disposeTarget(rt);
@@ -365,8 +393,15 @@ export class Renderer {
     const opaque = lists.opaque, blend = lists.blend;
     opaque.length = 0; blend.length = 0;
     const s = this.tmpSphere;
+    // (qp3 perf: a mesh with lod 1 is the near model, lod 2 the far one, by the distance from the camera: every pass
+    // picks the same one)
+    const eye = this.lodEye, far = (this.q.lod || 25) * (this.lodScale || 1), far2 = far * far;
     for (const mesh of scene.meshes) {
-      if (!mesh.visible || (filter && !filter(mesh))) continue;
+      if (!mesh.visible || mesh.culled || (filter && !filter(mesh))) continue; // (culled: out of the camera's view, not posed)
+      if (mesh.lod && eye) {
+        const c = mesh.boundsOverride ? mesh.boundsOverride.center : null;
+        if (c) { const dx = c[0] - eye[0], dy = c[1] - eye[1], dz = c[2] - eye[2]; if ((dx * dx + dy * dy + dz * dz > far2 * (mesh.lodK || 1)) === (mesh.lod === 1)) continue; }
+      }
       if (mesh.cull) { mesh.worldSphere(s); if (!M.sphereInFrustum(this.planes, s[0], s[1], s[2], s[3])) continue; mesh._depth = s; }
       (mesh.material.blend ? blend : opaque).push(mesh);
     }
@@ -451,6 +486,7 @@ export class Renderer {
     this.time += dt;
     c.stats.draws = 0; c.stats.tris = 0;
     cam.update(this.w / this.h);
+    this.lodEye = cam.pos;
     // lights
     this.fogDensity = scene.fog.density;
     this.lightCount = Math.min(8, scene.lights.length);

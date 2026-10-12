@@ -5,3 +5,6 @@ Description=Afterhours 16 online server: back up the database
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/afterhours16 backup
+# (behind the games for the CPU and the disk)
+Nice=10
+IOSchedulingClass=idle

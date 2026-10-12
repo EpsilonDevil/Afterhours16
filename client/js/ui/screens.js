@@ -213,6 +213,7 @@ export function openSettings(app) {
       <label>Music volume<input type="range" min="0" max="1" step="0.05" data-k="musicVol" value="${settings.musicVol}"></label>
       <label>Name tags<select data-k="tags"><option value="1" ${settings.tags ? 'selected' : ''}>Show</option><option value="0" ${!settings.tags ? 'selected' : ''}>Hide</option></select></label>
       <label>FPS counter<select data-k="showFps"><option value="0" ${!settings.showFps ? 'selected' : ''}>Off</option><option value="1" ${settings.showFps ? 'selected' : ''}>On</option></select></label>
+      <label title="When your frames run slow in an online game, everyone else waits on you: this draws a little lighter until they're quick again">Online games<select data-k="adaptiveGfx"><option value="1" ${settings.adaptiveGfx !== false ? 'selected' : ''}>Keep them smooth</option><option value="0" ${settings.adaptiveGfx === false ? 'selected' : ''}>Full graphics</option></select></label>
     </div>
     <h3>Controller & window</h3>
     <div class="settings-grid">
@@ -236,7 +237,7 @@ export function openSettings(app) {
     const k = el.dataset.k;
     let v = el.value;
     if (['sfx', 'crowd', 'musicVol', 'difficulty', 'deadzone'].includes(k)) v = +v;
-    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'shotFeedbackAll', 'defArrows'].includes(k)) v = v === '1';
+    if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'shotFeedbackAll', 'defArrows', 'adaptiveGfx'].includes(k)) v = v === '1';
     settings[k] = v; saveSettings();
     if (k === 'quality') app.renderer.setQuality(v);
     if (k === 'camera') app.cameraRig.mode = v;

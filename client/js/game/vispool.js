@@ -14,7 +14,7 @@ import { AthleteView } from '../char/view.js';
 
 // the things an athlete's meshes and textures are made from
 export function visualKey(build, look, opts = {}) {
-  return JSON.stringify([build?.height, build?.weight, build?.wingspan, look || null, opts.detail ?? 1, opts.faceRes || 0]);
+  return JSON.stringify([build?.height, build?.weight, build?.wingspan, look || null, opts.detail ?? 1, opts.faceRes || 0, opts.lod ?? null]);
 }
 
 export class VisualPool {
@@ -43,6 +43,7 @@ export class VisualPool {
   release(key, view) {
     view.removeFrom();
     view.setVisible(true);
+    view.setCulled?.(false);
     view._poolKey = key;
     let list = this.free.get(key);
     if (!list) this.free.set(key, list = []);

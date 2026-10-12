@@ -2,6 +2,7 @@
 progression (Rep, badges), Pro-Am teams, match tickets/results, and the static game client."""
 import argparse
 import collections
+import gzip
 import hashlib
 import hmac
 import http.cookies
@@ -38,6 +39,25 @@ TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
 STATIC_EXT = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
               ".svg": "image/svg+xml", ".json": "application/json", ".ico": "image/x-icon", ".txt": "text/plain", ".woff2": "font/woff2",
               ".mp3": "audio/mpeg"}
+# v0.4.7.5 qp3 perf: the game's files come from memory (read and hashed once, again only when one changes), and the
+# text ones gzipped for browsers that take it: a friend loading the game from a home PC's upload gets a quarter of it
+STATIC_CACHE = {}
+STATIC_GZIP = (".html", ".js", ".css", ".svg", ".json", ".txt")
+
+
+def static_entry(file):
+    """(etag, content, gzipped content or None) for a client file, from memory while it's unchanged."""
+    st = file.stat()
+    key = str(file)
+    hit = STATIC_CACHE.get(key)
+    if hit and hit[0] == (st.st_mtime_ns, st.st_size):
+        return hit[1]
+    content = file.read_bytes()
+    etag = '"' + hashlib.sha1(content).hexdigest()[:16] + '"'
+    gz = gzip.compress(content, 6, mtime=0) if file.suffix.lower() in STATIC_GZIP and len(content) > 1024 else None
+    entry = (etag, content, gz if gz and len(gz) < len(content) * 0.9 else None)
+    STATIC_CACHE[key] = ((st.st_mtime_ns, st.st_size), entry)
+    return entry
 
 
 # v0.4.7.5 qp3: online play from your own copy. Every screen in an online game runs the same simulation, so everyone
@@ -582,12 +602,16 @@ class Handler(BaseHTTPRequestHandler):
             raise HTTPError(404, "File not found.")
         if file.suffix.lower() == ".mp3":
             return self.static_media(file)
-        content = file.read_bytes()
-        etag = '"' + hashlib.sha1(content).hexdigest()[:16] + '"'
+        etag, content, gz = static_entry(file)
+        if gz is not None and "gzip" in (self.headers.get("Accept-Encoding") or "").lower():
+            content, etag = gz, etag[:-1] + '-gz"'  # (each form has its own tag)
+        else:
+            gz = None
         if self.headers.get("If-None-Match") == etag:
             self.send_response(304)
             self.headers_common()
             self.send_header("ETag", etag)
+            self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -599,6 +623,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-cache")
         self.send_header("ETag", etag)
+        self.send_header("Vary", "Accept-Encoding")
+        if gz is not None:
+            self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)

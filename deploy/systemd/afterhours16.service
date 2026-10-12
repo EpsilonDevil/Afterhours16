@@ -10,9 +10,16 @@ Group=afterhours
 WorkingDirectory=/opt/afterhours16
 EnvironmentFile=/etc/afterhours16.env
 Environment=PYTHONUNBUFFERED=1
+# (+: as root, outside the sandbox below; -: never holds the start up)
+ExecStartPre=-+/usr/local/bin/afterhours16 tune
 ExecStart=/usr/bin/python3 -m server.app --server --host 127.0.0.1 --port 8765
 Restart=always
 RestartSec=3
+# (first in line for the CPU and the disk: games relay every player's input as it comes; plenty of sockets)
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=2
+LimitNOFILE=65536
 # (it only needs its own folder and its database)
 NoNewPrivileges=true
 PrivateTmp=true

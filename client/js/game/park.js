@@ -22,7 +22,7 @@ import { VisualPool } from './vispool.js';
 import { audio } from '../core/audio.js';
 import * as M from '../core/math.js';
 import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
-import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP } from '../ui/online.js';
+import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP, squadAIPlayers } from '../ui/online.js';
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
@@ -123,7 +123,12 @@ export class Walker {
   render(dt) {
     const p = this.p;
     if (this.visual.pending) return;
-    this.visual.anim.update(dt, { x: p.x, y: 0, z: p.z, facing: p.facing }, p, null, null, {});
+    // (qp3 perf: posed only when he can be seen, every other frame from far away: ParkHub.animDt)
+    const k = this.hub.animDt ? this.hub.animDt(this, dt, p.x, p.z) : dt;
+    this.visual.setCulled?.(k < 0);
+    if (k < 0) return;
+    if (k === 0) this.visual.view.move?.(p.x, 0, p.z, p.facing);
+    else this.visual.anim.update(k, { x: p.x, y: 0, z: p.z, facing: p.facing }, p, null, null, {});
     this.visual.place(p.x, 0, p.z);
   }
   dispose() { this.visual.dispose(); }
@@ -151,10 +156,38 @@ export class FriendWalker extends Walker {
 
 // v0.4.7.5 qp3 online: the real people walking around where you are (a park or the Crew HQ). world: the ParkHub or
 // CrewHQ (it has app, r, scene, pool, rng and placeKey()); positions come in through the hosted game (ui/online.js)
+// v0.4.7.5 qp3 online: an AI squad mate a real player brought from his own game, a step behind him on your screen (or
+// on his squad's Got Next spot: world.followerSpot)
+export class PeerFollower extends Walker {
+  constructor(hub, entry, owner, slot, aiId) {
+    super(hub, entry, owner.p.x - 1.2, owner.p.z - 1.2);
+    this.owner = owner; this.slot = slot; this.aiId = aiId;
+  }
+  update(dt) {
+    const p = this.p, it = p.intent, o = this.owner.p;
+    it.mx = 0; it.mz = 0; it.sprint = false; it.face = null;
+    if (this.visual.pending) return;
+    const f = o.facing, slot = this.slot, spot = this.hub.followerSpot?.(this) || null;
+    const back = 1.5 + Math.floor(slot / 2) * 1.2, lat = (slot % 2 ? 1 : -1) * (0.85 + Math.floor(slot / 2) * 0.3);
+    const tx = spot ? spot.x : o.x - Math.sin(f) * back + Math.cos(f) * lat, tz = spot ? spot.z : o.z - Math.cos(f) * back - Math.sin(f) * lat;
+    const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    if (d > 22) p.setPos(tx, tz, f);
+    else if (d > 0.35) { const k = Math.min(1, d / 1.4) * (d > 3.5 ? 1 : 0.62); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 4.5; }
+    else it.face = spot && spot.face != null ? spot.face : f;
+    p.move(dt * GAME_SPEED, false, 0);
+    for (const s of this.hub.venue.solids || []) pushOut(p, s);
+    p.stamina = 1;
+  }
+}
+
+// v0.4.7.5 qp3 online: the real people walking around where you are (a park or the Crew HQ), and the AI squad mates
+// each of them brought from his own game. world: the ParkHub or CrewHQ (it has app, r, scene, pool, rng and
+// placeKey()); positions come in through the hosted game (ui/online.js)
 export class Peers {
-  constructor(world) { this.w = world; this.map = new Map(); }
+  constructor(world) { this.w = world; this.map = new Map(); this.fol = new Map(); this.withAI = !!world.parkList; } // (AI squads walk with their owners in the parks)
   get size() { return this.map.size; }
   list() { return [...this.map.values()]; }
+  followers() { return [...this.fol.values()]; }
   pos(m) {
     const net = this.w.app.net;
     if (!net || net.place !== this.w.placeKey() || !m.from) return;
@@ -170,6 +203,25 @@ export class Peers {
     }
     w.target = { x: +m.x || 0, z: +m.z || 0, f: +m.f || 0, m: +m.m || 0 };
     w.seen = performance.now();
+    this.syncFollowers(m.from, w, net.people.get(m.from)?.ai || []);
+  }
+  // his AI squad mates walk with him (the ones he has now)
+  syncFollowers(id, w, ai) {
+    if (!this.withAI) return;
+    const key = ai.map(a => a.id).join(',');
+    if (w.aiKey === key) return;
+    w.aiKey = key;
+    for (const [k, f] of this.fol) if (f.owner === w && !ai.some(a => `${id}:${a.id}` === k)) { f.dispose(); this.fol.delete(k); }
+    ai.forEach((a, i) => {
+      const k = `${id}:${a.id}`;
+      let f = this.fol.get(k);
+      if (!f && a.entry?.build) {
+        const entry = { ...a.entry, look: a.entry.look || resolveLook(a.entry.build, this.w.app.catalog) };
+        f = new PeerFollower(this.w, entry, w, i, a.id);
+        this.fol.set(k, f);
+      }
+      if (f) f.slot = i;
+    });
   }
   // someone left (gone) or has a new look (pentry: he's rebuilt with his next position); 'here': whoever isn't here
   people(m) {
@@ -177,7 +229,12 @@ export class Peers {
     const net = this.w.app.net;
     for (const id of [...this.map.keys()]) if (!net?.people.has(id)) this.drop(id);
   }
-  drop(id) { const w = this.map.get(id); if (w) { w.dispose(); this.map.delete(id); } }
+  drop(id) {
+    const w = this.map.get(id);
+    if (!w) return;
+    for (const [k, f] of this.fol) if (f.owner === w) { f.dispose(); this.fol.delete(k); }
+    w.dispose(); this.map.delete(id);
+  }
   clear() { for (const id of [...this.map.keys()]) this.drop(id); }
   frame(dt) {
     const now = performance.now();
@@ -185,6 +242,7 @@ export class Peers {
       if (now - w.seen > 4000) { this.drop(id); continue; } // (gone quiet: in a game, a menu, or gone)
       w.update(dt); w.render(dt);
     }
+    for (const f of this.fol.values()) { f.update(dt); f.render(dt); }
   }
 }
 
@@ -242,7 +300,10 @@ class Spectator {
     d = this.sit ? Math.max(-0.6, Math.min(0.6, d)) : Math.max(-1.3, Math.min(1.3, d)); // seated: shoulders, not the whole body
     p.facing = M.angleLerp(p.facing, base + d, 1 - Math.exp(-dt * 2.5));
     if (p.action) p.action.t += dt;
-    if (near) this.render(dt);
+    // (qp3 perf: posed only when he can be seen, every other frame from far away)
+    const k = this.hub.animDt ? this.hub.animDt(this, dt, p.x, p.z) : near ? dt : -1;
+    if (this.hub.animDt) this.visual.setCulled?.(k < 0);
+    if (k > 0) this.render(k);
   }
   render(dt, force = false) {
     const p = this.p;
@@ -423,6 +484,36 @@ export class ParkHub {
     return this.nextLine(c)?.l === my.l ? 'next' : this.nextLine(c) ? 'after' : 'filling';
   }
 
+  // ---------- v0.4.7.5 qp3 perf: animate only what the camera can see ----------
+  // A park is sixty-odd people, and posing one (the animator and the skeleton) is the biggest thing the CPU does each
+  // frame. Whoever is out of the camera's view isn't posed at all (his time adds up for when he's back in view: the
+  // view is last frame's, close enough), and whoever is past the far-model distance (QUALITY lod) is posed every other
+  // frame, half of them on each, and only moved on the frames between.
+  viewTick() {
+    const cam = this.app.camera;
+    if (!cam?.viewProj) { this.vis = null; return; }
+    const v = this.vis || (this.vis = { planes: new Float32Array(24), eye: [0, 0, 0], n: 0, far2: 0 });
+    M.frustumPlanes(v.planes, cam.viewProj);
+    v.eye = cam.pos; v.n++;
+    const far = (this.r.q?.lod || 22) * (this.r.lodScale || 1);
+    v.far2 = far * far;
+  }
+  // the time to pose o with this frame: > 0 pose him (all the time since the last), 0 just move him, -1 nothing (out of
+  // view). x, z: where he is; r: how big he is (a court is a big one)
+  animDt(o, dt, x, z, r = 1.3) {
+    o.animAcc = Math.min(0.5, (o.animAcc || 0) + dt);
+    const v = this.vis;
+    if (v && !this.overview && o.animPosed) { // (anyone new is posed once first, wherever he is)
+      if (!M.sphereInFrustum(v.planes, x, 1, z, r + 1.5)) return -1;
+      const dx = x - v.eye[0], dz = z - v.eye[2];
+      if (dx * dx + dz * dz > v.far2 + r * r && ((v.n + (o.animPhase ?? (o.animPhase = v.n & 1))) & 1)) return 0;
+    }
+    o.animPosed = true;
+    const t = o.animAcc;
+    o.animAcc = 0;
+    return t;
+  }
+
   courtWatched(c) {
     if (this.overview) return true; // (the overview is live: every court at normal speed)
     const cam = this.rig.pos, tgt = this.rig.tgt;
@@ -436,7 +527,9 @@ export class ParkHub {
   courtRate(c) {
     const g = c.session?.game;
     if (!g) return 1;
-    if (!this.courtWatched(c)) return 2.6;
+    // (qp3 perf: while you play, the games you can't see barely move: your own game gets the PC, and online everyone
+    // waits on the slowest screen)
+    if (!this.courtWatched(c)) return this.mode === 'match' ? 0.35 : 2.6;
     if (g.phase === 'check' || g.phase === 'inbound' || g.phase === 'pregame') return 3;
     if (g.phase === 'dead' || g.over) return 2;
     return 1;
@@ -452,6 +545,7 @@ export class ParkHub {
     for (const w of this.walkers) add(w.entry);
     for (const c of this.courts) { if (c.session) for (const r of c.session.opts.rosters) r.forEach(add); for (const l of c.lines) if (l) l.members.forEach(w => add(w.entry)); }
     (this.myMates || []).forEach(add); (this.myOpp || []).forEach(add);
+    for (const id of this.squadInGame || []) s.add(id); // (v0.4.7.5 qp3 online: your AI squad mates in a game with friends)
     return s;
   }
   // v0.4.5: who is in a game right now (a court here, or yours)
@@ -568,12 +662,14 @@ export class ParkHub {
     for (const e of [...home, ...away]) { e.look = e.look || resolveLook(e.build, this.catalog); e.human = false; }
     c.kings = home;
     c.session = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters: [home, away], teams: [{ name: 'Kings', abbr: 'KNG', color: '#ffd84a' }, { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' }], seed: this.rng.int(1, 1e9), target: 11, difficulty: 0.6, assist: true });
+    c.session.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
     c.bgStart = performance.now();
   }
 
   // ---------------- frame ----------------
   frame(dt) {
     const app = this.app, inp = app.input;
+    this.viewTick();
     // athletes being built: a small slice per frame (a bigger one while your own game is getting ready)
     if (this.pool.pending) this.pool.tick(this.mode === 'starting' ? 10 : 3);
     this.venue.update(dt);
@@ -697,7 +793,35 @@ export class ParkHub {
 
   // ---------- v0.4.7.5 GOT NEXT spots: two per court, the first squad to fill up runs next ----------
   myLine() { for (const c of this.courts) for (let r = 0; r < c.lines.length; r++) if (c.lines[r]?.mine) return { c, r, l: c.lines[r] }; return null; }
-  lineFull(c, l) { return l.members.length + (l.mine ? 1 + (l.realMates?.length || 0) : 0) >= c.format; }
+  lineFull(c, l) { return l.members.length + (l.mine ? 1 + (l.realMates?.length || 0) + this.mateAI(c, l).length : 0) >= c.format; }
+  // v0.4.7.5 qp3 online: your squad's AI from your friends' games (each friend in your squad brings his AI squad mates)
+  // on your Got Next line: the squad runs together, its real players first, then everyone's AI squad mates (yours
+  // first: they're on the spot already), then park-goers. [{owner, id, name, entry}]
+  mateAI(c, l) {
+    if (!l?.mine || !l.realMates?.length) return [];
+    const net = this.netHere();
+    if (!net) return [];
+    const own = this.walkers.filter(w => this.world.inSquad(w.entry.aiId) && (w.follow != null || l.members.includes(w))).length;
+    const room = c.format - 1 - l.realMates.length - own;
+    if (room <= 0) return [];
+    const out = [];
+    for (const id of l.realMates) for (const a of net.aiOf(id)) out.push({ owner: id, ...a });
+    return out.slice(0, room);
+  }
+  // where a friend's AI squad mate stands on your screen: on his squad's Got Next spot (yours, or the other squad's
+  // leader's), otherwise a step behind his owner
+  followerSpot(f) {
+    const ownerId = f.owner.id;
+    for (const c of this.courts) for (let r = 0; r < c.lines.length; r++) {
+      const l = c.lines[r];
+      if (!l) continue;
+      let slot = -1;
+      if (l.mine) { const i = this.mateAI(c, l).findIndex(a => a.owner === ownerId && a.id === f.aiId); if (i >= 0) slot = 1 + l.members.length + i; }
+      else if (l.remote && l.remote.leader === ownerId) slot = 1 + f.slot;
+      if (slot >= 0 && c.rows[r][slot]) { const sp = c.rows[r][slot]; return { x: sp.x, z: sp.z, face: Math.atan2(c.origin[0] - sp.x, c.origin[2] + 8 - sp.z) }; }
+    }
+    return null;
+  }
   lineSet(c, l) { return this.lineFull(c, l) && l.members.every(w => w.state === 'queued'); }
   // stamp the moment a line fills up (it's what decides who runs next)
   markFull(c, l) { if (l && !l.fullAt && this.lineFull(c, l)) l.fullAt = (this.fillSeq = (this.fillSeq || 0) + 1); }
@@ -817,8 +941,15 @@ export class ParkHub {
         // v0.4.4: an empty court (quiet hours): the squad on the other spot, or whoever's around, runs against you
         if (!c.session && !c.live && this.canStart(c)) this.startNext(c);
       }
-      // (online: a friend joined the squad, so one of the park-goers on the spot steps off for him)
-      while (l.members.length && l.members.length + 1 + (l.realMates?.length || 0) > c.format) { const w = l.members.pop(); w.spot = null; w.state = 'idle'; w.t = 1; }
+      // (online: a friend joined the squad, or his AI squad mates came with him: park-goers on the spot step off first)
+      let trimmed = false;
+      while (l.members.length && l.members.length + 1 + (l.realMates?.length || 0) + this.mateAI(c, l).length > c.format) {
+        let i = l.members.map(w => this.world.inSquad(w.entry.aiId)).lastIndexOf(false);
+        if (i < 0) i = l.members.length - 1;
+        const [w] = l.members.splice(i, 1);
+        w.spot = null; w.state = 'idle'; w.t = 1; trimmed = true;
+      }
+      if (trimmed) { this.placeLine(c, r); this.syncSquad(); }
       return;
     }
     this.fillT -= dt;
@@ -957,7 +1088,7 @@ export class ParkHub {
     for (const e of [...mine, ...opp]) e.look = e.look || resolveLook(e.build, this.catalog);
     this.mode = 'starting';
     // (you play in the athlete you walked over in: it's lent to the game, see lendMe)
-    await this.pool.prebuild([...mine, ...opp].filter(e => !e.human).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512 } })));
+    await this.pool.prebuild([...mine, ...opp].filter(e => !e.human).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512, lod: true } })));
     if (this.disposed) return;
     this.lendMe();
     const teams = [{ name: this.aff.name, abbr: 'YOU', color: this.aff.color }, { name: 'Court Kings', abbr: 'KNG', color: '#e8e3d8' }];
@@ -1256,13 +1387,24 @@ export class ParkHub {
   startHubGame(c, aiOpp, oppStreak = 0) {
     const net = this.netHere(), me = net.myId;
     const li = c.lines.findIndex(l => l?.mine), l0 = li >= 0 ? c.lines[li] : { members: [], realMates: [] };
+    // the squad: its people, then everyone's AI squad mates (yours, then your friends' from their games), then park-goers
+    const mates = li >= 0 ? this.mateAI(c, l0).map(a => ({ entry: { ...a.entry, sq: { owner: a.owner, id: a.id } } })) : [];
+    const ownAI = l0.members.filter(w => this.world.inSquad(w.entry.aiId)), goers = l0.members.filter(w => !ownAI.includes(w));
     const home = this.people([me, ...(l0.realMates || [])]), used = new Set();
-    for (const w of l0.members) { if (home.length < c.format) { home.push({ entry: w.entry }); used.add(w); w.dispose(); } else { w.spot = null; w.state = 'idle'; w.t = 1; } }
+    const take = w => {
+      if (home.length >= c.format) { w.spot = null; w.state = 'idle'; w.t = 1; return; }
+      home.push({ entry: this.world.inSquad(w.entry.aiId) ? { ...w.entry, sq: { owner: me, id: w.entry.aiId } } : w.entry });
+      used.add(w); w.dispose();
+    };
+    ownAI.forEach(take);
+    for (const m of mates) if (home.length < c.format) home.push(m);
+    goers.forEach(take);
     this.walkers = this.walkers.filter(w => !used.has(w));
     if (li >= 0) c.lines[li] = null;
     const rc = this.remoteClaimLine(c);
     let away;
-    if (rc) { away = this.people(rc.claim.members); this.walkOff(c, aiOpp); oppStreak = 0; }
+    // (the other squad: its people and their AI squad mates)
+    if (rc) { away = [...this.people(rc.claim.members), ...squadAIPlayers(this.app, rc.claim.members.filter(id => this.netHere().people.has(id)))].slice(0, c.format); this.walkOff(c, aiOpp); oppStreak = 0; }
     else away = (aiOpp || []).map(e => ({ entry: e }));
     const sides = [this.topUp(home, c.format), this.topUp(away, c.format, { exclude: new Set(home.map(x => x.entry.aiId).filter(Boolean)) })];
     this.sendParkGame(c, sides, { streaks: [0, oppStreak], names: [`${net.you.username}'s squad`, rc ? `${net.usernameOf(rc.claim.leader)}'s squad` : 'Court Kings'] });
@@ -1273,15 +1415,17 @@ export class ParkHub {
     if (!net || !c) { this.leaveCourt(session, true); return; }
     const me = net.myId, ct = this.ct(c), g = session.game, myTeam = g.human?.team ?? 0;
     const home = this.people([me, ...(ct?.kings?.members || []).filter(id => id !== me)]);
-    // the AI who won it with you stay on with you (your park-goers, or the ones from the last game's setup)
-    const aiMine = this.myMates?.length ? this.myMates : session.opts.rosters[myTeam].filter(e => !e.human);
+    // the AI who won it with you stay on with you (the squad's AI squad mates and the park-goers from the last game;
+    // yours and your park's are themselves again, from your world)
+    const byName = new Map((this.myMates || []).map(e => [e.name, e]));
+    const aiMine = session.opts.rosters[myTeam].filter(e => !e.human).map(e => e.sq?.owner === me ? { ...this.entryFor(e.sq.id), sq: e.sq } : byName.get(e.name) || e);
     for (const e of aiMine) if (home.length < c.format) home.push({ entry: e });
     const oldOpp = this.onlineGame ? [] : this.myOpp || [];
     session.dispose(); this.mySession = null; this.onlineGame = null;
     for (const e of oldOpp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     const rc = this.remoteClaimLine(c);
     let away, nm = 'Challengers';
-    if (rc) { away = this.people(rc.claim.members); nm = `${net.usernameOf(rc.claim.leader)}'s squad`; }
+    if (rc) { away = [...this.people(rc.claim.members), ...squadAIPlayers(this.app, rc.claim.members.filter(id => net.people.has(id)))].slice(0, c.format); nm = `${net.usernameOf(rc.claim.leader)}'s squad`; }
     else {
       const nx = this.upNext(c, false);
       if (nx) { away = nx.l.members.map(w => ({ entry: w.entry })); this.takeLine(c, nx.i); }
@@ -1347,6 +1491,12 @@ export class ParkHub {
     // your own Got Next line, if you weren't the one who started this: its park-goers step off
     for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) { const l = cc.lines[r]; if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } cc.lines[r] = null; cc.mine = false; } }
     if (!decided) { this.myMates = []; this.myOpp = []; }
+    // your AI squad mates in it (your squad's game, or a friend's who set it up): off the park until it's over
+    const me = app.net?.myId;
+    this.squadInGame = new Set(setup.rosters.flat().filter(e => e.sq?.owner === me).map(e => e.sq.id));
+    const away = this.walkers.filter(w => this.squadInGame.has(w.entry.aiId));
+    for (const w of away) { if (w.spot) for (const cc of this.courts) for (const l of cc.lines) if (l) l.members = l.members.filter(x => x !== w); w.dispose(); }
+    this.walkers = this.walkers.filter(w => !away.includes(w));
     if (c.session) this.vacate(c);
     if (c.live) this.dropWatch(c, true);
     for (const a of Object.keys(setup.slots || {})) this.peers.drop(a);
@@ -1363,7 +1513,8 @@ export class ParkHub {
     if (this.disposed) return;
     const rosters = structuredClone(setup.rosters);
     for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
-    await this.pool.prebuild(rosters.flat().filter((e, i) => i !== local).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512 } })));
+    // (the same options the game asks for: the other people at full face, the AI at 512, everyone with a far model)
+    await this.pool.prebuild(rosters.flat().filter((e, i) => i !== local).map(e => ({ build: e.build, look: e.look, opts: e.human ? { detail: 1, lod: true } : { detail: 1, faceRes: 512, lod: true } })));
     if (this.disposed || this.onlineGame !== setup) return;
     this.lendMe();
     const aids = Object.fromEntries(Object.entries(setup.slots).map(([a, s]) => [s, a]));
@@ -1385,7 +1536,8 @@ export class ParkHub {
     // (your crew mates in it, real ones, double your crew XP; a friend's crew gets its share from your game)
     const teamAids = Object.entries(setup?.slots || {}).filter(([, s]) => session.game.players[s]?.team === summary.me.team).map(([a]) => a);
     const crewMates = crewMatesIn(app, teamAids);
-    const mates = (this.myMates || []).map(e => e.aiId).filter(Boolean).slice(0, 4);
+    // (the AI from your world who ran with you: your AI squad mates and, if you set it up, your park's)
+    const mates = [...new Set([...(this.squadInGame || []), ...(this.myMates || []).map(e => e.aiId).filter(Boolean)])].slice(0, 4);
     this.world.recordGame(mates, (this.myOpp || []).map(e => e.aiId).filter(Boolean), won);
     const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates, crew_mates: Math.min(4, crewMates) }).catch(e => { this.ui.toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
     await playOutro(app, { summary, session, result: saving });
@@ -1411,6 +1563,10 @@ export class ParkHub {
     this.mySession = null; this.onlineGame = null;
     this.walkOff(c, [...(this.myMates || []), ...(this.myOpp || [])]);
     this.myMates = []; this.myOpp = [];
+    // your AI squad mates come off the court with you
+    const back = [...(this.squadInGame || [])];
+    this.squadInGame = null;
+    if (c) back.forEach((id, i) => { if (!this.walkers.some(w => w.entry.aiId === id) && this.world.inSquad(id)) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + 3 + i, this.entryFor(id)); w.follow = i; this.walkers.push(w); } });
     if (c) { c.mine = false; c.kingsStreak = 0; this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2); if (!this.realHeld(c) || release) this.newBackgroundGame(c, null); }
     this.rebuildMe();
     this.syncSquad();
@@ -1444,6 +1600,7 @@ export class ParkHub {
       target: setup.target, difficulty: setup.difficulty,
       online: { net: this.app.net, local: -1, spectate: true, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: () => { c.liveEndAt = 1; } },
     });
+    c.live.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
   }
   endWatch(g) { for (const c of this.courts) if (c.liveSetup?.game === g && !c.liveEndAt) c.liveEndAt = performance.now(); }
   dropWatch(c, now = false) {

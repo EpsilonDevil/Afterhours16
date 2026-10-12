@@ -7,3 +7,6 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/afterhours16 update --auto
+# (behind the games for the CPU and the disk)
+Nice=10
+IOSchedulingClass=idle

@@ -7,6 +7,7 @@
 #   afterhours16 logs              the server's latest messages
 #   afterhours16 restart           restart the server
 #   afterhours16 backup            copy the database now (/var/lib/afterhours16/backups, the last 14 kept)
+#   afterhours16 tune              apply the network settings for games (the service does this when it starts)
 set -uo pipefail
 APP=${AFTERHOURS16_APP:-/opt/afterhours16}
 ENVF=${AFTERHOURS16_ENV:-/etc/afterhours16.env}
@@ -90,6 +91,16 @@ backup() {
   echo "Backed up to $out"
 }
 
+# the network settings for games (deploy/sysctl-afterhours16.conf), applied quietly; never fails the service start
+tune() {
+  [ "$(id -u)" = 0 ] || return 0
+  [ -f "$APP/deploy/sysctl-afterhours16.conf" ] || return 0
+  modprobe tcp_bbr >/dev/null 2>&1 || true
+  install -m 644 "$APP/deploy/sysctl-afterhours16.conf" /etc/sysctl.d/90-afterhours16.conf 2>/dev/null || return 0
+  sysctl -q -p /etc/sysctl.d/90-afterhours16.conf >/dev/null 2>&1 || true
+  return 0
+}
+
 case "${1:-status}" in
   status) status ;;
   update) update "$([ "${2:-}" = --auto ] && echo 1 || echo 0)" ;;
@@ -104,5 +115,6 @@ case "${1:-status}" in
   logs) journalctl -u afterhours16 -u caddy -n "${2:-60}" --no-pager ;;
   restart) need_root restart; systemctl restart afterhours16 && echo "Restarted." ;;
   backup) backup ;;
+  tune) tune ;;
   *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

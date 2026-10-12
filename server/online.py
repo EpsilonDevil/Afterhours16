@@ -38,7 +38,9 @@ MAX_MESSAGE = 512 * 1024      # a game setup carries every roster entry (builds 
 MAX_SQUAD = 5          # you and four friends
 MAX_CREW = 40
 MAX_FRIENDS = 100
-INPUT_KEYS = ("t", "k", "i")
+MAX_AI_SQUAD = 4       # (a player's own AI squad: four friends from his game's world)
+MAX_BATCH = 64        # (ticks of input in one message: a frame after a hitch can send several)
+WATCH_EVERY = 0.1     # watchers get a game's inputs in bundles, ten times a second (they play a moment behind)
 
 
 class WSClosed(Exception):
@@ -57,44 +59,141 @@ def accept_key(key):
     return base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
 
 
+def frame(data, opcode=0x1):
+    """A whole (unmasked, server-to-client) WebSocket frame around data (bytes)."""
+    n = len(data)
+    return bytes([0x80 | opcode]) + (bytes([n]) if n < 126 else bytes([126]) + struct.pack("!H", n) if n < 65536 else bytes([127]) + struct.pack("!Q", n)) + data
+
+
+def encode(obj):
+    """A message as a ready-to-send text frame: encoded once, however many sockets it goes to."""
+    return frame(json.dumps(obj, separators=(",", ":")).encode())
+
+
+def unmask(payload, mask):
+    """A client frame's payload, unmasked (RFC 6455 5.3) a whole number at a time instead of a byte at a time."""
+    n = len(payload)
+    if not n:
+        return b""
+    m = int.from_bytes((mask * (n // 4 + 1))[:n], "little")
+    return (int.from_bytes(payload, "little") ^ m).to_bytes(n, "little")
+
+
+# v0.4.7.5 qp3 perf: nothing the hub does waits on one player's connection. Every socket has its own queue and a writer
+# thread that sends whatever has piled up in one go; a socket that stops taking data (a phone that lost its Wi-Fi, a
+# frozen tab) is cut off once it's this far behind, and its player is handed to the AI like anyone who leaves.
+MAX_BACKLOG = 8 * 1024 * 1024   # bytes queued for one socket
+MAX_STALL = 10.0                # seconds one write may hang
+
+
 class WSConn:
-    """One browser's socket. Reads happen on the handler thread; sends can come from any thread (the lock)."""
+    """One browser's socket. Reads happen on the handler thread; sends can come from any thread: they're queued and
+    written by the socket's own writer thread, so a slow connection never holds up the hub (or anyone else)."""
 
     def __init__(self, rfile, wfile, sock, aid, username):
         self.rfile, self.wfile, self.sock = rfile, wfile, sock
         self.aid, self.username = aid, username
-        self.lock = threading.Lock()
+        self.cv = threading.Condition(threading.Lock())
+        self.out, self.out_bytes = [], 0
+        self.writing_since = None   # (monotonic time a write started, while one is under way)
+        self.stopping = False       # (write what's queued, then stop)
+        self.down = False
         self.alive = True
         self.info = {"name": username, "park": None, "status": "menu", "char": None}
         self.squad = None     # squad id
         self.game = None      # the game he's playing (id)
         self.entry = None     # his player as he plays (for the others where he is)
+        self.aisquad = []     # the AI from his own game who run in his squad: [{"id", "name", "entry"}] (they're in his online squad too)
         self.ip = None
         self.connected_at = time.time()
+        self.stats = {"sent": 0, "frames": 0, "writes": 0}
+        threading.Thread(target=self._writer, name="ws-writer", daemon=True).start()
 
-    # ---- framing ----
+    # ---- sending: queued, written by the writer thread ----
     def send(self, obj):
+        return self.send_frame(encode(obj))
+
+    def send_frame(self, fr):
+        """Queue a ready frame (see encode). False when the socket is gone (or was just cut off for falling behind)."""
         if not self.alive:
             return False
-        data = json.dumps(obj, separators=(",", ":")).encode()
-        n = len(data)
-        head = bytes([0x81]) + (bytes([n]) if n < 126 else bytes([126]) + struct.pack("!H", n) if n < 65536 else bytes([127]) + struct.pack("!Q", n))
-        try:
-            with self.lock:
-                self.wfile.write(head + data)
+        with self.cv:
+            if self.stopping:
+                return False
+            ws = self.writing_since
+            if self.out_bytes + len(fr) > MAX_BACKLOG or (ws is not None and time.monotonic() - ws > MAX_STALL):
+                self.out.clear()
+                self.out_bytes = 0
+                self.alive = False
+                cut = True
+            else:
+                self.out.append(fr)
+                self.out_bytes += len(fr)
+                self.cv.notify()
+                cut = False
+        if cut:
+            self._shutdown()  # (the reader stops too, and the hub sees him leave)
+        return not cut
+
+    def _writer(self):
+        while True:
+            with self.cv:
+                while not self.out and not self.stopping:
+                    self.cv.wait()
+                if not self.out:
+                    self.cv.notify_all()
+                    break
+                chunks, self.out, self.out_bytes = self.out, [], 0
+                self.writing_since = time.monotonic()
+            data = chunks[0] if len(chunks) == 1 else b"".join(chunks)
+            try:
+                self.wfile.write(data)
                 self.wfile.flush()
-            return True
-        except (OSError, ValueError):
-            self.alive = False
-            return False
+                self.stats["sent"] += len(data)
+                self.stats["frames"] += len(chunks)
+                self.stats["writes"] += 1
+            except (OSError, ValueError, AttributeError):
+                with self.cv:
+                    self.alive = False
+                    self.stopping = True
+                    self.out, self.out_bytes, self.writing_since = [], 0, None
+                    self.cv.notify_all()
+                break
+            with self.cv:
+                self.writing_since = None
+                if not self.out:
+                    self.cv.notify_all()  # (anyone waiting for the queue to empty)
+        if self.stopping and not self.alive:
+            self._shutdown()
+
+    def drain(self, timeout=2.0):
+        """Wait (a while at most) until everything queued has been written."""
+        end = time.monotonic() + timeout
+        with self.cv:
+            while (self.out or self.writing_since is not None) and not self.down:
+                left = end - time.monotonic()
+                if left <= 0:
+                    return False
+                self.cv.wait(left)
+        return True
+
+    def stop(self):
+        """No more sends: the writer finishes what's queued and ends."""
+        with self.cv:
+            self.stopping = True
+            self.cv.notify_all()
+
+    def _shutdown(self):
+        if self.down:
+            return
+        self.down = True
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
 
     def _control(self, opcode, payload=b""):
-        try:
-            with self.lock:
-                self.wfile.write(bytes([0x80 | opcode, len(payload)]) + payload)
-                self.wfile.flush()
-        except (OSError, ValueError):
-            self.alive = False
+        self.send_frame(frame(payload, opcode))
 
     def _read(self, n):
         buf = self.rfile.read(n)
@@ -119,9 +218,7 @@ class WSConn:
                 self.close(1002)  # clients must mask (RFC 6455 5.1)
                 raise WSClosed()
             mask = self._read(4)
-            payload = bytearray(self._read(n))
-            for i in range(n):
-                payload[i] ^= mask[i & 3]
+            payload = unmask(self._read(n), mask)
             if opcode == 0x8:
                 self.close(1000)
                 raise WSClosed()
@@ -144,10 +241,12 @@ class WSConn:
         if self.alive:
             self._control(0x8, struct.pack("!H", code))
         self.alive = False
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+        self.stop()
+        # (the writer sends the close, and whatever was queued before it, then shuts the socket; one that isn't taking
+        # data is shut a moment later anyway)
+        t = threading.Timer(2.0, self._shutdown)
+        t.daemon = True
+        t.start()
 
 
 # ---------------- friends (database) ----------------
@@ -234,12 +333,15 @@ class Hub:
         return [c for c in list(self.conns.values()) if c.alive and place and c.info.get("park") == place and c.aid != skip]
 
     def send_to(self, aids, msg, skip=None):
+        fr = None  # (encoded once, for everyone)
         for a in aids:
             if a == skip:
                 continue
             c = self.live(a)
             if c:
-                c.send(msg)
+                if fr is None:
+                    fr = encode(msg)
+                c.send_frame(fr)
 
     def name_of(self, aid):
         c = self.conns.get(aid)
@@ -335,7 +437,7 @@ class Hub:
             self.offer_watch(conn, place)
 
     def person(self, c):
-        return {"id": c.aid, "username": c.username, "name": c.info.get("name") or c.username, "entry": c.entry, "rtt": c.info.get("rtt")}
+        return {"id": c.aid, "username": c.username, "name": c.info.get("name") or c.username, "entry": c.entry, "rtt": c.info.get("rtt"), "ai": c.aisquad}
 
     def release_place(self, aid, place):
         """Leaving a park: his claims there go, and so does a court he held as king."""
@@ -360,7 +462,9 @@ class Hub:
             {"id": m, "username": self.conns[m].username if m in self.conns else "?", "name": self.name_of(m),
              "park": (self.conns[m].info.get("park") if m in self.conns else None), "status": (self.conns[m].info.get("status") if m in self.conns else None),
              "char": (self.conns[m].info.get("char") if m in self.conns else None), "inGame": bool(self.conns[m].game) if m in self.conns else False,
-             "rtt": (self.conns[m].info.get("rtt") if m in self.conns else None)}
+             "rtt": (self.conns[m].info.get("rtt") if m in self.conns else None),
+             "ai": [{"id": a["id"], "name": a["name"], "ovr": (a["entry"].get("build") or {}).get("overall"), "pos": (a["entry"].get("build") or {}).get("position")}
+                    for a in (self.conns[m].aisquad if m in self.conns else [])]}
             for m in sq["members"]]}
 
     def push_squad(self, sq):
@@ -368,7 +472,8 @@ class Hub:
 
     def push_squad_entries(self, sq):
         ents = {m: self.conns[m].entry for m in sq["members"] if m in self.conns and self.conns[m].entry}
-        self.send_to(sq["members"], {"t": "squad-entries", "entries": ents})
+        ai = {m: self.conns[m].aisquad for m in sq["members"] if m in self.conns and self.conns[m].aisquad}
+        self.send_to(sq["members"], {"t": "squad-entries", "entries": ents, "ai": ai})
 
     def leave_squad(self, conn):
         sq = self.squads.get(conn.squad) if conn.squad else None
@@ -506,7 +611,8 @@ class Hub:
         gid = self.game_seq
         setup["game"] = gid
         g = {"id": gid, "where": place, "court": ci, "slots": slots, "players": set(slots), "last": {}, "setup": setup, "started": time.time(),
-             "log": [], "score": None, "names": [self.name_of(a) for a in slots], "teams": setup.get("sideIds") if isinstance(setup.get("sideIds"), list) else None}
+             "log": [], "wbuf": [], "wsent": 0.0, "score": None, "names": [self.name_of(a) for a in slots],
+             "teams": setup.get("sideIds") if isinstance(setup.get("sideIds"), list) else None}
         self.games[gid] = g
         for a in slots:
             self.conns[a].game = gid
@@ -520,9 +626,7 @@ class Hub:
         self.refresh_claims()  # (anyone in it is off the other claims he was on)
         self.send_to(slots, {"t": "start", "setup": setup})
         if place:
-            for w in self.at(place):
-                if w.aid not in slots:
-                    w.send({"t": "watch", "setup": setup})
+            self.send_to([w.aid for w in self.at(place) if w.aid not in slots], {"t": "watch", "setup": setup})
         for a in slots:
             self.push_presence(a)
 
@@ -536,31 +640,55 @@ class Hub:
                 conn.send({"t": "watch", "setup": g["setup"], "log": g["log"]})
 
     def relay(self, conn, msg):
+        """A player's inputs: b holds one entry per tick from tick k on (each one the change from the tick before it,
+        0 for no change: session.js). They go straight to the other players, encoded once; the people watching from
+        the same place get them in bundles (WATCH_EVERY)."""
         g = self.games.get(conn.game)
         if not g or msg.get("g") != g["id"] or conn.aid not in g["slots"]:
             return
-        k = msg.get("k")
-        if not isinstance(k, int) or isinstance(k, bool) or k <= g["last"].get(conn.aid, 0):
+        k, b = msg.get("k"), msg.get("b")
+        if not isinstance(k, int) or isinstance(k, bool) or not isinstance(b, list) or not 0 < len(b) <= MAX_BATCH:
             return
-        g["last"][conn.aid] = k
-        out = {"t": "in", "s": g["slots"][conn.aid], "k": k, "i": msg.get("i"), "g": g["id"]}
+        if k != g["last"].get(conn.aid, 0) + 1:
+            return  # (every tick once, in order: each entry builds on the one before)
+        g["last"][conn.aid] = k + len(b) - 1
+        s = g["slots"][conn.aid]
+        fr = encode({"t": "in", "s": s, "k": k, "b": b, "g": g["id"]})
+        for a in g["players"]:
+            if a != conn.aid:
+                c = self.conns.get(a)
+                if c:
+                    c.send_frame(fr)
+        rec = [s, k, b]
         if g["log"] is not None:
             if time.time() - g["started"] < 60:
-                g["log"].append([out["s"], k, out["i"]])
+                g["log"].append(rec)
             else:
                 g["log"] = None  # (past a minute in, late arrivals see the score instead of the game)
-        targets = set(g["players"]) | ({c.aid for c in self.at(g["where"])} if g["where"] else set())
-        targets.discard(conn.aid)
-        for a in targets:
-            c = self.conns.get(a)
-            if c:
-                c.send(out)
+        if g["where"]:
+            g["wbuf"].append(rec)
+            now = time.monotonic()
+            if now - g["wsent"] >= WATCH_EVERY:
+                self.flush_watch(g, now)
+
+    def flush_watch(self, g, now=None):
+        """The inputs a game's watchers haven't had yet, in one message: {"t": "inw", "g", "m": [[slot, k, b]...]}."""
+        if not g.get("wbuf"):
+            return
+        msg, g["wbuf"], g["wsent"] = {"t": "inw", "g": g["id"], "m": g["wbuf"]}, [], now or time.monotonic()
+        fr = None
+        for c in self.at(g["where"]):
+            if c.aid not in g["players"]:
+                if fr is None:
+                    fr = encode(msg)
+                c.send_frame(fr)
 
     def quit_game(self, conn, reason="left"):
         g = self.games.get(conn.game)
         conn.game = None
         if not g or conn.aid not in g["slots"]:
             return
+        self.flush_watch(g)  # (the watchers have his last inputs before they hear he's gone)
         slot = g["slots"].pop(conn.aid)
         g["players"].discard(conn.aid)
         msg = {"t": "left", "slot": slot, "last": g["last"].get(conn.aid, 0), "id": conn.aid, "reason": reason, "g": g["id"]}
@@ -579,6 +707,7 @@ class Hub:
         if g.get("over"):
             return
         g["over"] = True
+        self.flush_watch(g)
         for a in list(g["players"]):
             c = self.conns.get(a)
             if c and c.game == g["id"]:
@@ -704,7 +833,8 @@ class Hub:
             return fc.send({"t": "note", "text": f"{self.name_of(conn.aid)} passed on the Pro-Am challenge."})
         team = [m for m in self.party(conn.aid) if self.live(m) and not self.conns[m].game]
         fc.send({"t": "challenge-go", "opp": {"leader": conn.aid, "members": team, "entries": {m: self.conns[m].entry for m in team if self.conns[m].entry},
-                                               "usernames": {m: self.conns[m].username for m in team}, "rtts": {m: self.conns[m].info.get("rtt") for m in team}}})
+                                               "usernames": {m: self.conns[m].username for m in team}, "rtts": {m: self.conns[m].info.get("rtt") for m in team},
+                                               "ai": {m: self.conns[m].aisquad for m in team if self.conns[m].aisquad}}})
         conn.send({"t": "note", "text": f"{self.name_of(frm)} is setting up the Pro-Am game."})
 
     # ---- online crews: a crew's founder brings friends into it; his save keeps the crew and its XP ----
@@ -826,20 +956,46 @@ class Hub:
         if t == "pos":  # where he's walking (the others at the same place show him there), ~5 times a second
             place = conn.info.get("park")
             if place:
-                out = {"t": "pos", "from": conn.aid, **{k: msg.get(k) for k in ("x", "z", "f", "m") if isinstance(msg.get(k), (int, float))}}
+                fr = None
                 for c in self.at(place, skip=conn.aid):
-                    c.send(out)
+                    if fr is None:
+                        fr = encode({"t": "pos", "from": conn.aid, **{k: msg.get(k) for k in ("x", "z", "f", "m") if isinstance(msg.get(k), (int, float)) and not isinstance(msg.get(k), bool)}})
+                    c.send_frame(fr)
             return
         with self.lock:
             if t == "where":
                 upd = {k: msg.get(k) for k in ("name", "status", "char") if k in msg and (msg.get(k) is None or isinstance(msg.get(k), str))}
-                if isinstance(msg.get("rtt"), (int, float)) and not isinstance(msg.get("rtt"), bool):
-                    upd["rtt"] = max(0, min(2000, int(msg["rtt"])))  # (his round trip here: games pick their input delay from it)
+                changed = any(conn.info.get(k) != v for k, v in upd.items())
                 conn.info.update(upd)
+                if isinstance(msg.get("rtt"), (int, float)) and not isinstance(msg.get("rtt"), bool):
+                    rtt = max(0, min(2000, int(msg["rtt"])))  # (his round trip here: games pick their input delay from it)
+                    if rtt != conn.info.get("rtt"):
+                        conn.info["rtt"] = rtt
+                        # (just the number, to the people who set up games with him: no presence round for it)
+                        place = conn.info.get("park")
+                        self.send_to({c.aid for c in self.at(place, skip=conn.aid)} | set(self.party(conn.aid)), {"t": "rtt", "id": conn.aid, "rtt": rtt}, skip=conn.aid)
+                moved = False
                 if "park" in msg and (msg["park"] is None or isinstance(msg["park"], str)):
-                    self.move(conn, (msg["park"] or None) if not msg["park"] or len(msg["park"]) <= 64 else None)
-                self.push_presence(conn.aid)
-                self.refresh_claims()
+                    place = (msg["park"] or None) if not msg["park"] or len(msg["park"]) <= 64 else None
+                    moved = place != conn.info.get("park")
+                    self.move(conn, place)
+                if changed or moved:  # (friends' lists, his squad and his crew hear about it: a few database reads)
+                    self.push_presence(conn.aid)
+                if moved:
+                    self.refresh_claims()
+            elif t == "aisquad":  # the AI squad mates from his own game: they walk with him and run in his online squad
+                ms = msg.get("members")
+                if isinstance(ms, list) and len(ms) <= MAX_AI_SQUAD and len(json.dumps(ms)) < 200_000 and all(
+                        isinstance(a, dict) and isinstance(a.get("id"), str) and 0 < len(a["id"]) <= 64 and isinstance(a.get("name"), str)
+                        and isinstance(a.get("entry"), dict) and isinstance(a["entry"].get("build"), dict) for a in ms):
+                    conn.aisquad = [{"id": a["id"], "name": a["name"][:40], "entry": a["entry"]} for a in ms]
+                    place = conn.info.get("park")
+                    if place:
+                        self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {"t": "pentry", **self.person(conn)})
+                    sq = self.squad_of(conn.aid)
+                    if sq:
+                        self.push_squad(sq)
+                        self.push_squad_entries(sq)
             elif t == "entry":  # his player as he plays (build, look, badges): the others where he is see him with it
                 if isinstance(msg.get("entry"), dict) and len(json.dumps(msg["entry"])) < 200_000:
                     conn.entry = msg["entry"]
@@ -898,7 +1054,10 @@ class Hub:
             elif t == "hash":
                 g = self.games.get(conn.game)
                 if g:
-                    self.send_to(g["players"], {"t": "hash", "k": msg.get("k"), "h": msg.get("h"), "from": conn.aid, "name": conn.info.get("name")}, skip=conn.aid)
+                    # (w: how long his screen waited on each seat's inputs since the last check: session.js lateReport)
+                    w = msg.get("w") if isinstance(msg.get("w"), dict) and len(msg["w"]) <= 10 else None
+                    w = {str(s)[:3]: v for s, v in w.items() if isinstance(v, (int, float)) and not isinstance(v, bool)} if w else None
+                    self.send_to(g["players"], {"t": "hash", "k": msg.get("k"), "h": msg.get("h"), "w": w, "from": conn.aid, "name": conn.info.get("name")}, skip=conn.aid)
             elif t == "challenge":
                 self.challenge(conn, msg)
             elif t == "challenge-reply":
@@ -964,9 +1123,11 @@ class Hub:
         try:
             if conn.aid is None and not self.sign_in(conn):
                 conn.close(4001)
+                conn.drain(2.0)  # (he gets the reason before the socket closes)
                 return
         except (WSClosed, OSError, ValueError):
             conn.alive = False
+            conn.stop()
             return
         self.connect(conn)
         try:
@@ -983,3 +1144,4 @@ class Hub:
         finally:
             conn.alive = False
             self.disconnect(conn)
+            conn.stop()

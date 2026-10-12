@@ -702,7 +702,9 @@ export class Game {
     this.emit({ type: 'dropped', player: id });
   }
   // a timed release (the shot button let go): online, graded at the moment it was let go on the player's screen
-  relAt(p, a) { return this.multi && p.human ? Math.max(0, a.t - this.lag) : a.t; }
+  relAt(p, a) { return this.multi && p.human ? Math.max(0, a.t - this.lagOf(p)) : a.t; }
+  // (qp3 perf: how long his input took to land: the game's delay, plus the ticks his own PC sent it further ahead: dl)
+  lagOf(p) { return this.lag + Math.max(0, Math.min(8, p.intent?.dl | 0)) * DT; }
   // online: the game state boiled down to a number, compared between the clients now and then (a desync check)
   stateHash() {
     let h = 2166136261 >>> 0;
@@ -2795,7 +2797,7 @@ export class Game {
   oopInput(p, btn) {
     const q = p.oopQte;
     if (!q || q.result) return null;
-    const t = this.time - q.t0 - (this.multi && p.human ? this.lag : 0); // (online: when it was pressed on his screen)
+    const t = this.time - q.t0 - (this.multi && p.human ? this.lagOf(p) : 0); // (online: when it was pressed on his screen)
     q.at = t;
     q.result = btn !== q.btn ? 'wrong' : t < q.open ? 'early' : t > q.close ? 'late' : 'hit';
     this.emit({ type: 'oopQte', player: p.id, result: q.result, t: +t.toFixed(2) });

@@ -22,7 +22,7 @@ export class Net {
     this.authError = null;       // {code: version | token | auth | rate, text}
     // where you are: the people there (id -> {id, username, name, entry}), its courts' claims / kings / games in use
     this.place = null; this.people = new Map(); this.courts = {}; this.placeGames = [];
-    this.squad = null; this.squadEntries = {};
+    this.squad = null; this.squadEntries = {}; this.squadAI = {}; // (squadAI: each member's AI squad mates, from his own game)
     this.crew = null;
     this.watchFns = new Map(); this.watchBox = new Map(); // game id -> fn / held messages (games you watch)
   }
@@ -79,11 +79,12 @@ export class Net {
 
   receive(m) {
     switch (m.t) {
-      case 'in': case 'left': case 'hash': {
+      case 'in': case 'inw': case 'left': case 'hash': {
         // your game's (held until it's ready; an input for a game you haven't been told about yet waits for its start)
+        // (qp3 perf: 'in' is a player's inputs for a few ticks; 'inw' a bundle of everyone's, for the people watching)
         const g = m.g;
         if (m.t === 'hash' || g === this.gameNo || (g == null && m.t === 'left')) { if (this.gameFn) this.gameFn(m); else this.inbox.push(m); return; }
-        if (m.t === 'in' && g > this.gameNo && !this.watchFns.has(g) && !this.watchBox.has(g)) { this.early.push(m); if (this.early.length > 4000) this.early.shift(); return; }
+        if ((m.t === 'in' || m.t === 'inw') && g > this.gameNo && !this.watchFns.has(g) && !this.watchBox.has(g)) { this.early.push(m); if (this.early.length > 4000) this.early.shift(); return; }
         // a game you're watching
         const fn = this.watchFns.get(g);
         if (fn) fn(m); else { const box = this.watchBox.get(g) || []; box.push(m); if (box.length < 50000) this.watchBox.set(g, box); }
@@ -105,7 +106,7 @@ export class Net {
       case 'here':
         this.place = m.place; this.people = new Map((m.players || []).map(p => [p.id, p])); this.courts = m.courts || {}; this.placeGames = m.games || [];
         this.emit('people'); this.emit('courts'); return;
-      case 'pentry': if (m.id) { this.people.set(m.id, { id: m.id, username: m.username, name: m.name, entry: m.entry }); this.emit('people', m); } return;
+      case 'pentry': if (m.id) { this.people.set(m.id, { id: m.id, username: m.username, name: m.name, entry: m.entry, rtt: m.rtt, ai: m.ai || [] }); this.emit('people', m); } return;
       case 'gone': this.people.delete(m.id); this.emit('people', m); this.emit('gone', m); return;
       case 'courts': if (m.place === this.place) { this.courts = m.courts || {}; this.emit('courts'); } return;
       case 'courtscore': {
@@ -114,8 +115,8 @@ export class Net {
         this.emit('courtscore', m); return;
       }
       // ---- your squad, your crew ----
-      case 'squad': this.squad = m.squad; if (!m.squad) this.squadEntries = {}; this.emit('squad'); return;
-      case 'squad-entries': this.squadEntries = m.entries || {}; this.emit('squad'); return;
+      case 'squad': this.squad = m.squad; if (!m.squad) { this.squadEntries = {}; this.squadAI = {}; } this.emit('squad'); return;
+      case 'squad-entries': this.squadEntries = m.entries || {}; this.squadAI = m.ai || {}; this.emit('squad'); return;
       case 'crew': this.crew = m.crew; this.emit('crew'); return;
       // ---- games ----
       case 'start': {
@@ -130,7 +131,7 @@ export class Net {
         const g = m.setup?.game;
         if (g == null || g === this.gameNo) return;
         // (inputs that came before the watch, and the game so far when you arrived late)
-        const held = [...(m.log || []).map(([s, k, i]) => ({ t: 'in', s, k, i, g })), ...this.early.filter(x => x.g === g), ...(this.watchBox.get(g) || [])];
+        const held = [...(Array.isArray(m.log) ? [{ t: 'inw', g, m: m.log }] : []), ...this.early.filter(x => x.g === g), ...(this.watchBox.get(g) || [])];
         this.early = this.early.filter(x => x.g !== g);
         this.watchBox.set(g, held);
         this.emit('watch', m.setup);
@@ -145,6 +146,13 @@ export class Net {
         if (this.rtts.length > 8) this.rtts.shift();
         const s = [...this.rtts].sort((a, b) => a - b);
         this.rtt = s[Math.min(1, s.length - 1)];
+        return;
+      }
+      // (qp3 perf: someone's round trip changed: the people here and your squad set up games with it)
+      case 'rtt': {
+        const p = this.people.get(m.id), sm = this.squad?.members?.find(x => x.id === m.id);
+        if (p) p.rtt = m.rtt;
+        if (sm) sm.rtt = m.rtt;
         return;
       }
       case 'replaced': this.want = false; this.emit('note', { text: 'You signed in somewhere else: online play moved there.' }); return;
@@ -180,6 +188,8 @@ export class Net {
   // squad mates with you right now at this place and free to play (not you)
   squadHere() { return (this.squad?.members || []).filter(m => m.id !== this.myId && m.park === this.place && !m.inGame); }
   entryOf(id) { return this.people.get(id)?.entry || this.squadEntries[id] || null; }
+  // the AI squad mates a player brought from his own game: [{id, name, entry}] (they run in his online squad too)
+  aiOf(id) { const p = this.people.get(id); return (p?.ai?.length ? p.ai : this.squadAI[id]) || []; }
   usernameOf(id) { return this.people.get(id)?.username || this.squad?.members.find(m => m.id === id)?.username || this.friends.find(f => f.id === id)?.username || '?'; }
   court(ci) { return this.courts[String(ci)] || null; }
 }

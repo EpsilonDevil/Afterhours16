@@ -14,6 +14,9 @@ function sharedTex(ctx, key, make, opts) {
   return m.get(key);
 }
 
+// v0.4.7.5 qp3 perf: the far model of the people around the park (see AthleteView.init)
+export const LOD_DETAIL = 0.3;
+
 // v0.4.5 stage 7: an athlete can be built in steps (a few milliseconds each) spread over several frames, so a
 // park full of people arriving and games rotating never freezes the frame. new AthleteView(...) still builds
 // everything at once; AthleteView.staged(...) returns the view and a generator that builds it step by step.
@@ -86,17 +89,18 @@ export class AthleteView {
     };
     this.body = add(geo.body, bodyMat, 'body');
     this.head = add(geo.head, headMat, 'head');
-    add(geo.eyes, eyeMat, 'eyes');
+    const eyes = add(geo.eyes, eyeMat, 'eyes');
+    let hair = null;
     if (geo.hair) {
       const hairTex = own(paintHair(look), { aniso: 4 });
       yield;
       const hairMat = new Material({ map: hairTex, color: [1, 1, 1], roughness: 0.62, specular: 0.7, shading: 'cloth', sheen: [0.1, 0.09, 0.08], alphaTest: 0.32, character: true });
-      add(geo.hair, hairMat, 'hair');
+      hair = add(geo.hair, hairMat, 'hair');
     }
-    add(geo.top, topMat, 'top');
+    const topM = add(geo.top, topMat, 'top');
     // v0.4.7.5: the straps and top edge always on top of the skin (a few centimetres toward the camera)
-    if (geo.straps) add(geo.straps, new Material({ ...topMat, viewBias: 0.018 }), 'straps'); // (same options as the top)
-    add(geo.bottom, botMat, 'bottom');
+    const straps = geo.straps ? add(geo.straps, new Material({ ...topMat, viewBias: 0.018 }), 'straps') : null; // (same options as the top)
+    const botM = add(geo.bottom, botMat, 'bottom');
     add(geo.gear, gearMat, 'gear');
     if (geo.shoes) {
       // v0.4.3: textured sneakers (one texture per design, shared by everyone wearing it)
@@ -116,6 +120,24 @@ export class AthleteView {
       add(geo.chain.chain, metal(tex, etex), 'chain');
       add(geo.chain.pendant, Object.assign(metal(ptex, petex), { doubleSided: true }), 'pendant');
     }
+    // v0.4.7.5 qp3 perf: the people around the park (everyone built below full detail: walkers, the background games,
+    // the games you watch, the crowd) get a far model too. A park is sixty-odd people at 40-50 thousand triangles each,
+    // drawn again for the shadows; from a court or two away nobody can tell a third of that. The far model is the body,
+    // head, hair and clothes again at LOD_DETAIL, on the same bones with the same textures and materials; the renderer
+    // draws one or the other by the distance from the camera (QUALITY lod). Shoes, gear and chains are the same meshes
+    // for both, and the eyes aren't drawn from that far.
+    if (opts.lod ?? detail < 1) {
+      const k2 = detail >= 1 ? 2.25 : 1; // (full-detail players switch 1.5x as far out: lodK is squared)
+      const lm = new AthleteModel(build, look, LOD_DETAIL), lg = {};
+      lg.body = lm.buildBody(); yield;
+      lg.head = lm.buildHead(); lg.hair = hair ? lm.buildHair() : null; yield;
+      lg.top = lm.buildTop(top); lg.straps = straps ? lm.strapGeo : null; yield;
+      lg.bottom = lm.buildBottom(bot);
+      const far = (g, near) => { if (!g || !near) return; near.lod = 1; near.lodK = k2; const m = add(g, near.material, near.name + ':far'); m.lod = 2; m.lodK = k2; };
+      far(lg.body, this.body); far(lg.head, this.head); far(lg.hair, hair); far(lg.top, topM); far(lg.straps, straps); far(lg.bottom, botM);
+      if (eyes) { eyes.lod = 1; eyes.lodK = k2; }
+      this.lod = true;
+    }
     this.scene = null;
     this.visible = true;
   }
@@ -124,10 +146,22 @@ export class AthleteView {
   removeFrom() { if (!this.scene) return; for (const m of this.meshes) this.scene.remove(m); this.scene = null; }
   setVisible(v) { this.visible = v; for (const m of this.meshes) m.visible = v; }
   setShadow(v) { for (const m of this.meshes) m.castShadow = v; }
+  // v0.4.7.5 qp3 perf: left out of every pass (shadows included) while he's out of view and not being posed, so a pose
+  // or a place from before never shows
+  setCulled(c) { for (const m of this.meshes) m.culled = c; }
 
   // Solve pose and place in world
   update(pose, x, y, z, yaw, opts) {
     this.rig.solve(pose, opts);
+    M.m4fromYaw(this.world, x, y, z, yaw);
+    this.rig.updateSkin(this.world);
+    const c = [x, y + this.H * 0.5, z];
+    for (const m of this.meshes) { m.boundsOverride.center = c; }
+  }
+
+  // v0.4.7.5 qp3 perf: move him without posing him again (the people far away are posed every other frame, moved
+  // every frame)
+  move(x, y, z, yaw) {
     M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
     const c = [x, y + this.H * 0.5, z];

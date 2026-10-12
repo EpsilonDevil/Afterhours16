@@ -11,6 +11,7 @@ import socket
 import struct
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -40,9 +41,15 @@ class Client:
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"null")
 
-    def connect(self, origin=True):
+    def connect(self, origin=True, rcvbuf=None):
         host, port = self.base.split("//")[1].split(":")
-        self.sock = socket.create_connection((host, int(port)), timeout=5)
+        if rcvbuf:  # (a connection that takes data slowly: a small window)
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+            self.sock.settimeout(5)
+            self.sock.connect((host, int(port)))
+        else:
+            self.sock = socket.create_connection((host, int(port)), timeout=5)
         cookie = "; ".join(f"{c.name}={c.value}" for c in self.jar)
         key = base64.b64encode(os.urandom(16)).decode()
         lines = [f"GET /api/ws HTTP/1.1", f"Host: {host}:{port}", "Upgrade: websocket", "Connection: Upgrade",
@@ -68,8 +75,8 @@ class Client:
         data = json.dumps(obj).encode()
         mask = os.urandom(4)
         n = len(data)
-        head = bytes([0x81]) + (bytes([0x80 | n]) if n < 126 else bytes([0x80 | 126]) + struct.pack("!H", n))
-        self.sock.sendall(head + mask + bytes(b ^ mask[i & 3] for i, b in enumerate(data)))
+        head = bytes([0x81]) + (bytes([0x80 | n]) if n < 126 else bytes([0x80 | 126]) + struct.pack("!H", n) if n < 65536 else bytes([0x80 | 127]) + struct.pack("!Q", n))
+        self.sock.sendall(head + mask + online.unmask(data, mask))  # (masking is the same XOR)
 
     def _read(self, n):
         while len(self.buf) < n:
@@ -220,11 +227,21 @@ class OnlineTests(unittest.TestCase):
         busy = w.until("courts", lambda m: m["courts"]["3"]["busy"])["courts"]["3"]  # (the court's in use, then the game)
         self.assertEqual((busy["busy"]["kind"], busy["lines"]), ("game", [None, None]))
         self.assertEqual(w.until("watch")["setup"]["game"], g)
-        # inputs go to the other player and the watcher, in order; scores to the watcher
-        for k in (4, 5, 5, 6):
-            a.send({"t": "in", "k": k, "g": g, "i": {"mx": k}})
-        self.assertEqual([m["k"] for m in (b.until("in"), b.until("in"), b.until("in"))], [4, 5, 6])
-        self.assertEqual([m["k"] for m in (w.until("in"), w.until("in"), w.until("in"))], [4, 5, 6])
+        # inputs go to the other player at once, every tick once and in order (a few ticks a message, each the change
+        # from the tick before: client/js/sim/wire.js); the watcher gets them in bundles; scores to the watcher
+        a.send({"t": "in", "k": 1, "g": g, "b": [{"mx": 1}, 0]})
+        a.send({"t": "in", "k": 2, "g": g, "b": [0]})  # (a tick that went already: not passed on)
+        a.send({"t": "in", "k": 5, "g": g, "b": [0]})  # (one with ticks missing before it: not passed on)
+        a.send({"t": "in", "k": 3, "g": g, "b": [{"mx": None}, 0, 0]})
+        a.send({"t": "in", "k": 6, "g": g, "i": {}})   # (not in the batch form: not passed on)
+        time.sleep(0.15)
+        a.send({"t": "in", "k": 6, "g": g, "b": [{"sprint": True}]})
+        got = [b.until("in") for _ in range(3)]
+        self.assertEqual([(m["s"], m["k"], m["b"]) for m in got], [(0, 1, [{"mx": 1}, 0]), (0, 3, [{"mx": None}, 0, 0]), (0, 6, [{"sprint": True}])])
+        ticks = []
+        while len(ticks) < 6:
+            ticks += [k + i for s, k, bb in w.until("inw")["m"] for i in range(len(bb))]
+        self.assertEqual(ticks, [1, 2, 3, 4, 5, 6])
         b.send({"t": "score", "score": [3, 1]})
         self.assertEqual(w.until("courtscore")["score"], [3, 1])
         # nobody in a game starts another
@@ -245,7 +262,7 @@ class OnlineTests(unittest.TestCase):
         a.send({"t": "start", "setup": {"kind": "park", "where": "harbor", "court": 3, "slots": {ida: 0, idb: 1}}})
         g2 = a.until("start")["setup"]["game"]
         b.until("start")
-        b.send({"t": "in", "k": 9, "g": g2, "i": {}})
+        b.send({"t": "in", "k": 1, "g": g2, "b": [0] * 9})
         a.until("in")
         b.close()
         left = a.until("left")
@@ -264,6 +281,82 @@ class OnlineTests(unittest.TestCase):
         cts = a.until("courts", lambda m: not (m["courts"].get("2") or {}).get("lines", [0, 0])[1])["courts"]
         self.assertIsNone(cts["1"]["kings"], "his court too")
         a.close(); w.close()
+
+    def test_a_socket_that_stops_taking_data_holds_nobody_up(self):
+        # qp3 perf: everything the hub sends is queued per socket and written by that socket's own thread. Someone whose
+        # connection stops taking data (lost Wi-Fi, a frozen tab) is cut off once he's far enough behind; nobody else
+        # waits for him meanwhile
+        (a, ida), (b, idb) = self.friends("st_talker", "st_reader")
+        stuck = self.player("st_stuck")
+        self.assertEqual(stuck.connect(rcvbuf=4096), 101)
+        ids = stuck.until("hello")["you"]["id"]
+        for c, n in ((a, "Talker"), (b, "Reader"), (stuck, "Stuck")):
+            c.send({"t": "where", "name": n, "park": "brick", "status": "park"})
+            c.until("here")
+        old = online.MAX_BACKLOG
+        online.MAX_BACKLOG = 512 * 1024
+        try:
+            t0 = time.monotonic()
+            seen, gone = set(), False
+            blob = "x" * 150_000
+            for i in range(60):  # (9 MB for each of the others: far more than the stuck one's socket holds)
+                a.send({"t": "entry", "entry": {"name": "Talker", "n": i, "pad": blob}})
+                while i not in seen:  # (the reader keeps up; the stuck one never reads)
+                    m = b.recv()
+                    if m.get("t") == "pentry" and m["id"] == ida:
+                        seen.add(m["entry"]["n"])
+                    gone = gone or (m.get("t") == "gone" and m["id"] == ids)
+            while not gone:
+                m = b.recv()
+                gone = m.get("t") == "gone" and m["id"] == ids
+            self.assertLess(time.monotonic() - t0, 20)
+            self.assertEqual(seen, set(range(60)), "the reader got every one")
+        finally:
+            online.MAX_BACKLOG = old
+        self.assertFalse(self.service.hub.live(ids), "the stuck one was cut off")
+        # the round trip alone goes to the people there as a number (no friends lists, no squad round)
+        a.send({"t": "ping", "c": 0})
+        a.until("pong", limit=400)
+        a.send({"t": "where", "rtt": 75})
+        self.assertEqual(b.until("rtt"), {"t": "rtt", "id": ida, "rtt": 75})
+        a.send({"t": "ping", "c": 1})
+        nxt = [a.recv()["t"] for _ in range(1)]
+        self.assertEqual(nxt, ["pong"], "no friends list for a round trip")
+        for c in (a, b, stuck):
+            c.close()
+
+    def test_ai_squad_mates_in_the_online_squad(self):
+        (a, ida), (b, idb), (w, idw) = self.friends("ais_lead", "ais_mate", "ais_watch")
+        for c, n in ((a, "Lead"), (b, "Mate"), (w, "Watcher")):
+            c.send({"t": "entry", "entry": {"name": n, "build": {"overall": 70}}})
+            c.send({"t": "where", "name": n, "park": "brick", "status": "park"})
+            c.until("here")
+        # the mate brings an AI squad mate from his own game: everyone where he is sees him with it
+        ai = [{"id": "ai-7", "name": "Tariq Hale", "entry": {"name": "Tariq Hale", "build": {"overall": 67, "position": "SG"}, "iq": 0.45}}]
+        b.send({"t": "aisquad", "members": ai})
+        pe = w.until("pentry", lambda m: m["id"] == idb and m.get("ai"))
+        self.assertEqual(pe["ai"][0]["entry"]["iq"], 0.45)
+        # (and anyone arriving later gets it with him)
+        a.send({"t": "where", "name": "Lead", "park": None, "status": "menu"})
+        a.send({"t": "where", "name": "Lead", "park": "brick", "status": "park"})
+        here = a.until("here")
+        self.assertEqual([p["ai"] for p in here["players"] if p["id"] == idb][0][0]["name"], "Tariq Hale")
+        # in a squad, his AI squad mate is the squad's: listed with him, and his entry goes to the squad
+        a.send({"t": "sq-invite", "to": idb})
+        b.until("sqinvite")
+        b.send({"t": "sq-accept", "from": ida})
+        sq = a.until("squad", lambda m: m["squad"] and len(m["squad"]["members"]) == 2 and any(x["ai"] for x in m["squad"]["members"]))["squad"]
+        self.assertEqual([x["ai"] for x in sq["members"] if x["id"] == idb][0], [{"id": "ai-7", "name": "Tariq Hale", "ovr": 67, "pos": "SG"}])
+        self.assertEqual(a.until("squad-entries", lambda m: m.get("ai"))["ai"][idb][0]["id"], "ai-7")
+        # (bad ones are ignored: too many, or no player in them)
+        b.send({"t": "aisquad", "members": [{"id": "x", "name": "y", "entry": {}}]})
+        b.send({"t": "aisquad", "members": [{"id": f"ai-{i}", "name": "n", "entry": {"build": {}}} for i in range(6)]})
+        b.send({"t": "ping", "c": 1})
+        b.until("pong")
+        with self.service.hub.lock:
+            self.assertEqual([x["id"] for x in self.service.hub.conns[idb].aisquad], ["ai-7"])
+        for c in (a, b, w):
+            c.close()
 
     def test_pro_am_challenges(self):
         (a, ida), (b, idb) = self.friends("ch_one", "ch_two")

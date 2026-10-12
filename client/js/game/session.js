@@ -26,6 +26,7 @@ import { BLOCK_BY_ID, blockCallout } from '../sim/blocks.js';
 import { hsName, hsCallout } from '../sim/hashsling.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
+import { normIntent, intentDelta, takeInputs } from '../sim/wire.js';
 
 const esc2 = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
@@ -54,7 +55,7 @@ export class PlayerVisual {
     this.scene = scene;
     this.ring = null;
     this.pending = false;
-    const vopts = { detail: opts.detail ?? 1, faceRes: opts.faceRes };
+    const vopts = { detail: opts.detail ?? 1, faceRes: opts.faceRes, lod: opts.lod };
     this.pool = opts.pool || null;
     if (this.pool) {
       this.key = visualKey(build, look, vopts);
@@ -81,7 +82,17 @@ export class PlayerVisual {
     this.pending = false;
     this.view = view.addTo(this.scene);
     view.setVisible(visible);
+    view.setCulled?.(!!this.culled);
+    this.animPosed = false; // (a new athlete: posed the first time he's asked for, wherever he is)
     this.anim = new Animator(view);
+  }
+  // v0.4.7.5 qp3 perf: out of the camera's view and not being posed (ParkHub.animDt): him, his floor shadow and rings
+  // are left out of the frame until he's back in view
+  setCulled(c) {
+    if (this.culled === c) return;
+    this.culled = c;
+    this.view?.setCulled?.(c);
+    for (const m of [this.blob, this.ring, this.fire, this.ice]) if (m) m.culled = c;
   }
   addRing(r, color) {
     const ctx = r.ctx;
@@ -164,7 +175,8 @@ export class MatchSession {
       // v0.4.5 stage 7: background games share the park's pool with the walkers (same detail), so the people
       // who step onto a court keep the athlete they walked over in, and new faces are built across frames
       // (your own games use the pool too, with athletes built ahead of time; see ParkHub.prebuild)
-      const lod = opts.background ? { detail: 0.75, pool: opts.pool } : p.human ? { detail: 1, pool: opts.pool, now: true } : { detail: 1, faceRes: 512, pool: opts.pool, now: true };
+      // (qp3 perf: everyone in your game but you has a far model too, for the far end of the floor: AthleteView)
+      const lod = opts.background ? { detail: 0.75, pool: opts.pool } : p.human ? { detail: 1, pool: opts.pool, now: true, lod: !this.isMe(p) } : { detail: 1, faceRes: 512, pool: opts.pool, now: true, lod: true };
       const pv = new PlayerVisual(this.r, this.scene, e.build, e.look || resolveLook(e.build, this.catalog), lod);
       // (online: your ring is gold; the other people playing get blue rings with you, red against you)
       // (watching: the people playing get a white ring)
@@ -467,10 +479,20 @@ export class MatchSession {
   // Tick k is simulated once every human's input for it is here. Each client sends its own for tick k + delay when it
   // gets to tick k (so ticks 1..delay are blank for everybody), the service passes them on in order, and the game waits
   // ("Waiting for ...") when one hasn't arrived. Everyone simulates the same thing; nothing else crosses the network.
+  // qp3 perf: the inputs go out as changes, a frame's ticks in one message (sim/wire.js); they keep going out on time while
+  // the game waits on someone (so one late input doesn't make everybody else late in turn), a game catches up on a
+  // wait over a few frames instead of in one jump, and a PC whose frames come slowly sends its input that much further
+  // ahead itself (extra, carried in its input as dl: the release timing allows for it) instead of making the others
+  // wait for it every frame. Watchers play a moment behind, steadily (their inputs come in bundles). And every screen
+  // tells the others, with its state check every 2 s, how long it waited on each of them (w): a player whose inputs
+  // keep arriving late (his Wi-Fi, or someone else's) sends them further ahead too, back down once nobody waits.
   initOnline() {
     const o = this.online, g = this.game;
-    this.lk = { D: Math.max(1, o.delay | 0), sent: 0, mine: new Map(), theirs: new Map(), drops: new Map(), hashes: new Map(), peerHash: new Map(), waitT: 0, waiting: null, warned: false, lost: false, seq: 0, maxK: 0, scoreT: 0, scoreKey: '' };
+    this.lk = { D: Math.max(1, o.delay | 0), sent: 0, mine: new Map(), theirs: new Map(), drops: new Map(), hashes: new Map(), peerHash: new Map(), waitT: 0, waiting: null, warned: false, lost: false, seq: 0, maxK: 0, scoreT: 0, scoreKey: '',
+      last: {}, dec: new Map(), extra: 0, frameExtra: 0, netExtra: 0, fms: [], lowFor: 0, buf: null, stalls: 0,
+      waitBy: new Map(), lateWin: new Map(), raisedAt: 0, calm: 0 };
     this.lk.humans = g.players.filter(p => p.human).map(p => p.id);
+    if (!this.spectate) this.r?.resetGovern?.(); // (qp3 perf: every game starts at full graphics)
     // (your own game takes its messages; a game you watch gets the same ones, and the game so far when you came late)
     this.offNet = this.spectate ? o.net.attachWatch(o.game, m => this.netMessage(m)) : o.net.attachGame(o.game, m => this.netMessage(m));
   }
@@ -479,15 +501,14 @@ export class MatchSession {
   netMessage(m) {
     const lk = this.lk, g = this.game;
     if (m.t === 'in') {
-      if (m.s === this.online.local || typeof m.k !== 'number') return;
-      let t = lk.theirs.get(m.k);
-      if (!t) lk.theirs.set(m.k, t = new Map());
-      t.set(m.s, m.i && typeof m.i === 'object' ? m.i : {});
-      if (m.k > lk.maxK) lk.maxK = m.k;
+      if (typeof m.k === 'number' && Array.isArray(m.b)) this.takeInputs(m.s, m.k, m.b);
+    } else if (m.t === 'inw') { // (watching: a bundle of everyone's)
+      for (const r of Array.isArray(m.m) ? m.m : []) if (Array.isArray(r) && typeof r[1] === 'number' && Array.isArray(r[2])) this.takeInputs(r[0], r[1], r[2]);
     } else if (m.t === 'left') {
       // he's the AI's from the tick after the last input of his that went round (never inside the blank first ticks)
       if (typeof m.slot === 'number' && g.players[m.slot]?.human && m.slot !== this.online.local) lk.drops.set(m.slot, Math.max(m.last | 0, lk.D) + 1);
     } else if (m.t === 'hash') {
+      if (m.w && typeof m.w === 'object') this.lateReport(m.k, +m.w[this.online.local] || 0);
       const mine = lk.hashes.get(m.k);
       if (mine == null) lk.peerHash.set(m.k, m);
       else if (mine !== m.h) this.desync(m);
@@ -498,6 +519,22 @@ export class MatchSession {
       else lk.offline = true;
     }
   }
+  // a player's inputs from tick k on (each the change from the one before: sim/wire.js), into the ticks they're for
+  takeInputs(s, k, b) {
+    const lk = this.lk;
+    if (s === this.online.local || !this.game.players[s]) return;
+    let dec = lk.dec.get(s);
+    if (!dec) lk.dec.set(s, dec = { k: 0, it: {} });
+    const ok = takeInputs(dec, k, b, (t, it) => {
+      let tm = lk.theirs.get(t);
+      if (!tm) lk.theirs.set(t, tm = new Map());
+      tm.set(s, it);
+      if (t > lk.maxK) lk.maxK = t;
+      // (the tick the game is waiting on: how late his came, for the next state check's report)
+      if (t === lk.needK) lk.waitBy.set(s, (lk.waitBy.get(s) || 0) + performance.now() - lk.needAt);
+    });
+    if (!ok && !lk.gapWarned) { lk.gapWarned = true; console.warn('[online] inputs out of order from seat', s, 'at tick', k); }
+  }
   desync(m) {
     if (this.lk.warned) return;
     this.lk.warned = true;
@@ -505,12 +542,60 @@ export class MatchSession {
     this.hud.pushFeed(`Out of sync with ${m.name || 'a player'}: your screens may not match from here`, 'bad');
     logGameEvent?.({ type: 'feed', text: `online desync at tick ${m.k}` }, this.game);
   }
-  // the input for one tick ahead: yours (blank while the pause menu is up), as plain JSON
+  // the input for one tick ahead: yours (blank while the pause menu is up), normalized as it goes out (sim/wire.js)
   onlineIntent() {
     const P = this.pend;
     for (const k in P) if (P[k].seq == null) P[k].seq = ++this.lk.seq;
     const it = this.paused || this.ended ? null : this.stepIntent();
-    return it ? JSON.parse(JSON.stringify(it)) : {};
+    if (it && this.lk.extra) it.dl = this.lk.extra; // (how much further ahead than the game's delay this one went out)
+    return it ? normIntent(it) : {};
+  }
+  // send your input up to tick upTo: every tick once, in order, one message for all of them
+  sendOnline(upTo) {
+    const lk = this.lk;
+    if (lk.sent >= upTo) return;
+    const k0 = lk.sent + 1, b = [];
+    while (lk.sent < upTo) {
+      const t = ++lk.sent, it = this.onlineIntent();
+      lk.mine.set(t, it);
+      b.push(intentDelta(lk.last, it));
+      lk.last = it;
+      this.ageOnline(DT);
+    }
+    if (!lk.offline) this.online.net.send({ t: 'in', k: k0, g: this.online.game, b });
+  }
+  // how much further ahead than the game's delay your input goes out: the more your frames or your connection need
+  setExtra() { const lk = this.lk; lk.extra = Math.min(6, Math.max(lk.frameExtra, lk.netExtra)); }
+  // a PC whose frames come slowly (the slowest one in ten over the last second) sends its input further ahead: up at
+  // once, back down after a few steady seconds
+  paceOnline(dt) {
+    const lk = this.lk, g = this.game;
+    lk.fms.push(dt * 1000);
+    if (lk.fms.length < 60) return;
+    const s = lk.fms.sort((a, b) => a - b), p90 = s[Math.floor(s.length * 0.9)];
+    lk.fms = [];
+    const tickMs = DT * 1000 / (g.speed || 1);
+    const want = Math.max(0, Math.min(4, Math.ceil((p90 - 25) / tickMs)));
+    if (want > lk.frameExtra) { lk.frameExtra = want; lk.lowFor = 0; }
+    else if (want < lk.frameExtra) { if (++lk.lowFor >= 3) { lk.frameExtra--; lk.lowFor = 0; } }
+    else lk.lowFor = 0;
+    this.setExtra();
+  }
+  // another screen waited ms on your inputs in the 2 s up to tick k: past 100 ms (5% of the time), yours go out a tick
+  // further ahead (once a window, however many screens say so; 4 at most); see calmOnline for the way back down
+  lateReport(k, ms) {
+    const lk = this.lk;
+    if (typeof k !== 'number') return;
+    lk.lateWin.set(k, Math.max(lk.lateWin.get(k) || 0, ms));
+    if (ms > 100 && k > lk.raisedAt) { lk.raisedAt = k; lk.netExtra = Math.min(4, lk.netExtra + 1); lk.calm = 0; this.setExtra(); }
+  }
+  // at each state check: a window nobody waited on you for more than a blink in (the one before last: everyone's said by
+  // then) counts toward coming back down a tick, three in a row (6 s): the delay is never more than it has to be
+  calmOnline(k) {
+    const lk = this.lk, v = lk.lateWin.get(k - 240) || 0;
+    for (const t of lk.lateWin.keys()) if (t <= k - 240) lk.lateWin.delete(t);
+    if (v > 25) { lk.calm = 0; return; }
+    if (++lk.calm >= 3) { lk.calm = 0; if (lk.netExtra > 0) { lk.netExtra--; this.setExtra(); } }
   }
   // after a tick's input is sent: presses the game has used are gone, the rest age (as ageInput)
   ageOnline(dt) {
@@ -537,11 +622,25 @@ export class MatchSession {
     const g = this.game, lk = this.lk, net = this.online.net, spec = this.spectate;
     if (this.visuals.some(v => v.pending)) { this.render(0); return; } // (everyone's athlete is built before the tip)
     this.timeScale = 1; this.slowT = 0;
-    this.acc = Math.min(this.acc + Math.min(0.1, dt) * (g.speed || 1), DT * 12); // (after a wait: catch up, a few ticks a frame)
-    // watching a game you came to late: its first minute plays through quickly until you're with everyone else
-    let cap = 8;
-    if (spec && lk.maxK - g.tick > 12 && !g.over) { cap = Math.min(90, lk.maxK - g.tick - 4); this.acc = Math.max(this.acc, cap * DT); }
+    const fdt = Math.min(0.1, dt) * (g.speed || 1);
+    let cap;
+    if (spec) {
+      // watching: a steady few ticks behind the newest input (they come in bundles, ten a second), a little faster or
+      // slower to stay there; a game you came to late plays through quickly until you're with everyone else
+      const ahead = lk.maxK - g.tick;
+      lk.buf = lk.buf == null ? ahead : lk.buf * 0.92 + ahead * 0.08;
+      if (ahead > 30 && !g.over) { cap = Math.min(90, ahead - 12); this.acc = Math.max(this.acc, cap * DT); }
+      else { cap = 8; this.acc = Math.min(this.acc + fdt * Math.max(0.9, Math.min(1.15, 1 + (lk.buf - 13) * 0.02)), DT * 12); }
+    } else {
+      this.acc = Math.min(this.acc + fdt, DT * 12); // (after a wait: catch up, a couple of ticks more a frame)
+      cap = Math.min(8, Math.ceil(fdt / DT) + 2);
+      this.paceOnline(dt);
+      // (slow frames hold everyone up: lighter graphics until they're quick again, unless you'd rather not)
+      if (settings.adaptiveGfx !== false && this.r?.govern?.(dt)) this.hud.pushFeed('Frames running slow: lighter graphics for now to keep the game smooth');
+    }
     if (!this.paused && !spec) this.captureInput();
+    // your input goes out first: up to the tick this frame gets to, plus the delay (on time even while we wait)
+    if (!spec && !g.over && !lk.lost) this.sendOnline(g.tick + Math.floor(this.acc / DT + 1e-9) + lk.D + lk.extra);
     let steps = 0;
     const evs = this.frameEvents = [];
     let waiting = null;
@@ -551,18 +650,10 @@ export class MatchSession {
         this.acc -= DT; steps++; continue;
       }
       const k = g.tick + 1;
-      // our input for tick k + delay goes out once, when we reach tick k
-      if (!spec) {
-        while (lk.sent < k + lk.D) {
-          const t = ++lk.sent, it = this.onlineIntent();
-          lk.mine.set(t, it);
-          if (!lk.offline) net.send({ t: 'in', k: t, g: this.online.game, i: it });
-          this.ageOnline(DT);
-        }
-      }
+      if (!spec && lk.sent < k + lk.D) this.sendOnline(k + lk.D); // (never short: the game can't run past what's gone out)
       for (const [id, at] of lk.drops) if (k >= at) { g.dropHuman(id); lk.drops.delete(id); }
       const miss = this.missingFor(k);
-      if (miss.length) { waiting = miss; break; }
+      if (miss.length) { waiting = miss; if (!steps) lk.stalls++; if (lk.needK !== k) { lk.needK = k; lk.needAt = performance.now(); } break; }
       const theirs = lk.theirs.get(k);
       for (const id of lk.humans) {
         if (!g.players[id].human) continue;
@@ -579,7 +670,12 @@ export class MatchSession {
           const h = g.stateHash();
           lk.hashes.set(k, h);
           if (lk.hashes.size > 30) lk.hashes.delete(lk.hashes.keys().next().value);
-          net.send({ t: 'hash', k, h });
+          // (with how long this screen waited on each of the others since the last one: lateReport)
+          const w = {};
+          for (const [id, ms] of lk.waitBy) if (ms >= 1) w[id] = Math.round(ms);
+          lk.waitBy.clear();
+          net.send({ t: 'hash', k, h, w });
+          this.calmOnline(k);
           const ph = lk.peerHash.get(k);
           if (ph) { lk.peerHash.delete(k); if (ph.h !== h) this.desync(ph); }
         }
@@ -626,11 +722,16 @@ export class MatchSession {
     this.ballMesh.visible = this.ballBlob.visible = !this.inIntro;
     M.m4fromYaw(this.ballBlob.matrix, bx, 0.011, bz, 0, Math.max(0.12, 0.42 - by * 0.06));
     const ballW = { x: bx, y: by, z: bz };
+    // (qp3 perf: a background game at the park poses its players only when they can be seen: ParkHub.animDt)
+    const cull = this.background && this.animDt;
     for (let i = 0; i < g.players.length; i++) {
       const p = g.players[i], v = this.visuals[i];
       const x = M.lerp(p.prevX, p.x, alpha) + ox, z = M.lerp(p.prevZ, p.z, alpha) + oz, y = M.lerp(p.prevY, p.y, alpha);
       const f = M.angleLerp(p.prevFacing, p.facing, alpha);
-      v.anim.update(dt * this.timeScale, { x, y, z, facing: f }, p, this.gameProxy(), ballW);
+      const k = cull ? this.animDt(v, dt * this.timeScale, x, z) : dt * this.timeScale;
+      if (cull) { v.setCulled(k < 0); if (k < 0) continue; }
+      if (k > 0) v.anim.update(k, { x, y, z, facing: f }, p, this.gameProxy(), ballW);
+      else v.view.move?.(x, y, z, f);
       v.setStatus(p.hot, p.cold, dt);
       v.place(x, y, z);
       // squeaks on hard plants
@@ -638,8 +739,9 @@ export class MatchSession {
       this.lastPlant.set(p.id, p.plantT > 0);
     }
     if (!this.background) this.defArrows(dt, alpha);
-    // hoops (rim shake + nets) — pass ball in world coords
-    for (const h of this.court.hoops) h.update(dt * this.timeScale, ballW);
+    // hoops (rim shake + nets) — pass ball in world coords (a background court's only while it can be seen)
+    const hk = cull ? this.animDt(this.court, dt * this.timeScale, this.court.origin[0], this.court.origin[2], this.court.full ? 17 : 14) : dt * this.timeScale;
+    if (hk > 0) for (const h of this.court.hoops) h.update(hk, ballW);
     if (this.venue.update && !this.opts.hub) this.venue.update(dt, { ball: ballW, phase: g.phase, over: g.over, events: this.frameEvents || [] });
     this.frameEvents = null;
     if (this.background) return;
@@ -1091,6 +1193,7 @@ export class MatchSession {
   dispose() {
     if (this.disposed) return; // the park can finish a court's game from two places in one frame
     this.disposed = true;
+    if (this.online && !this.spectate) this.r?.resetGovern?.(); // (qp3 perf: the next game starts at full graphics)
     for (const v of this.visuals) v.dispose();
     this.scene.remove(this.ballMesh);
     this.scene.remove(this.ballBlob);

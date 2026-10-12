@@ -16,6 +16,8 @@ const DEFAULTS = {
   greens: 'all',
   // v0.4.7.5 quick patch: the defensive assignment arrows (you and the man you should be guarding)
   defArrows: true,
+  // v0.4.7.5 qp3 perf: an online game whose frames run slow draws a little lighter until they're quick again
+  adaptiveGfx: true,
 };
 export const settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* private mode */ }

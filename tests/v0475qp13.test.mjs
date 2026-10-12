@@ -29,18 +29,19 @@ test('online: where you are, its people, courts and games come from the hosted g
   n.receive({ t: 'courts', place: 'brick', courts: {} }); // (another park's: not ours)
   assert.ok(n.court(2));
   assert.deepEqual(seen, ['people:here', 'courts', 'people:pentry', 'people:gone']);
-  // a game here starts while you walk around: its first inputs come before the watch, the rest after
-  n.receive({ t: 'in', s: 0, k: 4, g: 7, i: { mx: 1 } });
-  n.receive({ t: 'watch', setup: { game: 7 }, log: [[0, 2, {}], [0, 3, { mz: 1 }]] });
-  n.receive({ t: 'in', s: 0, k: 5, g: 7, i: {} });
-  const got = [];
-  const off = n.attachWatch(7, m => got.push(m.k));
-  n.receive({ t: 'in', s: 0, k: 6, g: 7, i: {} });
-  assert.deepEqual(got.sort((a, b) => a - b), [2, 3, 4, 5, 6]);
+  // a game here starts while you walk around: its first inputs come before the watch, the rest after (qp3 perf: a
+  // watcher's come in bundles, 'inw'; the game so far is one too)
+  n.receive({ t: 'inw', g: 7, m: [[0, 4, [0]]] });
+  n.receive({ t: 'watch', setup: { game: 7 }, log: [[0, 1, [{}, 0]], [0, 3, [{ mz: 1 }]]] });
+  n.receive({ t: 'inw', g: 7, m: [[0, 5, [0]]] });
+  const got = [], ticks = m => (m.t === 'inw' ? m.m.flatMap(([, k, b]) => b.map((_, i) => k + i)) : [m.k]);
+  const off = n.attachWatch(7, m => got.push(...ticks(m)));
+  n.receive({ t: 'inw', g: 7, m: [[0, 6, [0]]] });
+  assert.deepEqual(got, [1, 2, 3, 4, 5, 6], 'the game so far first, then the rest, in order');
   off();
   // your own game's messages still go to your game
   n.receive({ t: 'start', setup: { game: 8 } });
-  n.receive({ t: 'in', s: 1, k: 4, g: 8, i: {} });
+  n.receive({ t: 'in', s: 1, k: 4, g: 8, b: [0] });
   assert.deepEqual(n.inbox.map(m => m.k), [4]);
   // squads and crews
   n.receive({ t: 'hello', you: { id: 'a', username: 'me' }, friends: [] });
@@ -122,4 +123,25 @@ test('online server: an https:// address is reached over wss (a friend\'s PC sta
   assert.equal(hubSocketUrl('https://game.example.com:8443'), 'wss://game.example.com:8443/api/ws');
   assert.equal(hubSocketUrl('203.0.113.7:8765'), 'ws://203.0.113.7:8765/api/ws');
   assert.match(src('client/js/core/netplay.js'), /new WebSocket\(this\.hub \? hubSocketUrl\(this\.hub\)/);
+});
+
+test('online squads: each player\'s AI squad mates are the squad\'s (tagged with whose), and AI keep their IQ in a setup', async () => {
+  const { squadAIPlayers, myAISquad } = await import('../client/js/ui/online.js');
+  const [x] = makeTeam(new RNG(9), 1, { catalog, level: 0.6 });
+  const world = { activeSquad: () => ['ai-3'], gameEntry: () => ({ ...x, aiId: 'ai-3', iq: 0.81, number: 23, tier: 'elite' }) };
+  const n = new Net();
+  n.receive({ t: 'hello', you: { id: 'me', username: 'me' }, friends: [] });
+  n.receive({ t: 'squad-entries', entries: {}, ai: { b: [{ id: 'ai-9', name: 'Tariq', entry: { name: 'Tariq', build: x.build, iq: 0.45 } }] } });
+  const app = { net: n, ai: world, catalog };
+  const mine = myAISquad(app);
+  assert.deepEqual(mine.map(a => [a.id, a.entry.iq, a.entry.number, a.entry.aiId]), [['ai-3', 0.81, 23, undefined]], 'your AI squad goes out without your world\'s ids');
+  const all = squadAIPlayers(app, ['me', 'b']);
+  assert.deepEqual(all.map(p => [p.entry.sq.owner, p.entry.sq.id, p.entry.iq]), [['me', 'ai-3', 0.81], ['b', 'ai-9', 0.45]]);
+  const e = setupEntry(app, all[1].entry, false);
+  assert.equal(e.iq, 0.45, 'an AI plays with his own IQ online'); assert.deepEqual(e.sq, { owner: 'b', id: 'ai-9' });
+  // (people at the place carry their AI squad too)
+  n.receive({ t: 'pentry', id: 'c', username: 'cee', name: 'Cy', entry: { name: 'Cy' }, rtt: 40, ai: [{ id: 'ai-1', name: 'Q', entry: { build: x.build } }] });
+  assert.equal(n.aiOf('c')[0].id, 'ai-1'); assert.equal(n.people.get('c').rtt, 40);
+  const park = src('client/js/game/park.js');
+  for (const f of ['export class PeerFollower', 'mateAI(c, l)', 'followerSpot(f)', 'this.squadInGame']) assert.ok(park.includes(f), f);
 });
