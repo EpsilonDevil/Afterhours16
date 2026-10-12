@@ -26,10 +26,19 @@ REPO=${REPO:-https://github.com/EpsilonDevil/Afterhours16}
 BRANCH=${BRANCH:-main}
 ENVF=/etc/afterhours16.env
 PORT=8765
-export DEBIAN_FRONTEND=noninteractive HOME=${HOME:-/root}
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a HOME=${HOME:-/root}
 
 say() { printf '\n== %s\n' "$*"; }
-apt_() { apt-get -o DPkg::Lock::Timeout=600 -y "$@"; }  # (waits for Ubuntu's own updates on a new machine)
+apt_() { apt-get -o DPkg::Lock::Timeout=1800 -y "$@"; }  # (waits for Ubuntu's own updates on a new machine)
+# a new Ubuntu machine installs its own updates first (5-20 minutes on a small one): wait for them quietly, and keep
+# its update timers from starting another round until the setup is done
+wait_for_updates() {
+  local n=0
+  while pgrep -x unattended-upgr >/dev/null || pgrep -f apt.systemd.daily >/dev/null || pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null; do
+    if [ $((n % 60)) = 0 ]; then echo "Waiting for Ubuntu's own updates to finish ($((n / 60)) min so far; this is normal)..."; fi
+    n=$((n + 5)); sleep 5
+  done
+}
 die() { printf '\n!! %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "Run this as root (sudo)."
 
@@ -42,7 +51,7 @@ JOIN_CODE=${JOIN_CODE:-${AFTERHOURS16_JOIN_CODE:-}}
 DOMAIN=${DOMAIN:-${AFTERHOURS16_DOMAIN:-}}
 EMAIL=${EMAIL:-${AFTERHOURS16_EMAIL:-}}
 if [ -z "$JOIN_CODE" ] || [ "$JOIN_CODE" = "change-me" ]; then
-  JOIN_CODE="hoops-$(tr -dc '0-9' </dev/urandom | head -c 4)"
+  JOIN_CODE="hoops-$(printf '%04d' $((RANDOM % 10000)))"
   say "No join code given: using $JOIN_CODE (change it any time: afterhours16 joincode NEWCODE)"
 fi
 [[ "$JOIN_CODE" =~ ^[A-Za-z0-9._-]{4,64}$ ]] || die "The join code can only have letters, digits, - _ and . (4 to 64 of them)."
@@ -61,6 +70,9 @@ say "Setting up the Afterhours 16 online server at $URL"
 
 # ---- packages ----
 say "Packages"
+systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+trap 'systemctl start apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true' EXIT
+wait_for_updates
 apt_ update
 apt_ install git python3 curl ca-certificates gnupg ufw unattended-upgrades openssl
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || die "Python 3.10 or newer is needed."
