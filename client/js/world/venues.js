@@ -1059,7 +1059,7 @@ function buildHQ(r, scene, theme, opts) {
     g.fillStyle = cc; g.fillRect(0, 0, Wc, 86);
     g.fillStyle = ink; g.font = '900 48px "Arial Black", Impact, sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'left';
     g.fillText(`${tag}  ${name}`.slice(0, 30), 30, 45);
-    g.textAlign = 'right'; g.font = font(700, 28); g.fillText(`${d.rows.length}/39 · ${d.online || 0} ON NOW`, Wc - 30, 45);
+    g.textAlign = 'right'; g.font = font(700, 28); g.fillText(`${d.rows.length}/${d.max || 39} · ${d.online || 0} ON NOW`, Wc - 30, 45);
     g.textAlign = 'left';
     if (!d.rows.length) { g.fillStyle = '#c9ced6'; g.font = font(700, 32); g.fillText('No members yet — add friends from the crew menu.', 40, 200); }
     const per = 9, colW = (Wc - 60) / 2;
@@ -1067,7 +1067,7 @@ function buildHQ(r, scene, theme, opts) {
       const x = 30 + Math.floor(i / per) * colW, y = 122 + (i % per) * 48;
       g.fillStyle = m.online ? '#3ddc84' : '#4a4f57'; g.beginPath(); g.arc(x + 12, y, 9, 0, Math.PI * 2); g.fill();
       g.fillStyle = m.online ? '#f4f1ea' : '#9aa3ad'; g.font = font(700, 27); g.fillText(m.name.slice(0, 18), x + 32, y);
-      g.textAlign = 'right'; g.fillStyle = '#c9ced6'; g.font = font(600, 23); g.fillText(`${m.ovr} ${m.pos} · ${fmt(m.xp)} XP`, x + colW - 24, y); g.textAlign = 'left';
+      g.textAlign = 'right'; g.fillStyle = '#c9ced6'; g.font = font(600, 23); g.fillText(`${m.ovr} ${m.pos}${m.xp != null ? ` · ${fmt(m.xp)} XP` : ''}`, x + colW - 24, y); g.textAlign = 'left';
     });
     if (d.rows.length > per * 2) { g.fillStyle = '#9aa3ad'; g.font = font(600, 22); g.fillText(`+${d.rows.length - per * 2} more in the crew menu`, 40, Hc - 24); }
     ctx.updateTexture(mb.tex, mb.cvs);

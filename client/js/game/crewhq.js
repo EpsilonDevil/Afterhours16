@@ -4,6 +4,9 @@
 // 5-on-5 on the main court once at least four crew members are on (you and four of them against the next ones
 // on, topped up with regulars). Crew runs are practice: no VC, Rep or crew XP. Interior customization and
 // level rewards are coming soon.
+// v0.4.7.5 qp3 online: a crew brought online (ui/online.js) has its real members here too: they walk in from their own
+// game, run 5-on-5 with you (together against the next ones on, or against each other), and watch each other's runs.
+// A friend's crew you play in has its HQ for you as well (opts.online: no AI members of yours in it).
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
 import { HQ, courtPlayRect } from '../world/themes.js';
@@ -12,7 +15,8 @@ import { resolveLook } from '../sim/bots.js';
 import { PlayerVisual, MatchSession } from './session.js';
 import { GAME_SPEED } from '../sim/game.js';
 import { VisualPool } from './vispool.js';
-import { badgeTiers } from './park.js';
+import { badgeTiers, Peers } from './park.js';
+import { personOf, setupEntry, seatPeople, inputDelay, newSeed } from '../ui/online.js';
 import { promptGlyph } from '../core/input.js';
 import { RNG } from '../core/rng.js';
 import { audio } from '../core/audio.js';
@@ -83,7 +87,7 @@ class Member {
     }
     p.move(dt * GAME_SPEED, false, 0); // (v0.4.7.5: the same pace as in a game)
     for (const s of this.hq.venue.solids) pushOut(p, s);
-    if (this.hq.session) pushOut(p, this.hq.mainRect);
+    if (this.hq.session || this.hq.live) pushOut(p, this.hq.mainRect);
     if (this.hq.practice) pushOut(p, this.hq.sideRect);
     const b = HQ.bounds; p.x = M.clamp(p.x, b.x0, b.x1); p.z = M.clamp(p.z, b.z0, b.z1);
     p.stamina = 1;
@@ -97,10 +101,17 @@ class Member {
   dispose() { this.visual.dispose(); }
 }
 
+// a crew's level as the boards show it, from its level and XP (server/crew.py level_floor)
+const floorOf = n => (n <= 1 ? 0 : Math.round(2500 * (n - 1) ** 1.75));
+const levelOf = (level, xp) => ({ level, xp, floor: floorOf(level), next: level < 40 ? floorOf(level + 1) : null });
+
 export class CrewHQ {
-  constructor(app, ui, from) {
+  constructor(app, ui, from, opts = {}) {
     this.app = app; this.ui = ui; this.from = from; this.r = app.renderer;
-    this.crew = app.crew;
+    // (a friend's online crew: its name, colors and level; its members are the real ones)
+    this.onlineCrew = opts.online || null;
+    this.crew = this.onlineCrew ? { name: this.onlineCrew.name, tag: this.onlineCrew.tag, color: this.onlineCrew.color, level: levelOf(this.onlineCrew.level, this.onlineCrew.xp), members: [] } : app.crew;
+    this.peers = new Peers(this);
     this.scene = new Scene();
     this.venue = buildVenue(this.r, this.scene, 'hq', { crew: this.crew });
     // the walls keep the roam camera inside the building
@@ -134,9 +145,33 @@ export class CrewHQ {
     this.r.prewarm(this.scene);
   }
 
+  // ---------- v0.4.7.5 qp3 online: the real crew members here ----------
+  // where this HQ is for the hosted game: the online crew's (a friend's, or yours once it's online); null = just yours
+  placeKey() {
+    const net = this.app.net;
+    if (this.onlineCrew) return `hq:${this.onlineCrew.id}`;
+    return net?.connected && net.crew && net.crew.founder === net.myId ? `hq:${net.myId}` : null;
+  }
+  netHere() { const n = this.app.net, k = this.placeKey(); return n && n.connected && k && n.place === k ? n : null; }
+  // the other real people in the HQ right now: [{id, username, entry, rtt}]
+  realHere() { const net = this.netHere(); return net ? [...net.people.keys()].map(id => personOf(this.app, id)).filter(p => p?.entry) : []; }
+  onPeerPos(m) { if (!this.liveSetup?.slots?.[m.from] && !this.onlineGame?.slots?.[m.from]) this.peers.pos(m); }
+  onPeople(m) { this.peers.people(m); this.boardT = Math.min(this.boardT, 0.5); }
+  clearPeers() { this.peers.clear(); }
+  onCrew() {
+    const net = this.app.net;
+    if (this.onlineCrew) {
+      if (!net.crew || net.crew.id !== this.onlineCrew.id) { this.ui.toast('You\'re not in that crew any more.', 'error'); if (this.mode === 'roam') this.ui.exit(this); return; }
+      this.onlineCrew = net.crew;
+      this.crew = { ...this.crew, name: net.crew.name, tag: net.crew.tag, color: net.crew.color, level: levelOf(net.crew.level, net.crew.xp) };
+    }
+    this.boardT = Math.min(this.boardT, 0.5);
+  }
+
   // ---------- who's here ----------
-  // crew members online right now, best players first
+  // crew members online right now, best players first (your AI members; a friend's crew has none of yours)
   onlineIds(t = Date.now()) {
+    if (this.onlineCrew) return [];
     return (this.crew?.members || []).map(m => m.id).filter(id => this.world.online(id, t))
       .sort((a, b) => this.world.account(b).level - this.world.account(a).level);
   }
@@ -147,7 +182,7 @@ export class CrewHQ {
   freeSeat(s) { this.seatsTaken.delete(s); }
   slotFree(slot) {
     if (this.shooters.some(s => s.slot === slot)) return false;
-    return slot === 'main' ? !this.session : !this.practice;
+    return slot === 'main' ? !this.session && !this.live : !this.practice;
   }
   // people log on and off: whoever went offline walks out, new arrivals come in through the door
   sync(initial = false) {
@@ -190,11 +225,15 @@ export class CrewHQ {
     this.members.push(m);
   }
   refreshBoards() {
-    const cr = this.app.crew || this.crew;
+    const cr = this.onlineCrew ? this.crew : this.app.crew || this.crew;
     if (!cr) return;
-    const rows = cr.members.map(m => { const e = this.world.entry(m.id); return { name: e.name, ovr: e.build.overall, pos: e.build.position, xp: m.xp, online: this.world.online(m.id) }; })
+    const rows = (cr.members || []).map(m => { const e = this.world.entry(m.id); return { name: e.name, ovr: e.build.overall, pos: e.build.position, xp: m.xp, online: this.world.online(m.id) }; })
       .sort((a, b) => (b.online - a.online) || b.xp - a.xp);
-    this.venue.boards.members.set({ rows, online: rows.filter(r => r.online).length });
+    // (online: the crew's real members, on top)
+    const net = this.app.net, oc = this.onlineCrew || (net?.crew?.founder === net?.myId ? net?.crew : null);
+    const real = (oc?.members || []).filter(m => m.id !== net?.myId || this.onlineCrew).map(m => { const [ovr, pos] = String(m.char || '').split(' '); return { name: m.name || m.username, ovr: ovr || '', pos: pos || '', xp: null, online: !!m.online }; });
+    const all = [...real.sort((a, b) => b.online - a.online), ...rows];
+    this.venue.boards.members.set({ rows: all, online: all.filter(r => r.online).length, max: this.onlineCrew ? 40 : 39 });
     this.venue.boards.levels.set({ level: cr.level });
   }
 
@@ -203,6 +242,10 @@ export class CrewHQ {
     const inp = this.app.input;
     if (this.pool.pending) this.pool.tick();
     for (const s of this.shooters) s.session.frame(dt);
+    this.peers.frame(dt);
+    // v0.4.7.5 qp3 online: a run you're watching from the sideline
+    if (this.live) { this.live.frame(dt); if ((this.live.ended && this.live.endT > 2.5) || (this.liveEndAt && performance.now() - this.liveEndAt > 6000)) this.dropWatch(); }
+    if (this.awaitStart && performance.now() - this.awaitStart > 8000) this.startFailed();
     for (const m of this.members) { m.update(dt); if (!m.gone) m.render(dt); }
     if (this.members.some(m => m.gone)) { for (const m of this.members) if (m.gone) m.dispose(); this.members = this.members.filter(m => !m.gone); }
     if ((this.syncT -= dt) <= 0) { this.syncT = 20; this.sync(); }
@@ -235,6 +278,8 @@ export class CrewHQ {
     me.x = M.clamp(me.x, b.x0, b.x1); me.z = M.clamp(me.z, b.z0, b.z1);
     for (const s of this.venue.solids) pushOut(me, s);
     for (const m of this.members) separate(me, m.p, !!m.seat);
+    for (const w of this.peers.list()) separate(me, w.p, true);
+    if (this.live) for (const p of this.live.game.players) separate(me, { x: p.x + this.main.origin[0], z: p.z + this.main.origin[2], phys: p.phys }, true);
     for (const s of this.shooters) { const p = s.session.game.players[0], [ox, , oz] = s.session.origin; separate(me, { x: p.x + ox, z: p.z + oz, phys: p.phys }, true); }
     place();
     this.rig.updateRoam(dt, me, inp, b, this.camSolids);
@@ -243,14 +288,19 @@ export class CrewHQ {
     const E = promptGlyph(inp, 'E', 'A'), go = inp.wasPressed('interact');
     const near = (x, z, r) => Math.hypot(me.x - x, me.z - z) < r;
     this.prompt = '';
-    const tb = HQ.table, on = this.onlineIds().length;
+    const tb = HQ.table, on = this.onlineIds().length, real = this.realHere().length;
     if (near(HQ.door.x, HQ.door.z + 0.9, 1.9)) { this.prompt = `${E} Back to the park`; if (go) this.ui.exit(this); }
     else if (Math.abs(me.x - (HQ.board.x - 1.7)) < 1.6 && Math.abs(me.z - HQ.board.z) < 3.2) { this.prompt = `${E} Crew menu · members, levels, name and colors`; if (go) this.ui.openCrewMenu(this); }
     else if (near(HQ.levels.x, HQ.levels.z + 1.5, 2.2)) { this.prompt = `${E} Crew levels`; if (go) this.ui.openCrewMenu(this); }
     else if (near(HQ.custom.x, HQ.custom.z + 2.2, 2.8)) { this.prompt = `${E} Customize the HQ · coming soon`; if (go) this.ui.toast('Crew HQ interior customization is coming soon: furniture, trophies, lighting and more.'); }
     else if (Math.abs(me.x - tb.x) < 2 && Math.abs(me.z - tb.z) < 3.8) {
-      this.prompt = on >= RUN_MIN ? `${E} Run 5-on-5 · ${on} crew member${on > 1 ? 's' : ''} on` : `5-on-5 needs ${RUN_MIN} crew members on · ${on} on now`;
-      if (go) { if (on >= RUN_MIN) this.startRun(); else this.ui.toast(`You need ${RUN_MIN} crew members online to run 5-on-5 (${on} on now). Add more friends to the crew, or come back when more of them are on.`, 'error'); }
+      // (online: with real crew members here, the run is theirs too)
+      if (this.live) this.prompt = 'A run is on · watch it from the sideline';
+      else if (real) { this.prompt = `${E} Run 5-on-5 · ${real + 1} of you here${on ? ` · ${on} more crew on` : ''}`; if (go) this.ui.pickRun(this); }
+      else {
+        this.prompt = on >= RUN_MIN ? `${E} Run 5-on-5 · ${on} crew member${on > 1 ? 's' : ''} on` : `5-on-5 needs ${RUN_MIN} crew members on · ${on} on now`;
+        if (go) { if (on >= RUN_MIN) this.startRun(); else this.ui.toast(`You need ${RUN_MIN} crew members online to run 5-on-5 (${on} on now). Add more friends to the crew, or come back when more of them are on.`, 'error'); }
+      }
     } else if (near(HQ.rack.x, HQ.rack.z, 2.3) || near(this.side.origin[0], 6, 4)) { this.prompt = `${E} Shoot around`; if (go) this.startPractice(); }
     if (inp.wasPressed('celebrate') && !me.action) me.startAction('celebrate', 1.6, { kind: this.app.catalog[this.char.equipment?.celebration]?.anim || 'flex' });
     if (me.action) { me.action.t += dt; if (me.action.t > me.action.dur) me.action = null; }
@@ -320,10 +370,11 @@ export class CrewHQ {
   // after the final: run it back with whoever's still on, or back to the floor
   endRun(again = false) {
     if (this.session) { this.session.dispose(); this.session = null; }
-    const ids = this.run?.ids || [];
-    this.run = null;
+    const ids = this.run?.ids || [], wasOnline = !!this.onlineGame;
+    this.run = null; this.onlineGame = null;
     this.app.mode = 'park';
     music.duck(false);
+    if (again && wasOnline && this.realHere().length) { this.startOnlineRun(this.lastSplit); return; }
     if (again && this.onlineIds().length >= RUN_MIN) { this.startRun(); return; }
     // the crew members who played walk off the court; regulars head home
     const crewIds = new Set((this.crew.members || []).map(m => m.id));
@@ -338,12 +389,14 @@ export class CrewHQ {
     this.app.hud.show(false);
     this.ui.backToRoam(this);
   }
-  async forfeitMyGame() { this.ui.toast('You left the run.'); this.endRun(false); }
+  async forfeitMyGame() { if (this.onlineGame) this.app.net?.send({ t: 'quit' }); this.ui.toast('You left the run.'); this.endRun(false); }
   get mySession() { return this.session; }
 
   onFocusLost() { if (this.mode === 'match' && this.session && !this.session.ended && !this.session.paused && !this.app.modalOpen()) this.ui.pauseGame(this); }
   deactivate() { }
   dispose() {
+    this.peers.clear();
+    if (this.live) this.live.dispose();
     for (const m of this.members) m.dispose();
     for (const s of this.shooters) s.session.dispose();
     if (this.session) this.session.dispose();
@@ -352,6 +405,96 @@ export class CrewHQ {
     this.pool.dispose();
   }
 }
+
+// ---------------- v0.4.7.5 qp3 online: crew runs with the real members here ----------------
+Object.assign(CrewHQ.prototype, {
+  // split: real people on both sides (against each other); otherwise all of you together against the next ones on.
+  // Open spots: your AI crew members who are on, then regulars. Crew runs are practice: no tickets, nothing paid.
+  startOnlineRun(split = false) {
+    const app = this.app, net = this.netHere();
+    if (!net || this.mode !== 'roam') return;
+    this.lastSplit = split;
+    const people = [personOf(app, net.myId), ...this.realHere()].filter(p => p?.entry).slice(0, 10);
+    const sides = [[], []];
+    people.forEach((p, i) => { const t = split ? i % 2 : (sides[0].length < 5 ? 0 : 1); sides[t].push({ entry: p.entry, person: p }); });
+    const seed = newSeed(), used = new Set(), ai = this.onlineIds();
+    const lvl = 0.55 + 0.1 * (app.settings?.difficulty ?? settings.difficulty ?? 0.6);
+    for (const t of [0, 1]) {
+      while (sides[t].length < 5) {
+        let id = ai.find(x => !used.has(x));
+        if (!id) id = this.world.pick({ level: lvl, exclude: used, key: `hqol${seed}-${t}-${sides[t].length}` });
+        used.add(id); sides[t].push({ entry: this.world.gameEntry(id) });
+      }
+    }
+    const cc = this.crew.color, other = contrastColor(cc);
+    const uni = (color, trim, abbr) => ({ top: { family: 'jersey', color, trim, secondary: trim, pattern: 'panel', lettering: abbr, tucked: true }, bottom: { family: 'shorts', color, trim, stripe: trim } });
+    const myU = uni(cc, other, this.crew.tag), opU = uni(other, cc, split ? this.crew.tag : 'RUN');
+    const map = new Map();
+    const rosters = sides.map((side, t) => side.map((x, i) => {
+      const e = setupEntry(app, x.entry, !!x.person, x.person?.username);
+      e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...(t ? opU : myU), number: e.build.appearance?.number ?? (i * (t ? 9 : 7) + (t ? 11 : 3)) % 50, name: e.name });
+      if (x.person) map.set(e, x.person);
+      return e;
+    }));
+    const { slots, names, meter } = seatPeople(rosters, map);
+    const nm = t => (split ? `${sides[t][0].person?.username || 'Crew'}'s five` : t ? 'Crew Run' : this.crew.name);
+    const setup = {
+      kind: 'hq', where: this.placeKey(), court: null, format: 5, full: true, seed, rosters, slots, names, meter,
+      teams: [{ name: nm(0), abbr: this.crew.tag, color: cc }, { name: nm(1), abbr: split ? 'RUN' : 'RUN', color: other }],
+      delay: inputDelay(people.map(p => p.rtt)), target: 21, difficulty: settings.difficulty ?? 0.6,
+    };
+    this.mode = 'starting'; this.awaitStart = performance.now();
+    net.send({ t: 'start', setup });
+  },
+  startFailed() { this.awaitStart = null; if (this.mode === 'starting' && !this.session) { this.mode = 'roam'; this.ui.toast('The run didn\'t start (the hosted game didn\'t answer).', 'error'); } },
+  onError() { if (this.awaitStart) this.startFailed(); },
+  readyForOnline() {
+    if (this.mode === 'practice') this.endPractice();
+    return this.mode === 'roam' || (this.mode === 'starting' && !!this.awaitStart) || (this.mode === 'match' && !!this.session?.ended);
+  },
+  async startOnlineGame(setup, local) {
+    const app = this.app;
+    this.awaitStart = null;
+    if (this.session) { this.session.dispose(); this.session = null; }
+    if (this.live) this.dropWatch(true);
+    for (const s of [...this.shooters]) if (s.slot === 'main') this.stopShooter(s);
+    for (const a of Object.keys(setup.slots || {})) this.peers.drop(a);
+    const rosters = structuredClone(setup.rosters);
+    for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
+    this.onlineGame = setup; this.run = { ids: [], online: true };
+    this.hideMe(true);
+    const aids = Object.fromEntries(Object.entries(setup.slots).map(([a, s]) => [s, a]));
+    this.session = new MatchSession(app, {
+      mode: 'park', full: true, hub: true, scene: this.scene, venue: this.venue, court: this.main, rosters, seed: setup.seed, teams: setup.teams,
+      target: setup.target, difficulty: setup.difficulty,
+      online: { net: app.net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, aids, onLost: () => { this.ui.toast('Lost the connection to the game service: you left the run.', 'error'); this.endRun(false); } },
+      onEnd: async (summary, s) => { const won = summary.winner === summary.me.team; await this.ui.runResults(this, summary, s, won, { online: true, again: this.realHere().length > 0 }); },
+    });
+    this.mode = 'match'; app.mode = 'match';
+    music.duck(true);
+    this.ui.matchStarted(this);
+    const others = Object.values(setup.names || {}).filter(n => n !== app.net?.you?.username);
+    app.hud.pushFeed(`Crew run with ${others.join(', ') || 'the crew'}`, 'good');
+  },
+  // a run you're not in: on the main court, from the sideline
+  watchGame(setup) {
+    if (setup.slots?.[this.app.net?.myId] != null || this.session) return;
+    if (this.live) this.dropWatch(true);
+    for (const s of [...this.shooters]) if (s.slot === 'main') this.stopShooter(s);
+    for (const a of Object.keys(setup.slots || {})) this.peers.drop(a);
+    const rosters = structuredClone(setup.rosters);
+    for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
+    this.liveSetup = setup; this.liveEndAt = 0;
+    this.live = new MatchSession(this.app, {
+      background: true, hub: true, pool: this.pool, mode: 'park', full: true, scene: this.scene, venue: this.venue, court: this.main, rosters, seed: setup.seed, teams: setup.teams,
+      target: setup.target, difficulty: setup.difficulty,
+      online: { net: this.app.net, local: -1, spectate: true, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: () => { this.liveEndAt = 1; } },
+    });
+    this.ui.toast(`${Object.values(setup.names || {}).join(', ')} ${Object.keys(setup.slots || {}).length > 1 ? 'are' : 'is'} running 5-on-5 on the main court.`);
+  },
+  endWatch(g) { if (this.liveSetup?.game === g && !this.liveEndAt) this.liveEndAt = performance.now(); },
+  dropWatch() { if (!this.live) return; this.live.dispose(); this.live = null; this.liveSetup = null; this.liveEndAt = 0; },
+});
 
 const tableSide = () => HQ.table.x - 1.3;
 // a jersey color that reads against the crew's

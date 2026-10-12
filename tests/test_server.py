@@ -346,7 +346,7 @@ class LegacySaveTests(unittest.TestCase):
             svc = server_app.Service(p, dev_accounts=False)
             try:
                 db = svc.db
-                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 10)
+                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 11)
                 self.assertEqual(db.query("SELECT balance FROM wallets")[0][0], 996500)
                 self.assertEqual(len(db.query("SELECT * FROM ledger WHERE kind='welcome_grant'")), 1)
                 self.assertEqual(db.query("SELECT item_id FROM inventory")[0][0], "jersey_coral")
@@ -360,7 +360,7 @@ class LegacySaveTests(unittest.TestCase):
             # reopening is a no-op
             svc = server_app.Service(p, dev_accounts=False)
             try:
-                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 10)
+                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 11)
             finally:
                 svc.close()
 

@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "client"
 CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json").read_text())}
 VENUES = json.loads((ROOT / "server/venues.json").read_text())
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
 VERSION = "0.4.7.5"
@@ -852,9 +852,9 @@ class Handler(BaseHTTPRequestHandler):
     # ---------------- v0.4.2: daily rewards wheel ----------------
     def crew_action(self, aid, data):
         s, db = self.service, self.service.db
-        builds.strict_keys(data, ("key", "action", "name", "tag", "color", "member"))
+        builds.strict_keys(data, ("key", "action", "name", "tag", "color", "member", "xp"))
         action = data.get("action")
-        if action not in ("create", "update", "add", "remove"):
+        if action not in ("create", "update", "add", "remove", "online_xp"):
             raise builds.Invalid("Unknown crew action.")
 
         def run(c):
@@ -870,6 +870,10 @@ class Handler(BaseHTTPRequestHandler):
                 cr = crew.new_crew(name, tag, color, now)
             elif not cr:
                 raise builds.Invalid("Start a crew first.")
+            elif action == "online_xp":
+                # qp3: crew XP your crew's real members earned in their own games (collected from the online hub)
+                xp = builds.integer(data.get("xp"), 1, 1_000_000, "XP")
+                cr["online_xp"] = cr.get("online_xp", 0) + xp
             elif action == "update":
                 try:
                     cr["name"], cr["tag"], cr["color"] = crew.validate_identity(data.get("name", cr["name"]), data.get("tag", cr["tag"]), data.get("color", cr["color"]))
@@ -1141,8 +1145,11 @@ class Handler(BaseHTTPRequestHandler):
                         char["progression"].setdefault("park", {})["streak"] = 0
                         c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), row["character_id"]))
             return self.respond(200, {"status": "cancelled", "reward": 0})
-        builds.strict_keys(data, ("key", "summary", "mates"))
+        builds.strict_keys(data, ("key", "summary", "mates", "crew_mates"))
         mates = data.get("mates") or []
+        crew_mates = data.get("crew_mates") or 0  # (qp3: real crew members who ran with you in an online game)
+        if not isinstance(crew_mates, int) or isinstance(crew_mates, bool) or not 0 <= crew_mates <= 4:
+            raise builds.Invalid("Invalid crew teammates.")
         if not isinstance(mates, list) or len(mates) > 4 or not all(isinstance(m, str) and progression.AI_ID.match(m) for m in mates):
             raise builds.Invalid("Invalid teammates.")
 
@@ -1190,7 +1197,7 @@ class Handler(BaseHTTPRequestHandler):
             cr = s.load_crew(c, aid) if row["mode"] in ("park", "proam") else None
             if cr and not summary["forfeit"]:
                 ids = {m["id"] for m in cr["members"]}
-                with_crew = any(m in ids for m in mates)
+                with_crew = any(m in ids for m in mates) or crew_mates > 0
                 before = crew.level_info(crew.total_xp(cr))
                 gain = crew.game_xp(rw["rep"], row["mode"], ticket["meta"].get("venue"), with_crew)
                 cr["user_xp"] = cr.get("user_xp", 0) + gain

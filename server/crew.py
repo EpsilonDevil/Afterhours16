@@ -194,7 +194,8 @@ def validate_identity(name, tag, color):
 
 
 def total_xp(crew):
-    return int(crew.get("user_xp", 0) + crew.get("former_xp", 0) + sum(m.get("xp", 0) for m in crew.get("members", [])))
+    # (qp3: online_xp is what the crew's real members earned in their own games, collected through the online hub)
+    return int(crew.get("user_xp", 0) + crew.get("former_xp", 0) + crew.get("online_xp", 0) + sum(m.get("xp", 0) for m in crew.get("members", [])))
 
 
 def settle(crew, world, friends, now=None):

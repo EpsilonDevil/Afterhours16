@@ -168,66 +168,148 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(a.call("/api/online/friend", {"username": "fr_ben", "action": "remove"})[0], 200)
         self.assertEqual(b.call("/api/online")[1]["friends"], [])
 
-    def test_rooms_invites_and_the_input_relay(self):
-        a, b, c = self.player("rm_host"), self.player("rm_mate"), self.player("rm_stranger")
-        a.call("/api/online/friend", {"username": "rm_mate", "action": "add"})
-        b.call("/api/online/friend", {"username": "rm_host", "action": "accept"})
-        self.assertEqual(a.connect(), 101)
-        hello = a.until("hello")
-        self.assertEqual(hello["you"]["username"], "rm_host")
-        self.assertEqual(b.connect(), 101)
-        mate_id = b.until("hello")["you"]["id"]
-        # presence: the host sees his friend come online, at a park
-        b.send({"t": "where", "name": "Mate Guy", "park": "harbor", "status": "park"})
-        f = a.until("friends", lambda m: m["friends"] and m["friends"][0].get("presence", {}).get("park") == "harbor")
-        self.assertTrue(f["friends"][0]["presence"]["online"])
-        a.send({"t": "where", "name": "Host Guy", "park": "harbor", "status": "park"})
-        # a stranger can't be invited or join
-        self.assertEqual(c.connect(), 101)
-        c.until("hello")
-        a.send({"t": "create"})
-        room = a.until("room", lambda m: m["room"])["room"]
-        a.send({"t": "invite", "to": "nobody"})
-        self.assertIn("friends", a.until("error")["text"])
-        c.send({"t": "join", "room": room["id"]})
-        self.assertIn("invite", c.until("error")["text"])
-        # invite, join, entries go to the host
-        a.send({"t": "invite", "to": mate_id})
-        inv = b.until("invite")
-        self.assertEqual((inv["room"], inv["username"], inv["park"]), (room["id"], "rm_host", "harbor"))
-        b.send({"t": "join", "room": inv["room"]})
-        r = a.until("room", lambda m: m["room"] and len(m["room"]["members"]) == 2)["room"]
-        self.assertEqual([m["username"] for m in r["members"]], ["rm_host", "rm_mate"])
-        self.assertEqual(r["members"][1]["park"], "harbor")
-        b.send({"t": "entry", "entry": {"name": "Mate Guy", "build": {"overall": 70}}})
-        ents = a.until("entries", lambda m: m["entries"])
-        self.assertEqual(ents["entries"][mate_id]["name"], "Mate Guy")
-        # only the host starts; the start goes to everyone with the game number
-        b.send({"t": "start", "setup": {"slots": {}}})
-        self.assertIn("host", b.until("error")["text"])
-        host_id = hello["you"]["id"]
-        a.send({"t": "start", "setup": {"seed": 7, "slots": {host_id: 0, mate_id: 1}}})
-        sa, sb = a.until("start"), b.until("start")
-        self.assertEqual(sa["setup"]["game"], 1)
-        self.assertEqual(sb["setup"]["seed"], 7)
-        # the relay: in order, stamped with the sender's slot; stale ticks and other games are dropped
-        for k in (5, 6, 6, 4, 7):
-            a.send({"t": "in", "k": k, "g": 1, "i": {"mx": k}})
-        a.send({"t": "in", "k": 9, "g": 2, "i": {}})
-        got = [b.until("in") for _ in range(3)]
-        self.assertEqual([(m["s"], m["k"], m["i"]["mx"], m["g"]) for m in got], [(0, 5, 5, 1), (0, 6, 6, 1), (0, 7, 7, 1)])
-        b.send({"t": "in", "k": 5, "g": 1, "i": {"mx": 1}})
-        self.assertEqual(a.until("in")["s"], 1)
-        # the host drops out mid-game: everyone gets the tick he's handed to the AI after, and the room is the mate's
-        a.close()
-        left = b.until("left")
-        self.assertEqual((left["slot"], left["last"], left["id"]), (0, 7, host_id))
-        r = b.until("room", lambda m: m["room"] and len(m["room"]["members"]) == 1)["room"]
-        self.assertEqual(r["host"], mate_id)
-        b.send({"t": "end", "g": 1})
-        self.assertEqual(b.until("room", lambda m: m["room"] and m["room"]["status"] == "lobby")["room"]["game"], 1)
+    def friends(self, *names):
+        """Accounts that are all friends with each other, connected, with hello read: [(client, id)]."""
+        cs = [self.player(n) for n in names]
+        for i, a in enumerate(cs):
+            for j in range(i + 1, len(cs)):
+                a.call("/api/online/friend", {"username": names[j], "action": "add"})
+                cs[j].call("/api/online/friend", {"username": names[i], "action": "accept"})
+        out = []
+        for c in cs:
+            self.assertEqual(c.connect(), 101)
+            out.append((c, c.until("hello")["you"]["id"]))
+        return out
+
+    def test_park_presence_squads_claims_games_and_kings(self):
+        (a, ida), (b, idb), (w, idw) = self.friends("pk_lead", "pk_mate", "pk_watch")
+        for c, n in ((a, "Lead"), (b, "Mate"), (w, "Watcher")):
+            c.send({"t": "entry", "entry": {"name": n, "build": {"overall": 70}}})
+        # everyone at the same park sees the others (with their player) and where they walk
+        a.send({"t": "where", "name": "Lead", "park": "harbor", "status": "park"})
+        here = a.until("here")
+        self.assertEqual((here["place"], here["players"], here["courts"]), ("harbor", [], {}))
+        b.send({"t": "where", "name": "Mate", "park": "harbor", "status": "park"})
+        self.assertEqual(b.until("here")["players"][0]["entry"]["name"], "Lead")
+        self.assertEqual(a.until("pentry")["id"], idb)
+        a.send({"t": "pos", "x": 1.5, "z": -2.25, "f": 0.5, "m": 3})
+        self.assertEqual({k: v for k, v in b.until("pos").items() if k != "t"}, {"from": ida, "x": 1.5, "z": -2.25, "f": 0.5, "m": 3})
+        # a squad: invite, accept; the member can't call next, the leader can, for both of them
+        a.send({"t": "sq-invite", "to": idb})
+        inv = b.until("sqinvite")
+        self.assertEqual((inv["from"], inv["park"]), (ida, "harbor"))
+        b.send({"t": "sq-accept", "from": ida})
+        sq = a.until("squad", lambda m: m["squad"] and len(m["squad"]["members"]) == 2)["squad"]
+        self.assertEqual((sq["leader"], [m["id"] for m in sq["members"]]), (ida, [ida, idb]))
+        self.assertEqual(b.until("squad-entries", lambda m: len(m["entries"]) == 2)["entries"][ida]["name"], "Lead")
+        b.send({"t": "claim", "court": 3, "spot": 0})
+        self.assertFalse(b.until("claimed")["ok"])
+        a.send({"t": "claim", "court": 3, "spot": 0})
+        self.assertTrue(a.until("claimed")["ok"])
+        cts = b.until("courts", lambda m: m["courts"].get("3", {}).get("lines", [None])[0])["courts"]
+        self.assertEqual(cts["3"]["lines"][0]["members"], [ida, idb])
+        # the watcher arrives: he sees the claim
+        w.send({"t": "where", "name": "Watcher", "park": "harbor", "status": "park"})
+        hw = w.until("here")
+        self.assertEqual(hw["courts"]["3"]["lines"][0]["leader"], ida)
+        self.assertEqual(sorted(p["id"] for p in hw["players"]), sorted([ida, idb]))
+        # the leader starts the game on that court: the players get it, the watcher gets it to watch; the claim's used
+        a.send({"t": "start", "setup": {"seed": 5, "kind": "park", "where": "harbor", "court": 3, "slots": {ida: 0, idb: 1}}})
+        g = a.until("start")["setup"]["game"]
+        self.assertEqual(b.until("start")["setup"]["game"], g)
+        busy = w.until("courts", lambda m: m["courts"]["3"]["busy"])["courts"]["3"]  # (the court's in use, then the game)
+        self.assertEqual((busy["busy"]["kind"], busy["lines"]), ("game", [None, None]))
+        self.assertEqual(w.until("watch")["setup"]["game"], g)
+        # inputs go to the other player and the watcher, in order; scores to the watcher
+        for k in (4, 5, 5, 6):
+            a.send({"t": "in", "k": k, "g": g, "i": {"mx": k}})
+        self.assertEqual([m["k"] for m in (b.until("in"), b.until("in"), b.until("in"))], [4, 5, 6])
+        self.assertEqual([m["k"] for m in (w.until("in"), w.until("in"), w.until("in"))], [4, 5, 6])
+        b.send({"t": "score", "score": [3, 1]})
+        self.assertEqual(w.until("courtscore")["score"], [3, 1])
+        # nobody in a game starts another
+        b.send({"t": "start", "setup": {"slots": {idb: 0}}})
+        self.assertIn("can't play", b.until("error")["text"])
+        # the end: the winners hold the court (the squad leader leads them); the watcher hears it's over
+        b.send({"t": "end", "g": g, "winners": [ida, idb]})
+        kings = a.until("courts", lambda m: m["courts"]["3"]["kings"])["courts"]["3"]["kings"]
+        self.assertEqual((kings["leader"], kings["members"], kings["streak"]), (ida, [ida, idb], 1))
+        self.assertEqual(w.until("watchend")["g"], g)
+        # a solo player's local game on another court: the court shows busy with its score, then he holds it
+        w.send({"t": "court", "court": 1, "busy": True, "score": [0, 0]})
+        self.assertEqual(a.until("courts", lambda m: (m["courts"].get("1") or {}).get("busy"))["courts"]["1"]["busy"]["kind"], "local")
+        w.send({"t": "court", "court": 1, "busy": False, "kings": True})
+        k1 = a.until("courts", lambda m: (m["courts"].get("1") or {}).get("kings"))["courts"]["1"]
+        self.assertEqual((k1["busy"], k1["kings"]["leader"]), (None, idw))
+        # a player who drops out mid-game: the others get the tick he's handed to the AI after
+        a.send({"t": "start", "setup": {"kind": "park", "where": "harbor", "court": 3, "slots": {ida: 0, idb: 1}}})
+        g2 = a.until("start")["setup"]["game"]
+        b.until("start")
+        b.send({"t": "in", "k": 9, "g": g2, "i": {}})
+        a.until("in")
         b.close()
-        c.close()
+        left = a.until("left")
+        self.assertEqual((left["slot"], left["last"], left["g"]), (1, 9, g2))
+        sq = a.until("squad")["squad"]  # (the squad broke up: he was the only other one)
+        self.assertIsNone(sq)
+        # the last player walks out of the game: the court's free and nobody holds it
+        a.send({"t": "quit"})
+        c3 = w.until("courts", lambda m: (m["courts"].get("3") or {}).get("busy") is None and not m["courts"]["3"]["kings"])["courts"]["3"]
+        self.assertEqual(c3["lines"], [None, None])
+        # leaving the park takes your claims and your court with you
+        w.send({"t": "claim", "court": 2, "spot": 1})
+        a.until("courts", lambda m: (m["courts"].get("2") or {}).get("lines", [None, None])[1])
+        w.send({"t": "where", "park": None, "status": "menu"})
+        self.assertEqual(a.until("gone", lambda m: m["id"] == idw)["place"], "harbor")
+        cts = a.until("courts", lambda m: not (m["courts"].get("2") or {}).get("lines", [0, 0])[1])["courts"]
+        self.assertIsNone(cts["1"]["kings"], "his court too")
+        a.close(); w.close()
+
+    def test_pro_am_challenges(self):
+        (a, ida), (b, idb) = self.friends("ch_one", "ch_two")
+        b.send({"t": "entry", "entry": {"name": "Two", "build": {"overall": 71}}})
+        a.send({"t": "challenge", "to": idb})
+        ch = b.until("challenge")
+        self.assertEqual((ch["from"], ch["size"]), (ida, 1))
+        b.send({"t": "challenge-reply", "from": ida, "ok": True})
+        go = a.until("challenge-go")["opp"]
+        self.assertEqual((go["leader"], go["members"], go["entries"][idb]["name"]), (idb, [idb], "Two"))
+        a.send({"t": "challenge", "to": idb})
+        b.until("challenge")
+        b.send({"t": "challenge-reply", "from": ida, "ok": False})
+        self.assertIn("passed", a.until("note", lambda m: "passed" in m["text"])["text"])
+        a.close(); b.close()
+
+    def test_online_crews(self):
+        (f, idf), (m, idm), (x, idx) = self.friends("cr_found", "cr_mem", "cr_other")
+        # the founder brings his crew (from his save) online, and adds a friend
+        f.send({"t": "crew-sync", "crew": {"name": "Night Shift", "tag": "NS", "color": "#2457c5", "level": 3, "xp": 9000}})
+        cr = f.until("crew")["crew"]
+        self.assertEqual((cr["id"], cr["name"], cr["level"], [p["id"] for p in cr["members"]]), (idf, "Night Shift", 3, [idf]))
+        m.send({"t": "crew-invite", "to": idx})
+        self.assertIn("founder", m.until("error")["text"])
+        f.send({"t": "crew-invite", "to": idm})
+        inv = m.until("crewinvite")
+        self.assertEqual(inv["crew"]["tag"], "NS")
+        m.send({"t": "crew-accept", "crew": inv["crew"]["id"]})
+        cr = m.until("crew", lambda q: q["crew"] and len(q["crew"]["members"]) == 2)["crew"]
+        self.assertEqual([p["id"] for p in cr["members"]], [idf, idm])
+        # a member can't bring a crew of his own online while he's in this one
+        m.send({"t": "crew-sync", "crew": {"name": "Other", "tag": "OT", "color": "#111111"}})
+        self.assertIn("leave it", m.until("crew-error")["text"])
+        # his games' crew XP waits for the founder's game to collect it
+        m.send({"t": "crewxp", "xp": 120})
+        m.send({"t": "crewxp", "xp": 99999})  # (out of range: ignored)
+        self.assertEqual(f.until("crew-pending")["xp"], 120)
+        f.send({"t": "crew-ack", "xp": 120})
+        m.send({"t": "crewxp", "xp": 30})
+        self.assertEqual(f.until("crew-pending")["xp"], 30)
+        # he leaves; the founder takes the crew offline
+        m.send({"t": "crew-leave"})
+        self.assertIsNone(m.until("crew", lambda q: q["crew"] is None)["crew"])
+        f.send({"t": "crew-leave"})
+        self.assertIsNone(f.until("crew", lambda q: q["crew"] is None)["crew"])
+        f.close(); m.close(); x.close()
 
     def test_your_own_copy_signs_in_on_the_socket_with_the_same_build(self):
         build = self.service.build

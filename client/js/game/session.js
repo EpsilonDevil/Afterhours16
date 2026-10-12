@@ -134,9 +134,11 @@ export class MatchSession {
     this.origin = this.court.origin;
     this.catalog = app.catalog;
     this.teams = opts.teams;
-    // v0.4.7.5 qp3 online play (lockstep): {net, local, delay, game, meter, names, onLost}. Every client runs this same
-    // game; each one sends its own player's input for a few ticks ahead (delay) and waits for everyone else's
+    // v0.4.7.5 qp3 online play (lockstep): {net, local, delay, game, meter, names, aids, onLost, spectate}. Every client
+    // runs this same game; each one sends its own player's input for a few ticks ahead (delay) and waits for everyone
+    // else's. spectate: watching it from the sideline (the same inputs, none of your own: local is -1)
     this.online = opts.online || null;
+    this.spectate = !!this.online?.spectate;
     this.game = new Game({
       mode: opts.mode, full: !!opts.full, seed: opts.seed, rosters: opts.rosters, catalog: this.catalog, target: opts.target, winBy2: opts.winBy2,
       quarterLen: opts.quarterLen, quarters: opts.quarters, surface: this.venue.theme.court.surface === 'wood' ? 'wood' : 'asphalt',
@@ -148,7 +150,7 @@ export class MatchSession {
     this.game.teamsMeta = this.teams;
     if (this.online) {
       // (this.human is the player on this screen; every human's green window follows his own shot-meter setting)
-      this.game.human = this.game.players[this.online.local] || this.game.human;
+      this.game.human = this.spectate ? null : this.game.players[this.online.local] || this.game.human;
       for (const p of this.game.players) if (p.human) p.greenBonus = this.online.meter?.[p.id] ? 1.1 : 1;
     }
     spreadGreens(this.game.players, this.catalog); // (v0.4.7.5: every AI player on the floor has his own green release)
@@ -165,7 +167,8 @@ export class MatchSession {
       const lod = opts.background ? { detail: 0.75, pool: opts.pool } : p.human ? { detail: 1, pool: opts.pool, now: true } : { detail: 1, faceRes: 512, pool: opts.pool, now: true };
       const pv = new PlayerVisual(this.r, this.scene, e.build, e.look || resolveLook(e.build, this.catalog), lod);
       // (online: your ring is gold; the other people playing get blue rings with you, red against you)
-      if (p.human) pv.addRing(this.r, this.isMe(p) ? '#ffd84a' : p.team === this.game.human?.team ? '#4ac8ff' : '#ff5a6a');
+      // (watching: the people playing get a white ring)
+      if (p.human) pv.addRing(this.r, this.spectate ? '#f4f2ec' : this.isMe(p) ? '#ffd84a' : p.team === this.game.human?.team ? '#4ac8ff' : '#ff5a6a');
       if (!opts.background) pv.addStatus(this.r);
       return pv;
     });
@@ -466,10 +469,13 @@ export class MatchSession {
   // ("Waiting for ...") when one hasn't arrived. Everyone simulates the same thing; nothing else crosses the network.
   initOnline() {
     const o = this.online, g = this.game;
-    this.lk = { D: Math.max(1, o.delay | 0), sent: 0, mine: new Map(), theirs: new Map(), drops: new Map(), hashes: new Map(), peerHash: new Map(), waitT: 0, waiting: null, warned: false, lost: false, seq: 0 };
+    this.lk = { D: Math.max(1, o.delay | 0), sent: 0, mine: new Map(), theirs: new Map(), drops: new Map(), hashes: new Map(), peerHash: new Map(), waitT: 0, waiting: null, warned: false, lost: false, seq: 0, maxK: 0, scoreT: 0, scoreKey: '' };
     this.lk.humans = g.players.filter(p => p.human).map(p => p.id);
-    this.offNet = o.net.attachGame(o.game, m => this.netMessage(m));
+    // (your own game takes its messages; a game you watch gets the same ones, and the game so far when you came late)
+    this.offNet = this.spectate ? o.net.attachWatch(o.game, m => this.netMessage(m)) : o.net.attachGame(o.game, m => this.netMessage(m));
   }
+  // the other people still playing (not the AI's yet)
+  othersIn() { return this.lk.humans.filter(id => id !== this.online.local && this.game.players[id].human); }
   netMessage(m) {
     const lk = this.lk, g = this.game;
     if (m.t === 'in') {
@@ -477,6 +483,7 @@ export class MatchSession {
       let t = lk.theirs.get(m.k);
       if (!t) lk.theirs.set(m.k, t = new Map());
       t.set(m.s, m.i && typeof m.i === 'object' ? m.i : {});
+      if (m.k > lk.maxK) lk.maxK = m.k;
     } else if (m.t === 'left') {
       // he's the AI's from the tick after the last input of his that went round (never inside the blank first ticks)
       if (typeof m.slot === 'number' && g.players[m.slot]?.human && m.slot !== this.online.local) lk.drops.set(m.slot, Math.max(m.last | 0, lk.D) + 1);
@@ -485,7 +492,10 @@ export class MatchSession {
       if (mine == null) lk.peerHash.set(m.k, m);
       else if (mine !== m.h) this.desync(m);
     } else if (m.t === 'closed') {
-      lk.lost = true;
+      // (a game of your own with nobody else in it just carries on without the connection: nobody's waiting on you,
+      // and nobody else can be watched waiting either)
+      if (this.spectate || this.othersIn().length || [...lk.drops.keys()].length) lk.lost = true;
+      else lk.offline = true;
     }
   }
   desync(m) {
@@ -518,27 +528,37 @@ export class MatchSession {
     }
     return out;
   }
+  // the people on the winning side (their accounts), for the court they now hold
+  winnersOnline() {
+    const g = this.game, aids = this.online.aids || {};
+    return Object.entries(aids).filter(([s]) => g.players[s] && g.players[s].team === g.winner).map(([, a]) => a);
+  }
   frameOnline(dt) {
-    const g = this.game, lk = this.lk, net = this.online.net;
+    const g = this.game, lk = this.lk, net = this.online.net, spec = this.spectate;
     if (this.visuals.some(v => v.pending)) { this.render(0); return; } // (everyone's athlete is built before the tip)
     this.timeScale = 1; this.slowT = 0;
     this.acc = Math.min(this.acc + Math.min(0.1, dt) * (g.speed || 1), DT * 12); // (after a wait: catch up, a few ticks a frame)
-    if (!this.paused) this.captureInput();
+    // watching a game you came to late: its first minute plays through quickly until you're with everyone else
+    let cap = 8;
+    if (spec && lk.maxK - g.tick > 12 && !g.over) { cap = Math.min(90, lk.maxK - g.tick - 4); this.acc = Math.max(this.acc, cap * DT); }
+    if (!this.paused && !spec) this.captureInput();
     let steps = 0;
     const evs = this.frameEvents = [];
     let waiting = null;
-    while (this.acc >= DT && steps < 8 && !lk.lost) {
+    while (this.acc >= DT && steps < cap && !lk.lost) {
       if (g.over) { // (after the final buzzer nobody's input counts: everyone just plays out the end on his own)
-        g.step(DT); this.handleEvents(g.events); for (const e of g.events) evs.push(e);
+        g.step(DT); if (this.background) this.backgroundEvents(g.events); else this.handleEvents(g.events); for (const e of g.events) evs.push(e);
         this.acc -= DT; steps++; continue;
       }
       const k = g.tick + 1;
       // our input for tick k + delay goes out once, when we reach tick k
-      while (lk.sent < k + lk.D) {
-        const t = ++lk.sent, it = this.onlineIntent();
-        lk.mine.set(t, it);
-        net.send({ t: 'in', k: t, g: this.online.game, i: it });
-        this.ageOnline(DT);
+      if (!spec) {
+        while (lk.sent < k + lk.D) {
+          const t = ++lk.sent, it = this.onlineIntent();
+          lk.mine.set(t, it);
+          if (!lk.offline) net.send({ t: 'in', k: t, g: this.online.game, i: it });
+          this.ageOnline(DT);
+        }
       }
       for (const [id, at] of lk.drops) if (k >= at) { g.dropHuman(id); lk.drops.delete(id); }
       const miss = this.missingFor(k);
@@ -550,29 +570,43 @@ export class MatchSession {
       }
       lk.theirs.delete(k); lk.mine.delete(k);
       g.step(DT);
-      this.handleEvents(g.events); for (const e of g.events) logGameEvent(e, g);
+      if (this.background) this.backgroundEvents(g.events); else { this.handleEvents(g.events); for (const e of g.events) logGameEvent(e, g); }
       for (const e of g.events) evs.push(e);
-      if (!this.grade && g.human) this.grade = g.aiGrades.get(g.human.id) || null;
-      // every 2 s of game: compare the state with everyone else's
-      if (k % 120 === 0) {
-        const h = g.stateHash();
-        lk.hashes.set(k, h);
-        if (lk.hashes.size > 30) lk.hashes.delete(lk.hashes.keys().next().value);
-        net.send({ t: 'hash', k, h });
-        const ph = lk.peerHash.get(k);
-        if (ph) { lk.peerHash.delete(k); if (ph.h !== h) this.desync(ph); }
+      if (!spec) {
+        if (!this.grade && g.human) this.grade = g.aiGrades.get(g.human.id) || null;
+        // every 2 s of game: compare the state with everyone else's
+        if (k % 120 === 0 && !lk.offline) {
+          const h = g.stateHash();
+          lk.hashes.set(k, h);
+          if (lk.hashes.size > 30) lk.hashes.delete(lk.hashes.keys().next().value);
+          net.send({ t: 'hash', k, h });
+          const ph = lk.peerHash.get(k);
+          if (ph) { lk.peerHash.delete(k); if (ph.h !== h) this.desync(ph); }
+        }
+        // the score for the people around the court (whoever has the lowest seat of those still playing reports it)
+        if (k % 60 === 0 && !lk.offline && this.online.local === Math.min(...lk.humans.filter(id => g.players[id].human))) {
+          const key = g.score.join('-');
+          if (key !== lk.scoreKey) { lk.scoreKey = key; net.send({ t: 'score', score: [g.score[0], g.score[1]] }); }
+        }
       }
       this.acc -= DT; steps++;
     }
-    // waiting on somebody's input: say who after a moment (a slow connection, or still loading in)
-    if (waiting) lk.waitT += dt; else lk.waitT = 0;
-    const who = lk.lost ? 'Connection to the host lost' : waiting && lk.waitT > 0.35 ? `Waiting for ${waiting.map(id => this.online.names?.[id] || g.players[id].name).join(', ')}…` : '';
-    if (who !== (lk.waiting || '')) { lk.waiting = who; this.hud.setHint(who); }
-    if (lk.lost && !this.lostHandled) { this.lostHandled = true; this.hud.callout('CONNECTION LOST', 'bad'); setTimeout(() => this.online.onLost?.(this), 1800); }
+    if (!spec) {
+      // waiting on somebody's input: say who after a moment (a slow connection, or still loading in)
+      if (waiting) lk.waitT += dt; else lk.waitT = 0;
+      const who = lk.lost ? 'Connection to the host lost' : waiting && lk.waitT > 0.35 ? `Waiting for ${waiting.map(id => this.online.names?.[id] || g.players[id].name).join(', ')}…` : '';
+      if (who !== (lk.waiting || '')) { lk.waiting = who; this.hud.setHint(who); }
+    }
+    if (lk.lost && !this.lostHandled) {
+      this.lostHandled = true;
+      if (!spec) this.hud.callout('CONNECTION LOST', 'bad');
+      setTimeout(() => this.online.onLost?.(this), spec ? 0 : 1800);
+    }
     if (g.over && !this.ended) {
       this.ended = true; this.endT = 0;
       if (this.grade) this.app.lastGrade = this.grade.result();
-      net.send({ t: 'end', g: this.online.game });
+      // (whoever finishes first ends it on the service: the people who won hold the court)
+      if (!spec && !lk.offline) net.send({ t: 'end', g: this.online.game, winners: this.winnersOnline() });
     }
     this.lastEvents = evs;
     if (this.ended) { this.endT += dt; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }
@@ -798,8 +832,7 @@ export class MatchSession {
           else if (e.kind === 'dunk' && (mine || shooter?.team === myTeam)) hud.callout(hsCallout(this.lastDunkStyle) || { '360': 'THREE-SIXTY!', windmill: 'WINDMILL!', cradle: 'CRADLE JAM!', double: 'DOUBLE CLUTCH!', reverse: 'REVERSE JAM!', tomahawk: 'TOMAHAWK!' }[this.lastDunkStyle] || ['SLAM!', 'JAM!', 'FLUSHED!'][g.tick % 3], 'hot');
           else if (e.three && mine) hud.callout('SPLASH!', 'good');
           if (e.andOne) { audio.whistle(); hud.callout('AND ONE!', 'hot'); }
-          // celebrations on big plays
-          if (shooter && (big || e.swish) && !shooter.human && g.rng.next() < 0.6) shooter.pendingCelly = this.celebrationKind(shooter);
+          // (celebrations on big plays: celebrationEffects)
           if (this.isMe(shooter) && big) hud.setHint(`Press ${promptGlyph(this.input, 'G', 'UP')} to celebrate`);
           break;
         }
@@ -868,8 +901,8 @@ export class MatchSession {
         case 'oopPrompt': if (mine) { audio.cheer?.(0.3); this.rig.shake?.(0.04, 0.15); this.oopShow = null; } break; // (qp3) the prompt itself is drawn in updateHUD
         case 'oopQte': if (mine) this.oopShow = { t: 0.8, state: e.result === 'hit' ? 'hit' : 'miss', text: e.result === 'hit' ? 'OOP!' : e.result === 'wrong' ? 'WRONG BUTTON' : e.result === 'early' ? 'TOO EARLY' : 'TOO LATE' }; break;
         case 'oopMiss': { const P2 = g.players[e.player]; if (this.isMe(P2)) hud.callout('OFF THE HANDS', 'bad'); else if (P2) hud.pushFeed(`${P2.name} can't handle the lob`, P2.team === myTeam ? 'bad' : 'good'); break; }
-        case 'check': hud.pushFeed(e.team === myTeam ? 'Your ball — check it up' : 'Defense — check ball', 'neutral'); this.rig.snap(); this.checkCelebrations(); break;
-        case 'inbound': this.rig.snap(); this.checkCelebrations(); break;
+        case 'check': hud.pushFeed(e.team === myTeam ? 'Your ball — check it up' : 'Defense — check ball', 'neutral'); this.rig.snap(); break;
+        case 'inbound': this.rig.snap(); break;
         case 'cleared': if (e.team === myTeam) hud.pushFeed('Ball cleared', 'neutral'); break;
         case 'possession': if (g.mode === 'park' && g.half && e.team === myTeam && e.reason !== 'check') hud.pushFeed('Take it back past the arc!', 'neutral'); break;
         case 'noCount': audio.whistle(); break;
@@ -889,6 +922,20 @@ export class MatchSession {
         case 'dropped': if (P) hud.pushFeed(`${this.online?.names?.[e.player] || P.name} left · the AI has his player`, 'neutral'); break;
       }
     }
+    this.celebrationEffects(events);
+  }
+
+  // The part of the events that changes the game itself: who celebrates a big play (the game's rng decides), when he
+  // does, and who stops for a check. v0.4.7.5 qp3: every screen of an online game runs it the same way, the ones
+  // watching from the sideline too (it used to sit inside handleEvents, so a watcher's game drifted from the players')
+  celebrationEffects(events) {
+    const g = this.game;
+    for (const e of events) {
+      if (e.type === 'score') {
+        const shooter = e.player != null ? g.players[e.player] : null, big = e.pts === 3 || e.kind === 'dunk' || e.andOne;
+        if (shooter && (big || e.swish) && !shooter.human && g.rng.next() < 0.6) shooter.pendingCelly = this.celebrationKind(shooter);
+      } else if (e.type === 'check' || e.type === 'inbound') this.checkCelebrations();
+    }
     // celebrations during dead balls
     if (g.phase === 'dead' || g.phase === 'check' || g.phase === 'inbound') for (const p of g.players) if (p.pendingCelly && !p.action && !p.airborne && g.ball.holder !== p.id && !(g.phase === 'inbound' && g.inbounder === p)) { p.startAction('celebrate', 1.5, { kind: p.pendingCelly }); p.pendingCelly = null; }
     if (g.phase === 'live') for (const p of g.players) p.pendingCelly = null;
@@ -897,6 +944,7 @@ export class MatchSession {
   // distant courts: only positional sounds and hoop reactions
   backgroundEvents(events) {
     const g = this.game, [ox, , oz] = this.origin;
+    if (this.spectate) this.celebrationEffects(events); // (watching an online game: the same game as the players')
     const cam = this.rig.pos;
     const d = Math.hypot(ox - cam[0], oz + 8 - cam[2]);
     const near = d < 30, k = Math.max(0, 1 - d / 34);

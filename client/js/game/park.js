@@ -22,6 +22,7 @@ import { VisualPool } from './vispool.js';
 import { audio } from '../core/audio.js';
 import * as M from '../core/math.js';
 import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
+import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP } from '../ui/online.js';
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
@@ -128,7 +129,8 @@ export class Walker {
   dispose() { this.visual.dispose(); }
 }
 
-// v0.4.7.5 qp3 online: a friend in your room, walking this park on his own screen (his position comes ~5 times a second)
+// v0.4.7.5 qp3 online: a real player at this park (or Crew HQ), walking it on his own screen (his position comes ~5
+// times a second through the hosted game)
 export class FriendWalker extends Walker {
   constructor(hub, entry, x, z, id) {
     super(hub, entry, x, z);
@@ -144,6 +146,45 @@ export class FriendWalker extends Walker {
     else it.face = T.f;
     p.move(dt * GAME_SPEED, false, 0);
     p.stamina = 1;
+  }
+}
+
+// v0.4.7.5 qp3 online: the real people walking around where you are (a park or the Crew HQ). world: the ParkHub or
+// CrewHQ (it has app, r, scene, pool, rng and placeKey()); positions come in through the hosted game (ui/online.js)
+export class Peers {
+  constructor(world) { this.w = world; this.map = new Map(); }
+  get size() { return this.map.size; }
+  list() { return [...this.map.values()]; }
+  pos(m) {
+    const net = this.w.app.net;
+    if (!net || net.place !== this.w.placeKey() || !m.from) return;
+    let w = this.map.get(m.from);
+    if (!w) {
+      const person = net.people.get(m.from), e = person?.entry;
+      if (!e?.build) return;
+      const entry = { ...e, look: e.look || resolveLook({ ...e.build, name: e.name }, this.w.app.catalog) };
+      w = new FriendWalker(this.w, entry, +m.x || 0, +m.z || 0, m.from);
+      w.username = person.username || '';
+      w.squad = !!net.squad?.members.some(x => x.id === m.from);
+      this.map.set(m.from, w);
+    }
+    w.target = { x: +m.x || 0, z: +m.z || 0, f: +m.f || 0, m: +m.m || 0 };
+    w.seen = performance.now();
+  }
+  // someone left (gone) or has a new look (pentry: he's rebuilt with his next position); 'here': whoever isn't here
+  people(m) {
+    if (m?.t === 'gone' || m?.t === 'pentry') { this.drop(m.id); return; }
+    const net = this.w.app.net;
+    for (const id of [...this.map.keys()]) if (!net?.people.has(id)) this.drop(id);
+  }
+  drop(id) { const w = this.map.get(id); if (w) { w.dispose(); this.map.delete(id); } }
+  clear() { for (const id of [...this.map.keys()]) this.drop(id); }
+  frame(dt) {
+    const now = performance.now();
+    for (const [id, w] of this.map) {
+      if (now - w.seen > 4000) { this.drop(id); continue; } // (gone quiet: in a game, a menu, or gone)
+      w.update(dt); w.render(dt);
+    }
   }
 }
 
@@ -225,6 +266,7 @@ export class ParkHub {
   constructor(app, themeId, ui) {
     this.app = app; this.r = app.renderer; this.ui = ui;
     this.themeId = themeId;
+    this.peers = new Peers(this); // v0.4.7.5 qp3 online: the real people at this park
     this.scene = new Scene();
     this.theme = THEMES[themeId];
     // v0.4.7.5 qp3: the Event Park hall's sign names the running event (or, at an event park, your home park)
@@ -294,7 +336,7 @@ export class ParkHub {
   blockers(w) {
     const out = [...(this.venue.solids || [])];
     if (w && (w.follow != null || w.leaving > 0)) return out;
-    for (const c of this.courts) if (c.session || c.mine) out.push(c.rect);
+    for (const c of this.courts) if (c.session || c.mine || c.live || this.realBusy?.(c)) out.push(c.rect);
     return out;
   }
   // v0.4.5: add corner waypoints so a path goes around the shops and the wheel instead of into them
@@ -358,15 +400,27 @@ export class ParkHub {
   }
   // what the overview and the ticker show for a court: {name, score, target, streak, bounty, mine, next, live}
   courtInfo(c) {
-    const s = c === this.myCourt && this.mySession ? this.mySession : c.session, g = s?.game;
+    const s = c === this.myCourt && this.mySession ? this.mySession : c.live || c.session, g = s?.game;
     const streak = this.courtStreak(c), my = this.myLine(), mine = c === this.myCourt && !!this.mySession;
+    // v0.4.7.5 qp3 online: real people on it, holding it, or with next on it (a game you came too late to watch: its score)
+    const ct = this.ct(c), busy = ct?.busy && !s ? ct.busy : null, sq = this.squadLine();
+    const claims = c.lines.filter(l => l?.remote).map(l => l.remote.names.join(', '));
     return {
-      name: c.name, live: !!g && !g.over, over: !!g?.over, score: g ? [g.score[0], g.score[1]] : null, target: g?.target || null,
-      teams: s ? [s.teams?.[0]?.abbr || 'KNG', s.teams?.[1]?.abbr || 'CHL'] : null,
+      name: c.name, live: !!g && !g.over || !!busy, over: !!g?.over, score: g ? [g.score[0], g.score[1]] : busy?.score || null, target: g?.target || null,
+      teams: s ? [s.teams?.[0]?.abbr || 'KNG', s.teams?.[1]?.abbr || 'CHL'] : busy ? ['', ''] : null,
       streak, bounty: mine ? 0 : bountyFor(streak), myStreak: mine,
       waiting: c.lines.filter(Boolean).length,
-      next: my && my.c === c ? (this.nextLine(c)?.l === my.l ? 'next' : this.nextLine(c) ? 'after' : 'filling') : null,
+      next: my && my.c === c ? this.myTurn(c, my) : sq && sq.c === c ? 'squad' : null,
+      people: busy ? busy.names.join(', ') : c.liveSetup ? Object.values(c.liveSetup.names || {}).join(', ') : '',
+      kings: ct?.kings && !mine ? ct.kings.names.join(', ') : '', claims,
     };
+  }
+  // where your line stands: next, after the other squad, or still filling up
+  myTurn(c, my) {
+    const rc = this.remoteClaimLine(c), myAt = this.ct(c)?.lines?.[my.r]?.at;
+    if (rc && myAt != null && rc.claim.at < myAt) return 'after';
+    if (this.realKings(c) && !this.lineFull(c, my.l)) return 'filling';
+    return this.nextLine(c)?.l === my.l ? 'next' : this.nextLine(c) ? 'after' : 'filling';
   }
 
   courtWatched(c) {
@@ -441,7 +495,7 @@ export class ParkHub {
     const t = Date.now();
     for (const [id, x] of this.world.extra) if (x.until < t) this.world.extra.delete(id);
     for (const w of this.walkers) if (w.entry.aiId && !w.spot && w.follow == null && !w.exit && !this.stays(w.entry, t)) w.leave();
-    for (const c of this.courts) if (!c.session && !c.mine) this.newBackgroundGame(c, null);
+    for (const c of this.courts) if (!c.session && !c.mine && !c.live) this.newBackgroundGame(c, null);
     // v0.4.5: groups of park-goers line up on the squad spots of busy courts (one new group per tick)
     const busyCourts = this.rng.shuffle(this.courts.filter(c => c.session && c.lines.some(l => !l)));
     for (const c of busyCourts) { if (this.rng.next() < 0.45 && this.formAILine(c)) break; }
@@ -493,8 +547,10 @@ export class ParkHub {
     return w;
   }
 
-  newBackgroundGame(c, kings) {
+  newBackgroundGame(c, kings, force = false) {
     if (c.session) { c.session.dispose(); c.session = null; }
+    // (v0.4.7.5 qp3 online: real people hold this court, a game or kings between games: no AI game of ours on it)
+    if (!force && (this.realHeld(c) || c.live)) { c.kings = null; c.kingsStreak = 0; return; }
     const fmt = c.format, t = Date.now();
     // kings keep the court while they're all still on (and none of them left to run with you)
     let home = kings && kings.every(e => this.stays(e, t) && !this.world.inSquad(e.aiId)) ? kings : null;
@@ -528,15 +584,26 @@ export class ParkHub {
         c.session.rate = this.courtRate(c);
         c.session.frame(dt);
         const g = c.session.game;
-        // my squad is waiting: wrap the current game up
+        // my squad is waiting: wrap the current game up (sooner when real people are waiting on it too)
         const nx = this.nextLine(c);
-        if (nx && nx.l.mine && nx.l.ready && !g.over && (performance.now() - nx.l.readyAt) > 25000) { const lead = g.score[0] >= g.score[1] ? 0 : 1; g.finish(lead); }
+        const realWait = nx?.l.mine && (nx.l.realMates?.length || this.remoteClaimLine(c)) ? 8000 : 25000;
+        if (nx && nx.l.mine && nx.l.ready && !g.over && (performance.now() - nx.l.readyAt) > realWait && this.canStart(c)) { const lead = g.score[0] >= g.score[1] ? 0 : 1; g.finish(lead); }
         if (g.over && c.session.ended && c.session.endT > 2.2) this.rotateCourt(c);
       }
+      // v0.4.7.5 qp3 online: a real game you're watching from the sideline
+      if (c.live) {
+        c.live.frame(dt);
+        if ((c.live.ended && c.live.endT > 2.5) || (c.liveEndAt && performance.now() - c.liveEndAt > 6000)) this.dropWatch(c);
+      }
     }
+    // your squad is set on an open court: on you go (online, when it's yours to start)
+    const my = this.myLine();
+    if (my && my.l.ready && this.mode === 'roam' && !my.c.session && !my.c.live && this.canStart(my.c)) this.startNext(my.c);
+    if (this.awaitStart && performance.now() - this.awaitStart.at > 8000) this.startFailed();
     this.updateSpectators(dt);
     for (const w of this.walkers) { w.update(dt); if (!w.gone) w.render(dt); }
-    this.friendsFrame(dt);
+    this.peers.frame(dt);
+    this.courtReport(dt);
     if (this.walkers.some(w => w.gone)) { for (const w of this.walkers) if (w.gone) w.dispose(); this.walkers = this.walkers.filter(w => !w.gone); }
     this.updateStreakFX(dt);
     if (this.cup && (this.cupT -= dt) <= 0) { this.cupT = 60; this.refreshCup(); }
@@ -588,7 +655,8 @@ export class ParkHub {
     for (const s of this.venue.solids || []) pushOut(me, s);
     // bump into people
     for (const w of this.walkers) this.separate(me, w.p);
-    for (const c of this.courts) if (c.session) for (const p of c.session.game.players) this.separate(me, { x: p.x + c.origin[0], z: p.z + c.origin[2], phys: p.phys }, true);
+    for (const c of this.courts) for (const s of [c.session, c.live]) if (s) for (const p of s.game.players) this.separate(me, { x: p.x + c.origin[0], z: p.z + c.origin[2], phys: p.phys }, true);
+    for (const w of this.peers.list()) this.separate(me, w.p, true);
     this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {});
     this.meVisual.place(me.x, 0, me.z);
     this.rig.updateRoam(dt, me, inp, b, this.venue.solids);
@@ -629,7 +697,7 @@ export class ParkHub {
 
   // ---------- v0.4.7.5 GOT NEXT spots: two per court, the first squad to fill up runs next ----------
   myLine() { for (const c of this.courts) for (let r = 0; r < c.lines.length; r++) if (c.lines[r]?.mine) return { c, r, l: c.lines[r] }; return null; }
-  lineFull(c, l) { return l.members.length + (l.mine ? 1 : 0) >= c.format; }
+  lineFull(c, l) { return l.members.length + (l.mine ? 1 + (l.realMates?.length || 0) : 0) >= c.format; }
   lineSet(c, l) { return this.lineFull(c, l) && l.members.every(w => w.state === 'queued'); }
   // stamp the moment a line fills up (it's what decides who runs next)
   markFull(c, l) { if (l && !l.fullAt && this.lineFull(c, l)) l.fullAt = (this.fillSeq = (this.fillSeq || 0) + 1); }
@@ -683,10 +751,14 @@ export class ParkHub {
     const me = this.me;
     const mine = this.myLine();
     if (!mine) {
+      // v0.4.7.5 qp3 online: in a friend's squad, he calls next for all of you
+      const net = this.netHere(), member = net?.squad && !net.isLeader(), sq = this.squadLine();
       let on = null;
       for (const c of this.courts) c.rows.forEach((row, r) => row.forEach((sp, i) => { if (Math.hypot(me.x - sp.x, me.z - sp.z) < 0.75) on = { c, r, i }; }));
       if (on) {
         const { c, r } = on, other = c.lines[1 - r];
+        if (c.lines[r]?.remote) { this.prompt = c.lines[r].squad ? `Your squad has GOT NEXT on ${c.name}` : `${c.lines[r].remote.names[0]}'s squad has this GOT NEXT spot on ${c.name}`; this.claimT = 0; return; }
+        if (member) { this.prompt = sq ? `Your squad has GOT NEXT on ${sq.c.name} · your squad leader calls it` : 'Your squad leader calls GOT NEXT for the squad'; this.claimT = 0; return; }
         if (c.lines[r]) { this.prompt = `This GOT NEXT spot on ${c.name} is taken · ${other ? 'both spots are full' : 'the other spot is open'}`; this.claimT = 0; return; }
         if (this.anteDeclined === c) { this.prompt = `Step off and back on to claim the spot on ${c.name}`; return; }
         this.claimT += dt;
@@ -699,30 +771,36 @@ export class ParkHub {
             this.ui.pickAnte(this, ante => { if (ante) { this.ante = ante; this.claim(c, r); } else this.anteDeclined = c; });
           }
         }
-      } else { this.claimT = 0; this.anteDeclined = null; }
+      } else { this.claimT = 0; this.anteDeclined = null; if (sq && !this.prompt) this.prompt = `Your squad has GOT NEXT on ${sq.c.name}${this.realBusy(sq.c) || sq.c.session ? ' · after this game' : ''}`; }
       return;
     }
     const { c, r, l } = mine;
     const n = l.members.length + 1;
     const head = c.rows[r][0];
     if (Math.hypot(me.x - head.x, me.z - head.z) > 6) { this.unclaim(c); this.ui.toast('You left your spot.'); return; }
-    const nx = this.nextLine(c), other = c.lines[1 - r];
-    if (n < c.format) this.prompt = `GOT NEXT on ${c.name} · waiting for teammates (${n}/${c.format})${other && other.fullAt ? ' · the other squad filled first: they run next' : ' · fill up first to run next'}`;
-    else if (nx && nx.l === l) this.prompt = `Squad ready on ${c.name} · you run next${c.session ? ' · after this game' : ''}`;
+    const nx = this.nextLine(c), other = c.lines[1 - r], n2 = n + (l.realMates?.length || 0), turn = this.myTurn(c, mine);
+    const kings = this.realKings(c), busy = this.realBusy(c);
+    if (other?.remote && turn === 'after') this.prompt = `GOT NEXT on ${c.name} · ${other.remote.names[0]}'s squad called it first: you run after their game`;
+    else if (n2 < c.format) this.prompt = `GOT NEXT on ${c.name} · waiting for teammates (${n2}/${c.format})${other && other.fullAt ? ' · the other squad filled first: they run next' : ' · fill up first to run next'}`;
+    else if (other?.remote) this.prompt = `Squad ready on ${c.name} · you run next, against ${other.remote.names[0]}'s squad${c.session || busy ? ' · after this game' : ''}`;
+    else if (kings) this.prompt = `Squad ready on ${c.name} · ${kings.names[0]}'s squad holds the court: you're up when they run it back`;
+    else if (nx && nx.l === l) this.prompt = `Squad ready on ${c.name} · you run next${c.session || busy || c.live ? ' · after this game' : ''}`;
     else this.prompt = `Squad ready on ${c.name} · the other squad filled first: you're up after their game`;
     this.fillQueue(c, r, l, dt);
   }
 
   claim(c, r) {
     c.mine = true; this.claimT = 0;
-    c.lines[r] = { members: [], mine: true, ready: false, readyAt: 0 };
+    c.lines[r] = { members: [], mine: true, ready: false, readyAt: 0, realMates: [] };
     this.markFull(c, c.lines[r]);
+    this.netHere()?.send({ t: 'claim', court: this.courts.indexOf(c), spot: r }); // (online: everyone here sees your squad on it)
     audio.ui('buy');
     const other = c.lines[1 - r];
     this.ui.toast(other && other.fullAt ? `Got next on ${c.name}! The squad on the other spot filled first: you run after their game.` : `Got next on ${c.name}! Teammates are on the way. Fill up first and you run next.`);
     this.fillT = 1.5;
   }
-  unclaim(c) {
+  unclaim(c, quiet = false) {
+    if (!quiet) this.netHere()?.send({ t: 'unclaim' });
     c.mine = false;
     const r = c.lines.findIndex(l => l?.mine);
     if (r >= 0) {
@@ -737,14 +815,10 @@ export class ParkHub {
       if (!l.ready && this.nextLine(c)?.l === l && l.members.every(w => w.state === 'queued')) {
         l.ready = true; l.readyAt = performance.now(); this.ui.toast('Squad is ready. You run next!');
         // v0.4.4: an empty court (quiet hours): the squad on the other spot, or whoever's around, runs against you
-        if (!c.session) {
-          const o = c.lines.findIndex(x => x && !x.mine && this.lineSet(c, x));
-          let opp = null;
-          if (o >= 0) { opp = c.lines[o].members.map(w => w.entry); this.takeLine(c, o); }
-          else { const streak = this.char.progression?.park?.streak || 0; opp = this.takeEntries(c.format, { topUp: true, level: Math.min(0.95, 0.5 + 0.05 * streak) }); }
-          this.startMyGame(c, opp, 0);
-        }
+        if (!c.session && !c.live && this.canStart(c)) this.startNext(c);
       }
+      // (online: a friend joined the squad, so one of the park-goers on the spot steps off for him)
+      while (l.members.length && l.members.length + 1 + (l.realMates?.length || 0) > c.format) { const w = l.members.pop(); w.spot = null; w.state = 'idle'; w.t = 1; }
       return;
     }
     this.fillT -= dt;
@@ -786,7 +860,7 @@ export class ParkHub {
     }
     c.kingsStreak = g.winner === 0 ? (c.kingsStreak || 0) + 1 : 1;
     const nx = this.nextLine(c), l0 = nx?.l;
-    if (l0 && l0.mine && l0.ready) {
+    if (l0 && l0.mine && l0.ready && this.canStart(c)) {
       s.dispose(); c.session = null;
       // kings who logged off (or left to join your squad) are replaced by whoever's around
       const kept = winners.every(e => this.stays(e) && !this.world.inSquad(e.aiId));
@@ -815,6 +889,7 @@ export class ParkHub {
   myStreak() { const p = this.app.char()?.progression; return (this.cup ? p?.cup?.streak : p?.park?.streak) || 0; }
   courtStreak(c) {
     if (c === this.myCourt && (this.mySession || this.mode === 'starting')) return this.myStreak();
+    const k = this.realKings(c); if (k) return k.streak || 0; // (online: real kings, their streak on this court)
     return c.session ? c.kingsStreak || 0 : 0;
   }
   updateStreakFX(dt) {
@@ -844,6 +919,9 @@ export class ParkHub {
   // oppStreak: the streak the opponents bring (the kings' when you challenge them, 0 for a fresh group)
   async startMyGame(c, opponents, oppStreak = 0) {
     const app = this.app;
+    // v0.4.7.5 qp3 online: with other people at the park (or friends in your squad), the game goes through the hosted
+    // game so they can play in it or watch it from the sideline
+    if (this.useHub(c)) { this.startHubGame(c, opponents, oppStreak); return; }
     this.myCourt = c; this.myOppStreak = oppStreak || 0;
     this.mode = 'starting';
     let ticket;
@@ -894,6 +972,7 @@ export class ParkHub {
     app.mode = 'match';
     music.duck(true); // v0.4.4: the soundtrack keeps going under park games
     this.ui.matchStarted(this);
+    this.reportCourt({ busy: true, score: [0, 0] }); // (online: the people here see the court in use, and its score)
     // (after the session: starting a game clears the feed)
     if (ticket.meta.ante) app.hud.pushFeed(`Ante-up: ${ticket.meta.ante.toLocaleString()} VC on the line`, 'good');
     if (ticket.meta.boosts?.length) app.hud.pushFeed(`Boosts active: ${ticket.meta.boosts.map(k => app.config.boosts?.categories?.[k]?.name || k).join(', ')} (+${app.config.boosts?.amount || 5})`, 'good');
@@ -903,6 +982,7 @@ export class ParkHub {
     const app = this.app;
     // v0.4.4: remember who you ran with and against (social phone: recent players)
     const won0 = summary.winner === summary.me.team;
+    this.reportCourt({ kings: won0 }); // (online: you hold the court now, for the people here)
     this.world.recordGame((this.myMates || []).map(e => e.aiId).filter(Boolean), (this.myOpp || []).map(e => e.aiId).filter(Boolean), won0);
     // v0.4.3: the box-score outro shows while the result saves, then fills the Rep bar live
     // v0.4.5: who ran with you (a crew member on your team doubles the crew XP)
@@ -922,6 +1002,8 @@ export class ParkHub {
 
   stayOnCourt(session) {
     const c = this.myCourt;
+    // v0.4.7.5 qp3 online: people here (another squad with next on this court, or anyone watching): through the hosted game
+    if (this.useHub(c)) { this.runItBack(session); return; }
     session.dispose(); this.mySession = null;
     // new challengers walk up: the hotter your streak, the better the people who step up
     const old = this.myOpp || [];
@@ -946,7 +1028,7 @@ export class ParkHub {
 
   leaveCourt(session, won) {
     const c = this.myCourt;
-    const g = session ? session.game : null;
+    this.reportCourt({ kings: false }); // (online: the court is free again)
     if (session) session.dispose();
     this.mySession = null;
     c.mine = false;
@@ -965,7 +1047,7 @@ export class ParkHub {
     c.kingsStreak = session && !won ? (this.myOppStreak || 0) + 1 : 0;
     const opp = this.myOpp; this.myOpp = [];
     if (won && opp) for (const e of opp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] - 4, e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
-    this.newBackgroundGame(c, won ? null : opp);
+    this.newBackgroundGame(c, won ? null : opp, true);
     // put me on the sideline
     this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2);
     // back in your roaming athlete (the one from the game, with any new gear)
@@ -1013,7 +1095,7 @@ export class ParkHub {
   async forfeitMyGame() {
     const s = this.mySession;
     if (!s) return;
-    if (this.onlineGame) this.app.net?.send({ t: 'leave' }); // (online: you leave the room; the AI plays your player for the rest)
+    if (this.onlineGame) this.app.net?.send({ t: 'quit' }); // (online: you leave the game; the AI plays your player for the rest)
     if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
     this.ui.toast('You left the game. Your win streak resets.');
     if (this.onlineGame) this.leaveOnlineCourt(s); else this.leaveCourt(s, false);
@@ -1024,58 +1106,256 @@ export class ParkHub {
     for (const sp of this.spectators) {
       const c = sp.court;
       // the court's game this frame: a background game, or yours when it's on this court
-      const s = c.session || (this.mySession && this.myCourt === c ? this.mySession : null);
+      const s = c.live || c.session || (this.mySession && this.myCourt === c ? this.mySession : null);
       if (s && s.lastEvents) sp.onEvents(s.lastEvents);
       sp.update(dt, Math.hypot(sp.p.x - cam[0], sp.p.z - cam[2]) < 45, s?.game);
     }
-    for (const c of this.courts) if (c.session) c.session.lastEvents = null;
+    for (const c of this.courts) { if (c.session) c.session.lastEvents = null; if (c.live) c.live.lastEvents = null; }
     if (this.mySession) this.mySession.lastEvents = null;
   }
 
-  // ---------------- v0.4.7.5 qp3: online games with friends (ui/online.js) ----------------
-  // the room's members at this park, walking around (their positions from the service)
-  onFriendPos(m, net) {
-    if (m.park !== this.themeId) { this.dropFriend(m.from); return; }
-    if (!this.friendWalkers) this.friendWalkers = new Map();
-    let w = this.friendWalkers.get(m.from);
-    if (!w) {
-      const e = net.entries?.[m.from];
-      if (!e || !e.build) return;
-      const entry = { ...e, look: e.look || resolveLook({ ...e.build, name: e.name }, this.catalog) };
-      w = new FriendWalker(this, entry, +m.x || 0, +m.z || 0, m.from);
-      this.friendWalkers.set(m.from, w);
-    }
-    w.target = { x: +m.x || 0, z: +m.z || 0, f: +m.f || 0, m: +m.m || 0 };
-    w.seen = performance.now();
+  // ---------------- v0.4.7.5 qp3: the real people at this park (ui/online.js, server/online.py) ----------------
+  // Everyone at the same park sees the others walk around (Peers), their Got Next claims on the courts (a squad's line
+  // on a spot), the kings holding a court between games and the games real people play (watched from the sideline:
+  // c.live). Games with people in them go through the hosted game (lockstep, session.js); whoever decides for a court
+  // sets the game up: the leader of the squad that called it first, or the kings' leader when he runs it back.
+  placeKey() { return this.themeId; }
+  netHere() { const n = this.app.net; return n && n.connected && n.place === this.themeId ? n : null; }
+  ct(c) { const n = this.netHere(); return n ? n.court(this.courts.indexOf(c)) : null; }
+  realBusy(c) { return this.ct(c)?.busy || null; }
+  realKings(c) { return this.ct(c)?.kings || null; }
+  // a court real people hold right now (a game on it, or kings between games): no AI game of ours on it
+  realHeld(c) { const ct = this.ct(c); return !!(ct && (ct.busy || ct.kings)); }
+  // your squad's line, when your squad leader called it (you're one of its members)
+  squadLine() {
+    const net = this.netHere(); if (!net?.squad || net.isLeader()) return null;
+    for (const c of this.courts) for (let r = 0; r < c.lines.length; r++) if (c.lines[r]?.remote?.members.includes(net.myId)) return { c, r, l: c.lines[r] };
+    return null;
   }
-  dropFriend(id) { const w = this.friendWalkers?.get(id); if (w) { w.dispose(); this.friendWalkers.delete(id); } }
-  clearFriends() { for (const id of [...(this.friendWalkers?.keys() || [])]) this.dropFriend(id); }
-  friendsFrame(dt) {
-    if (!this.friendWalkers?.size) return;
-    const now = performance.now(), room = new Set((this.app.net?.room?.members || []).map(x => x.id));
-    for (const [id, w] of this.friendWalkers) {
-      // (gone quiet, out of the room, or in a game with you right now: not walking about)
-      if (now - w.seen > 4000 || !room.has(id) || this.mode === 'match') { this.dropFriend(id); continue; }
-      w.update(dt); w.render(dt);
-    }
+  // another squad's claim on this court (the first one called, when there are two): {r, claim}
+  remoteClaimLine(c) {
+    const me = this.app.net?.myId; let best = null;
+    c.lines.forEach((l, r) => { if (l?.remote && !l.remote.members.includes(me) && (!best || l.remote.at < best.claim.at)) best = { r, claim: l.remote }; });
+    return best;
+  }
+  // is it yours to start the next game on this court? (offline: always)
+  canStart(c) {
+    const ct = this.ct(c); if (!ct) return true;
+    const me = this.app.net.myId;
+    if (ct.busy || (ct.kings && ct.kings.leader !== me)) return false; // (a game on it, or kings: their leader runs it back)
+    const rc = this.remoteClaimLine(c), my = this.myLine(), myAt = my && my.c === c ? ct.lines?.[my.r]?.at : null;
+    return !(rc && myAt != null && rc.claim.at < myAt); // (the other squad called it first: their leader sets it up)
+  }
+  // a game that goes through the hosted game: people here to watch it, friends in it, or another squad to play
+  useHub(c) {
+    const net = this.netHere(); if (!net) return false;
+    const my = this.myLine();
+    return net.people.size > 0 || !!(my && my.c === c && my.l.realMates?.length) || !!this.remoteClaimLine(c);
+  }
+  // your own game on a court, not through the hosted game: the people here see the court in use, its score, and you
+  // holding it after a win (server/online.py court_state)
+  reportCourt(o) { const net = this.app.net, c = this.myCourt; if (net?.connected && c && !this.onlineGame) net.send({ t: 'court', court: this.courts.indexOf(c), ...o }); }
+  courtReport(dt) {
+    if (this.mode !== 'match' || !this.mySession || this.onlineGame) return;
+    if ((this.scoreT = (this.scoreT || 0) - dt) > 0) return;
+    this.scoreT = 2;
+    const g = this.mySession.game, k = g.score.join('-');
+    if (k !== this.scoreKey && !g.over) { this.scoreKey = k; this.reportCourt({ busy: true, score: [g.score[0], g.score[1]] }); }
   }
 
-  // the room's game, on one of this park's courts. Every client builds the same game from the host's setup; local is
-  // your player in it. The result counts for you like any park game when the service gives you a ticket (otherwise it's
-  // played for fun: see the results)
+  // ---- what the hosted game says about this park's courts ----
+  onCourts() {
+    const net = this.netHere(); if (!net) return;
+    const me = net.myId;
+    this.courts.forEach((c, ci) => {
+      const ct = net.court(ci);
+      for (let r = 0; r < c.lines.length; r++) {
+        const claim = ct?.lines?.[r] || null, l = c.lines[r];
+        if (claim && claim.leader === me) { if (l?.mine) l.realMates = claim.members.filter(id => id !== me); continue; }
+        if (claim) {
+          if (l?.mine) continue; // (both of you at once: the hosted game says who got it, see onClaimed)
+          if (l && !l.remote) this.disperseLine(c, r);
+          c.lines[r] = { remote: claim, members: [], mine: false, ready: false, readyAt: 0, squad: claim.members.includes(me) };
+        } else if (l?.remote) c.lines[r] = null;
+      }
+      // real people took the court: the AI game we had on it gives way (their game comes in as a watch)
+      if (ct && (ct.busy || (ct.kings && ct.kings.leader !== me)) && c.session && !(c.mine && c === this.myCourt)) this.vacate(c);
+      // and gave it back: the park's own games start up on it again
+      if (!this.realHeld(c) && !c.session && !c.live && !c.mine && !this.disposed) this.newBackgroundGame(c, null);
+    });
+  }
+  onClaimed(m) {
+    const c = this.courts[m.court];
+    if (m.ok || !c) return;
+    if (c.lines[m.spot]?.mine) { this.unclaim(c, true); this.ui.toast(m.text || 'That spot is taken.', 'error'); }
+  }
+  // park-goers on a spot step off it (a real squad has it now)
+  disperseLine(c, r) {
+    const l = c.lines[r]; if (!l) return;
+    for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = this.rng.range(0.5, 3); }
+    c.lines[r] = null;
+  }
+  // the AI game on a court ends where it stands: everybody on it walks off
+  vacate(c) {
+    const s = c.session; if (!s) return;
+    const g = s.game;
+    for (const p of g.players) {
+      if (this.walkers.length >= 18) break;
+      const e = s.opts.rosters[p.team][g.teams[p.team].indexOf(p)];
+      if (!e?.aiId) continue;
+      const w = this.spawnWalker(p.x + c.origin[0], p.z + c.origin[2], e);
+      w.leaving = 8;
+      if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave();
+      this.walkers.push(w);
+    }
+    s.dispose(); c.session = null; c.kings = null; c.kingsStreak = 0;
+  }
+
+  // ---- the people walking around ----
+  onPeerPos(m) { if (!this.inGameIds().has(m.from)) this.peers.pos(m); }
+  onPeople(m) { this.peers.people(m); }
+  clearPeers() { this.peers.clear(); }
+  // the people in a game here right now (yours, or one you're watching): they're on the court, not walking about
+  inGameIds() {
+    const s = new Set();
+    for (const c of this.courts) if (c.liveSetup) Object.keys(c.liveSetup.slots || {}).forEach(a => s.add(a));
+    if (this.onlineGame) Object.keys(this.onlineGame.slots || {}).forEach(a => s.add(a));
+    return s;
+  }
+
+  // ---- starting a game ----
+  // your squad is set and the court is yours: the squad on the other spot (real or not) or whoever's around runs against you
+  startNext(c) {
+    if (this.mode !== 'roam') return;
+    if (this.netHere() && this.remoteClaimLine(c)) { this.startMyGame(c, null, 0); return; }
+    const o = c.lines.findIndex(x => x && !x.mine && !x.remote && this.lineSet(c, x));
+    let opp = null;
+    if (o >= 0) { opp = c.lines[o].members.map(w => w.entry); this.takeLine(c, o); }
+    else if (c.aiKings && performance.now() - c.aiKings.at < 60000) { opp = c.aiKings.entries; c.aiKings = null; } // (the AI who won the game you watched hold the court)
+    else { const streak = this.char.progression?.park?.streak || 0; opp = this.takeEntries(c.format, { topUp: true, level: Math.min(0.95, 0.5 + 0.05 * streak) }); }
+    this.startMyGame(c, opp, 0);
+  }
+  // free people (in this park, not in a game) as setup players: {entry, person}
+  people(ids) {
+    const net = this.netHere(), out = [];
+    for (const id of ids) {
+      if (id !== net.myId && !net.people.has(id)) continue;
+      const p = personOf(this.app, id);
+      if (p?.entry) out.push({ entry: p.entry, person: p });
+    }
+    return out;
+  }
+  topUp(side, n, opts = {}) {
+    if (side.length >= n) return side;
+    const ex = new Set(side.map(x => x.entry.aiId).filter(Boolean));
+    const more = this.takeEntries(n - side.length, { topUp: true, exclude: ex, ...opts }) || [];
+    return [...side, ...more.map(e => ({ entry: e }))];
+  }
+  // your squad's game: you, your friends in the squad and the park-goers on your spot, against the other squad with next
+  // on this court (real people) or the AI opponents
+  startHubGame(c, aiOpp, oppStreak = 0) {
+    const net = this.netHere(), me = net.myId;
+    const li = c.lines.findIndex(l => l?.mine), l0 = li >= 0 ? c.lines[li] : { members: [], realMates: [] };
+    const home = this.people([me, ...(l0.realMates || [])]), used = new Set();
+    for (const w of l0.members) { if (home.length < c.format) { home.push({ entry: w.entry }); used.add(w); w.dispose(); } else { w.spot = null; w.state = 'idle'; w.t = 1; } }
+    this.walkers = this.walkers.filter(w => !used.has(w));
+    if (li >= 0) c.lines[li] = null;
+    const rc = this.remoteClaimLine(c);
+    let away;
+    if (rc) { away = this.people(rc.claim.members); this.walkOff(c, aiOpp); oppStreak = 0; }
+    else away = (aiOpp || []).map(e => ({ entry: e }));
+    const sides = [this.topUp(home, c.format), this.topUp(away, c.format, { exclude: new Set(home.map(x => x.entry.aiId).filter(Boolean)) })];
+    this.sendParkGame(c, sides, { streaks: [0, oppStreak], names: [`${net.you.username}'s squad`, rc ? `${net.usernameOf(rc.claim.leader)}'s squad` : 'Court Kings'] });
+  }
+  // after a win (you hold the court): run it back against the next squad, real or not
+  runItBack(session) {
+    const net = this.netHere(), c = this.myCourt;
+    if (!net || !c) { this.leaveCourt(session, true); return; }
+    const me = net.myId, ct = this.ct(c), g = session.game, myTeam = g.human?.team ?? 0;
+    const home = this.people([me, ...(ct?.kings?.members || []).filter(id => id !== me)]);
+    // the AI who won it with you stay on with you (your park-goers, or the ones from the last game's setup)
+    const aiMine = this.myMates?.length ? this.myMates : session.opts.rosters[myTeam].filter(e => !e.human);
+    for (const e of aiMine) if (home.length < c.format) home.push({ entry: e });
+    const oldOpp = this.onlineGame ? [] : this.myOpp || [];
+    session.dispose(); this.mySession = null; this.onlineGame = null;
+    for (const e of oldOpp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    const rc = this.remoteClaimLine(c);
+    let away, nm = 'Challengers';
+    if (rc) { away = this.people(rc.claim.members); nm = `${net.usernameOf(rc.claim.leader)}'s squad`; }
+    else {
+      const nx = this.upNext(c, false);
+      if (nx) { away = nx.l.members.map(w => ({ entry: w.entry })); this.takeLine(c, nx.i); }
+      else away = (this.takeEntries(c.format, { topUp: true, level: Math.min(0.97, 0.5 + 0.06 * this.myStreak()) }) || []).map(e => ({ entry: e }));
+    }
+    const sides = [this.topUp(home, c.format), this.topUp(away, c.format, { exclude: new Set(home.map(x => x.entry.aiId).filter(Boolean)) })];
+    this.sendParkGame(c, sides, { streaks: [Math.max(ct?.kings?.streak || 0, this.myStreak()), 0], names: [`${net.you.username}'s squad`, nm] });
+  }
+  // AI who were going to play walk back into the park instead
+  walkOff(c, entries) {
+    for (const e of entries || []) if (this.walkers.length < 16 && e?.aiId) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+  }
+  // sides: [[{entry, person?}], [..]] (team 0 first). The game starts on everyone's screen when the hosted game says so
+  sendParkGame(c, sides, { streaks = [0, 0], names = ['Squad', 'Court Kings'] } = {}) {
+    const app = this.app, net = this.netHere(), people = new Map(), ci = this.courts.indexOf(c);
+    const rosters = sides.map(side => side.slice(0, c.format).map(x => { const e = setupEntry(app, x.entry, !!x.person, x.person?.username); if (x.person) people.set(e, x.person); return e; }));
+    const { slots, names: seatNames, meter } = seatPeople(rosters, people);
+    const humans = [...people.values()];
+    const hum = rosters.map(ro => ro.some(e => e.human));
+    const abbr = s => s.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SQD';
+    const teams = names.map((n, t) => ({ name: hum[t] ? n : t ? 'Court Kings' : n, abbr: hum[t] ? abbr(n) : t ? 'KNG' : abbr(n), color: hum[0] && hum[1] ? (t ? '#4ac8ff' : '#ffd84a') : t ? '#e8e3d8' : this.aff.color }));
+    const setup = {
+      kind: 'park', where: this.themeId, court: ci, format: c.format, full: !!c.full, seed: newSeed(), rosters, teams, slots, names: seatNames, meter,
+      delay: humans.length > 1 ? inputDelay(humans.map(p => p.rtt)) : 1, target: app.settings.parkTarget || 21, difficulty: app.settings.difficulty ?? 0.6,
+      ante: this.cup ? this.ante || this.cupState?.antes?.[0] || 500 : null, streaks,
+    };
+    // (the AI from your own park in it: remembered with you afterwards)
+    this.myMates = sides[0].filter(x => !x.person && x.entry.aiId).map(x => x.entry);
+    this.myOpp = sides[1].filter(x => !x.person && x.entry.aiId).map(x => x.entry);
+    if (slots[net.myId] == null) { this.ui.toast('Could not set the game up.', 'error'); return; }
+    this.myCourt = c; c.mine = true; this.mode = 'starting';
+    this.awaitStart = { at: performance.now(), c };
+    net.send({ t: 'start', setup });
+  }
+  onError() { if (this.awaitStart) this.startFailed(); } // (the hosted game turned the game down: someone's busy)
+  startFailed() {
+    const c = this.awaitStart?.c; this.awaitStart = null;
+    if (this.mode !== 'starting' || this.mySession) return;
+    this.netHere()?.send({ t: 'unclaim' });
+    this.ui.toast('The game didn\'t start (the hosted game didn\'t answer). Back to the park.', 'error');
+    this.walkOff(c, [...(this.myMates || []), ...(this.myOpp || [])]);
+    this.myMates = []; this.myOpp = [];
+    if (c) { c.mine = false; this.newBackgroundGame(c, null, true); }
+    this.myCourt = null; this.mode = 'roam'; this.app.mode = 'park';
+    if (!this.meVisual) this.rebuildMe();
+  }
+  // can a game that comes in from the hosted game start for you now?
+  readyForOnline() {
+    if (this.mode === 'practice') this.endPractice();
+    return this.mode === 'roam' || (this.mode === 'starting' && !!this.awaitStart) || (this.mode === 'match' && !!this.mySession?.ended);
+  }
+
+  // ---- your game with real people (or watched by them) ----
+  // Every client builds the same game from the setup; local is your player in it. It counts for you like any park game
+  // (your own ticket: your VC, Rep, streak and badges, in your own save)
   async startOnlineGame(setup, local) {
     const app = this.app, c = this.courts[setup.court];
     if (!c) throw new Error('That court is not at this park.');
-    const my = this.myLine(); if (my) this.unclaim(my.c);
-    this.clearFriends();
-    // whoever was on that court steps off for you (the game on it ends; anyone with next on it goes back to hanging out)
-    if (c.session) { c.session.dispose(); c.session = null; }
-    for (let i = 0; i < c.lines.length; i++) { const l = c.lines[i]; if (l) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } c.lines[i] = null; } }
-    c.mine = true; c.kingsStreak = 0;
-    this.myCourt = c; this.mode = 'starting'; this.onlineGame = setup; this.myMates = []; this.myOpp = []; this.myOppStreak = 0;
+    const decided = !!this.awaitStart;
+    this.awaitStart = null;
+    // still on the last game's results (the kings ran it back): off that game first
+    if (this.mySession) { this.mySession.dispose(); this.mySession = null; }
+    // your own Got Next line, if you weren't the one who started this: its park-goers step off
+    for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) { const l = cc.lines[r]; if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } cc.lines[r] = null; cc.mine = false; } }
+    if (!decided) { this.myMates = []; this.myOpp = []; }
+    if (c.session) this.vacate(c);
+    if (c.live) this.dropWatch(c, true);
+    for (const a of Object.keys(setup.slots || {})) this.peers.drop(a);
+    c.mine = true;
+    this.myCourt = c; this.mode = 'starting'; this.onlineGame = setup; this.myOppStreak = 0;
+    const myTeam = local < setup.rosters[0].length ? 0 : 1, oppStreak = setup.streaks?.[1 - myTeam] || 0;
     let ticket = null;
     try {
-      ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: setup.format, target: setup.target, difficulty: setup.difficulty, ante: this.cup ? setup.ante : undefined });
+      ticket = await app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: setup.format, target: setup.target, difficulty: setup.difficulty, ante: this.cup ? (this.ante || setup.ante) : undefined, ...(oppStreak >= BOUNTY_MIN ? { bounty_streak: Math.min(99, oppStreak) } : {}) });
       if (ticket.meta.ante) app.setBalance((app.profile.balance || 0) - ticket.meta.ante);
     } catch (e) { ticket = null; this.ui.toast(`This one won't count for you (${e.message}). Playing it anyway.`, 'error'); }
     this.ticket = ticket;
@@ -1084,35 +1364,54 @@ export class ParkHub {
     const rosters = structuredClone(setup.rosters);
     for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
     await this.pool.prebuild(rosters.flat().filter((e, i) => i !== local).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512 } })));
-    if (this.disposed) return;
+    if (this.disposed || this.onlineGame !== setup) return;
     this.lendMe();
+    const aids = Object.fromEntries(Object.entries(setup.slots).map(([a, s]) => [s, a]));
     this.mySession = new MatchSession(app, {
       mode: 'park', full: !!setup.full, hub: true, pool: this.pool, scene: this.scene, venue: this.venue, court: c, rosters, teams: setup.teams, seed: setup.seed,
       target: setup.target, difficulty: setup.difficulty,
-      online: { net: app.net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: s => this.onlineLost(s) },
+      online: { net: app.net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, aids, onLost: s => this.onlineLost(s) },
       onEnd: (summary, session) => this.onlineGameOver(summary, session),
     });
     this.mode = 'match'; app.mode = 'match';
     music.duck(true);
     this.ui.matchStarted(this);
-    app.hud.pushFeed(`Online game · ${Object.values(setup.names || {}).join(', ')}`, 'good');
+    const others = Object.values(setup.names || {}).filter(n => n !== app.net?.you?.username);
+    app.hud.pushFeed(others.length ? `Online game with ${others.join(', ')}` : 'Online game · the people here can watch it', 'good');
     if (ticket?.meta.ante) app.hud.pushFeed(`Ante-up: ${ticket.meta.ante.toLocaleString()} VC on the line`, 'good');
   }
   async onlineGameOver(summary, session) {
-    const app = this.app, won = summary.winner === summary.me.team;
-    const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates: [] }).catch(e => { this.ui.toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
+    const app = this.app, net = app.net, won = summary.winner === summary.me.team, setup = this.onlineGame;
+    // (your crew mates in it, real ones, double your crew XP; a friend's crew gets its share from your game)
+    const teamAids = Object.entries(setup?.slots || {}).filter(([, s]) => session.game.players[s]?.team === summary.me.team).map(([a]) => a);
+    const crewMates = crewMatesIn(app, teamAids);
+    const mates = (this.myMates || []).map(e => e.aiId).filter(Boolean).slice(0, 4);
+    this.world.recordGame(mates, (this.myOpp || []).map(e => e.aiId).filter(Boolean), won);
+    const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates, crew_mates: Math.min(4, crewMates) }).catch(e => { this.ui.toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
     await playOutro(app, { summary, session, result: saving });
     const result = await saving;
-    if (result) { app.replaceChar(result.character); app.setBalance(result.balance); this.char = app.char(); }
+    if (result) { app.replaceChar(result.character); app.setBalance(result.balance); this.char = app.char(); reportCrewXP(app, result, { mode: 'park', venue: this.themeId, mates: crewMates }); }
     if (this.cup) this.refreshCup();
-    if (this.mySession !== session) return; // (the host already started the next one)
-    this.ui.results(this, summary, result, won, { online: true, players: [], leave: () => this.leaveOnlineCourt(session) });
+    if (this.mySession !== session) return; // (the next one already started)
+    // the people who won hold the court: their leader runs it back (or leaves it); the rest stay with him or walk off
+    const kings = this.realKings(this.myCourt), me = net?.myId;
+    const lead = won && kings?.leader === me, member = won && !lead && kings?.members?.includes(me);
+    this.ui.results(this, summary, result, won, {
+      online: true, players: [...(this.myMates || []), ...(this.myOpp || [])],
+      stay: lead ? () => this.runItBack(session) : null,
+      back: member ? () => this.leaveOnlineCourt(session, { release: false }) : null,
+      leave: () => this.leaveOnlineCourt(session, { release: true }),
+      note: lead ? 'You hold the court: run it back against the next squad.' : member ? `${kings.names[0]} holds the court for your squad: stay and he runs it back with you.` : '',
+    });
   }
-  leaveOnlineCourt(session) {
-    const c = this.myCourt;
+  leaveOnlineCourt(session, { release = true } = {}) {
+    const c = this.myCourt, net = this.app.net;
+    if (release && c) net?.send({ t: 'release', court: this.courts.indexOf(c) });
     if (session) session.dispose();
     this.mySession = null; this.onlineGame = null;
-    if (c) { c.mine = false; c.kingsStreak = 0; this.newBackgroundGame(c, null); this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2); }
+    this.walkOff(c, [...(this.myMates || []), ...(this.myOpp || [])]);
+    this.myMates = []; this.myOpp = [];
+    if (c) { c.mine = false; c.kingsStreak = 0; this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2); if (!this.realHeld(c) || release) this.newBackgroundGame(c, null); }
     this.rebuildMe();
     this.syncSquad();
     this.myCourt = null;
@@ -1126,12 +1425,40 @@ export class ParkHub {
     if (this.mySession !== session) return;
     if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
     this.ui.toast('Lost the connection to the game service: you left the game.', 'error');
-    this.leaveOnlineCourt(session);
+    this.leaveOnlineCourt(session, { release: false });
+  }
+
+  // ---- watching a game from the sideline ----
+  // The same game on your screen as on the players': their inputs as they come (and the game so far, when you came late)
+  watchGame(setup) {
+    const c = this.courts[setup.court];
+    if (!c || setup.slots?.[this.app.net?.myId] != null) return;
+    if (c.live) this.dropWatch(c, true);
+    if (c.session) this.vacate(c);
+    for (const a of Object.keys(setup.slots || {})) this.peers.drop(a);
+    const rosters = structuredClone(setup.rosters);
+    for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
+    c.liveSetup = setup; c.liveEndAt = 0;
+    c.live = new MatchSession(this.app, {
+      background: true, hub: true, pool: this.pool, mode: 'park', full: !!setup.full, scene: this.scene, venue: this.venue, court: c, rosters, teams: setup.teams, seed: setup.seed,
+      target: setup.target, difficulty: setup.difficulty,
+      online: { net: this.app.net, local: -1, spectate: true, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, onLost: () => { c.liveEndAt = 1; } },
+    });
+  }
+  endWatch(g) { for (const c of this.courts) if (c.liveSetup?.game === g && !c.liveEndAt) c.liveEndAt = performance.now(); }
+  dropWatch(c, now = false) {
+    const s = c.live; if (!s) return;
+    const g = s.game, setup = c.liveSetup;
+    // the AI won it: they hold the court (for the next squad to play), unless real people do
+    if (!now && g.over && g.winner != null && !setup.rosters[g.winner].some(e => e.human)) c.aiKings = { entries: setup.rosters[g.winner].map(e => ({ ...e, human: false })), at: performance.now() };
+    s.dispose(); c.live = null; c.liveSetup = null; c.liveEndAt = 0;
+    if (!now && !this.realHeld(c) && !c.mine && !c.session) this.newBackgroundGame(c, null);
   }
 
   dispose() {
     this.disposed = true;
-    this.clearFriends();
+    this.peers.clear();
+    for (const c of this.courts) if (c.live) c.live.dispose();
     for (const c of this.courts) if (c.fx) c.fx.dispose();
     for (const sp of this.spectators || []) sp.dispose();
     for (const w of this.walkers) w.dispose();

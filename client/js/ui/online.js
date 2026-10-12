@@ -1,8 +1,12 @@
-// v0.4.7.5 qp3: playing online with friends. The social phone's Online tab (real players on this game service: friend
-// requests by username, who's on and where), invites, the room (the host sets the game up: a park court or the Pro-Am
-// arena, together against the AI or against each other) and the start of the game on everyone's screen.
-// The connection itself is core/netplay.js; the game runs in lockstep (game/session.js frameOnline).
-import { $, $$, esc, toast, closeModal } from './common.js';
+// v0.4.7.5 qp3: playing online with friends, in the base game itself. The real people on the hosted game are where you
+// are: at the same park (or Crew HQ) you see them walk around, their Got Next claims and the games they play (you can
+// watch them from the sideline). Friends make squads (up to five, they go everywhere together: Got Next, Pro-Am, the
+// Crew HQ), challenge each other's squads to Pro-Am, and play in each other's online crews.
+// This file: the connection's listeners (core/netplay.js is the socket), your presence, the invites that pop up, the
+// social phone's Online tab, the helpers every online game setup uses, and the start of an online game on each screen.
+// The games run in lockstep (game/session.js frameOnline); park games are set up in game/park.js, Pro-Am in
+// ui/modes.js, crew runs in game/crewhq.js.
+import { $$, esc, toast, closeModal } from './common.js';
 import { Net } from '../core/netplay.js';
 import { THEMES } from '../world/themes.js';
 import { PARK_NAMES } from '../sim/world.js';
@@ -12,9 +16,11 @@ import { settings } from '../core/settings.js';
 import { badgeTiers } from '../game/park.js';
 import { boostedBuild } from '../sim/ratings.js';
 
-export const MAX_ROOM = 6;
-const parkName = id => PARK_NAMES[id] || THEMES[id]?.name || 'a park';
+export const MAX_SQUAD = 5;
+export const parkName = id => !id ? 'somewhere' : String(id).startsWith('hq:') ? 'a Crew HQ' : PARK_NAMES[id] || THEMES[id]?.name || 'a park';
 const hubOf = app => (app.world && app.world.parkList && app.world.themeId ? app.world : null);
+// the park or Crew HQ you're in, when it shows the people there (game/park.js, game/crewhq.js)
+const placeOf = app => (app.world && app.world.placeKey ? app.world : null);
 
 // ---------------- the connection, presence ----------------
 // Which game you go online through: the friend's hosted game your own copy is linked to (your save stays yours), or
@@ -23,13 +29,33 @@ export async function initOnline(app) {
   if (app.net) { if (app.net.hub || app.config?.online?.hosting) app.net.start(); return app.net; }
   const net = app.net = new Net();
   net.entryFn = () => myEntry(app);
-  net.on('invite', m => showInvite(app, m));
   net.on('note', m => toast(m.text));
-  net.on('error', m => toast(m.text, 'error'));
-  net.on('start', s => startOnline(app, s).catch(e => { console.error(e); toast('Could not start the online game: ' + e.message, 'error'); net.send({ t: 'leave' }); }));
-  net.on('pos', m => hubOf(app)?.onFriendPos?.(m, net));
-  net.on('room', () => { if (!net.room || net.room.members.length < 2) hubOf(app)?.clearFriends?.(); });
-  net.on('state', () => { if (!net.connected) hubOf(app)?.clearFriends?.(); });
+  net.on('error', m => { toast(m.text, 'error'); placeOf(app)?.onError?.(m); });
+  net.on('crew-error', m => toast(m.text, 'error'));
+  net.on('sqinvite', m => popInvite(app, 'sq', {
+    eyebrow: 'SQUAD INVITE', title: m.name || m.username, text: `${m.username} wants you in his squad${m.size > 1 ? ` (${m.size} of them)` : ''}${m.park ? ` · ${parkName(m.park)}` : ''}`,
+    yes: 'Join', onYes: () => net.send({ t: 'sq-accept', from: m.from }), onNo: () => net.send({ t: 'sq-decline', from: m.from }),
+  }));
+  net.on('challenge', m => popInvite(app, 'ch', {
+    eyebrow: 'PRO-AM CHALLENGE', title: m.name || m.username, text: `${m.username}${m.size > 1 ? `'s squad of ${m.size}` : ''} wants to run Pro-Am against ${net.squad ? 'your squad' : 'you'} in the arena`,
+    yes: 'Accept', onYes: () => net.send({ t: 'challenge-reply', from: m.from, ok: true }), onNo: () => net.send({ t: 'challenge-reply', from: m.from, ok: false }),
+  }));
+  net.on('challenge-go', m => import('./modes.js').then(Modes => Modes.startProAmOnline(app, m.opp)).catch(e => { console.error(e); toast(e.message, 'error'); }));
+  net.on('crewinvite', m => popInvite(app, 'crew', {
+    eyebrow: 'CREW INVITE', title: `${m.crew?.name || 'A crew'} [${m.crew?.tag || ''}]`, text: `${m.from} wants you in his crew (level ${m.crew?.level || 1}). Your games add crew XP to it.`,
+    yes: 'Join the crew', onYes: () => net.send({ t: 'crew-accept', crew: m.crew?.id }),
+  }));
+  net.on('crew-pending', m => collectCrewXP(app, m.xp));
+  net.on('crew', () => { crewSync(app); placeOf(app)?.onCrew?.(); });
+  net.on('claimed', m => hubOf(app)?.onClaimed?.(m));
+  net.on('start', s => startOnline(app, s).catch(e => { console.error(e); toast('Could not start the online game: ' + e.message, 'error'); net.send({ t: 'quit' }); }));
+  net.on('watch', s => { const w = placeOf(app); if (w && s.where && s.where === w.placeKey()) w.watchGame?.(s); });
+  net.on('watchend', m => placeOf(app)?.endWatch?.(m.g));
+  net.on('pos', m => placeOf(app)?.onPeerPos?.(m));
+  net.on('people', m => placeOf(app)?.onPeople?.(m));
+  net.on('courts', () => placeOf(app)?.onCourts?.());
+  net.on('state', () => { if (!net.connected) placeOf(app)?.clearPeers?.(); });
+  net.on('squad', () => followSquad(app));
   // signed in on the host's game from your own copy: keep the token for next time (in your own save)
   net.on('autherror', m => toast(m.text, 'error'));
   net.on('authed', m => { if (net.hub) toast(`Signed in on ${net.hub} as ${m.you?.username || ''}.`); });
@@ -43,33 +69,33 @@ export async function initOnline(app) {
   try { if (sessionStorage.getItem('ah16.openOnline')) { sessionStorage.removeItem('ah16.openOnline'); setTimeout(() => import('./phone.js').then(P => P.openPhone(app, { tab: 'online' })), 700); } } catch { /* private mode */ }
   let lastChar = null;
   setInterval(() => {
-    if (!net.connected) return;
-    const w = whereNow(app);
-    net.where(w);
-    // (another player picked, or a new look: the room gets your new entry)
-    const c = app.char(), key = c ? `${c.id}|${c.overall}|${JSON.stringify(c.equipment || {})}` : null;
-    if (key !== lastChar) { lastChar = key; if (net.room) net.sendEntry(); }
-    // the host's park is the room's park
-    if (net.isHost() && w.park && net.room.park !== w.park) net.send({ t: 'config', config: net.room.config || {}, park: w.park });
+    if (!net.connected) { lastChar = null; return; }
+    net.where(whereNow(app));
+    // (another player picked, or a new look: the people where you are see you with it)
+    const c = app.char(), key = c ? `${c.id}|${c.overall}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}` : null;
+    if (key !== lastChar) { lastChar = key; net.sendEntry(); }
   }, 1000);
-  // where you're walking in the park, for the rest of the room to see you there (5 times a second)
+  // where you're walking, for the others at the same park or HQ to see you there (5 times a second)
   setInterval(() => {
-    const hub = hubOf(app);
-    if (!net.connected || !net.room || net.room.members.length < 2 || !hub || hub.mode !== 'roam') return;
-    const me = hub.me, r2 = v => Math.round(v * 100) / 100;
-    net.send({ t: 'pos', x: r2(me.x), z: r2(me.z), f: r2(me.facing), m: r2(me.speed || 0), park: hub.themeId });
+    const w = placeOf(app);
+    if (!net.connected || !w || w.mode !== 'roam' || !net.people.size || net.place !== w.placeKey()) return;
+    const me = w.me, r2 = v => Math.round(v * 100) / 100;
+    net.send({ t: 'pos', x: r2(me.x), z: r2(me.z), f: r2(me.facing), m: r2(me.speed || 0) });
   }, 200);
   return net;
 }
 
 export function whereNow(app) {
-  const c = app.char(), hub = hubOf(app);
+  const c = app.char(), w = placeOf(app), net = app.net;
   let status = 'menu', park = null;
-  if (hub) { park = hub.themeId; status = hub.mode === 'roam' ? 'park' : hub.mode === 'match' ? 'game' : 'busy'; }
+  if (w) { park = w.placeKey(); status = w.mode === 'roam' ? 'park' : w.mode === 'match' || w.mode === 'starting' ? 'game' : 'busy'; }
   else if (app.mode === 'match') status = 'game';
   else if (app.world) status = 'busy';
-  return { name: c?.name || null, park, status, char: c ? `${c.overall} ${c.position}` : null };
+  // (the round trip in 25 ms steps: online games pick their input delay from everyone's)
+  return { name: c?.name || null, park, status, char: c ? `${c.overall} ${c.position}` : null, rtt: net?.rtt != null ? Math.min(2000, Math.round(net.rtt / 25) * 25) : null };
 }
+// (straight away, when you arrive somewhere: the others see you, and you them, without waiting for the next second)
+export function touchWhere(app) { const net = app.net; if (net?.connected) net.where(whereNow(app)); }
 
 // your player as he goes into an online game: the same entry on every screen (so it plays the same everywhere)
 export function myEntry(app) {
@@ -80,37 +106,136 @@ export function myEntry(app) {
   return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false };
 }
 
-const statusText = p => !p || !p.online ? 'Offline' : p.playing ? 'In a game' : p.status === 'game' ? 'In a game' : p.park ? `At ${parkName(p.park)}${p.status === 'busy' ? ' · busy' : ''}` : 'In the menus';
+const statusText = p => !p || !p.online ? 'Offline' : p.playing || p.status === 'game' ? 'In a game' : p.park ? `At ${parkName(p.park)}${p.status === 'busy' ? ' · busy' : ''}` : 'In the menus';
 
-// ---------------- invites ----------------
-function showInvite(app, m) {
-  document.getElementById('ol-invite')?.remove();
+// ---------------- helpers for every online game's setup ----------------
+// the input delay (ticks) for a game: long enough for an input to go from the slowest player through the service
+// to the next slowest (half of each one's round trip) with a little to spare; 3 ticks (~45 ms) at the least
+export function inputDelay(rtts) {
+  const r = [...rtts].map(v => (typeof v === 'number' && v >= 0 ? v : 80)).sort((a, b) => b - a);
+  const oneWay = ((r[0] || 0) + (r[1] || 0)) / 2;
+  const tickMs = 1000 / (60 * GAME_SPEED);
+  return Math.max(3, Math.min(15, Math.ceil((oneWay + 30) / tickMs)));
+}
+export const newSeed = () => (Math.random() * 2147483646 | 0) + 1;
+// a real player in a setup: {id, username, entry} (you, or anyone the service told you about)
+export function personOf(app, id) {
+  const net = app.net;
+  if (id === net.myId) return { id, username: net.you.username, entry: myEntry(app), rtt: net.rtt };
+  const p = net.people.get(id), m = net.squad?.members.find(x => x.id === id);
+  const entry = net.entryOf(id);
+  return entry ? { id, username: p?.username || m?.username || net.usernameOf(id), entry, rtt: p?.rtt ?? m?.rtt ?? null } : null;
+}
+// a roster entry as it goes into a setup: his look resolved (the same on every screen), human or not
+export function setupEntry(app, e, human, username = null) {
+  const out = { build: e.build, name: e.name, look: e.look || resolveLook({ ...e.build, name: e.name }, app.catalog), badges: e.badges || {}, human: !!human };
+  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; }
+  return out;
+}
+// slots, names and shot-meter settings of a setup's people: rosters are team 0 then team 1; people: [{id, username}]
+// by roster entry (the entry objects themselves)
+export function seatPeople(rosters, people) {
+  const slots = {}, names = {}, meter = {};
+  let i = 0;
+  for (const ro of rosters) for (const e of ro) {
+    const p = people.get(e);
+    if (p) { slots[p.id] = i; names[i] = p.username; meter[i] = !!e.meterOff; }
+    i++;
+  }
+  return { slots, names, meter };
+}
+// squad mates who can play with you now (not in a game); here: only the ones at the same place
+export function freeSquad(app, here = false) {
+  const net = app.net;
+  return (net.squad?.members || []).filter(m => m.id !== net.myId && !m.inGame && m.status !== 'game' && (!here || (m.park && m.park === net.place)));
+}
+export const netOn = app => !!app.net?.connected;
+
+// ---------------- popups: squad / Pro-Am / crew invites ----------------
+function popInvite(app, kind, o) {
+  const id = `ol-invite-${kind}`;
+  document.getElementById(id)?.remove();
   const el = document.createElement('div');
-  el.id = 'ol-invite'; el.className = 'ol-invite';
-  el.innerHTML = `<div class="eyebrow">ONLINE INVITE</div><b>${esc(m.name || m.username)}</b><small>${esc(m.username)} wants you in his room${m.park ? ` · at ${esc(parkName(m.park))}` : ''}</small>
-    <div class="row gap"><button class="btn small ghost" data-no>Not now</button><button class="btn small primary" data-yes>Join</button></div>`;
+  el.id = id; el.className = 'ol-invite';
+  el.style.top = `${74 + 150 * ['sq', 'ch', 'crew'].indexOf(kind)}px`;
+  el.innerHTML = `<div class="eyebrow">${esc(o.eyebrow)}</div><b>${esc(o.title)}</b><small>${esc(o.text)}</small>
+    <div class="row gap"><button class="btn small ghost" data-no>Not now</button><button class="btn small primary" data-yes>${esc(o.yes)}</button></div>`;
   document.body.appendChild(el);
   const done = () => { el.remove(); clearTimeout(t); };
   const t = setTimeout(done, 60000);
-  el.querySelector('[data-no]').onclick = done;
-  el.querySelector('[data-yes]').onclick = () => { done(); joinRoom(app, m.room, m.park); };
+  el.querySelector('[data-no]').onclick = () => { done(); o.onNo?.(); };
+  el.querySelector('[data-yes]').onclick = () => { done(); o.onYes?.(); };
+}
+const clearInvites = () => document.querySelectorAll('.ol-invite').forEach(el => el.remove());
+
+// ---------------- your squad goes where its leader goes ----------------
+// A squad member who's walking around a park (or the HQ) follows the leader to the park he went to; one in the menus
+// is told where the squad is
+function followSquad(app) {
+  const net = app.net, sq = net.squad;
+  if (!sq || net.isLeader()) { net.following = null; return; }
+  const lead = sq.members.find(m => m.id === sq.leader), target = lead?.park || null;
+  const w = placeOf(app), here = w ? w.placeKey() : null;
+  if (!target || target === here) { net.following = null; return; }
+  if (net.following === target) return;
+  const hq = target.startsWith('hq:');
+  if (hq && net.crew?.id !== target.slice(3)) return; // (a crew's HQ is for its members)
+  if (hq ? false : THEMES[target]?.event && app.config?.event?.id !== target) return;
+  net.following = target;
+  if (w && w.mode === 'roam' && !app.modalOpen()) {
+    toast(`Following ${lead.name || lead.username} to ${hq ? 'the Crew HQ' : parkName(target)}…`);
+    import('./modes.js').then(Modes => { if (hq) Modes.enterHQ(app, hubOf(app)?.themeId || app.char()?.affiliation || 'harbor', { online: true }); else Modes.enterPark(app, target); });
+  } else toast(`Your squad is at ${hq ? 'the Crew HQ' : parkName(target)}. ${w ? 'Finish up here, then head over.' : 'Head over when you\'re ready.'}`);
 }
 
-export function joinRoom(app, roomId, park) {
-  const net = app.net;
-  if (app.mode === 'match' || hubOf(app)?.mode === 'match') { toast('Finish your game first, then join.', 'error'); return; }
-  net.send({ t: 'join', room: roomId });
-  // a park game is played at the host's park: go there (the room panel has the way too)
-  if (park && hubOf(app)?.themeId !== park) travel(app, park);
-}
-
-async function travel(app, park) {
+export async function travel(app, park) {
   const Modes = await import('./modes.js');
   closeModal();
   Modes.enterPark(app, park);
 }
 
-// the host's own screen: did the router open the port (server/upnp.py), and the address to give friends
+// ---------------- online crews ----------------
+// The founder's own crew (the one in his save) goes online when he brings it online; friends he invites play in it.
+// Their games' crew XP waits on the hosted game until his game collects it into his save.
+export function crewSync(app, force = false) {
+  const net = app.net, cr = app.crew;
+  if (!net?.connected || !cr) return;
+  if (!force && net.crew?.founder !== net.myId) return;
+  const want = { name: cr.name, tag: cr.tag, color: cr.color, level: cr.level?.level || 1, xp: cr.level?.xp || 0 };
+  const have = net.crew;
+  if (!force && have && have.name === want.name && have.tag === want.tag && have.color === want.color && have.level === want.level && have.xp === want.xp) return;
+  net.send({ t: 'crew-sync', crew: want });
+}
+async function collectCrewXP(app, xp) {
+  const net = app.net;
+  if (!(xp > 0) || net.collecting) return;
+  net.collecting = true;
+  try {
+    const r = await app.api.mutate('/api/crew', { action: 'online_xp', xp });
+    app.crew = r.crew;
+    net.send({ t: 'crew-ack', xp });
+    toast(`+${xp.toLocaleString()} crew XP from your crew's online games.`);
+    crewSync(app);
+  } catch (e) { console.warn('crew XP not collected', e); }
+  finally { net.collecting = false; }
+}
+// the crew mates (real ones, in your online crew) on your side of a game you just played: ids of the people on it
+export function crewMatesIn(app, aids) {
+  const net = app.net, mem = new Set((net?.crew?.members || []).map(m => m.id));
+  return aids.filter(a => a !== net?.myId && mem.has(a)).length;
+}
+// after a game: a member of a friend's online crew sends its crew XP (the same share of the Rep as a crew of your own)
+const CREW_SHARE = 0.3, MODE_WEIGHT = { park: 1.1, proam: 1.3, event: 1.5 };
+export function reportCrewXP(app, result, { mode, venue, mates = 0 } = {}) {
+  const net = app.net;
+  if (!net?.connected || !net.crew || net.crew.founder === net.myId || !result?.rep) return 0;
+  const w = THEMES[venue]?.event ? MODE_WEIGHT.event : MODE_WEIGHT[mode] || 0;
+  const xp = Math.round(Math.max(0, result.rep) * CREW_SHARE * w * (mates > 0 ? 2 : 1));
+  if (xp > 0) net.send({ t: 'crewxp', xp: Math.min(5000, xp) });
+  return xp;
+}
+
+// ---------------- the host's own screen: did the router open the port (server/upnp.py) ----------------
 const PUBLIC_NET = ip => !/^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip || '');
 function hostNote(app) {
   const net = app.net;
@@ -127,6 +252,7 @@ function hostNote(app) {
 }
 
 // ---------------- the Online tab on the phone ----------------
+const av = (s, cls = '') => `<span class="ol-av ${cls}">${esc(String(s || '?').slice(0, 1).toUpperCase())}</span>`;
 export function phoneTab(app) {
   const net = app.net;
   if (!net) return '<p class="ph-empty">Online play starts when you sign in.</p>';
@@ -139,31 +265,60 @@ export function phoneTab(app) {
     : `<div class="ph-note">Connecting to the game service… ${net.state === 'off' ? 'retrying' : ''}</div>`) + hostNote(app);
   const fr = net.friends || [];
   const mine = fr.filter(f => f.status === 'friends'), inc = fr.filter(f => f.status === 'incoming'), out = fr.filter(f => f.status === 'requested');
-  const room = net.room ? roomHTML(app) : '';
-  const inRoom = new Set((net.room?.members || []).map(m => m.id));
+  const inSquad = new Set((net.squad?.members || []).map(m => m.id));
+  const crewIds = new Set((net.crew?.members || []).map(m => m.id));
+  const lead = net.isLeader(), founder = net.crew?.founder === net.myId;
+  const herePlace = placeOf(app)?.placeKey() || null;
   const friendRow = f => {
-    const p = f.presence || {};
-    const canInvite = conn && p.online && !inRoom.has(f.id) && !p.playing && (net.room?.members.length || 1) < MAX_ROOM;
-    const joinable = conn && p.online && p.room && p.host && !p.playing && !inRoom.has(f.id) && net.room?.id !== p.room;
-    return `<div class="ph-row"><div class="ph-main"><span class="ol-av">${esc((p.name || f.username).slice(0, 1).toUpperCase())}</span><span class="ph-who"><b>${esc(p.name || f.username)}</b><small>${esc(f.username)}${p.online && p.char ? ' · ' + esc(p.char) : ''}</small><em>${esc(statusText(p))}${inRoom.has(f.id) ? ' · in your room' : ''}</em></span><i class="ph-dot ${p.online ? 'on' : ''}"></i></div>
-      ${joinable ? `<button class="ph-act inv" data-join="${esc(p.room)}" data-park="${esc(p.park || '')}">Join</button>` : canInvite ? `<button class="ph-act inv" data-oinv="${esc(f.id)}">Invite</button>` : ''}
-      <button class="ph-act" data-ofr="remove" data-u="${esc(f.username)}" title="Remove friend">✕</button></div>`;
+    const p = f.presence || {}, on = conn && p.online, free = on && !p.playing && p.status !== 'game';
+    const acts = [];
+    if (on && lead && !inSquad.has(f.id) && (net.squad?.members.length || 1) < MAX_SQUAD) acts.push(`<button class="ph-act inv" data-osq="${esc(f.id)}" title="Invite to your squad">Squad</button>`);
+    if (free && lead && !inSquad.has(f.id)) acts.push(`<button class="ph-act inv" data-och="${esc(f.id)}" title="Challenge to Pro-Am">Pro-Am</button>`);
+    if (on && founder && !crewIds.has(f.id)) acts.push(`<button class="ph-act inv" data-ocrew="${esc(f.id)}" title="Invite to your crew">Crew</button>`);
+    if (on && p.park && !p.park.startsWith('hq:') && p.park !== herePlace) acts.push(`<button class="ph-act" data-ogo="${esc(p.park)}" title="Go to his park">Go</button>`);
+    return `<div class="ph-row"><div class="ph-main">${av(p.name || f.username)}<span class="ph-who"><b>${esc(p.name || f.username)}</b><small>${esc(f.username)}${on && p.char ? ' · ' + esc(p.char) : ''}</small><em>${esc(statusText(p))}${inSquad.has(f.id) ? ' · your squad' : p.squad && p.squad.size > 1 ? ` · squad of ${p.squad.size}` : ''}</em></span><i class="ph-dot ${on ? 'on' : ''}"></i></div>
+      ${acts.join('')}<button class="ph-act" data-ofr="remove" data-u="${esc(f.username)}" title="Remove friend">✕</button></div>`;
   };
-  return `${head}${room}
-    ${inc.length ? `<div class="ph-sec">Friend requests</div>${inc.map(f => `<div class="ph-row"><div class="ph-main"><span class="ol-av">${esc(f.username.slice(0, 1).toUpperCase())}</span><span class="ph-who"><b>${esc(f.username)}</b><small>wants to be friends</small></span></div><button class="ph-act add" data-ofr="accept" data-u="${esc(f.username)}">Accept</button><button class="ph-act" data-ofr="decline" data-u="${esc(f.username)}">✕</button></div>`).join('')}` : ''}
+  return `${head}${conn ? squadHTML(app) + crewHTML(app) : ''}
+    ${inc.length ? `<div class="ph-sec">Friend requests</div>${inc.map(f => `<div class="ph-row"><div class="ph-main">${av(f.username)}<span class="ph-who"><b>${esc(f.username)}</b><small>wants to be friends</small></span></div><button class="ph-act add" data-ofr="accept" data-u="${esc(f.username)}">Accept</button><button class="ph-act" data-ofr="decline" data-u="${esc(f.username)}">✕</button></div>`).join('')}` : ''}
     <div class="ph-sec">Friends · ${mine.filter(f => f.presence?.online).length} of ${mine.length} online</div>
     ${mine.length ? mine.sort((a, b) => (b.presence?.online ? 1 : 0) - (a.presence?.online ? 1 : 0)).map(friendRow).join('') : '<p class="ph-empty">No friends yet. Add your friends by their username below.</p>'}
-    ${out.length ? `<div class="ph-sec">Sent</div>${out.map(f => `<div class="ph-row"><div class="ph-main"><span class="ol-av">${esc(f.username.slice(0, 1).toUpperCase())}</span><span class="ph-who"><b>${esc(f.username)}</b><small>request sent</small></span></div><button class="ph-act" data-ofr="remove" data-u="${esc(f.username)}">Cancel</button></div>`).join('')}` : ''}
-    <form class="ol-add" data-oadd><input class="text" name="u" maxlength="24" placeholder="Friend's username" autocomplete="off"><button class="btn small primary" type="submit">Add friend</button></form>
-    ${!net.room && conn ? '<div class="ph-acts"><button class="btn small" data-ocreate>Start a room</button></div>' : ''}`;
+    ${out.length ? `<div class="ph-sec">Sent</div>${out.map(f => `<div class="ph-row"><div class="ph-main">${av(f.username)}<span class="ph-who"><b>${esc(f.username)}</b><small>request sent</small></span></div><button class="ph-act" data-ofr="remove" data-u="${esc(f.username)}">Cancel</button></div>`).join('')}` : ''}
+    <form class="ol-add" data-oadd><input class="text" name="u" maxlength="24" placeholder="Friend's username" autocomplete="off"><button class="btn small primary" type="submit">Add friend</button></form>`;
+}
+
+// your squad: who's in it, where they are; the leader calls next, sets up Pro-Am and invites
+export function squadHTML(app) {
+  const net = app.net, sq = net.squad;
+  if (!sq) return `<div class="ol-room"><div class="ph-sec">Squad</div><p class="ph-note">Invite friends to your squad (Squad on a friend below). A squad of up to ${MAX_SQUAD} goes everywhere together: it calls Got Next as one, runs Pro-Am as one team, and follows its leader from park to park.</p></div>`;
+  const lead = net.isLeader();
+  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>`).join('');
+  return `<div class="ol-room"><div class="ph-sec">Your squad · ${sq.members.length}/${MAX_SQUAD}</div>${rows}
+    <p class="ph-note">${lead ? 'You lead: you call Got Next for the squad, and Pro-Am games start when you start one.' : `${esc(sq.members.find(m => m.id === sq.leader)?.name || 'Your leader')} leads: you go where he goes, and play when he starts a game.`}</p>
+    <div class="ph-acts"><button class="btn small ghost" data-osqleave>Leave squad</button></div></div>`;
+}
+
+function crewHTML(app) {
+  const net = app.net, cr = net.crew, local = app.crew;
+  if (!cr) {
+    if (!local) return '';
+    return `<div class="ol-room"><div class="ph-sec">Crew online</div><p class="ph-note">Bring <b>${esc(local.name)}</b> [${esc(local.tag)}] online and your friends can join it: their games add crew XP to it, and you run together in the Crew HQ.</p>
+      <div class="ph-acts"><button class="btn small primary" data-ocrewon>Bring the crew online</button></div></div>`;
+  }
+  const founder = cr.founder === net.myId;
+  const rows = cr.members.map(m => `<div class="ol-mem">${av(m.username, m.id === cr.founder ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === cr.founder ? ' <i class="ph-star">FOUNDER</i>' : ''}</b><small>${esc(m.username)}</small><em>${esc(statusText(m))}</em></span>${founder && m.id !== net.myId ? `<button class="ph-act" data-ocrewkick="${esc(m.id)}" title="Out of the crew">✕</button>` : ''}</div>`).join('');
+  return `<div class="ol-room crew-online" style="--c:${esc(cr.color)}"><div class="ph-sec">${esc(cr.name)} [${esc(cr.tag)}] · level ${cr.level} · online crew</div>${rows}
+    <p class="ph-note">${founder ? 'Your crew: invite friends with Crew on a friend below. Their games add crew XP to it (your game collects it). Run together in the Crew HQ.' : 'Your games add crew XP to this crew. The Crew HQ door in any park takes you to its HQ.'}</p>
+    <div class="ph-acts"><button class="btn small ghost" data-ocrewleave>${founder ? 'Take the crew offline' : 'Leave the crew'}</button></div></div>`;
 }
 
 export function bindPhoneTab(app, host, redraw) {
   const net = app.net;
   if (!net) return;
   bindLink(app, host, redraw);
+  const send = (m, okText) => { if (!net.send(m)) toast('Not connected right now.', 'error'); else if (okText) toast(okText); };
   // (friend requests go over the socket: from your own copy there's no sign-in cookie for the host's service)
-  $$('[data-ofr]', host).forEach(b => b.onclick = () => { if (!net.send({ t: 'friend', username: b.dataset.u, action: b.dataset.ofr })) toast('Not connected right now.', 'error'); });
+  $$('[data-ofr]', host).forEach(b => b.onclick = () => send({ t: 'friend', username: b.dataset.u, action: b.dataset.ofr }));
   const add = host.querySelector('[data-oadd]');
   if (add) add.onsubmit = e => {
     e.preventDefault();
@@ -171,10 +326,19 @@ export function bindPhoneTab(app, host, redraw) {
     if (!u) return;
     if (net.send({ t: 'friend', username: u, action: 'add' })) add.reset(); else toast('Not connected right now.', 'error');
   };
-  $$('[data-oinv]', host).forEach(b => b.onclick = () => { net.send({ t: 'invite', to: b.dataset.oinv }); b.disabled = true; b.textContent = 'Sent'; });
-  $$('[data-join]', host).forEach(b => b.onclick = () => { joinRoom(app, b.dataset.join, b.dataset.park || null); });
-  const cr = host.querySelector('[data-ocreate]'); if (cr) cr.onclick = () => net.send({ t: 'create' });
-  bindRoom(app, host, redraw);
+  const once = (b, label) => { b.disabled = true; b.textContent = label; };
+  $$('[data-osq]', host).forEach(b => b.onclick = () => { send({ t: 'sq-invite', to: b.dataset.osq }); once(b, 'Sent'); });
+  $$('[data-och]', host).forEach(b => b.onclick = () => { send({ t: 'challenge', to: b.dataset.och }); once(b, 'Sent'); });
+  $$('[data-ocrew]', host).forEach(b => b.onclick = () => { send({ t: 'crew-invite', to: b.dataset.ocrew }); once(b, 'Sent'); });
+  $$('[data-ogo]', host).forEach(b => b.onclick = () => {
+    if (app.world?.mySession || app.mode === 'match') { toast('Finish your game first.', 'error'); return; }
+    travel(app, b.dataset.ogo);
+  });
+  $$('[data-okick]', host).forEach(b => b.onclick = () => send({ t: 'sq-kick', id: b.dataset.okick }));
+  const sl = host.querySelector('[data-osqleave]'); if (sl) sl.onclick = () => send({ t: 'sq-leave' });
+  const con = host.querySelector('[data-ocrewon]'); if (con) con.onclick = () => { crewSync(app, true); once(con, 'Bringing it online…'); };
+  $$('[data-ocrewkick]', host).forEach(b => b.onclick = () => send({ t: 'crew-kick', id: b.dataset.ocrewkick }));
+  const cl = host.querySelector('[data-ocrewleave]'); if (cl) cl.onclick = () => send({ t: 'crew-leave' });
 }
 
 // ---------------- your own copy, linked to a friend's hosted game ----------------
@@ -202,7 +366,7 @@ function signInForm(net) {
       </form>`}
     <div class="ph-acts"><button class="btn small ghost" data-ounlink>Change host</button></div>`;
 }
-function bindLink(app, host, redraw) {
+function bindLink(app, host) {
   const net = app.net;
   const lf = host.querySelector('[data-olink]');
   if (lf) lf.onsubmit = async e => {
@@ -233,162 +397,19 @@ function bindLink(app, host, redraw) {
   });
 }
 
-// ---------------- the room ----------------
-function defaults(app) {
-  const hub = hubOf(app);
-  const n = app.net.room?.members.length || 1;
-  const court = hub ? Math.max(0, hub.courts.findIndex(c => c.format >= Math.min(3, n))) : 0;
-  return { mode: hub ? 'park' : 'proam', court, sides: 'together', target: settings.parkTarget || 21, ql: 180, ante: hub?.cup ? (hub.cupState?.antes?.[0] || 500) : null };
-}
-const cfgOf = app => ({ ...defaults(app), ...(app.net.room?.config || {}) });
-
-// can the host start? {ok, why}
-export function startCheck(app) {
-  const net = app.net, r = net.room, cfg = cfgOf(app), hub = hubOf(app);
-  if (!r) return { ok: false, why: '' };
-  const ms = r.members;
-  if (ms.some(m => !m.ready)) return { ok: false, why: 'Waiting for everyone\'s player…' };
-  if (cfg.mode === 'park') {
-    if (!hub) return { ok: false, why: 'Go to a park to set up a park game.' };
-    const c = hub.courts[cfg.court];
-    if (!c) return { ok: false, why: 'Pick a court.' };
-    const away = ms.filter(m => m.park !== hub.themeId);
-    if (away.length) return { ok: false, why: `${away.map(m => m.username).join(', ')} ${away.length > 1 ? 'aren\'t' : 'isn\'t'} at ${parkName(hub.themeId)} yet.` };
-    const busy = ms.filter(m => m.status !== 'park');
-    if (busy.length) return { ok: false, why: `${busy.map(m => m.username).join(', ')} ${busy.length > 1 ? 'are' : 'is'} busy (a game, the shootaround, a menu).` };
-    if (cfg.sides === 'versus' && ms.length < 2) return { ok: false, why: 'Against each other needs two of you.' };
-    const per = cfg.sides === 'versus' ? Math.ceil(ms.length / 2) : ms.length;
-    if (per > c.format) return { ok: false, why: `${c.name} is ${c.format}v${c.format}: too many of you for one side. Pick a bigger court${cfg.sides === 'together' ? ' or play against each other' : ''}.` };
-  } else {
-    const busy = ms.filter(m => m.status === 'game' || m.status === 'busy');
-    if (busy.length) return { ok: false, why: `${busy.map(m => m.username).join(', ')} ${busy.length > 1 ? 'are' : 'is'} busy.` };
-    if (cfg.sides === 'versus' && ms.length < 2) return { ok: false, why: 'Against each other needs two of you.' };
-    if (cfg.sides === 'together' && ms.length > 5) return { ok: false, why: 'Five a side: play against each other with six.' };
-  }
-  return { ok: true, why: '' };
-}
-
-function roomHTML(app) {
-  const net = app.net, r = net.room, host = net.isHost(), cfg = cfgOf(app), hub = hubOf(app);
-  const hostM = r.members.find(m => m.id === r.host);
-  const rows = r.members.map(m => `<div class="ol-mem"><span class="ol-av ${m.id === r.host ? 'host' : ''}">${esc((m.name || m.username).slice(0, 1).toUpperCase())}</span><span class="ph-who"><b>${esc(m.name || m.username)}${m.id === r.host ? ' <i class="ph-star">HOST</i>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${Math.round(m.rtt)} ms` : ''}</small><em>${esc(m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}${m.ready ? '' : ' · getting ready'}</em></span></div>`).join('');
-  const chip = (k, v, label, on) => `<button class="chip ${on ? 'on' : ''}" data-ocfg="${k}" data-v="${esc(String(v))}">${esc(label)}</button>`;
-  let conf;
-  if (host) {
-    const courts = hub ? hub.courts.map((c, i) => chip('court', i, `${c.name}${/\dv\d/.test(c.name) ? '' : ` · ${c.format}v${c.format}`}${c.full && !/full/i.test(c.name) ? ' full court' : ''}`, cfg.court === i)).join('') : '';
-    const chk = startCheck(app);
-    conf = `<div class="ol-cfg">
-      <div class="chips">${chip('mode', 'park', 'Park game', cfg.mode === 'park')}${chip('mode', 'proam', 'Pro-Am 5v5', cfg.mode === 'proam')}</div>
-      ${cfg.mode === 'park' ? (hub ? `<small class="muted">Court at ${esc(parkName(hub.themeId))}</small><div class="chips">${courts}</div>` : '<p class="ph-note">Go to a park to pick a court.</p>') : ''}
-      <div class="chips">${chip('sides', 'together', 'Together vs the AI', cfg.sides === 'together')}${chip('sides', 'versus', 'Against each other', cfg.sides === 'versus')}</div>
-      ${cfg.mode === 'park' ? `<div class="chips">${[11, 15, 21].map(t => chip('target', t, `To ${t}`, cfg.target === t)).join('')}</div>` : `<div class="chips">${[[120, '2 min'], [180, '3 min'], [300, '5 min']].map(([v, l]) => chip('ql', v, `${l} quarters`, cfg.ql === v)).join('')}</div>`}
-      ${cfg.mode === 'park' && hub?.cup ? `<small class="muted">Ante (everyone puts it up)</small><div class="chips">${(hub.cupState?.antes || [500, 1000, 2500, 5000, 10000]).map(a => chip('ante', a, a.toLocaleString() + ' VC', cfg.ante === a)).join('')}</div>` : ''}
-      <div class="ph-acts"><button class="btn primary" data-ostart ${chk.ok ? '' : 'disabled'}>Start the game</button></div>
-      ${chk.why ? `<p class="ph-note">${esc(chk.why)}</p>` : ''}</div>`;
-  } else {
-    const where = r.park ? parkName(r.park) : null;
-    const travelBtn = cfg.mode === 'park' && r.park && hub?.themeId !== r.park ? `<button class="btn small primary" data-otravel="${esc(r.park)}">Go to ${esc(where)}</button>` : '';
-    conf = `<p class="ph-note">${esc(hostM?.username || 'The host')} sets the game up: ${cfg.mode === 'proam' ? 'Pro-Am 5v5 in the arena' : `a park game${where ? ` at ${esc(where)}` : ''}`}, ${cfg.sides === 'versus' ? 'against each other' : 'together against the AI'}. You're in as soon as he starts it.</p>${travelBtn ? `<div class="ph-acts">${travelBtn}</div>` : ''}`;
-  }
-  return `<div class="ol-room"><div class="ph-sec">Your room · ${r.members.length}/${MAX_ROOM}${r.status === 'playing' ? ' · playing' : ''}</div>${rows}${conf}
-    <div class="ph-acts"><button class="btn small ghost" data-oleave>Leave room</button></div></div>`;
-}
-
-function bindRoom(app, host, redraw) {
-  const net = app.net;
-  $$('[data-ocfg]', host).forEach(b => b.onclick = () => {
-    const cfg = cfgOf(app), k = b.dataset.ocfg, v = b.dataset.v;
-    cfg[k] = k === 'mode' || k === 'sides' ? v : +v;
-    net.send({ t: 'config', config: cfg, park: hubOf(app)?.themeId || null });
-    if (net.room) net.room.config = cfg;
-    redraw();
-  });
-  const lv = host.querySelector('[data-oleave]'); if (lv) lv.onclick = () => { net.send({ t: 'leave' }); };
-  const tr = host.querySelector('[data-otravel]'); if (tr) tr.onclick = () => travel(app, tr.dataset.otravel);
-  const st = host.querySelector('[data-ostart]'); if (st) st.onclick = () => {
-    const chk = startCheck(app);
-    if (!chk.ok) { toast(chk.why, 'error'); return; }
-    try { net.send({ t: 'start', setup: buildSetup(app) }); st.disabled = true; st.textContent = 'Starting…'; }
-    catch (e) { console.error(e); toast(e.message, 'error'); }
-  };
-}
-
-// ---------------- the host sets the game up ----------------
-// the input delay (ticks) for this room: long enough for an input to go from the slowest player through the service
-// to the next slowest (half of each one's round trip) with a little to spare; 3 ticks (~45 ms) at the least
-export function inputDelay(rtts) {
-  const r = [...rtts].map(v => (typeof v === 'number' && v >= 0 ? v : 80)).sort((a, b) => b - a);
-  const oneWay = ((r[0] || 0) + (r[1] || 0)) / 2;
-  const tickMs = 1000 / (60 * GAME_SPEED);
-  return Math.max(3, Math.min(15, Math.ceil((oneWay + 30) / tickMs)));
-}
-
-const ORDER = ['PG', 'SG', 'SF', 'PF', 'C'];
-export function buildSetup(app) {
-  const net = app.net, r = net.room, cfg = cfgOf(app), hub = hubOf(app), cat = app.catalog;
-  const members = r.members.filter(m => net.entries[m.id]);
-  const human = m => { const e = structuredClone(net.entries[m.id]); e.human = true; e.look = e.look || resolveLook({ ...e.build, name: e.name }, cat); e.username = m.username; return e; };
-  const sides = [[], []];
-  members.forEach((m, i) => sides[cfg.sides === 'versus' ? i % 2 : 0].push({ m, e: human(m) }));
-  const seed = (Math.random() * 2147483646 | 0) + 1;
-  let fmt, rosters, teams, extra = {};
-  if (cfg.mode === 'park') {
-    const c = hub.courts[cfg.court];
-    fmt = c.format;
-    const need = 2 * fmt - members.length;
-    const ai = (need > 0 ? hub.takeEntries(need, { topUp: true, level: 0.62 }) : []) || [];
-    if (ai.length < need) throw new Error('Not enough people at the park to fill the teams. Try a smaller court.');
-    rosters = sides.map(s => s.map(x => x.e));
-    for (const e of ai) { const t = rosters[0].length < fmt ? 0 : 1; rosters[t].push({ ...e, human: false, look: e.look || resolveLook(e.build, cat) }); }
-    const nm = s => (s[0] ? `${s[0].m.username}'s squad` : 'Court Kings');
-    teams = cfg.sides === 'versus'
-      ? [{ name: nm(sides[0]), abbr: sides[0][0].m.username.slice(0, 3).toUpperCase(), color: '#ffd84a' }, { name: nm(sides[1]), abbr: sides[1][0].m.username.slice(0, 3).toUpperCase(), color: '#4ac8ff' }]
-      : [{ name: nm(sides[0]), abbr: 'SQD', color: hub.aff?.color || '#ffd84a' }, { name: 'Court Kings', abbr: 'KNG', color: '#e8e3d8' }];
-    extra = { park: hub.themeId, court: cfg.court, full: !!c.full, target: cfg.target, ante: hub.cup ? cfg.ante : null };
-  } else {
-    fmt = 5;
-    const w = app.ai, used = new Set();
-    const fill = (list, level, key) => {
-      const open = ORDER.filter(p => !list.some(x => x.build.position === p));
-      while (list.length < 5) { const position = open.shift() || ORDER[list.length % 5]; const id = w.pick({ position, level, exclude: used, key: key + list.length }); used.add(id); list.push({ ...w.gameEntry(id), human: false }); }
-      return list;
-    };
-    rosters = sides.map((s, t) => fill(s.map(x => x.e), 0.62 + (t ? 0.02 : 0), `ol${seed}-${t}-`));
-    const t0 = app.profile?.proam_team;
-    const brand = { name: t0?.name || `${members[0].username}'s team`, abbr: t0?.abbr || members[0].username.slice(0, 3).toUpperCase(), primary: t0?.primary || '#2457c5', secondary: t0?.secondary || '#f2c14e', logo: t0?.logo || 'bolt', wood: t0?.wood || 'natural' };
-    const opp = cfg.sides === 'versus'
-      ? { name: `${sides[1][0].m.username}'s team`, abbr: sides[1][0].m.username.slice(0, 3).toUpperCase(), primary: '#c8322f', secondary: '#111111' }
-      : { name: 'Night Owls', abbr: 'NOW', primary: '#c8322f', secondary: '#111111' };
-    if (opp.primary === brand.primary) { opp.primary = '#1f7a4d'; opp.secondary = '#f4f2ec'; }
-    const uni = (b, n) => ({ top: { family: 'jersey', color: b.primary, trim: b.secondary, secondary: b.secondary, pattern: 'panel', lettering: b.abbr, tucked: true }, bottom: { family: 'shorts', color: b.primary, trim: b.secondary, stripe: b.secondary }, number: n });
-    rosters.forEach((ro, t) => ro.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, cat, { ...uni(t ? opp : brand, e.build.appearance?.number ?? (i * 7 + 3) % 50), name: e.name }); }));
-    teams = [{ name: brand.name, abbr: brand.abbr, color: brand.primary }, { name: opp.name, abbr: opp.abbr, color: opp.primary }];
-    extra = { branding: brand, quarterLen: cfg.ql };
-  }
-  // who plays whom: player index = team 0 in order, then team 1
-  const slots = {}, names = {}, meter = {};
-  let i = 0;
-  rosters.forEach(ro => ro.forEach(e => {
-    if (e.human) { const m = members.find(x => x.username === e.username); if (m) { slots[m.id] = i; names[i] = m.username; meter[i] = !!e.meterOff; } }
-    i++;
-  }));
-  return { mode: cfg.mode, format: fmt, sides: cfg.sides, seed, rosters, teams, slots, names, meter, delay: inputDelay(r.members.map(m => m.rtt)), difficulty: settings.difficulty ?? 0.6, host: net.you.id, ...extra };
-}
-
 // ---------------- the start, on every screen ----------------
+// A park game (on a court where you are), a crew run (in the HQ) or Pro-Am (in the arena: the squad goes there)
 export async function startOnline(app, setup) {
-  const net = app.net, local = setup.slots?.[net.you?.id];
-  if (local == null) return; // (not in this one: joined after it started)
-  document.getElementById('ol-invite')?.remove();
-  if (setup.mode === 'park') {
-    let hub = hubOf(app);
-    if (!hub || hub.themeId !== setup.park) { toast(`The game is at ${parkName(setup.park)}: you have to be there to play. The AI takes your spot.`, 'error'); net.send({ t: 'leave' }); return; }
-    // (still on the last game's results: off the court first)
-    if (hub.mySession && hub.mySession.ended && hub.onlineGame) { closeModal(); hub.leaveOnlineCourt(hub.mySession); }
-    if (hub.mode === 'practice') hub.endPractice();
-    if (hub.mode !== 'roam') { toast('You were busy: the AI takes your spot in this one.', 'error'); net.send({ t: 'leave' }); return; }
+  const net = app.net, local = setup.slots?.[net.myId];
+  if (local == null) return; // (not in this one)
+  clearInvites();
+  const kind = setup.kind || 'park';
+  if (kind === 'park' || kind === 'hq') {
+    const w = placeOf(app);
+    if (!w || w.placeKey() !== setup.where) { toast(`That game is at ${parkName(setup.where)}: you weren't there. The AI takes your spot.`, 'error'); net.send({ t: 'quit' }); return; }
+    if (!w.readyForOnline?.()) { toast('You were busy: the AI takes your spot in this one.', 'error'); net.send({ t: 'quit' }); return; }
     closeModal();
-    await hub.startOnlineGame(setup, local);
+    await w.startOnlineGame(setup, local);
   } else {
     const Modes = await import('./modes.js');
     closeModal();

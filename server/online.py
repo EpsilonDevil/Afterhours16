@@ -9,13 +9,17 @@ What this module adds:
 
 * Friends between real players (people with an account on this service): requests by username, accepted or declined,
   stored in `online_friends` (one row per direction: friends / requested / incoming).
-* A WebSocket (`/api/ws`, implemented here on the standard library: RFC 6455 framing, text frames only) that carries
-  presence (who of your friends is on, at which park, in a game or not), invites, rooms and the games themselves.
-* Rooms: a host and up to five friends who play together. The host sets the run up (mode, court, sides) and starts it;
-  the clients run the game in lockstep (client/js/game/session.js): every client simulates the same game from the same
-  seed and rosters, and each one sends its own player's input for a tick a few ticks ahead; the service only relays
-  them, in order, to the rest of the room. A member who leaves mid-game is handed to the AI at the same tick on every
-  client (the last tick the service relayed for him).
+* A WebSocket (`/api/ws`, implemented here on the standard library: RFC 6455 framing, text frames only). Games from
+  this service sign in with their cookie; a friend's own copy of the game signs in on the socket (Hub.sign_in).
+* The base game with real people in it (v0.4.7.5 qp3, part 2): everyone at the same park (or Crew HQ) sees the others
+  walk around; squads of up to five friends go everywhere together; Got Next claims, the kings holding a court and the
+  courts in use are shared by everyone at a park; games are started by whoever decides for that court (or a squad
+  leader, for Pro-Am and crew runs) and run in lockstep on every player's screen (client/js/game/session.js): every
+  client simulates the same game from the same seed and rosters, each one sends its own player's input for a tick a
+  few ticks ahead, and the service only relays them, in order, to the other players and to everyone watching from the
+  same place. A player who leaves mid-game is handed to the AI at the same tick on every screen.
+* Online crews: a crew's founder brings friends into it (`online_crews`, `online_crew_members`); members' games add
+  crew XP that the founder's own game collects into his save.
 
 The service never runs or checks the game: the results each client reports go through the same /api/matches
 validation as a single-player game.
@@ -31,7 +35,8 @@ import time
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_MESSAGE = 512 * 1024      # a game setup carries every roster entry (builds and looks): a few tens of kB
-MAX_ROOM = 6
+MAX_SQUAD = 5          # you and four friends
+MAX_CREW = 40
 MAX_FRIENDS = 100
 INPUT_KEYS = ("t", "k", "i")
 
@@ -61,7 +66,9 @@ class WSConn:
         self.lock = threading.Lock()
         self.alive = True
         self.info = {"name": username, "park": None, "status": "menu", "char": None}
-        self.room = None
+        self.squad = None     # squad id
+        self.game = None      # the game he's playing (id)
+        self.entry = None     # his player as he plays (for the others where he is)
         self.ip = None
         self.connected_at = time.time()
 
@@ -188,22 +195,76 @@ def friend_action(db, aid, username, action):
     raise ValueError("Unknown action.")
 
 
-# ---------------- the hub: presence, invites, rooms, relay ----------------
+# ---------------- online crews (database) ----------------
+def crew_of(db, aid):
+    rows = db.query("SELECT crew_id FROM online_crew_members WHERE account_id=?", (aid,))
+    return rows[0][0] if rows else None
+
+
+def crew_row(db, cid):
+    rows = db.query("SELECT * FROM online_crews WHERE id=?", (cid,))
+    return dict(rows[0]) if rows else None
+
+
+# ---------------- the hub ----------------
+# Where someone is: a park ("harbor"), a Crew HQ ("hq:<crew id>"), or nowhere in particular (menus, the arena). People
+# at the same place see each other walk around (pos), each other's Got Next claims and kings (courts) and the games
+# played there (watch). Squads go everywhere together; games are started by a squad leader (or whoever decides for a
+# court) and relayed in lockstep to their players and to everyone watching from the same place.
 class Hub:
     def __init__(self, db, authenticator=None):
         self.db = db
         self.authenticator = authenticator  # (qp3: sign-ins from your friends' own copies: Service.online_auth)
         self.lock = threading.RLock()
-        self.conns = {}   # account id -> WSConn
-        self.rooms = {}   # room id -> room dict
+        self.conns = {}      # account id -> WSConn
+        self.squads = {}     # squad id -> {"id", "leader", "members": [aids, leader first]}
+        self.invites = {}    # invitee -> {leader: time} (squad invites)
+        self.challenges = {} # challenged -> {challenger: time} (Pro-Am)
+        self.crew_invites = {}  # invitee -> {crew id: time}
+        self.courts = {}     # place -> {court index: {"lines": [claim|None, claim|None], "kings": claim|None, "busy": dict|None}}
+        self.games = {}      # game id -> game dict
+        self.game_seq = 0
+
+    # ---- small helpers ----
+    def live(self, aid):
+        c = self.conns.get(aid)
+        return c if c and c.alive else None
+
+    def at(self, place, skip=None):
+        return [c for c in list(self.conns.values()) if c.alive and place and c.info.get("park") == place and c.aid != skip]
+
+    def send_to(self, aids, msg, skip=None):
+        for a in aids:
+            if a == skip:
+                continue
+            c = self.live(a)
+            if c:
+                c.send(msg)
+
+    def name_of(self, aid):
+        c = self.conns.get(aid)
+        return (c.info.get("name") or c.username) if c else "?"
+
+    def squad_of(self, aid):
+        c = self.conns.get(aid)
+        return self.squads.get(c.squad) if c and c.squad else None
+
+    def leader_of(self, aid):
+        sq = self.squad_of(aid)
+        return sq["leader"] if sq else aid
+
+    def party(self, aid):
+        """He and his squad: [leader, members...] (just him when he has none)."""
+        sq = self.squad_of(aid)
+        return list(sq["members"]) if sq else [aid]
 
     # ---- presence ----
     def presence_of(self, aid):
-        c = self.conns.get(aid)
-        if not c or not c.alive:
+        c = self.live(aid)
+        if not c:
             return {"online": False}
-        r = self.rooms.get(c.room) if c.room else None
-        return {"online": True, **c.info, "room": c.room, "host": bool(r and r["host"] == aid), "playing": bool(r and r["status"] == "playing")}
+        sq = self.squads.get(c.squad) if c.squad else None
+        return {"online": True, **c.info, "playing": bool(c.game), "squad": {"leader": sq["leader"], "size": len(sq["members"])} if sq else None}
 
     def friends_payload(self, aid):
         out = []
@@ -213,124 +274,581 @@ class Hub:
         return out
 
     def push_presence(self, aid):
-        """Tell aid's online friends (and aid) the new state of things."""
+        """Tell aid's online friends (and aid) the new state of things; his squad and crew see it too."""
         with self.lock:
             targets = [aid] + [r["friend_id"] for r in friends_rows(self.db, aid) if r["status"] in ("friends", "incoming", "requested")]
             for t in targets:
-                c = self.conns.get(t)
-                if c and c.alive:
+                c = self.live(t)
+                if c:
                     c.send({"t": "friends", "friends": self.friends_payload(t)})
+            sq = self.squad_of(aid)
+            if sq:
+                self.push_squad(sq)
+            cid = crew_of(self.db, aid)
+            if cid:
+                self.push_crew(cid)
 
     def connect(self, conn):
         with self.lock:
             old = self.conns.get(conn.aid)
             if old and old is not conn:
                 old.send({"t": "replaced"})
-                self.leave_room(old, reason="replaced")
+                self.drop(old, reason="replaced")
                 old.close(4000)
             self.conns[conn.aid] = conn
         conn.send({"t": "hello", "you": {"id": conn.aid, "username": conn.username}, "friends": self.friends_payload(conn.aid)})
         self.push_presence(conn.aid)
+        cid = crew_of(self.db, conn.aid)
+        if cid:
+            self.push_crew(cid)
+            if cid == conn.aid:
+                self.offer_crew_xp(cid)
 
     def disconnect(self, conn):
         with self.lock:
-            self.leave_room(conn, reason="disconnected")
+            self.drop(conn, reason="disconnected")
             if self.conns.get(conn.aid) is conn:
                 del self.conns[conn.aid]
         self.push_presence(conn.aid)
 
-    # ---- rooms ----
-    def room_state(self, r):
-        return {"id": r["id"], "host": r["host"], "status": r["status"], "config": r["config"], "park": r["park"],
-                "game": r["game"], "members": [self.member_state(r, m) for m in r["members"]]}
+    def drop(self, conn, reason="left"):
+        """He's gone (or replaced): out of his game, his squad and his place."""
+        self.quit_game(conn, reason)
+        self.leave_squad(conn)
+        self.move(conn, None)
 
-    def member_state(self, r, m):
-        c = self.conns.get(m)
-        info = c.info if c else {}
-        return {"id": m, "username": c.username if c else "?", "name": info.get("name") or "?", "char": info.get("char"), "park": info.get("park"),
-                "status": info.get("status"), "ready": m in r["entries"], "rtt": r["rtt"].get(m)}
-
-    def broadcast(self, r, msg, skip=None):
-        for m in list(r["members"]):
-            if m == skip:
-                continue
-            c = self.conns.get(m)
-            if c and c.alive:
-                c.send(msg)
-
-    def send_entries(self, r):
-        """Everyone's player (the host sets the game up with them; the others see their friends walk the park)."""
-        self.broadcast(r, {"t": "entries", "room": r["id"], "entries": {m: e for m, e in r["entries"].items() if m in r["members"]}})
-
-    def push_room(self, r):
-        self.broadcast(r, {"t": "room", "room": self.room_state(r)})
-
-    def make_room(self, conn):
-        rid = secrets.token_urlsafe(6)
-        r = {"id": rid, "host": conn.aid, "members": [conn.aid], "status": "lobby", "config": {}, "park": conn.info.get("park"),
-             "invited": set(), "entries": {}, "slots": {}, "last": {}, "rtt": {}, "game": 0}
-        self.rooms[rid] = r
-        conn.room = rid
-        return r
-
-    def leave_room(self, conn, reason="left"):
-        rid = conn.room
-        conn.room = None
-        r = self.rooms.get(rid)
-        if not r or conn.aid not in r["members"]:
+    # ---- places: who's where, walking around ----
+    def move(self, conn, place):
+        old = conn.info.get("park")
+        if old == place:
             return
-        r["members"].remove(conn.aid)
-        r["entries"].pop(conn.aid, None)
-        if r["status"] == "playing" and conn.aid in r["slots"]:
-            # everyone hands his player to the AI after the last input the service passed on for him
-            self.broadcast(r, {"t": "left", "slot": r["slots"][conn.aid], "last": r["last"].get(conn.aid, 0), "id": conn.aid, "reason": reason})
-            r["slots"].pop(conn.aid, None)
-        if not r["members"]:
-            del self.rooms[rid]
+        conn.info["park"] = place
+        if old:
+            self.send_to([c.aid for c in self.at(old)], {"t": "gone", "id": conn.aid, "place": old})
+            self.release_place(conn.aid, old)
+        if place:
+            others = self.at(place, skip=conn.aid)
+            conn.send({"t": "here", "place": place, "players": [self.person(c) for c in others],
+                       "courts": self.courts_payload(place), "games": self.place_games(place)})
+            if conn.entry:
+                self.send_to([c.aid for c in others], {"t": "pentry", **self.person(conn)})
+            self.offer_watch(conn, place)
+
+    def person(self, c):
+        return {"id": c.aid, "username": c.username, "name": c.info.get("name") or c.username, "entry": c.entry, "rtt": c.info.get("rtt")}
+
+    def release_place(self, aid, place):
+        """Leaving a park: his claims there go, and so does a court he held as king."""
+        changed = False
+        for ci, ct in self.courts.get(place, {}).items():
+            for r, l in enumerate(ct["lines"]):
+                if l and l["leader"] == aid:
+                    ct["lines"][r] = None
+                    changed = True
+            if ct["kings"] and ct["kings"]["leader"] == aid:
+                ct["kings"] = None
+                changed = True
+            if ct["busy"] and ct["busy"].get("kind") == "local" and ct["busy"]["leader"] == aid:
+                ct["busy"] = None
+                changed = True
+        if changed:
+            self.push_courts(place)
+
+    # ---- squads ----
+    def squad_payload(self, sq):
+        return {"id": sq["id"], "leader": sq["leader"], "members": [
+            {"id": m, "username": self.conns[m].username if m in self.conns else "?", "name": self.name_of(m),
+             "park": (self.conns[m].info.get("park") if m in self.conns else None), "status": (self.conns[m].info.get("status") if m in self.conns else None),
+             "char": (self.conns[m].info.get("char") if m in self.conns else None), "inGame": bool(self.conns[m].game) if m in self.conns else False,
+             "rtt": (self.conns[m].info.get("rtt") if m in self.conns else None)}
+            for m in sq["members"]]}
+
+    def push_squad(self, sq):
+        self.send_to(sq["members"], {"t": "squad", "squad": self.squad_payload(sq)})
+
+    def push_squad_entries(self, sq):
+        ents = {m: self.conns[m].entry for m in sq["members"] if m in self.conns and self.conns[m].entry}
+        self.send_to(sq["members"], {"t": "squad-entries", "entries": ents})
+
+    def leave_squad(self, conn):
+        sq = self.squads.get(conn.squad) if conn.squad else None
+        conn.squad = None
+        if not sq or conn.aid not in sq["members"]:
             return
-        if r["host"] == conn.aid:
-            r["host"] = r["members"][0]
-            self.broadcast(r, {"t": "note", "text": "The host left: the room is yours now." if len(r["members"]) == 1 else "The host left; a new host takes over."})
-            self.send_entries(r)
-        self.push_room(r)
-        for m in r["members"]:
+        sq["members"].remove(conn.aid)
+        conn.send({"t": "squad", "squad": None})
+        place = conn.info.get("park")
+        if sq["leader"] == conn.aid and place:
+            self.release_place(conn.aid, place)  # (the claim was his to make)
+        if len(sq["members"]) <= 1:
+            for m in sq["members"]:
+                c = self.conns.get(m)
+                if c:
+                    c.squad = None
+                    c.send({"t": "squad", "squad": None})
+                    c.send({"t": "note", "text": "Your squad broke up."})
+            del self.squads[sq["id"]]
+        else:
+            if sq["leader"] == conn.aid:
+                sq["leader"] = sq["members"][0]
+                self.send_to(sq["members"], {"t": "note", "text": f"{self.name_of(sq['leader'])} leads the squad now."})
+            self.push_squad(sq)
+        self.refresh_claims()
+
+    def refresh_claims(self):
+        """Claims list their squad as it is now (who's at the park and not in a game)."""
+        for place, cts in self.courts.items():
+            changed = False
+            for ct in cts.values():
+                for l in ct["lines"]:
+                    if l:
+                        mem = self.claim_members(l["leader"], place)
+                        if mem != l["members"]:
+                            l["members"], l["names"] = mem, [self.name_of(m) for m in mem]
+                            changed = True
+            if changed:
+                self.push_courts(place)
+
+    def claim_members(self, leader, place):
+        out = []
+        for m in self.party(leader):
+            c = self.live(m)
+            if c and c.info.get("park") == place and not c.game:
+                out.append(m)
+        if leader not in out:
+            out.insert(0, leader)
+        return out
+
+    # ---- courts: Got Next claims, kings, a court in use ----
+    def court(self, place, ci):
+        return self.courts.setdefault(place, {}).setdefault(ci, {"lines": [None, None], "kings": None, "busy": None})
+
+    def courts_payload(self, place):
+        return {str(ci): ct for ci, ct in self.courts.get(place, {}).items()}
+
+    def push_courts(self, place):
+        self.send_to([c.aid for c in self.at(place)], {"t": "courts", "place": place, "courts": self.courts_payload(place)})
+
+    def claim(self, conn, msg):
+        place, ci, r = conn.info.get("park"), msg.get("court"), msg.get("spot")
+        if not place or place.startswith("hq:") or not isinstance(ci, int) or not 0 <= ci < 16 or r not in (0, 1):
+            return conn.send({"t": "error", "text": "You can only call next at a park."})
+        if self.leader_of(conn.aid) != conn.aid:
+            return conn.send({"t": "claimed", "ok": False, "court": ci, "spot": r, "text": "Your squad leader calls next for the squad."})
+        ct = self.court(place, ci)
+        if ct["lines"][r] and ct["lines"][r]["leader"] != conn.aid:
+            return conn.send({"t": "claimed", "ok": False, "court": ci, "spot": r, "text": "Somebody already has that spot."})
+        for cts in self.courts.get(place, {}).values():  # (one claim at a time)
+            for i, l in enumerate(cts["lines"]):
+                if l and l["leader"] == conn.aid:
+                    cts["lines"][i] = None
+        mem = self.claim_members(conn.aid, place)
+        ct["lines"][r] = {"leader": conn.aid, "members": mem, "names": [self.name_of(m) for m in mem], "at": time.time()}
+        conn.send({"t": "claimed", "ok": True, "court": ci, "spot": r})
+        self.push_courts(place)
+
+    def unclaim(self, conn):
+        place = conn.info.get("park")
+        changed = False
+        for ct in self.courts.get(place, {}).values():
+            for i, l in enumerate(ct["lines"]):
+                if l and l["leader"] == conn.aid:
+                    ct["lines"][i] = None
+                    changed = True
+        if changed:
+            self.push_courts(place)
+
+    def court_state(self, conn, msg):
+        """A local game on a court (a solo player against the AI), its score, and who holds the court after it."""
+        place, ci = conn.info.get("park"), msg.get("court")
+        if not place or not isinstance(ci, int) or not 0 <= ci < 16:
+            return
+        ct = self.court(place, ci)
+        if msg.get("busy"):
+            for i, l in enumerate(ct["lines"]):
+                if l and l["leader"] == conn.aid:
+                    ct["lines"][i] = None
+            ct["busy"] = {"kind": "local", "leader": conn.aid, "names": [self.name_of(conn.aid)], "score": msg.get("score") if isinstance(msg.get("score"), list) else None}
+        elif ct["busy"] and ct["busy"].get("kind") == "local" and ct["busy"]["leader"] == conn.aid:
+            ct["busy"] = None
+        if "kings" in msg:
+            if msg["kings"]:
+                prev = ct["kings"]
+                ct["kings"] = {"leader": conn.aid, "members": [conn.aid], "names": [self.name_of(conn.aid)], "at": time.time(),
+                               "streak": (prev["streak"] + 1) if prev and prev["leader"] == conn.aid else 1}
+            elif ct["kings"] and ct["kings"]["leader"] == conn.aid:
+                ct["kings"] = None
+        self.push_courts(place)
+
+    def release_court(self, conn, msg):
+        place, ci = conn.info.get("park"), msg.get("court")
+        ct = self.courts.get(place, {}).get(ci)
+        if ct and ct["kings"] and conn.aid in ct["kings"]["members"]:
+            ct["kings"]["members"] = [m for m in ct["kings"]["members"] if m != conn.aid]
+            if ct["kings"]["leader"] == conn.aid or not ct["kings"]["members"]:
+                ct["kings"] = None
+            self.push_courts(place)
+
+    # ---- games ----
+    def start(self, conn, msg):
+        setup = msg.get("setup")
+        if not isinstance(setup, dict) or not isinstance(setup.get("slots"), dict) or not setup["slots"]:
+            return conn.send({"t": "error", "text": "Bad game setup."})
+        slots = {a: s for a, s in setup["slots"].items() if isinstance(s, int) and not isinstance(s, bool)}
+        if conn.aid not in slots:
+            return conn.send({"t": "error", "text": "You start games you play in."})
+        busy = [a for a in slots if not self.live(a) or self.conns[a].game]
+        if busy:
+            return conn.send({"t": "error", "text": f"{', '.join(self.name_of(a) for a in busy)} can't play right now."})
+        place = setup.get("where") if isinstance(setup.get("where"), str) else None
+        ci = setup.get("court")
+        self.game_seq += 1
+        gid = self.game_seq
+        setup["game"] = gid
+        g = {"id": gid, "where": place, "court": ci, "slots": slots, "players": set(slots), "last": {}, "setup": setup, "started": time.time(),
+             "log": [], "score": None, "names": [self.name_of(a) for a in slots], "teams": setup.get("sideIds") if isinstance(setup.get("sideIds"), list) else None}
+        self.games[gid] = g
+        for a in slots:
+            self.conns[a].game = gid
+        if place and ci is not None:
+            ct = self.court(place, ci)
+            for i, l in enumerate(ct["lines"]):
+                if l and (l["leader"] in slots or any(m in slots for m in l["members"])):
+                    ct["lines"][i] = None
+            ct["busy"] = {"kind": "game", "game": gid, "leader": conn.aid, "names": g["names"], "score": [0, 0]}
+            self.push_courts(place)
+        self.refresh_claims()  # (anyone in it is off the other claims he was on)
+        self.send_to(slots, {"t": "start", "setup": setup})
+        if place:
+            for w in self.at(place):
+                if w.aid not in slots:
+                    w.send({"t": "watch", "setup": setup})
+        for a in slots:
+            self.push_presence(a)
+
+    def place_games(self, place):
+        return [{"game": g["id"], "court": g["court"], "names": g["names"], "score": g["score"]} for g in self.games.values() if g["where"] == place]
+
+    def offer_watch(self, conn, place):
+        """Arriving where a game is on: the game so far (its first minute is kept for this), or just its score."""
+        for g in self.games.values():
+            if g["where"] == place and conn.aid not in g["players"] and g["log"] is not None:
+                conn.send({"t": "watch", "setup": g["setup"], "log": g["log"]})
+
+    def relay(self, conn, msg):
+        g = self.games.get(conn.game)
+        if not g or msg.get("g") != g["id"] or conn.aid not in g["slots"]:
+            return
+        k = msg.get("k")
+        if not isinstance(k, int) or isinstance(k, bool) or k <= g["last"].get(conn.aid, 0):
+            return
+        g["last"][conn.aid] = k
+        out = {"t": "in", "s": g["slots"][conn.aid], "k": k, "i": msg.get("i"), "g": g["id"]}
+        if g["log"] is not None:
+            if time.time() - g["started"] < 60:
+                g["log"].append([out["s"], k, out["i"]])
+            else:
+                g["log"] = None  # (past a minute in, late arrivals see the score instead of the game)
+        targets = set(g["players"]) | ({c.aid for c in self.at(g["where"])} if g["where"] else set())
+        targets.discard(conn.aid)
+        for a in targets:
+            c = self.conns.get(a)
+            if c:
+                c.send(out)
+
+    def quit_game(self, conn, reason="left"):
+        g = self.games.get(conn.game)
+        conn.game = None
+        if not g or conn.aid not in g["slots"]:
+            return
+        slot = g["slots"].pop(conn.aid)
+        g["players"].discard(conn.aid)
+        msg = {"t": "left", "slot": slot, "last": g["last"].get(conn.aid, 0), "id": conn.aid, "reason": reason, "g": g["id"]}
+        self.send_to(set(g["players"]) | ({c.aid for c in self.at(g["where"])} if g["where"] else set()), msg, skip=conn.aid)
+        if not g["players"]:
+            self.finish(g, [])
+
+    def end_game(self, conn, msg):
+        g = self.games.get(msg.get("g"))
+        if not g or conn.aid not in g["players"]:
+            return
+        winners = [a for a in (msg.get("winners") or []) if isinstance(a, str) and a in g["slots"]]
+        self.finish(g, winners)
+
+    def finish(self, g, winners):
+        if g.get("over"):
+            return
+        g["over"] = True
+        for a in list(g["players"]):
+            c = self.conns.get(a)
+            if c and c.game == g["id"]:
+                c.game = None
+        place, ci = g["where"], g["court"]
+        if place and ci is not None:
+            ct = self.court(place, ci)
+            if ct["busy"] and ct["busy"].get("game") == g["id"]:
+                ct["busy"] = None
+            # whoever won holds the court (people, not the AI): their squad leader, if he played, leads them
+            live_w = [a for a in winners if self.live(a)]
+            if live_w:
+                leaders = [a for a in live_w if self.leader_of(a) == a]
+                lead = leaders[0] if leaders else live_w[0]
+                prev = ct["kings"]
+                ct["kings"] = {"leader": lead, "members": live_w, "names": [self.name_of(a) for a in live_w], "at": time.time(),
+                               "streak": (prev["streak"] + 1) if prev and set(prev["members"]) & set(live_w) else 1}
+            else:
+                ct["kings"] = None
+            self.push_courts(place)
+            self.send_to([c.aid for c in self.at(place)], {"t": "watchend", "g": g["id"]})
+        self.games.pop(g["id"], None)
+        self.refresh_claims()  # (the players are free again: back on their squad's claims)
+        for a in g["slots"]:
+            self.push_presence(a)
+
+    def score(self, conn, msg):
+        g = self.games.get(conn.game)
+        sc = msg.get("score")
+        if not g or not isinstance(sc, list) or len(sc) != 2:
+            return
+        g["score"] = sc
+        if g["where"] and g["court"] is not None:
+            ct = self.court(g["where"], g["court"])
+            if ct["busy"] and ct["busy"].get("game") == g["id"]:
+                ct["busy"]["score"] = sc
+            self.send_to([c.aid for c in self.at(g["where"]) if c.aid not in g["players"]], {"t": "courtscore", "court": g["court"], "score": sc, "names": g["names"]})
+
+    # ---- invites: squads, Pro-Am challenges ----
+    def sq_invite(self, conn, msg):
+        target = msg.get("to")
+        if not isinstance(target, str) or not are_friends(self.db, conn.aid, target):
+            return conn.send({"t": "error", "text": "You can only invite your friends."})
+        c = self.live(target)
+        if not c:
+            return conn.send({"t": "error", "text": "That friend isn't online."})
+        if self.leader_of(conn.aid) != conn.aid:
+            return conn.send({"t": "error", "text": "Your squad leader invites people."})
+        if target in self.party(conn.aid):
+            return conn.send({"t": "error", "text": "He's in your squad already."})
+        if len(self.party(conn.aid)) >= MAX_SQUAD:
+            return conn.send({"t": "error", "text": f"A squad is {MAX_SQUAD} at the most."})
+        self.invites.setdefault(target, {})[conn.aid] = time.time()
+        c.send({"t": "sqinvite", "from": conn.aid, "name": self.name_of(conn.aid), "username": conn.username, "park": conn.info.get("park"), "size": len(self.party(conn.aid))})
+        conn.send({"t": "note", "text": f"Squad invite sent to {self.name_of(target)}."})
+
+    def sq_accept(self, conn, msg):
+        lead = msg.get("from")
+        inv = self.invites.get(conn.aid, {})
+        if lead not in inv or time.time() - inv[lead] > 600:
+            return conn.send({"t": "error", "text": "That invite has run out."})
+        del inv[lead]
+        lc = self.live(lead)
+        if not lc:
+            return conn.send({"t": "error", "text": "He's gone offline."})
+        if conn.game:
+            return conn.send({"t": "error", "text": "Finish your game first."})
+        if len(self.party(lead)) >= MAX_SQUAD:
+            return conn.send({"t": "error", "text": "That squad is full."})
+        self.leave_squad(conn)
+        sq = self.squads.get(lc.squad) if lc.squad else None
+        if not sq:
+            sq = {"id": secrets.token_urlsafe(6), "leader": lead, "members": [lead]}
+            self.squads[sq["id"]] = sq
+            lc.squad = sq["id"]
+        if sq["leader"] != lead:
+            return conn.send({"t": "error", "text": "He isn't leading that squad any more."})
+        sq["members"].append(conn.aid)
+        conn.squad = sq["id"]
+        self.push_squad(sq)
+        self.push_squad_entries(sq)
+        self.send_to(sq["members"], {"t": "note", "text": f"{self.name_of(conn.aid)} joined the squad."}, skip=conn.aid)
+        self.refresh_claims()
+        for m in sq["members"]:
             self.push_presence(m)
+
+    def sq_kick(self, conn, msg):
+        sq = self.squad_of(conn.aid)
+        target = msg.get("id")
+        if not sq or sq["leader"] != conn.aid or target not in sq["members"] or target == conn.aid:
+            return
+        c = self.conns.get(target)
+        if c:
+            self.leave_squad(c)
+            c.send({"t": "note", "text": "You're out of the squad."})
+
+    def challenge(self, conn, msg):
+        target = msg.get("to")
+        if not isinstance(target, str) or not are_friends(self.db, conn.aid, target):
+            return conn.send({"t": "error", "text": "You can only challenge your friends."})
+        c = self.live(target)
+        if not c or c.game:
+            return conn.send({"t": "error", "text": "He can't play right now."})
+        if self.leader_of(conn.aid) != conn.aid:
+            return conn.send({"t": "error", "text": "Your squad leader sets up games."})
+        if target in self.party(conn.aid):
+            return conn.send({"t": "error", "text": "He's in your squad: play together."})
+        lead = self.leader_of(target)
+        self.challenges.setdefault(lead, {})[conn.aid] = time.time()
+        self.send_to([lead], {"t": "challenge", "from": conn.aid, "name": self.name_of(conn.aid), "username": conn.username, "size": len(self.party(conn.aid))})
+        conn.send({"t": "note", "text": f"Pro-Am challenge sent to {self.name_of(lead)}{' (his squad leader)' if lead != target else ''}."})
+
+    def challenge_reply(self, conn, msg):
+        frm = msg.get("from")
+        ch = self.challenges.get(conn.aid, {})
+        if frm not in ch:
+            return
+        del ch[frm]
+        fc = self.live(frm)
+        if not fc:
+            return conn.send({"t": "error", "text": "He's gone offline."})
+        if not msg.get("ok"):
+            return fc.send({"t": "note", "text": f"{self.name_of(conn.aid)} passed on the Pro-Am challenge."})
+        team = [m for m in self.party(conn.aid) if self.live(m) and not self.conns[m].game]
+        fc.send({"t": "challenge-go", "opp": {"leader": conn.aid, "members": team, "entries": {m: self.conns[m].entry for m in team if self.conns[m].entry},
+                                               "usernames": {m: self.conns[m].username for m in team}, "rtts": {m: self.conns[m].info.get("rtt") for m in team}}})
+        conn.send({"t": "note", "text": f"{self.name_of(frm)} is setting up the Pro-Am game."})
+
+    # ---- online crews: a crew's founder brings friends into it; his save keeps the crew and its XP ----
+    def crew_payload(self, cid):
+        cr = crew_row(self.db, cid)
+        if not cr:
+            return None
+        mem = [r[0] for r in self.db.query("SELECT account_id FROM online_crew_members WHERE crew_id=? ORDER BY since", (cid,))]
+        names = {r[0]: r[1] for r in self.db.query(f"SELECT id, username FROM accounts WHERE id IN ({','.join('?' * len(mem)) or 'NULL'})", mem)} if mem else {}
+        return {"id": cid, "founder": cid, "name": cr["name"], "tag": cr["tag"], "color": cr["color"], "level": cr["level"], "xp": cr["xp"],
+                "members": [{"id": m, "username": names.get(m, "?"), **self.presence_of(m)} for m in mem]}
+
+    def push_crew(self, cid):
+        pl = self.crew_payload(cid)
+        if pl:
+            self.send_to([m["id"] for m in pl["members"]], {"t": "crew", "crew": pl})
+
+    def crew_sync(self, conn, msg):
+        cr = msg.get("crew")
+        if not isinstance(cr, dict):
+            return
+        mine = crew_of(self.db, conn.aid)
+        if mine and mine != conn.aid:
+            return conn.send({"t": "crew-error", "text": "You're in a friend's crew online: leave it to bring your own crew online."})
+        name, tag, color = str(cr.get("name") or "")[:24], str(cr.get("tag") or "")[:4], str(cr.get("color") or "#888888")[:7]
+        level = cr.get("level") if isinstance(cr.get("level"), int) else 1
+        xp = cr.get("xp") if isinstance(cr.get("xp"), int) else 0
+        if not name or not tag:
+            return
+        now = time.time()
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO online_crews(id,name,tag,color,level,xp,pending_xp,updated_at) VALUES(?,?,?,?,?,?,0,?) "
+                      "ON CONFLICT(id) DO UPDATE SET name=excluded.name, tag=excluded.tag, color=excluded.color, level=excluded.level, xp=excluded.xp, updated_at=excluded.updated_at",
+                      (conn.aid, name, tag, color, max(1, min(40, level)), max(0, xp), now))
+            c.execute("INSERT OR IGNORE INTO online_crew_members VALUES(?,?,?)", (conn.aid, conn.aid, now))
+        self.push_crew(conn.aid)
+        self.offer_crew_xp(conn.aid)
+
+    def crew_invite(self, conn, msg):
+        target = msg.get("to")
+        if crew_of(self.db, conn.aid) != conn.aid:
+            return conn.send({"t": "error", "text": "Only the crew's founder brings people in."})
+        if not isinstance(target, str) or not are_friends(self.db, conn.aid, target):
+            return conn.send({"t": "error", "text": "You can only add your friends."})
+        if crew_of(self.db, target):
+            return conn.send({"t": "error", "text": "He's in a crew online already."})
+        if not self.live(target):
+            return conn.send({"t": "error", "text": "That friend isn't online."})
+        self.crew_invites.setdefault(target, {})[conn.aid] = time.time()
+        cr = crew_row(self.db, conn.aid)
+        self.send_to([target], {"t": "crewinvite", "crew": {"id": conn.aid, "name": cr["name"], "tag": cr["tag"], "color": cr["color"], "level": cr["level"]}, "from": self.name_of(conn.aid)})
+        conn.send({"t": "note", "text": f"Crew invite sent to {self.name_of(target)}."})
+
+    def crew_accept(self, conn, msg):
+        cid = msg.get("crew")
+        inv = self.crew_invites.get(conn.aid, {})
+        if cid not in inv:
+            return conn.send({"t": "error", "text": "That invite has run out."})
+        del inv[cid]
+        if crew_of(self.db, conn.aid):
+            return conn.send({"t": "error", "text": "Leave your crew first."})
+        if not crew_row(self.db, cid):
+            return conn.send({"t": "error", "text": "That crew is gone."})
+        n = self.db.query("SELECT COUNT(*) FROM online_crew_members WHERE crew_id=?", (cid,))[0][0]
+        if n >= MAX_CREW:
+            return conn.send({"t": "error", "text": "That crew is full."})
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO online_crew_members VALUES(?,?,?)", (conn.aid, cid, time.time()))
+        self.push_crew(cid)
+        self.send_to([cid], {"t": "note", "text": f"{self.name_of(conn.aid)} joined the crew."})
+
+    def crew_leave(self, conn, target=None):
+        cid = crew_of(self.db, conn.aid)
+        if not cid:
+            return
+        who = target or conn.aid
+        if target and cid != conn.aid:
+            return  # (only the founder removes people)
+        if who == cid:  # the founder takes the crew offline: everyone's out
+            mem = [r[0] for r in self.db.query("SELECT account_id FROM online_crew_members WHERE crew_id=?", (cid,))]
+            with self.db.transaction() as c:
+                c.execute("DELETE FROM online_crew_members WHERE crew_id=?", (cid,))
+                c.execute("DELETE FROM online_crews WHERE id=?", (cid,))
+            self.send_to(mem, {"t": "crew", "crew": None})
+            return
+        with self.db.transaction() as c:
+            c.execute("DELETE FROM online_crew_members WHERE account_id=? AND crew_id=?", (who, cid))
+        self.send_to([who], {"t": "crew", "crew": None})
+        self.push_crew(cid)
+
+    def crew_xp(self, conn, msg):
+        """A member's game paid crew XP: it waits on the hub until the founder's game collects it into his save."""
+        xp = msg.get("xp")
+        cid = crew_of(self.db, conn.aid)
+        if not cid or cid == conn.aid or not isinstance(xp, int) or isinstance(xp, bool) or not 0 < xp <= 5000:
+            return
+        with self.db.transaction() as c:
+            c.execute("UPDATE online_crews SET pending_xp = pending_xp + ? WHERE id=?", (xp, cid))
+        self.offer_crew_xp(cid)
+
+    def offer_crew_xp(self, cid):
+        cr = crew_row(self.db, cid)
+        if cr and cr["pending_xp"] > 0:
+            self.send_to([cid], {"t": "crew-pending", "xp": cr["pending_xp"]})
+
+    def crew_ack(self, conn, msg):
+        xp = msg.get("xp")
+        if crew_of(self.db, conn.aid) == conn.aid and isinstance(xp, int) and xp > 0:
+            with self.db.transaction() as c:
+                c.execute("UPDATE online_crews SET pending_xp = MAX(0, pending_xp - ?) WHERE id=?", (xp, conn.aid))
 
     # ---- messages ----
     def handle(self, conn, msg):
         t = msg.get("t")
-        if t == "in":  # the hot path: a player's input for a tick, passed on to the rest of the room
-            r = self.rooms.get(conn.room)
-            if not r or r["status"] != "playing" or conn.aid not in r["slots"]:
-                return
-            k, slot = msg.get("k"), r["slots"].get(conn.aid)
-            if not isinstance(k, int) or isinstance(k, bool) or slot is None or k <= r["last"].get(conn.aid, 0) or msg.get("g") != r["game"]:
-                return
-            r["last"][conn.aid] = k
-            out = {"t": "in", "s": slot, "k": k, "i": msg.get("i"), "g": r["game"]}
-            for m in r["members"]:
-                if m != conn.aid:
-                    c = self.conns.get(m)
-                    if c:
-                        c.send(out)
+        if t == "in":  # the hot path: a player's input for a tick, passed on to the others in the game and its watchers
+            with self.lock:
+                self.relay(conn, msg)
             return
-        if t == "pos":  # where a room member is walking in the park (the others show him there), ~5 times a second
-            r = self.rooms.get(conn.room)
-            if r and r["status"] != "playing":
-                out = {"t": "pos", "from": conn.aid, **{k: msg.get(k) for k in ("x", "z", "f", "m", "park") if isinstance(msg.get(k), (int, float, str))}}
-                for m in list(r["members"]):
-                    if m != conn.aid:
-                        c = self.conns.get(m)
-                        if c:
-                            c.send(out)
+        if t == "pos":  # where he's walking (the others at the same place show him there), ~5 times a second
+            place = conn.info.get("park")
+            if place:
+                out = {"t": "pos", "from": conn.aid, **{k: msg.get(k) for k in ("x", "z", "f", "m") if isinstance(msg.get(k), (int, float))}}
+                for c in self.at(place, skip=conn.aid):
+                    c.send(out)
             return
         with self.lock:
             if t == "where":
-                conn.info.update({k: msg.get(k) for k in ("name", "park", "status", "char") if k in msg and (msg.get(k) is None or isinstance(msg.get(k), str))})
+                upd = {k: msg.get(k) for k in ("name", "status", "char") if k in msg and (msg.get(k) is None or isinstance(msg.get(k), str))}
+                if isinstance(msg.get("rtt"), (int, float)) and not isinstance(msg.get("rtt"), bool):
+                    upd["rtt"] = max(0, min(2000, int(msg["rtt"])))  # (his round trip here: games pick their input delay from it)
+                conn.info.update(upd)
+                if "park" in msg and (msg["park"] is None or isinstance(msg["park"], str)):
+                    self.move(conn, (msg["park"] or None) if not msg["park"] or len(msg["park"]) <= 64 else None)
                 self.push_presence(conn.aid)
-                r = self.rooms.get(conn.room)
-                if r:
-                    self.push_room(r)
+                self.refresh_claims()
+            elif t == "entry":  # his player as he plays (build, look, badges): the others where he is see him with it
+                if isinstance(msg.get("entry"), dict) and len(json.dumps(msg["entry"])) < 200_000:
+                    conn.entry = msg["entry"]
+                    place = conn.info.get("park")
+                    if place:
+                        self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {"t": "pentry", **self.person(conn)})
+                    sq = self.squad_of(conn.aid)
+                    if sq:
+                        self.push_squad_entries(sq)
             elif t == "ping":
                 conn.send({"t": "pong", "c": msg.get("c")})
             elif t == "friend":  # (qp3: friend requests on the socket: a game from your own copy has no cookie here)
@@ -346,122 +864,60 @@ class Hub:
                     self.push_presence(conn.aid)
                     if other:
                         self.push_presence(other[0][0])
-            elif t == "rtt":
-                r = self.rooms.get(conn.room)
-                if r and isinstance(msg.get("ms"), (int, float)):
-                    r["rtt"][conn.aid] = round(float(msg["ms"]), 1)
-            elif t == "invite":
-                self.invite(conn, msg)
-            elif t == "join":
-                self.join(conn, msg.get("room"))
-            elif t == "leave":
-                self.leave_room(conn)
-                conn.send({"t": "room", "room": None})
+            elif t == "sq-invite":
+                self.sq_invite(conn, msg)
+            elif t == "sq-accept":
+                self.sq_accept(conn, msg)
+            elif t == "sq-decline":
+                inv = self.invites.get(conn.aid, {})
+                if msg.get("from") in inv:
+                    del inv[msg["from"]]
+                    self.send_to([msg["from"]], {"t": "note", "text": f"{self.name_of(conn.aid)} passed on the squad invite."})
+            elif t == "sq-leave":
+                self.leave_squad(conn)
                 self.push_presence(conn.aid)
-            elif t == "create":
-                if conn.room:
-                    self.leave_room(conn)
-                r = self.make_room(conn)
-                self.push_room(r)
-                self.push_presence(conn.aid)
-            elif t == "entry":  # a member's player as he'll play (build, look, badges): for the host's setup
-                r = self.rooms.get(conn.room)
-                if r and isinstance(msg.get("entry"), dict):
-                    r["entries"][conn.aid] = msg["entry"]
-                    self.send_entries(r)
-                    self.push_room(r)
-            elif t == "config":
-                r = self.rooms.get(conn.room)
-                if r and r["host"] == conn.aid and isinstance(msg.get("config"), dict):
-                    r["config"] = msg["config"]
-                    if msg.get("park"):
-                        r["park"] = msg["park"]
-                    self.push_room(r)
-            elif t == "entries":  # the host asks for everyone's player entries (anyone missing is asked for his)
-                r = self.rooms.get(conn.room)
-                if r and r["host"] == conn.aid:
-                    self.send_entries(r)
-                    for m in r["members"]:
-                        if m not in r["entries"] and m in self.conns:
-                            self.conns[m].send({"t": "need-entry"})
+            elif t == "sq-kick":
+                self.sq_kick(conn, msg)
+            elif t == "claim":
+                self.claim(conn, msg)
+            elif t == "unclaim":
+                self.unclaim(conn)
+            elif t == "court":
+                self.court_state(conn, msg)
+            elif t == "release":
+                self.release_court(conn, msg)
             elif t == "start":
                 self.start(conn, msg)
             elif t == "end":  # (whoever finishes first: every client ends the game on the same tick)
-                r = self.rooms.get(conn.room)
-                if r and r["status"] == "playing" and msg.get("g") == r["game"]:
-                    r["status"] = "lobby"
-                    r["slots"], r["last"] = {}, {}
-                    self.push_room(r)
-                    for m in r["members"]:
-                        self.push_presence(m)
-            elif t in ("hash", "chat", "go"):
-                r = self.rooms.get(conn.room)
-                if r:
-                    out = {**{k: v for k, v in msg.items() if k in ("t", "k", "h", "text", "where")}, "from": conn.aid, "name": conn.info.get("name")}
-                    self.broadcast(r, out, skip=conn.aid if t == "hash" else None)
-
-    def invite(self, conn, msg):
-        target = msg.get("to")
-        if not isinstance(target, str) or not are_friends(self.db, conn.aid, target):
-            conn.send({"t": "error", "text": "You can only invite your friends."})
-            return
-        c = self.conns.get(target)
-        if not c or not c.alive:
-            conn.send({"t": "error", "text": "That friend isn't online."})
-            return
-        r = self.rooms.get(conn.room) or self.make_room(conn)
-        if len(r["members"]) >= MAX_ROOM:
-            conn.send({"t": "error", "text": f"A room holds {MAX_ROOM} players."})
-            return
-        if r["status"] == "playing":
-            conn.send({"t": "error", "text": "Finish this game first."})
-            return
-        r["invited"].add(target)
-        c.send({"t": "invite", "room": r["id"], "from": conn.aid, "name": conn.info.get("name"), "username": conn.username, "park": r.get("park") or conn.info.get("park")})
-        conn.send({"t": "note", "text": f"Invite sent to {c.info.get('name') or c.username}."})
-        self.push_room(r)
-        self.push_presence(conn.aid)
-
-    def join(self, conn, rid):
-        r = self.rooms.get(rid)
-        if not r:
-            conn.send({"t": "error", "text": "That room is gone."})
-            return
-        if conn.aid not in r["invited"] and not are_friends(self.db, conn.aid, r["host"]):
-            conn.send({"t": "error", "text": "You need an invite to that room."})
-            return
-        if r["status"] == "playing":
-            conn.send({"t": "error", "text": "They're in a game. Join after it."})
-            return
-        if len(r["members"]) >= MAX_ROOM and conn.aid not in r["members"]:
-            conn.send({"t": "error", "text": "That room is full."})
-            return
-        if conn.room and conn.room != rid:
-            self.leave_room(conn)
-        if conn.aid not in r["members"]:
-            r["members"].append(conn.aid)
-        conn.room = rid
-        r["invited"].discard(conn.aid)
-        self.push_room(r)
-        for m in r["members"]:
-            self.push_presence(m)
-
-    def start(self, conn, msg):
-        r = self.rooms.get(conn.room)
-        if not r or r["host"] != conn.aid:
-            conn.send({"t": "error", "text": "Only the host starts the game."})
-            return
-        setup = msg.get("setup")
-        if not isinstance(setup, dict) or not isinstance(setup.get("slots"), dict):
-            conn.send({"t": "error", "text": "Bad game setup."})
-            return
-        slots = {aid: s for aid, s in setup["slots"].items() if aid in r["members"] and isinstance(s, int)}
-        r["status"], r["slots"], r["last"] = "playing", slots, {}
-        r["game"] += 1
-        setup["game"] = r["game"]
-        self.broadcast(r, {"t": "start", "setup": setup})
-        for m in r["members"]:
-            self.push_presence(m)
+                self.end_game(conn, msg)
+            elif t == "quit":
+                self.quit_game(conn, "left")
+                self.push_presence(conn.aid)
+            elif t == "score":
+                self.score(conn, msg)
+            elif t == "hash":
+                g = self.games.get(conn.game)
+                if g:
+                    self.send_to(g["players"], {"t": "hash", "k": msg.get("k"), "h": msg.get("h"), "from": conn.aid, "name": conn.info.get("name")}, skip=conn.aid)
+            elif t == "challenge":
+                self.challenge(conn, msg)
+            elif t == "challenge-reply":
+                self.challenge_reply(conn, msg)
+            elif t == "crew-sync":
+                self.crew_sync(conn, msg)
+            elif t == "crew-invite":
+                self.crew_invite(conn, msg)
+            elif t == "crew-accept":
+                self.crew_accept(conn, msg)
+            elif t == "crew-leave":
+                self.crew_leave(conn)
+            elif t == "crew-kick":
+                if isinstance(msg.get("id"), str):
+                    self.crew_leave(conn, msg["id"])
+            elif t == "crewxp":
+                self.crew_xp(conn, msg)
+            elif t == "crew-ack":
+                self.crew_ack(conn, msg)
 
     # ---- the socket loop (runs on the request's handler thread) ----
     def sign_in(self, conn):

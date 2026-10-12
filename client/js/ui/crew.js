@@ -12,6 +12,9 @@ export function inkFor(hex) {
 export const crewVars = cr => `--c:${cr.color};--ink:${inkFor(cr.color)}`;
 export const CREW_COLORS = ['#c8322f', '#e8590c', '#f2c14e', '#1f7a4d', '#0d8a8f', '#2457c5', '#3b5873', '#7a2bd1', '#d63384', '#111111', '#f4f2ec', '#8a5a2b'];
 
+// v0.4.7.5 qp3: your crew, once you've brought it online (ui/online.js), keeps its name, colors and level there too
+const syncOnline = app => { import('./online.js').then(O => O.crewSync(app)).catch(() => {}); };
+
 export async function fetchCrew(app) {
   const st = await app.api.get('/api/crew');
   app.crew = st.crew;
@@ -85,7 +88,7 @@ export async function openCrew(app, opts = {}) {
     </div></div>`, { wide: true });
   let color = cr.color;
   const redo = async (body, msg) => {
-    try { const r = await app.api.mutate('/api/crew', body); app.crew = r.crew; if (msg) toast(msg(r.crew)); closeModal(); openCrew(app, opts); opts.onChange?.(r.crew); }
+    try { const r = await app.api.mutate('/api/crew', body); app.crew = r.crew; if (msg) toast(msg(r.crew)); closeModal(); openCrew(app, opts); opts.onChange?.(r.crew); syncOnline(app); }
     catch (e) { toast(e.message, 'error'); }
   };
   $$('[data-add]', card).forEach(b => b.onclick = () => redo({ action: 'add', member: b.dataset.add }, () => `${ent(b.dataset.add).name} joined ${cr.name}.`));

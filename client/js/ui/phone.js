@@ -8,7 +8,7 @@ import { PARK_NAMES } from '../sim/world.js';
 import * as Crew from './crew.js';
 import * as Online from './online.js';
 
-// (v0.4.7.5 qp3: Online = real people on this game service: your friends there, invites and the room you play in)
+// (v0.4.7.5 qp3: Online = real people on the hosted game: your friends there, your squad, your online crew)
 const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['crew', 'Crew'], ['recent', 'Recent'], ['online', 'Online']];
 const ago = t => { const m = (Date.now() - t) / 60000; return m < 2 ? 'just now' : m < 60 ? `${Math.round(m)} min ago` : m < 1440 ? `${Math.round(m / 60)} hr ago` : `${Math.round(m / 1440)} d ago`; };
 const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -30,7 +30,7 @@ export function openPhone(app, opts = {}) {
   closeModal.onClose = () => { open = null; if (prevClose) prevClose(); if (opts.onClose) opts.onClose(); };
   const off = w.onChange(() => { if (phoneOpen()) draw(); else off(); });
   // the Online tab follows the service: friends coming on, requests, the room
-  const netOff = app.net ? ['friends', 'room', 'state', 'entries', 'autherror'].map(k => app.net.on(k, () => { if (!phoneOpen()) { netOff.forEach(f => f()); return; } if (st.tab === 'online' && !st.who && !document.activeElement?.closest?.('[data-oadd]')) draw(); })) : []; // (not while you type a friend's name)
+  const netOff = app.net ? ['friends', 'squad', 'crew', 'state', 'autherror'].map(k => app.net.on(k, () => { if (!phoneOpen()) { netOff.forEach(f => f()); return; } if ((st.tab === 'online' || st.tab === 'squad' || st.tab === 'crew') && !st.who && !document.activeElement?.closest?.('[data-oadd], [data-osignin]')) draw(); })) : []; // (not while you type a friend's name)
 
   // presence: someone physically at this park counts as online, and we can say what he's doing
   let where = new Map();
@@ -83,7 +83,9 @@ export function openPhone(app, opts = {}) {
     // v0.4.7.5: closing the game leaves your squad; some of the old squad keep running together
     const party = w.aiParty ? w.aiParty() : [], ex = w.exSquad && Date.now() - w.exSquad.at < 6 * 3600000 ? w.exSquad.ids : [];
     const exNote = !sq.length && ex.length ? `<p class="ph-note">Your squad broke up when you closed the game.${party.length > 1 ? ` ${party.map(id => esc(w.entry(id).name)).join(' and ')} are still running together at the park.` : ''} Invite them back any time they're online.</p>` : '';
-    return `${exNote}<p class="ph-note">Your squad follows you around the park, steps onto your Got Next spot first, and suits up with you in Pro-Am. Up to four friends; they have to be online. Closing the game leaves the squad.</p>
+    // v0.4.7.5 qp3 online: your squad of real friends, on top
+    const real = app.net?.connected ? Online.squadHTML(app) : '';
+    return `${real}${exNote}<p class="ph-note">Your squad follows you around the park, steps onto your Got Next spot first, and suits up with you in Pro-Am. Up to four friends; they have to be online. Closing the game leaves the squad.</p>
       <div class="ph-sec">Squad · ${sq.length}/4</div>${sq.length ? sq.map(id => row(id, statusOf(id).text)).join('') : '<p class="ph-empty">Just you for now.</p>'}
       ${busy.length ? `<p class="ph-note">${busy.map(id => esc(w.entry(id).name)).join(', ')} ${busy.length > 1 ? 'are' : 'is'} finishing a game and will come find you after it.</p>` : ''}
       <div class="ph-sec">Friends online to invite</div>${inv.length ? inv.map(id => row(id, statusOf(id).text)).join('') : '<p class="ph-empty">No friends online right now.</p>'}`;
@@ -95,6 +97,12 @@ export function openPhone(app, opts = {}) {
   }
   // v0.4.5 Crews: your crew at a glance (level, who's on), and the way into the crew menu
   function listCrew() {
+    // v0.4.7.5 qp3 online: a friend's crew you play in online
+    const oc = app.net?.connected ? app.net.crew : null;
+    const onl = oc && oc.founder !== app.net.myId ? `<div class="ph-crew" style="${Crew.crewVars(oc)}"><span class="crew-tag">${esc(oc.tag)}</span><span class="ph-crew-main"><b>${esc(oc.name)}</b><small>Online crew · level ${oc.level} · ${oc.members.filter(m => m.online).length} of ${oc.members.length} on</small></span></div><div class="ph-acts"><button class="btn small" data-tab="online">Online crew</button></div>` : '';
+    return onl + listCrewLocal();
+  }
+  function listCrewLocal() {
     const cr = app.crew;
     if (cr === undefined) {
       if (!st.crewLoading) { st.crewLoading = true; Crew.fetchCrew(app).catch(() => { app.crew = app.crew ?? null; }).finally(() => { st.crewLoading = false; if (phoneOpen() && st.tab === 'crew') draw(); }); }
@@ -157,7 +165,7 @@ export function openPhone(app, opts = {}) {
       if (r.ok) { app.audio?.ui?.('buy'); hub?.syncSquad(); }
     });
     $$('[data-kick]', host).forEach(x => x.onclick = ev => { ev.stopPropagation(); w.kick(x.dataset.kick); hub?.syncSquad(); });
-    if (st.tab === 'online' && !st.who) Online.bindPhoneTab(app, host, draw);
+    if ((st.tab === 'online' || st.tab === 'squad') && !st.who) Online.bindPhoneTab(app, host, draw);
     $$('[data-crewmenu]', host).forEach(x => x.onclick = () => { closeModal(); Crew.openCrew(app, { onChange: c => { if (app.world?.crew && c) { app.world.crew = c; app.world.refreshBoards?.(); } } }); });
   }
   draw();
