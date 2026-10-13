@@ -125,6 +125,7 @@ export function courtOverlay(spec) {
   g.clearRect(-W, -L, W * 2, L * 2);
   if (!wood) {
     g.fillStyle = spec.apron; g.fillRect(-W / 2, -L / 2, W, L);
+    if (spec.retro) retroApron(g, spec, W, L, margin); // (v0.4.8.5 quick patch: sunset stripes and Memphis confetti)
     g.fillStyle = spec.court; g.fillRect(-COURT.width / 2, -COURT.length / 2, COURT.width, COURT.length);
   } else if (spec.apron) {
     // stained border on wood courts
@@ -208,6 +209,14 @@ export function courtOverlay(spec) {
     g.save(); g.fillStyle = spec.baselineColor || spec.lines; g.globalAlpha = 0.85;
     g.font = '900 0.5px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.translate(0, s * (COURT.length / 2 + margin * 0.5)); g.rotate(s > 0 ? 0 : Math.PI);
+    if (spec.retro) {
+      // v0.4.8.5 quick patch: 80s lettering: italic, a dark outline and a cyan drop copy behind the cream
+      g.globalAlpha = 1; g.font = 'italic 900 0.48px "Arial Black", Impact, sans-serif'; g.lineJoin = 'round';
+      const tw = g.measureText(spec.baselineText).width; if (tw > 8.6) g.scale(8.6 / tw, 1);
+      g.fillStyle = spec.retro.shadow || '#2fe0ff'; g.fillText(spec.baselineText, 0.05, 0.05);
+      g.lineWidth = 0.07; g.strokeStyle = spec.retro.outline || '#1a1230'; g.strokeText(spec.baselineText, 0, 0);
+      g.fillStyle = spec.baselineColor || spec.lines; g.fillText(spec.baselineText, 0, 0); g.restore(); continue;
+    }
     g.fillText(spec.baselineText, 0, 0); g.restore();
   }
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -334,11 +343,89 @@ export function drawToucan(g, logo, size) {
   g.restore();
 }
 
+// v0.4.8.5 quick patch: And The Beat Goes On. The court logo is a synthwave sunset in a medallion: the striped sun going
+// down behind a neon grid horizon between two palms, the text (BEAT) across it in chrome italics. Unit space (radius 1).
+export function drawSunsetLogo(g, logo, size) {
+  const bg = logo.color || '#1a1230', pink = logo.accent || '#ff3fa4', cyan = logo.cyan || '#2fe0ff', dusk = '#4a1a5e';
+  g.save(); g.scale(size, size); g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fillStyle = bg; g.globalAlpha = logo.alpha ?? 0.96; g.fill(); g.globalAlpha = 1;
+  g.save(); g.beginPath(); g.arc(0, 0, 0.9, 0, Math.PI * 2); g.clip();
+  const hy = 0.12, sr = 0.6;
+  const sky = g.createLinearGradient(0, -0.9, 0, hy); sky.addColorStop(0, bg); sky.addColorStop(1, dusk); g.fillStyle = sky; g.fillRect(-1, -1, 2, 1 + hy);
+  // the sun: yellow at the top to pink at the horizon, bands of sky cut across its lower half
+  const sg = g.createLinearGradient(0, hy - sr, 0, hy); sg.addColorStop(0, '#ffe45c'); sg.addColorStop(0.5, '#ff8a3c'); sg.addColorStop(1, pink);
+  g.beginPath(); g.arc(0, hy, sr, Math.PI, 0); g.closePath(); g.fillStyle = sg; g.fill();
+  g.fillStyle = dusk; for (let i = 0; i < 5; i++) { const y = hy - 0.3 + i * 0.066, h = 0.012 + i * 0.008; g.fillRect(-0.7, y, 1.4, h); }
+  // the grid floor running to the horizon
+  g.fillStyle = bg; g.fillRect(-1, hy, 2, 1);
+  g.strokeStyle = cyan; g.lineWidth = 0.022;
+  g.beginPath(); g.moveTo(-1, hy); g.lineTo(1, hy); g.stroke();
+  g.lineWidth = 0.016; g.strokeStyle = pink;
+  for (let k = -7; k <= 7; k++) { g.beginPath(); g.moveTo(k * 0.05, hy); g.lineTo(k * 0.32, 1); g.stroke(); }
+  for (let j = 1; j < 7; j++) { const y = hy + 0.8 * (j / 6) ** 1.8; g.beginPath(); g.moveTo(-1, y); g.lineTo(1, y); g.stroke(); }
+  // two palm silhouettes on the horizon
+  g.fillStyle = '#120a20'; g.strokeStyle = '#120a20';
+  for (const [px, s, lean] of [[-0.6, 1, 0.12], [0.66, 0.8, -0.1]]) {
+    g.lineWidth = 0.035 * s; g.beginPath(); g.moveTo(px, hy + 0.02); g.quadraticCurveTo(px + lean * 0.5, hy - 0.3 * s, px + lean, hy - 0.55 * s); g.stroke();
+    const tx = px + lean, ty = hy - 0.55 * s;
+    for (let f = 0; f < 6; f++) { const a = -Math.PI * 0.95 + f * Math.PI * 0.38; g.lineWidth = 0.045 * s; g.beginPath(); g.moveTo(tx, ty); g.quadraticCurveTo(tx + Math.cos(a) * 0.16 * s, ty + Math.sin(a) * 0.14 * s - 0.03, tx + Math.cos(a) * 0.26 * s, ty + Math.sin(a) * 0.1 * s + 0.08 * s); g.stroke(); }
+  }
+  g.restore();
+  // the rings: pink outside, cyan inside
+  g.beginPath(); g.arc(0, 0, 0.955, 0, Math.PI * 2); g.lineWidth = 0.07; g.strokeStyle = pink; g.stroke();
+  g.beginPath(); g.arc(0, 0, 0.9, 0, Math.PI * 2); g.lineWidth = 0.022; g.strokeStyle = cyan; g.stroke();
+  // the word, in chrome italics with a cyan drop and a dark outline
+  if (logo.text) {
+    g.save(); g.translate(0, 0.5); g.rotate(-0.08);
+    g.font = 'italic 900 0.44px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const tw = g.measureText(logo.text).width; if (tw > 1.5) g.scale(1.5 / tw, 1);
+    g.fillStyle = cyan; g.fillText(logo.text, 0.035, 0.035);
+    g.lineWidth = 0.07; g.strokeStyle = '#120a20'; g.strokeText(logo.text, 0, 0);
+    const cg = g.createLinearGradient(0, -0.2, 0, 0.2); cg.addColorStop(0, '#ffffff'); cg.addColorStop(0.45, '#bfefff'); cg.addColorStop(0.55, '#ff9fd0'); cg.addColorStop(1, pink);
+    g.fillStyle = cg; g.fillText(logo.text, 0, 0); g.restore();
+  }
+  g.restore();
+}
+
+// v0.4.8.5 quick patch: the retro court apron: a frame of sunset stripes round its outer edge and Memphis-style confetti
+// (squiggles, triangles, dots, zigzags, rings, crosses, half moons) between the stripes and the boundary line, kept
+// clear of the baseline lettering and of the Got Next spots on the east side. spec.retro: {stripes, palette, count}
+function retroApron(g, spec, W, L, margin) {
+  const R = spec.retro, rng = new RNG((spec.seed || 3) * 7 + 1), cw = COURT.width / 2, cl = COURT.length / 2;
+  const stripes = R.stripes || ['#ffe45c', '#ff8a3c', '#2fe0ff'];
+  stripes.forEach((c, i) => { const d = 0.16 + i * 0.13; g.strokeStyle = c; g.lineWidth = 0.08; g.strokeRect(-W / 2 + d, -L / 2 + d, W - d * 2, L - d * 2); });
+  const inner = 0.3, outer = margin - 0.16 - stripes.length * 0.13 - 0.12, spots = [];
+  for (let tries = 0, n = 0; n < (R.count || 70) && tries < 3000; tries++) {
+    const side = rng.int(0, 3), d = inner + rng.next() * (outer - inner);
+    let x, z;
+    if (side < 2) { x = (rng.next() * 2 - 1) * (cw + d); z = (side ? 1 : -1) * (cl + d); } else { z = (rng.next() * 2 - 1) * (cl + d); x = (side === 2 ? 1 : -1) * (cw + d); }
+    if (Math.abs(z) > cl && Math.abs(x) < 4.9) continue;          // the baseline lettering
+    if (x > cw && z > -10 && z < 12) continue;                     // the Got Next spots
+    if (spots.some(([a, b]) => Math.hypot(a - x, b - z) < 0.62)) continue;
+    spots.push([x, z]); n++;
+    memphis(g, rng.int(0, 7), x, z, 0.13 + rng.next() * 0.12, rng.next() * Math.PI * 2, rng.pick(R.palette || ['#2fe0ff', '#ffe45c', '#1a1230', '#fff4e6', '#9b5cff']));
+  }
+}
+function memphis(g, kind, x, y, s, rot, color) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = color; g.strokeStyle = color; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = s * 0.28;
+  g.beginPath();
+  if (kind === 0) { for (let i = 0; i <= 16; i++) { const t = i / 16; g.lineTo((t - 0.5) * s * 3.2, Math.sin(t * Math.PI * 3) * s * 0.35); } g.stroke(); } // squiggle
+  else if (kind === 1) { g.moveTo(0, -s); g.lineTo(s * 0.9, s * 0.6); g.lineTo(-s * 0.9, s * 0.6); g.closePath(); g.fill(); } // triangle
+  else if (kind === 2) { g.lineWidth = s * 0.2; g.moveTo(0, -s); g.lineTo(s * 0.9, s * 0.6); g.lineTo(-s * 0.9, s * 0.6); g.closePath(); g.stroke(); }
+  else if (kind === 3) { for (let i = 0; i < 3; i++) { g.moveTo((i - 1) * s * 0.9 + s * 0.22, 0); g.arc((i - 1) * s * 0.9, (i % 2) * s * 0.4, s * 0.22, 0, Math.PI * 2); } g.fill(); } // dots
+  else if (kind === 4) { for (let i = 0; i <= 6; i++) g.lineTo((i / 6 - 0.5) * s * 3, (i % 2 ? -1 : 1) * s * 0.3); g.stroke(); } // zigzag
+  else if (kind === 5) { g.lineWidth = s * 0.22; g.arc(0, 0, s * 0.7, 0, Math.PI * 2); g.stroke(); } // ring
+  else if (kind === 6) { g.lineWidth = s * 0.3; g.moveTo(-s * 0.6, 0); g.lineTo(s * 0.6, 0); g.moveTo(0, -s * 0.6); g.lineTo(0, s * 0.6); g.stroke(); } // cross
+  else { g.arc(0, 0, s * 0.8, 0, Math.PI); g.closePath(); g.fill(); } // half moon
+  g.restore();
+}
+
 export function drawLogo(g, logo, x, y, size) {
   g.save(); g.translate(x, y);
   const shape = logo.shape || 'circle';
   if (shape === 'sphinx') { if (logo.rotate) g.rotate(logo.rotate); drawSphinx(g, logo, size); g.restore(); return; }
   if (shape === 'toucan') { if (logo.rotate) g.rotate(logo.rotate); drawToucan(g, logo, size); g.restore(); return; }
+  if (shape === 'sunset') { if (logo.rotate) g.rotate(logo.rotate); drawSunsetLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch)
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);
@@ -1066,5 +1153,242 @@ export function mural(text, opts = {}) {
   g.fillStyle = tg; g.fillText(text, 0, 0);
   g.lineWidth = 5; g.strokeStyle = pal[4]; g.strokeText(text, 0, 0);
   g.restore();
+  return c;
+}
+
+// ---------------- v0.4.8.5 quick patch: And The Beat Goes On ----------------
+// neon tubes: a wide faint glow, the tube, the white-hot core (draw() strokes the shape; additive over a dark board)
+function neonStroke(g, draw, color, w = 1) {
+  for (const [lw, a] of [[24 * w, 0.1], [13 * w, 0.26]]) { g.globalAlpha = a; g.strokeStyle = color; g.lineWidth = lw; draw(); }
+  g.globalAlpha = 1; g.strokeStyle = color; g.lineWidth = 5.5 * w; draw();
+  g.strokeStyle = '#ffffff'; g.globalAlpha = 0.85; g.lineWidth = 1.9 * w; draw(); g.globalAlpha = 1;
+}
+// the city's neon signs (1024 x 1024 atlas): twelve words in 512 x 128 cells (rows 0-5), the event's name across a whole
+// row (row 6) and eight 128 x 128 icons (row 7). retroSignUV(key) gives a cell's [u0, v0, uw, vh].
+export const RETRO_WORDS = [['DISCO', '#ff3fa4'], ['ARCADE', '#2fe0ff'], ['VIDEO', '#ffe45c'], ['ROLLER RINK', '#c77dff'], ['RECORDS', '#ff8a3c'], ['DINER', '#ff4a6a'],
+  ['MOTEL', '#3dffb0'], ['VACANCY', '#ff4a6a'], ['COCKTAILS', '#2fe0ff'], ['LIVE MUSIC', '#ff3fa4'], ['PIZZA', '#ffb03c'], ['DANCE', '#ffe45c']];
+export const RETRO_ICONS = ['cocktail', 'record', 'skate', 'cassette', 'palm', 'bolt', 'note', 'star'];
+export function retroSignUV(key) {
+  const i = RETRO_WORDS.findIndex(w => w[0] === key);
+  if (i >= 0) return [(i % 2) * 0.5, Math.floor(i / 2) * 0.125, 0.5, 0.125];
+  if (key === 'BEAT') return [0, 0.75, 1, 0.125];
+  const j = RETRO_ICONS.indexOf(key);
+  return [j * 0.125, 0.875, 0.125, 0.125];
+}
+export function retroSigns() {
+  const S = 1024, c = canvas(S, S), g = ctx2d(c);
+  g.clearRect(0, 0, S, S); g.lineJoin = 'round'; g.lineCap = 'round';
+  const word = (text, color, cx, cy, maxW, px, italic = true) => {
+    g.save(); g.translate(cx, cy);
+    g.font = `${italic ? 'italic ' : ''}800 ${px}px "Trebuchet MS", "Arial Rounded MT Bold", Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const sc = Math.min(1, maxW / g.measureText(text).width); g.scale(sc, 1);
+    neonStroke(g, () => g.strokeText(text, 0, 2), color);
+    g.restore();
+  };
+  RETRO_WORDS.forEach(([text, color], i) => {
+    const x = (i % 2) * 512, y = Math.floor(i / 2) * 128;
+    word(text, color, x + 256, y + 62, 440, text.length > 8 ? 62 : 80);
+    // an underline swoosh
+    g.save(); neonStroke(g, () => { g.beginPath(); g.moveTo(x + 70, y + 108); g.quadraticCurveTo(x + 256, y + 96, x + 442, y + 108); g.stroke(); }, color, 0.55); g.restore();
+  });
+  // the event's name: AND THE in cyan, BEAT GOES ON in pink
+  word('AND THE', '#2fe0ff', 150, 768 + 64, 250, 64);
+  word('BEAT GOES ON', '#ff3fa4', 610, 768 + 62, 640, 92);
+  // icons
+  const icon = (j, fn) => { g.save(); g.translate(j * 128 + 64, 896 + 64); fn(); g.restore(); };
+  const P = (pts, close) => () => { g.beginPath(); pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); if (close) g.closePath(); g.stroke(); };
+  icon(0, () => { neonStroke(g, P([[-36, -34], [36, -34], [0, 4], [-36, -34]]), '#2fe0ff', 0.5); neonStroke(g, P([[0, 4], [0, 34], [-20, 40], [20, 40]]), '#2fe0ff', 0.5); neonStroke(g, () => { g.beginPath(); g.arc(-8, -20, 7, 0, Math.PI * 2); g.stroke(); }, '#ff3fa4', 0.5); });
+  icon(1, () => { neonStroke(g, () => { g.beginPath(); g.arc(0, 0, 46, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, 30, 0.3, 2.2); g.stroke(); }, '#c77dff', 0.5); neonStroke(g, () => { g.beginPath(); g.arc(0, 0, 14, 0, Math.PI * 2); g.stroke(); }, '#ff8a3c', 0.5); });
+  icon(2, () => { neonStroke(g, P([[-30, -40], [-6, -40], [-4, -6], [34, 4], [36, 22], [-34, 22]], true), '#ff3fa4', 0.5); neonStroke(g, () => { for (const x of [-22, 0, 22]) { g.beginPath(); g.arc(x, 34, 9, 0, Math.PI * 2); g.stroke(); } }, '#ffe45c', 0.5); });
+  icon(3, () => { neonStroke(g, () => { g.beginPath(); g.rect(-46, -30, 92, 60); g.stroke(); g.beginPath(); g.arc(-20, -4, 10, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(20, -4, 10, 0, Math.PI * 2); g.stroke(); }, '#ffe45c', 0.5); neonStroke(g, P([[-26, 30], [-18, 16], [18, 16], [26, 30]]), '#ff3fa4', 0.5); });
+  icon(4, () => { neonStroke(g, () => { g.beginPath(); g.moveTo(-6, 44); g.quadraticCurveTo(2, 4, -2, -26); g.stroke(); }, '#ff8a3c', 0.5); neonStroke(g, () => { for (let k = 0; k < 6; k++) { const a = -Math.PI + 0.15 + k * 0.56; g.beginPath(); g.moveTo(-2, -26); g.quadraticCurveTo(-2 + Math.cos(a) * 26, -26 + Math.sin(a) * 24 - 8, -2 + Math.cos(a) * 44, -26 + Math.sin(a) * 18 + 14); g.stroke(); } }, '#3dffb0', 0.5); });
+  icon(5, () => neonStroke(g, P([[10, -46], [-24, 6], [0, 6], [-10, 46], [26, -10], [2, -10]], true), '#ffe45c', 0.55));
+  icon(6, () => { neonStroke(g, () => { for (const x of [-22, 18]) { g.beginPath(); g.ellipse(x - 8, 30, 12, 9, -0.4, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(x + 3, 28); g.lineTo(x + 3, -32); g.stroke(); } g.beginPath(); g.moveTo(-19, -32); g.lineTo(21, -40); g.stroke(); g.beginPath(); g.moveTo(-19, -20); g.lineTo(21, -28); g.stroke(); }, '#ff3fa4', 0.5); });
+  icon(7, () => neonStroke(g, () => { g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, r = k % 2 ? 12 : 46; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); g.stroke(); }, '#bff6ff', 0.5));
+  return c;
+}
+
+// pastel art-deco facades drawn to scale: one tile is 4 bays of 3.2 m by 4 floors of 3.4 m (map it in metres, ground floor
+// at the bottom of a texture row). kind 'stucco': white stucco (tint it by vertex colour) with framed windows under
+// "eyebrow" sunshades and three racing stripes at every floor line; 'glass': an 80s mirror-glass curtain wall, dark
+// spandrels at every floor. Returns {color, emissive} canvases (the emissive one: the rooms lit at sundown).
+export const DECO_TILE = { bays: 4, floors: 4, bayW: 3.2, floorH: 3.4 };
+export function decoFacade(opts = {}) {
+  const ppm = opts.ppm || 40, { bays, floors, bayW, floorH } = DECO_TILE;
+  const W = Math.round(bays * bayW * ppm), H = Math.round(floors * floorH * ppm), bw = W / bays, fh = H / floors;
+  const c = canvas(W, H), e = canvas(W, H), g = ctx2d(c), ge = ctx2d(e), rng = new RNG(opts.seed || 83), noise = makeNoise2D((opts.seed || 83) + 2);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  const lit = opts.lit ?? 0.32, glows = ['#ffcf8a', '#ffcf8a', '#ffb0d8', '#bcd8ff', '#ffe2b0', '#7fa6ff'];
+  if (opts.kind === 'glass') {
+    const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#3a6a8a'); gr.addColorStop(0.45, '#24486a'); gr.addColorStop(0.7, '#4a5a8a'); gr.addColorStop(1, '#1e3a5a');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    for (let r = 0; r < floors; r++) {
+      const y0 = H - (r + 1) * fh;
+      for (let k = 0; k < bays * 2; k++) {
+        const x = k * bw / 2, on = rng.next() < lit;
+        if (on) { ge.fillStyle = rng.pick(glows); ge.globalAlpha = 0.55 + rng.next() * 0.45; ge.fillRect(x + 2, y0 + 0.5 * ppm, bw / 2 - 4, fh - 1.2 * ppm); ge.globalAlpha = 1; }
+      }
+      g.fillStyle = '#161a2e'; g.fillRect(0, y0 + fh - 0.7 * ppm, W, 0.7 * ppm); // spandrel
+      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, y0 + fh - 0.72 * ppm, W, 2);
+    }
+    g.fillStyle = 'rgba(210,220,235,0.55)'; for (let k = 0; k <= bays * 2; k++) g.fillRect(k * bw / 2 - 1, 0, 2, H); // mullions
+    ge.fillStyle = '#000'; for (let k = 0; k <= bays * 2; k++) ge.fillRect(k * bw / 2 - 1.5, 0, 3, H);
+    return { color: c, emissive: e };
+  }
+  // stucco with a little trowel texture
+  g.fillStyle = '#f4efe7'; g.fillRect(0, 0, W, H);
+  const im = g.getImageData(0, 0, W, H), d = im.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = 0.95 + noise.tile(x * 8 / W, y * 8 / H, 8, 3) * 0.08 + (rng.next() - 0.5) * 0.03; const o = (y * W + x) * 4; d[o] *= k; d[o + 1] *= k; d[o + 2] *= k; }
+  g.putImageData(im, 0, 0);
+  const accent = opts.accent || '#2bb3b1', accent2 = opts.accent2 || '#ff6fae';
+  for (let r = 0; r < floors; r++) {
+    const y0 = H - (r + 1) * fh, ry = m => y0 + fh - m * ppm; // m metres above this floor
+    // racing stripes along the floor line, then the windows: framed, recessed, under an eyebrow sunshade
+    [accent, accent2, accent].forEach((col, i) => { g.fillStyle = col; g.fillRect(0, ry(0.32 - i * 0.11), W, 0.06 * ppm); });
+    for (let b = 0; b < bays; b++) {
+      const ribbon = (r + b) % 3 !== 1, x = b * bw + (ribbon ? 0.25 : 0.7) * ppm, w = bw - (ribbon ? 0.5 : 1.4) * ppm, y = ry(2.4), h = (2.4 - 0.95) * ppm;
+      const on = rng.next() < lit, glow = rng.pick(glows);
+      g.fillStyle = '#e6ded2'; g.fillRect(x - 0.08 * ppm, y - 0.08 * ppm, w + 0.16 * ppm, h + 0.16 * ppm); // frame
+      const gg = g.createLinearGradient(0, y, 0, y + h); gg.addColorStop(0, on ? '#8a6a58' : '#2a4656'); gg.addColorStop(1, on ? '#c89870' : '#4a7080');
+      g.fillStyle = gg; g.fillRect(x, y, w, h);
+      g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.moveTo(x + w * 0.1, y); g.lineTo(x + w * 0.35, y); g.lineTo(x + w * 0.15, y + h); g.lineTo(x - w * 0.1, y + h); g.closePath(); g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.fill(); g.restore();
+      for (let m = 1; m < (ribbon ? 3 : 2); m++) { g.fillStyle = '#d8d0c4'; g.fillRect(x + w * m / (ribbon ? 3 : 2) - 2, y, 4, h); }
+      if (on) { ge.fillStyle = glow; ge.globalAlpha = 0.6 + rng.next() * 0.4; ge.fillRect(x, y, w, h); ge.globalAlpha = 1; ge.fillStyle = '#000'; for (let m = 1; m < (ribbon ? 3 : 2); m++) ge.fillRect(x + w * m / (ribbon ? 3 : 2) - 2, y, 4, h); if (rng.next() < 0.4) { ge.fillStyle = 'rgba(0,0,0,0.7)'; ge.fillRect(x, y, w, h * rng.range(0.2, 0.5)); } }
+      // the eyebrow and its shadow over the glass
+      g.fillStyle = 'rgba(0,0,0,0.32)'; g.fillRect(x - 0.1 * ppm, y, w + 0.2 * ppm, 0.28 * ppm);
+      ge.fillStyle = 'rgba(0,0,0,0.5)'; ge.fillRect(x, y, w, 0.2 * ppm);
+      g.fillStyle = '#fbf8f2'; g.fillRect(x - 0.3 * ppm, y - 0.2 * ppm, w + 0.6 * ppm, 0.14 * ppm);
+      g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x - 0.3 * ppm, y - 0.06 * ppm, w + 0.6 * ppm, 0.05 * ppm);
+    }
+  }
+  return { color: c, emissive: e };
+}
+
+// the boombox-and-cassette mural (1536 x 512, for the 18 x 6 m wall): a synthwave sky over a neon grid, the striped sun
+// between two palms, a giant silver boombox and a pink cassette, notes flying out of the speakers, Memphis confetti
+// and the event's name in chrome across the top
+export function boomboxMural() {
+  const W = 1536, H = 512, c = canvas(W, H), g = ctx2d(c), rng = new RNG(808);
+  const sky = g.createLinearGradient(0, 0, 0, H * 0.62); sky.addColorStop(0, '#1b0f3a'); sky.addColorStop(0.55, '#7a1f74'); sky.addColorStop(1, '#ff6f61');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  const hy = H * 0.62;
+  // the sun
+  const sg = g.createLinearGradient(0, hy - 230, 0, hy); sg.addColorStop(0, '#ffe45c'); sg.addColorStop(0.6, '#ff8a3c'); sg.addColorStop(1, '#ff3fa4');
+  g.fillStyle = sg; g.beginPath(); g.arc(W / 2, hy, 230, Math.PI, 0); g.fill();
+  g.fillStyle = '#9a2a7a'; for (let i = 0; i < 6; i++) g.fillRect(W / 2 - 240, hy - 120 + i * 21, 480, 3 + i * 2.2);
+  // the grid floor
+  g.fillStyle = '#160b2a'; g.fillRect(0, hy, W, H - hy);
+  g.strokeStyle = '#ff3fa4'; g.lineWidth = 3;
+  for (let k = -16; k <= 16; k++) { g.beginPath(); g.moveTo(W / 2 + k * 28, hy); g.lineTo(W / 2 + k * 190, H); g.stroke(); }
+  for (let j = 1; j < 8; j++) { const y = hy + (H - hy) * (j / 7) ** 1.9; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.strokeStyle = '#2fe0ff'; g.lineWidth = 4; g.beginPath(); g.moveTo(0, hy); g.lineTo(W, hy); g.stroke();
+  // palms
+  g.fillStyle = '#12081f'; g.strokeStyle = '#12081f'; g.lineCap = 'round';
+  for (const [px, s, lean] of [[110, 1.1, 40], [250, 0.8, -30], [1290, 0.9, 30], [1430, 1.15, -45]]) {
+    g.lineWidth = 16 * s; g.beginPath(); g.moveTo(px, hy + 6); g.quadraticCurveTo(px + lean * 0.4, hy - 150 * s, px + lean, hy - 270 * s); g.stroke();
+    for (let f = 0; f < 7; f++) { const a = -Math.PI + 0.1 + f * 0.48; g.lineWidth = 14 * s; g.beginPath(); g.moveTo(px + lean, hy - 270 * s); g.quadraticCurveTo(px + lean + Math.cos(a) * 70 * s, hy - 270 * s + Math.sin(a) * 60 * s - 20, px + lean + Math.cos(a) * 120 * s, hy - 270 * s + Math.sin(a) * 40 * s + 50 * s); g.stroke(); }
+  }
+  // Memphis confetti in the sky
+  for (let i = 0; i < 40; i++) memphis(g, rng.int(0, 7), rng.range(20, W - 20), rng.range(110, hy - 30), rng.range(9, 18), rng.range(0, 6.3), rng.pick(['#2fe0ff', '#ffe45c', '#fff4e6', '#c77dff']));
+  // the boombox: a silver body, two big speakers, the tape deck, buttons, a handle and an aerial
+  const bx = 560, by = 330, bw = 520, bh = 250;
+  g.save(); g.translate(bx, by); g.rotate(-0.05);
+  g.strokeStyle = '#c9ced6'; g.lineWidth = 14; g.beginPath(); g.moveTo(-bw * 0.34, -bh / 2); g.lineTo(-bw * 0.3, -bh / 2 - 60); g.lineTo(bw * 0.3, -bh / 2 - 60); g.lineTo(bw * 0.34, -bh / 2); g.stroke();
+  g.lineWidth = 5; g.beginPath(); g.moveTo(bw * 0.4, -bh / 2); g.lineTo(bw * 0.62, -bh / 2 - 150); g.stroke();
+  const body = g.createLinearGradient(0, -bh / 2, 0, bh / 2); body.addColorStop(0, '#f4f6f8'); body.addColorStop(0.5, '#b8bec8'); body.addColorStop(1, '#7c8490');
+  g.fillStyle = body; g.beginPath(); g.roundRect ? g.roundRect(-bw / 2, -bh / 2, bw, bh, 22) : g.rect(-bw / 2, -bh / 2, bw, bh); g.fill();
+  g.strokeStyle = '#2a2d36'; g.lineWidth = 5; g.stroke();
+  for (const sx of [-1, 1]) {
+    const cx = sx * bw * 0.31, cy = 18;
+    for (const [r, col] of [[92, '#1d1f26'], [80, '#ff3fa4'], [72, '#2a2d36'], [50, '#3a3e48'], [30, '#1d1f26'], [12, '#9aa3ad']]) { g.fillStyle = col; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#2fe0ff'; g.fillRect(cx - 40, -bh / 2 + 16, 80, 10);
+  }
+  g.fillStyle = '#20232b'; g.fillRect(-82, -40, 164, 100); // the tape deck
+  g.fillStyle = '#ff9fd0'; g.fillRect(-66, -26, 132, 60);
+  g.fillStyle = '#20232b'; for (const x of [-30, 30]) { g.beginPath(); g.arc(x, 4, 14, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#fff4e6'; g.fillRect(-46, -20, 92, 12);
+  for (let i = 0; i < 6; i++) { g.fillStyle = i === 2 ? '#ff4a6a' : '#3a3e48'; g.fillRect(-84 + i * 28, -bh / 2 + 18, 22, 14); }
+  g.fillStyle = '#ffe45c'; for (let i = 0; i < 10; i++) g.fillRect(-80 + i * 16, 74, 10, 6 + (i * 7) % 18);
+  g.restore();
+  // notes flying out of the speakers
+  g.fillStyle = '#fff4e6';
+  for (let i = 0; i < 9; i++) { const x = 300 + i * 70 + rng.range(-15, 15), y = 200 - Math.sin(i * 0.8) * 60 - rng.range(0, 40); g.beginPath(); g.ellipse(x, y, 11, 8, -0.4, 0, Math.PI * 2); g.fill(); g.fillRect(x + 8, y - 44, 4, 44); if (i % 2) g.fillRect(x + 8, y - 44, 22, 6); }
+  // the cassette, tilted, off to the right
+  g.save(); g.translate(1110, 330); g.rotate(0.16);
+  g.fillStyle = '#ff3fa4'; g.beginPath(); g.roundRect ? g.roundRect(-190, -120, 380, 240, 16) : g.rect(-190, -120, 380, 240); g.fill();
+  g.strokeStyle = '#1b0f3a'; g.lineWidth = 6; g.stroke();
+  g.fillStyle = '#fff4e6'; g.fillRect(-160, -96, 320, 120);
+  ['#ffe45c', '#ff8a3c', '#2fe0ff'].forEach((col, i) => { g.fillStyle = col; g.fillRect(-160, -96 + 84 + i * 10, 320, 8); });
+  g.fillStyle = '#1b0f3a'; g.font = 'italic 900 30px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('BEAT GOES ON', 0, -62);
+  g.fillStyle = '#2a2d36'; g.fillRect(-100, -30, 200, 50);
+  for (const x of [-60, 60]) { g.fillStyle = '#fff4e6'; g.beginPath(); g.arc(x, -5, 20, 0, Math.PI * 2); g.fill(); g.fillStyle = '#2a2d36'; for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; g.fillRect(x + Math.cos(a) * 12 - 3, -5 + Math.sin(a) * 12 - 3, 6, 6); } }
+  g.fillStyle = '#c9306f'; g.beginPath(); g.moveTo(-120, 120); g.lineTo(-90, 60); g.lineTo(90, 60); g.lineTo(120, 120); g.closePath(); g.fill();
+  g.restore();
+  // the name across the top: chrome italics, a cyan drop, a dark outline
+  g.save(); g.translate(W / 2, 74); g.rotate(-0.025);
+  g.font = 'italic 900 92px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  g.fillStyle = '#2fe0ff'; g.fillText('AND THE BEAT GOES ON', 7, 7);
+  g.lineWidth = 12; g.strokeStyle = '#12081f'; g.strokeText('AND THE BEAT GOES ON', 0, 0);
+  const tg = g.createLinearGradient(0, -46, 0, 46); tg.addColorStop(0, '#ffffff'); tg.addColorStop(0.48, '#bfefff'); tg.addColorStop(0.52, '#ff9fd0'); tg.addColorStop(1, '#ff3fa4');
+  g.fillStyle = tg; g.fillText('AND THE BEAT GOES ON', 0, 0);
+  g.restore();
+  return c;
+}
+
+// the sun on the horizon (512 x 512, transparent ground): a soft halo, then the disc, yellow at the top through orange
+// to hot pink, with the synthwave bands cut out of its lower half (they show the sky behind)
+export function synthSun() {
+  const S = 512, c = canvas(S, S), g = ctx2d(c), r = S * 0.34, cx = S / 2, cy = S / 2;
+  g.clearRect(0, 0, S, S);
+  const halo = g.createRadialGradient(cx, cy, r * 0.9, cx, cy, S / 2);
+  halo.addColorStop(0, 'rgba(255,170,90,0.55)'); halo.addColorStop(0.35, 'rgba(255,110,120,0.22)'); halo.addColorStop(1, 'rgba(255,90,140,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, S, S);
+  const gr = g.createLinearGradient(0, cy - r, 0, cy + r);
+  gr.addColorStop(0, '#fff6b0'); gr.addColorStop(0.35, '#ffd24a'); gr.addColorStop(0.62, '#ff8a3c'); gr.addColorStop(1, '#ff3f8a');
+  g.save(); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+  g.fillStyle = gr; g.fillRect(cx - r, cy - r, r * 2, r * 2);
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 7; i++) { const y = cy + r * (0.02 + i * 0.14), h = r * (0.025 + i * 0.016); g.fillRect(cx - r, y, r * 2, h); }
+  g.restore();
+  return c;
+}
+
+// the disco's light-up dance floor: 8 x 8 tiles of neon colours (some dark), each with a hot centre and a grout edge;
+// the floor scrolls it a whole tile at a time so the tiles change colour on the beat
+export function danceFloor(seed = 19) {
+  const S = 512, n = 8, t = S / n, c = canvas(S, S), g = ctx2d(c), rng = new RNG(seed);
+  const cols = ['#ff3fa4', '#2fe0ff', '#ffe45c', '#c77dff', '#3dffb0', '#ff8a3c', '#fff4e6', '#1a1230', '#1a1230'];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const col = rng.pick(cols), gr = g.createRadialGradient(x * t + t / 2, y * t + t / 2, 2, x * t + t / 2, y * t + t / 2, t * 0.75);
+    gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.25, col); gr.addColorStop(1, col);
+    g.fillStyle = col === '#1a1230' ? col : gr; g.fillRect(x * t, y * t, t, t);
+    g.strokeStyle = 'rgba(10,6,20,0.9)'; g.lineWidth = 6; g.strokeRect(x * t + 1, y * t + 1, t - 2, t - 2);
+  }
+  return c;
+}
+
+// a long, soft synthwave cloud streak (512 x 128, white on transparent: tint it by vertex colour)
+export function cloudStreak(seed = 4) {
+  const W = 512, H = 128, c = canvas(W, H), g = ctx2d(c), rng = new RNG(seed);
+  g.clearRect(0, 0, W, H);
+  for (let i = 0; i < 14; i++) {
+    const x = rng.range(60, W - 60), y = H * 0.5 + rng.range(-14, 14), rx = rng.range(60, 190), ry = rng.range(5, 16);
+    const gr = g.createRadialGradient(x, y, 0, x, y, rx); gr.addColorStop(0, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.save(); g.translate(x, y); g.scale(1, ry / rx); g.translate(-x, -y); g.fillStyle = gr; g.beginPath(); g.arc(x, y, rx, 0, Math.PI * 2); g.fill(); g.restore();
+  }
+  return c;
+}
+
+// an LED message board (1024 x 128): text in lit dots on black, for the blimp (scroll it along u)
+export function ledBoard(text, color = '#ff3fa4', color2 = '#ffe45c') {
+  const W = 1024, H = 128, c = canvas(W, H), g = ctx2d(c);
+  g.fillStyle = '#05040a'; g.fillRect(0, 0, W, H);
+  g.font = '900 86px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const parts = text.split('★');
+  let x = 0; const ws = parts.map(p => g.measureText(p).width), star = 70, total = ws.reduce((a, b) => a + b, 0) + star * (parts.length - 1), sc = W / total;
+  g.save(); g.scale(sc, 1);
+  parts.forEach((p, i) => { g.fillStyle = i % 2 ? color2 : color; g.fillText(p, x + ws[i] / 2, 68); x += ws[i]; if (i < parts.length - 1) { g.fillStyle = '#2fe0ff'; g.fillText('★', x + star / 2, 66); x += star; } });
+  g.restore();
+  g.fillStyle = 'rgba(5,4,10,0.75)'; for (let y = 0; y < H; y += 6) g.fillRect(0, y, W, 2); for (let k = 0; k < W; k += 6) g.fillRect(k, 0, 2, H);
   return c;
 }

@@ -38,6 +38,7 @@ export function go(app, name, params = {}) {
   $('#hud').hidden = true;
   $('#prompt').innerHTML = '';
   app.setController(app.showroom, app.showroom.scene);
+  music.setPlaylist('main'); // (v0.4.8.5 quick patch: an event park's soundtrack stays at the event park)
   if (audio.unlocked) music.start();
   music.setSuppressed(false); music.duck(false);
   ui.className = 'layer menu-layer';

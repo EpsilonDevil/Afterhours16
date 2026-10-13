@@ -11,6 +11,8 @@ export const AFFILIATIONS = {
 export const EVENTS = {
   kingtut: { id: 'kingtut', name: 'King Tut Cup', park: 'The King Tut Cup', color: '#39ff88', accent: '#b14dff', blurb: 'Glow-in-the-dark ante-ups among the pyramids. 48-hour leaderboard.', event: true, exclusive: 'cup', prize: 'the glow-in-the-dark mo-cap suit', enter: 'Enter the Cup', eyebrow: 'KING TUT CUP' },
   jungle: { id: 'jungle', name: 'Jungle Ballers', park: 'The Jungle Ballers', color: '#ff8a1f', accent: '#2ec4ff', blurb: 'Ante-ups under the rainforest canopy, rain on every streak. 48-hour leaderboard.', event: true, exclusive: 'jungle', prize: 'the gorilla costume', enter: 'Enter the Jungle', eyebrow: 'JUNGLE BALLERS' },
+  // v0.4.8.5 quick patch: And The Beat Goes On, an 80s city at sundown (it follows the Jungle Ballers on the schedule)
+  beat: { id: 'beat', name: 'Beat Goes On', park: 'And The Beat Goes On', color: '#ff3fa4', accent: '#2fe0ff', blurb: 'Ante-ups in an 80s city at sundown: neon, lowriders, a disco bar and its own soundtrack. 48-hour leaderboard.', event: true, exclusive: 'beat', prize: 'the Beat Goes On tracksuit', enter: 'Enter the Beat', eyebrow: 'AND THE BEAT GOES ON' },
 };
 // name/colors for any park id, affiliation or event
 export const parkInfo = id => AFFILIATIONS[id] || EVENTS[id] || null;
@@ -91,6 +93,28 @@ export const THEMES = {
     env: { top: '#1a2e22', horizon: '#8fae8a', horizonLow: '#6a8a5a', ground: '#2a3a1e', lights: [{ u: 0.5, v: 0.3, r: 0.08, color: 'rgba(230,255,200,1)' }] },
     exposure: 1.16, bloom: { strength: 0.1, threshold: 1.05, radius: 1 }, grade: { saturation: 1.12, contrast: 1.06, vignette: 0.55 },
     floodlights: true, lightColor: [0.92, 1.0, 0.82], envIntensity: 0.75,
+  },
+  // v0.4.8.5 quick patch And The Beat Goes On: the same park layout in an 80s city with the sun sitting on the horizon,
+  // everything washed in orange: retro courts, neon signs, lowriders, dancers, a disco bar, and its own soundtrack
+  // (music: the playlist in client/audio/beat/, played only here)
+  beat: {
+    id: 'beat', kind: 'park', name: 'And The Beat Goes On', style: 'retro', event: true, streakFx: 'disco', music: 'beat',
+    // retro courts: deep purple floor, hot-pink apron with a frame of sunset stripes and Memphis confetti, a teal key, cream
+    // lines, the synthwave sunset logo (textures.js drawSunsetLogo) and the name in 80s italics on the baselines
+    court: { surface: 'asphalt', court: '#46308a', apron: '#ff3fa4', paint: '#17a9c6', lines: '#fff4e6', arcTint: 'rgba(255,214,255,0.1)', centerFill: '#ff3fa4', wear: 0.22, logo: { shape: 'sunset', color: '#1a1230', accent: '#ff3fa4', cyan: '#2fe0ff', text: 'BEAT', size: 1.5, inHalf: true, rotate: Math.PI }, baselineText: 'AND THE BEAT GOES ON', asphaltTint: '#c9a0b8',
+      retro: { stripes: ['#ffe45c', '#ff8a3c', '#2fe0ff'], palette: ['#2fe0ff', '#ffe45c', '#1a1230', '#fff4e6', '#7b3cff'], count: 72, shadow: '#2fe0ff', outline: '#1a1230' } },
+    ground: '#f2e6e2',
+    // the sky is a dome of its own (retro.js retroSky: purple overhead, hot pink, orange at the horizon, a glow round the
+    // sun); the sun disc sits on the west-north-west horizon (sunset: azimuth from north toward the west, degrees). The
+    // light comes from a little higher than the disc so the courts still get some of it, the shadows long
+    sunset: { az: 68, el: 4.6, size: 10, dist: 245 },
+    sky: { top: [0.12, 0.05, 0.24], horizon: [1.0, 0.45, 0.3], ground: [0.2, 0.1, 0.12], stars: 0 },
+    sun: { dir: [-0.89, 0.285, 0.36], color: [1.0, 0.66, 0.42], intensity: 3.6 },
+    ambient: { sky: [0.56, 0.42, 0.64], ground: [0.5, 0.32, 0.26] },
+    fog: { color: [0.86, 0.44, 0.42], density: 0.0026 },
+    env: { top: '#2a1450', horizon: '#ff8a4c', horizonLow: '#ffa860', ground: '#4a2a34', lights: [{ u: 0.19, v: 0.44, r: 0.07, color: 'rgba(255,196,120,1)' }, { u: 0.55, v: 0.47, r: 0.03, color: 'rgba(255,80,180,1)' }, { u: 0.82, v: 0.47, r: 0.03, color: 'rgba(60,230,255,1)' }] },
+    exposure: 1.06, bloom: { strength: 0.2, threshold: 1.0, radius: 1.15 }, grade: { saturation: 1.12, contrast: 1.06, vignette: 0.5 },
+    floodlights: false, envIntensity: 0.9,
   },
   arena: {
     id: 'arena', kind: 'arena', name: 'Afterhours Arena', style: 'arena',

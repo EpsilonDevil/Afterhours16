@@ -4,6 +4,7 @@
   {"id":"foundry","kind":"park","name":"Foundry Works","affiliation":"Foundry Rivets"},
   {"id":"kingtut","kind":"park","name":"The King Tut Cup","affiliation":null,"event":true},
   {"id":"jungle","kind":"park","name":"The Jungle Ballers","affiliation":null,"event":true},
+  {"id":"beat","kind":"park","name":"And The Beat Goes On","affiliation":null,"event":true},
   {"id":"arena","kind":"arena","name":"Afterhours Arena","affiliation":null},
   {"id":"gym","kind":"gym","name":"Union Fieldhouse","affiliation":null}
 ]

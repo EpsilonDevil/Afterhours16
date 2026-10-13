@@ -2,7 +2,7 @@
 import { canvas } from '../gfx/textures.js';
 import { RNG, makeNoise2D } from '../core/rng.js';
 import { hexToRgb } from '../core/math.js';
-import { FACE } from './athlete.js';
+import { FACE, SHOE_STRAP } from './athlete.js';
 
 const rgbStr = (c, a = 1) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
 const shade = (c, k) => c.map(v => Math.max(0, Math.min(1, v * k)));
@@ -469,6 +469,105 @@ export function paintGorilla(spec, kind) {
   return c;
 }
 
+// v0.4.8.5 quick patch And The Beat Goes On: the shell suit (the windbreaker, family 'shell', and the track pants), shiny
+// nylon colour-blocked the 80s way: a cyan yoke with a zig-zag edge and a yellow zig-zag under it, a hot-pink diagonal slash
+// across the front and a pink chevron on the back, scattered triangles, dark piping between the blocks, a rib-knit collar,
+// cuffs and waistband (trim, tipped pink), a silver zip down the front and the event's name across the back. The pants:
+// colour-blocked side panels (cyan, pink zig-zag edges, a yellow pinstripe), a drawcord waistband, rib cuffs.
+// spec: color (the body), secondary (cyan), accent (pink), stripe (yellow), trim (the rib).
+// Top uv: round the body u 0..1 (.25 the front, .75 the back, 0 and .5 his right and left side seams), v 0 neck .. .75 hem;
+// the collar v .752-.778; the sleeves v .78-1 (his right arm u 0-.5, left .5-1; a sleeve's front at a quarter of its
+// half, its outside at u .25 / 1, the cuff v .955-1). Pants: waist v 0 (the band) .. .5, thighs .5-.78, shins .78-.955,
+// cuffs .955-1 (athlete.js buildTop / buildBottom).
+export function paintShell(spec, kind, W = 512) {
+  const c = canvas(W, W), g = c.getContext('2d'), S = W / 512;
+  const base = spec.color || '#4a1f8c', cyan = spec.secondary || '#2fe0ff', pink = spec.accent || '#ff3fa4', yel = spec.stripe || '#ffe23f', trim = spec.trim || '#1a0f2e';
+  const pipe = rgbStr(shade(hexToRgb(trim), 0.8));
+  const X = u => u * W, Y = v => v * W;
+  // a shape drawn three times across the wrap (u -1, 0, +1), so anything at a seam closes up
+  const wrap = fn => { for (const o of [-1, 0, 1]) { g.save(); g.translate(o * W, 0); fn(); g.restore(); } };
+  const poly = (pts, fill, edge = 0) => wrap(() => {
+    g.beginPath(); pts.forEach(([u, v], i) => (i ? g.lineTo(X(u), Y(v)) : g.moveTo(X(u), Y(v)))); g.closePath();
+    g.fillStyle = fill; g.fill(); if (edge) { g.lineJoin = 'miter'; g.strokeStyle = pipe; g.lineWidth = edge * S; g.stroke(); }
+  });
+  const line = (pts, stroke, w) => wrap(() => { g.beginPath(); pts.forEach(([u, v], i) => (i ? g.lineTo(X(u), Y(v)) : g.moveTo(X(u), Y(v)))); g.strokeStyle = stroke; g.lineWidth = w * S; g.lineJoin = 'miter'; g.stroke(); });
+  // rib knit: the trim with fine vertical ribs and a pink tipping line
+  const rib = (v0, v1, tip) => {
+    g.fillStyle = trim; g.fillRect(0, Y(v0), W, Y(v1) - Y(v0));
+    g.fillStyle = 'rgba(255,255,255,0.07)'; for (let x = 0; x < W; x += 4 * S) g.fillRect(x, Y(v0), 1.5 * S, Y(v1) - Y(v0));
+    if (tip != null) { g.fillStyle = pink; g.fillRect(0, Y(tip) - 1.5 * S, W, 3 * S); }
+  };
+  // a zig-zag edge along u (teeth points at u0 + k*per, depth amp): points from u 0 to 1
+  const zig = (v, amp, per, u0, n = 1) => { const pts = []; for (let u = u0 - per * Math.ceil(u0 / per); u <= 1 + per; u += per / 2) { const k = Math.round((u - u0) / (per / 2)); pts.push([u, v + (k % 2 === 0 ? amp : 0) * n]); } return pts; };
+  g.fillStyle = base; g.fillRect(0, 0, W, W);
+  if (kind === 'top') {
+    // the front slash: a hot-pink band from his right shoulder down across to his left hip, the zip crossing it
+    poly([[0.0, 0.3], [0.13, 0.3], [0.5, 0.64], [0.5, 0.71], [0.42, 0.71], [0.0, 0.42]], pink, 2.5);
+    poly([[0.0, 0.47], [0.13, 0.71], [0.0, 0.71]], cyan, 2.5);                                   // a cyan corner low on his right
+    poly([[0.39, 0.33], [0.47, 0.33], [0.43, 0.42]], yel, 2);                                    // confetti on his left chest
+    poly([[0.12, 0.52], [0.17, 0.6], [0.08, 0.6]], yel, 2);
+    poly([[0.33, 0.47], [0.36, 0.42], [0.39, 0.47]], cyan, 2);
+    // the back: a pink chevron pointing down between the shoulder blades, a yellow one inside it, cyan triangles at the sides
+    poly([[0.55, 0.3], [0.62, 0.3], [0.75, 0.5], [0.88, 0.3], [0.95, 0.3], [0.75, 0.62]], pink, 2.5);
+    line([[0.58, 0.36], [0.75, 0.585], [0.92, 0.36]], yel, 5);
+    poly([[0.52, 0.5], [0.62, 0.71], [0.52, 0.71]], cyan, 2.5); poly([[0.98, 0.5], [0.88, 0.71], [0.98, 0.71]], cyan, 2.5);
+    poly([[0.71, 0.66], [0.79, 0.66], [0.75, 0.71]], yel, 2);
+    // the yoke: cyan over the shoulders, front and back, its lower edge a zig-zag (points at the front and back centres)
+    // with a yellow zig-zag just under it
+    const edge = zig(0.18, 0.06, 0.1, 0.25);
+    poly([[-0.1, 0], ...edge, [1.1, 0]], cyan, 2.5);
+    line(zig(0.215, 0.06, 0.1, 0.25), yel, 5);
+    // the event's name across the back yoke, in the body colour with a pink drop
+    g.save(); g.font = `italic 900 ${Math.round(17 * S)}px "Arial Black", Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = pink; g.fillText('BEAT GOES ON', X(0.75) + 1.5 * S, Y(0.1) + 1.5 * S); g.fillStyle = base; g.fillText('BEAT GOES ON', X(0.75), Y(0.1));
+    g.font = `italic 900 ${Math.round(11 * S)}px "Arial Black", Impact, sans-serif`; g.fillStyle = '#ffffff'; g.fillText('BEAT', X(0.355), Y(0.275)); g.restore();
+    // the sleeves: the yoke's cyan over the shoulder (zig-zag edge), a pink band slanting round the elbow, a yellow
+    // pinstripe down the outside
+    for (const h of [0, 0.5]) {
+      const L = (lu, v) => [h + lu * 0.5, v];
+      poly([L(0, 0.78), L(1, 0.78), ...Array.from({ length: 9 }, (_, i) => L(1 - i / 8, 0.83 + (i % 2 ? 0.018 : 0)))], cyan, 2);
+      poly([L(0, 0.872), L(1, 0.892), L(1, 0.918), L(0, 0.898)], pink, 2);
+      // (his left arm's outside is at both ends of its half, his right arm's at the middle; each kept to its own half)
+      g.save(); g.beginPath(); g.rect(X(h), 0, X(0.5), W); g.clip(); g.fillStyle = yel;
+      for (const o of h ? [0, 1] : [0.5]) g.fillRect(X(h + o * 0.5) - 2.5 * S, Y(0.78), 5 * S, Y(0.955) - Y(0.78));
+      g.restore();
+    }
+    // rib: the waistband, the cuffs, the collar
+    rib(0.715, 0.751, 0.718); rib(0.955, 1.0, 0.958); rib(0.751, 0.78, 0.772);
+    // the zip down the front: dark tape, silver teeth, the pull at the top of the collar
+    g.fillStyle = trim; g.fillRect(X(0.25) - 6 * S, 0, 12 * S, Y(0.78));
+    g.fillStyle = '#c9ccd4'; for (let y = 0; y < Y(0.78); y += 3 * S) g.fillRect(X(0.25) - (Math.round(y / (3 * S)) % 2 ? 2.5 : 0.5) * S, y, 3 * S, 1.6 * S);
+    g.fillStyle = '#e4e7ee'; g.fillRect(X(0.25) - 3 * S, Y(0.756), 6 * S, Y(0.776) - Y(0.756)); g.fillStyle = pink; g.fillRect(X(0.25) - 2 * S, Y(0.768), 4 * S, Y(0.777) - Y(0.768));
+  } else {
+    // the side panels: down his hips (the waist's side seams, u 0/1 and .5) and on down the outside of each leg
+    const side = (u, v0, v1, half) => {
+      poly([[u - half - 0.025, v0], [u + half + 0.025, v0], [u + half + 0.025, v1], [u - half - 0.025, v1]], pink, 0);
+      const n = Math.max(2, Math.round((v1 - v0) / 0.03));
+      for (const s of [-1, 1]) poly([[u + s * (half + 0.025), v0], ...Array.from({ length: n + 1 }, (_, i) => [u + s * (half + (i % 2 ? 0.025 : 0.004)), v0 + (v1 - v0) * i / n]), [u + s * (half + 0.025), v1]], base, 0);
+      poly([[u - half, v0], [u + half, v0], [u + half, v1], [u - half, v1]], cyan, 2);
+      g.fillStyle = yel; g.fillRect(X(u) - 2 * S, Y(v0), 4 * S, Y(v1) - Y(v0));
+    };
+    const clip = (u0, u1, fn) => { g.save(); g.beginPath(); g.rect(X(u0), Y(0.5), X(u1) - X(u0), W); g.clip(); fn(); g.restore(); };
+    for (const u of [0, 0.5, 1]) side(u, 0.06, 0.5, 0.03);
+    // (his right leg's outside at u .25, his left's at both ends of its half; each leg kept to its own half)
+    clip(0, 0.5, () => side(0.25, 0.5, 0.955, 0.04)); clip(0.5, 1, () => { side(0.5, 0.5, 0.955, 0.04); side(1, 0.5, 0.955, 0.04); });
+    // a pink triangle on the outer front of each thigh, echoing the jacket's slash (mirrored: a left-leg u is .5 - the right's)
+    poly([[0.11, 0.515], [0.21, 0.515], [0.21, 0.64]], pink, 2); poly([[0.64, 0.515], [0.54, 0.515], [0.54, 0.64]], pink, 2);
+    rib(0, 0.06, 0.058); rib(0.955, 1.0, 0.958);
+    // the drawcord: two white cords hanging from the front of the band
+    g.strokeStyle = '#f4f2ee'; g.lineWidth = 3 * S; g.lineCap = 'round';
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(X(0.25 + s * 0.012), Y(0.03)); g.quadraticCurveTo(X(0.25 + s * 0.02), Y(0.08), X(0.25 + s * 0.016), Y(0.13)); g.stroke(); }
+  }
+  // the nylon: a faint crinkle in the weave
+  const img = g.getImageData(0, 0, W, W), d = img.data, noise = makeNoise2D(41);
+  for (let i = 0, y = 0; y < W; y++) for (let x = 0; x < W; x++, i += 4) {
+    const k = 1 + noise(x * 0.6 / S, y * 0.6 / S) * 0.03 + noise(x * 0.05 / S, y * 0.12 / S) * 0.04;
+    d[i] = Math.min(255, d[i] * k); d[i + 1] = Math.min(255, d[i + 1] * k); d[i + 2] = Math.min(255, d[i + 2] * k);
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
 export function paintShorts(spec) {
   const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#202833'), trim = hexToRgb(spec.trim || '#ffffff'), stripe = hexToRgb(spec.stripe || spec.trim || '#ffffff');
@@ -535,7 +634,7 @@ export function paintShoe(spec = {}) {
     if (model === 'kinetic' || model === 'vanta') rect(half, 0.04, 0.3, 0.3, 0.42, 'rgba(255,255,255,0.18)'); // cushioning window
     // toe cap and heel counter
     poly(half, [...curve(t => 0.5 + 0.28 * Math.sqrt(Math.max(0, (t - 0.8) / 0.2)), 0.8, 1), [1, 1], [1, 0.5]], panel);
-    const heelCol = model === 'basic' || model === 'kinetic' || model === 'legend' || model === 'rise' ? accent : panel;
+    const heelCol = model === 'basic' || model === 'kinetic' || model === 'legend' || model === 'rise' ? accent : model === 'boombox' ? trim : panel;
     poly(half, [[0, 0.5], [0.19, 0.5], [0.15, 0.74], [0.07, 0.86], [0, 0.88]], heelCol);
     // collar lining and padded collar edge
     rect(half, 0, 0.93, 0.42, 1, lining);
@@ -580,6 +679,27 @@ export function paintShoe(spec = {}) {
         line(half, [[0.08, 0.6], [0.4, 0.84]], 'rgba(0,0,0,0.3)', 2, [5, 4]);
         dots(half, 0.82, 0.97, 0.6, 0.78, 0.028, 'rgba(0,0,0,0.3)', 2.6);
         g.fillStyle = accent; g.font = `900 ${Math.round(26 * k)}px "Arial Black", sans-serif`; g.textAlign = 'center'; g.fillText('16', X(half, 0.12), Y(0.62)); break;
+      }
+      case 'boombox': {
+        // v0.4.8.5 quick patch And The Beat Goes On: an 80s white leather hi-top. A perforated toe box, a cyan padded collar,
+        // a pink zig-zag bolt down the side with a cyan shadow, a cyan midsole stripe, and the velcro strap over the ankle
+        // (athlete.js SHOE_STRAP: the strap's mesh lies right over this): pink, stitched round its edge, a cyan band down
+        // its middle and the hook-and-loop grain
+        dots(half, 0.8, 0.97, 0.6, 0.8, 0.026, 'rgba(0,0,0,0.28)', 2.4);
+        rect(half, 0, 0.88, 0.36, 0.93, trim);
+        const bolt = [[0.17, 0.6], [0.3, 0.74], [0.4, 0.6], [0.52, 0.74], [0.62, 0.6], [0.73, 0.72]];
+        line(half, bolt.map(([t, v]) => [t + 0.014, v - 0.026]), trim, 15 * k); line(half, bolt, accent, 15 * k);
+        line(half, [[0, 0.46], [1, 0.46]], trim, 6); line(half, [[0, 0.4], [1, 0.4]], accent, 3);
+        const st = SHOE_STRAP, q = [[st.t0 - st.slant, st.v0], [st.t1 - st.slant, st.v0], [st.t1, 1], [st.t0, 1]];
+        poly(half, q, accent);
+        line(half, [[st.t0 + 0.035 - st.slant, st.v0], [st.t0 + 0.035, 1]], trim, 5);
+        g.save(); g.beginPath(); q.forEach(([t, v], i) => (i ? g.lineTo(X(half, t), Y(v)) : g.moveTo(X(half, t), Y(v)))); g.closePath(); g.clip();
+        g.fillStyle = 'rgba(0,0,0,0.12)'; for (let y = Y(1); y < Y(st.v0); y += 3) for (let x = X(half, st.t0 - st.slant); x < X(half, st.t1); x += 3) if ((x + y) % 6 < 3) g.fillRect(x, y, 1.5, 1.5);
+        g.restore();
+        line(half, [[st.t0 - st.slant + 0.008, st.v0 + 0.01], [st.t0 + 0.008, 1]], 'rgba(255,255,255,0.75)', 1.5, [4, 3]);
+        line(half, [[st.t1 - st.slant - 0.008, st.v0 + 0.01], [st.t1 - 0.008, 1]], 'rgba(255,255,255,0.75)', 1.5, [4, 3]);
+        line(half, [[st.t0 - st.slant + 0.006, st.v0 + 0.012], [st.t1 - st.slant - 0.006, st.v0 + 0.012]], 'rgba(255,255,255,0.75)', 1.5, [4, 3]);
+        break;
       }
       case 'legend': {
         for (const v of [0.58, 0.61]) line(half, [[0.18, v], [0.8, v + 0.04]], accent, 3);

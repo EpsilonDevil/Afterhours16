@@ -1,0 +1,229 @@
+{
+ "_": "v0.4.8.5 quick patch: the exclusive soundtrack of And The Beat Goes On (event park only). One continuous 74-minute 80s R&B DJ mix, split into 28 cuts where the music changes (key, sound and tempo shift together), each cut at the quietest moment within 4 s of the change, with a 0.6 s fade in and a 1.2 s fade out. \"from\" is where each cut starts in the original mix (seconds).",
+ "tracks": [
+  {
+   "file": "beat-01.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 1 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 259,
+   "from": 0.0
+  },
+  {
+   "file": "beat-02.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 2 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 127,
+   "from": 258.88
+  },
+  {
+   "file": "beat-03.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 3 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 183,
+   "from": 386.12
+  },
+  {
+   "file": "beat-04.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 4 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 254,
+   "from": 568.88
+  },
+  {
+   "file": "beat-05.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 5 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 243,
+   "from": 822.62
+  },
+  {
+   "file": "beat-06.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 6 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 110,
+   "from": 1065.88
+  },
+  {
+   "file": "beat-07.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 7 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 106,
+   "from": 1175.62
+  },
+  {
+   "file": "beat-08.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 8 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 114,
+   "from": 1282.12
+  },
+  {
+   "file": "beat-09.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 9 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 161,
+   "from": 1396.12
+  },
+  {
+   "file": "beat-10.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 10 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 192,
+   "from": 1557.12
+  },
+  {
+   "file": "beat-11.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 11 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 192,
+   "from": 1749.12
+  },
+  {
+   "file": "beat-12.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 12 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 113,
+   "from": 1941.62
+  },
+  {
+   "file": "beat-13.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 13 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 104,
+   "from": 2054.38
+  },
+  {
+   "file": "beat-14.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 14 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 220,
+   "from": 2158.38
+  },
+  {
+   "file": "beat-15.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 15 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 106,
+   "from": 2378.88
+  },
+  {
+   "file": "beat-16.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 16 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 258,
+   "from": 2485.38
+  },
+  {
+   "file": "beat-17.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 17 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 113,
+   "from": 2742.88
+  },
+  {
+   "file": "beat-18.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 18 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 124,
+   "from": 2856.12
+  },
+  {
+   "file": "beat-19.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 19 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 138,
+   "from": 2980.38
+  },
+  {
+   "file": "beat-20.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 20 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 143,
+   "from": 3117.88
+  },
+  {
+   "file": "beat-21.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 21 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 158,
+   "from": 3260.62
+  },
+  {
+   "file": "beat-22.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 22 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 119,
+   "from": 3418.38
+  },
+  {
+   "file": "beat-23.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 23 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 130,
+   "from": 3537.12
+  },
+  {
+   "file": "beat-24.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 24 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 210,
+   "from": 3667.38
+  },
+  {
+   "file": "beat-25.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 25 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 238,
+   "from": 3877.88
+  },
+  {
+   "file": "beat-26.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 26 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 103,
+   "from": 4115.88
+  },
+  {
+   "file": "beat-27.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 27 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 120,
+   "from": 4219.12
+  },
+  {
+   "file": "beat-28.mp3",
+   "title": "80s R&B Jamz \u00b7 Cut 28 of 28",
+   "artist": "",
+   "album": "And The Beat Goes On \u00b7 Event Soundtrack",
+   "duration": 89,
+   "from": 4339.62
+  }
+ ]
+}

@@ -12,6 +12,7 @@ import { COURT } from '../sim/constants.js';
 import { harborGround, harborPalms, waterlineZ } from './harbor.js';
 import { streetGround, cityStreets } from './street.js';
 import { industrialSprawl } from './industry.js';
+import { retroGround, retroSky, retroCity } from './retro.js';
 
 const lin = hex => M.hexLinear(hex);
 
@@ -63,6 +64,7 @@ function buildPark(r, scene, theme, opts) {
   // runs out under the industrial sprawl; the event parks keep the jointed concrete
   if (theme.style === 'coast') harborGround(ctx, scene, theme);
   else if (theme.style === 'city') streetGround(ctx, scene, theme);
+  else if (theme.style === 'retro') retroGround(ctx, scene, theme); // (v0.4.8.5 quick patch: streets all round, the park's slab)
   else {
     const conc = cachedTexture(ctx, 'concrete', () => T.concrete({ joints: true }).color, {});
     const concN = cachedTexture(ctx, 'concreteN', () => T.concrete({ joints: true }).normal, { srgb: false });
@@ -82,8 +84,9 @@ function buildPark(r, scene, theme, opts) {
     if (c.format === 1) spec.logo = { ...spec.logo, size: 0.9 };
     const built = buildCourt(ctx, spec, c.origin);
     built.meshes.forEach(m => scene.add(m));
-    const tut = theme.style === 'tut', jungle = theme.style === 'jungle';
-    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: tut ? '#e8c15a' : jungle ? '#ff8a1f' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: tut ? '#1c1428' : jungle ? '#3a2d26' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: tut ? '#b8ffd8' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
+    const tut = theme.style === 'tut', jungle = theme.style === 'jungle', retro = theme.style === 'retro';
+    // (v0.4.8.5 quick patch: the Beat Goes On's hoops: hot pink rims on purple poles, cream nets)
+    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: tut ? '#e8c15a' : jungle ? '#ff8a1f' : retro ? '#ff3fa4' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#3a2466' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: tut ? '#b8ffd8' : retro ? '#fff4e6' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
     // v0.4.5 King Tut Cup: the lines glow (an additive neon copy of the markings laid over the court)
     if (theme.court.neon) {
       const nz = theme.court.neon;
@@ -121,7 +124,7 @@ function buildPark(r, scene, theme, opts) {
     }
     // benches on the west sideline and by the Got Next line (east)
     const nb = full ? 3 : 1;
-    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : jungle ? '#6b4a2a' : '#8a5f3a', tut ? '#1c1428' : jungle ? '#3a2d26' : undefined));
+    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : jungle ? '#6b4a2a' : retro ? '#ff8fc8' : '#8a5f3a', tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#2fb8c8' : undefined));
     if (tut) {
       // neon strips along the fence bottoms (laser-tag arena trim)
       for (const [x0, z0, x1, z1] of runs) {
@@ -134,7 +137,9 @@ function buildPark(r, scene, theme, opts) {
     // v0.4.5: the two small bleachers that stood between the main court and the stores are gone; spectators
     // now sit on the benches and stand along the sidelines of every court (game/park.js)
   }
-  scene.add(new Mesh(ctx.geometry(G.merge(fenceRuns, false)), new Material({ color: [0.75, 0.78, 0.8], map: fenceTex, alphaTest: 0.5, doubleSided: true, roughness: 0.4, metalness: 0.6 }), { castShadow: true }));
+  // (v0.4.8.5 quick patch: at the Beat Goes On the sun sits so low that the chain-link's shadow would lie right across
+  // every court: there the mesh casts none, only its posts and rails do)
+  scene.add(new Mesh(ctx.geometry(G.merge(fenceRuns, false)), new Material({ color: [0.75, 0.78, 0.8], map: fenceTex, alphaTest: 0.5, doubleSided: true, roughness: 0.4, metalness: 0.6 }), { castShadow: theme.style !== 'retro' }));
   // Got Next spot rings
   const ringTex = cachedTexture(ctx, 'ring', () => T.ringTexture(256), { wrap: 'clamp' });
   const gotNextMat = new Material({ color: lin(parkInfo(theme.id)?.color || '#ffffff'), map: ringTex, shading: 'unlit', emissive: [0, 0, 0], blend: 'add', depthWrite: false, fog: false });
@@ -206,10 +211,11 @@ function buildPark(r, scene, theme, opts) {
   else if (theme.style === 'city') scenery = cityScenery(ctx, scene, rng, matte, metal, theme);
   else if (theme.style === 'tut') board = tutScenery(ctx, scene, rng, matte, metal, neon, foliage);
   else if (theme.style === 'jungle') board = jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps);
+  else if (theme.style === 'retro') ({ board, scenery } = retroScenery(ctx, scene, rng, matte, metal, foliage, neon, theme));
   else scenery = industrialScenery(ctx, scene, rng, matte, metal, theme);
   // trees/palms scattered around plaza
   for (let i = 0; i < 14; i++) {
-    if (theme.style === 'coast') break; // (v0.4.8.5: Harbor Point places its own palms, clear of the game cameras: harbor.js)
+    if (theme.style === 'coast' || theme.style === 'retro') break; // (v0.4.8.5: Harbor Point and the Beat Goes On place their own palms, clear of the game cameras: harbor.js, retro.js)
     let x = rng.range(-50, 50), z = rng.next() < 0.5 ? rng.range(-34, -22) : rng.range(20, 30);
     if (theme.style === 'city' && z > 0) z = 31.3 + (z - 20) * 0.08; // (v0.4.8.5: street trees on Brick Row's sidewalk, not in the road)
     if (Math.abs(x) < 10 && z < -18) continue;
@@ -221,9 +227,10 @@ function buildPark(r, scene, theme, opts) {
     else if (theme.style === 'jungle') foliage.push(...PR.rainTree(x, z, 0.42 + rng.next() * 0.2, rng, { leaf: '#2f7a3a', leaf2: '#4a8a3c' }), ...PR.fern(x + rng.range(-2.5, 2.5), z + rng.range(-2.5, 2.5), 0.9 + rng.next() * 0.5, rng)); // (a younger giant: 8-13 m)
     else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
   }
-  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : undefined));
+  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : theme.style === 'retro' ? '#3a2466' : undefined));
   // murals on a wall behind the west court
-  const muralTex = cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
+  // (v0.4.8.5 quick patch: the Beat Goes On's wall is its boombox-and-cassette mural)
+  const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
   const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1] }));
   // (v0.4.8.5: at the Old Brick Yard the west avenue runs where it stood: the mural is on the building line across it)
   M.m4mul(wall.matrix, M.m4translation(M.m4(), theme.style === 'city' ? -75.15 : -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
@@ -246,9 +253,10 @@ function buildPark(r, scene, theme, opts) {
     scene.lights.push({ pos: [0, 4.6, -20.5], range: 16, color: [1, 0.85, 0.6], intensity: 12, dir: null });
     scene.lights.push({ pos: [-14, 5.5, -19], range: 20, color: [0.75, 0.82, 1], intensity: 9, dir: null });
   }
+  if (scenery?.lights) scene.lights.push(...scenery.lights); // (v0.4.8.5 quick patch: the disco's pink light over its door)
   scene.shadowFocus = { center: [0, 0, 6], radius: 18 };
   // v0.4.3: people, traffic and random events in the background of every park
-  const life = createParkLife(r, scene, theme, new RNG(theme.id.length * 31 + 7));
+  const life = createParkLife(r, scene, theme, new RNG(theme.id.length * 31 + 7), theme.style === 'retro' ? { city: scenery } : undefined);
   let t = 0;
   return {
     theme, courts, hoops, practice: { origin: prOrigin, hoop: practiceHoop }, store: { x: storePos[0], z: storePos[1] + 2.4 }, gotNext, life,
@@ -587,6 +595,35 @@ function jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps) {
     },
   });
   return { solids: [], set: board.set, update: board.update };
+}
+
+// ---------------- v0.4.8.5 quick patch: And The Beat Goes On ----------------
+// The 80s city round the park is retro.js: the sky dome with the sun on the horizon, the Strip and the avenues, the
+// shops, the disco bar, neon everywhere. Here: the leaderboard, a neon billboard on chrome legs with a synthwave grid
+// behind the standings. Returns {board, scenery} (scenery: the city, its update and its neon for the events)
+function retroScenery(ctx, scene, rng, matte, metal, foliage, neon, theme) {
+  const c4 = h => [...lin(h), 1];
+  retroSky(ctx, scene, theme);
+  const city = retroCity(ctx, scene, rng, theme, { matte, metal, foliage });
+  const edge = (a, b, hex, r = 0.06) => neon.push({ geo: G.tube([a, b], r, 6), color: c4(hex) });
+  const board = eventBoard(ctx, scene, {
+    title: 'AND THE BEAT GOES ON', bg: '#170b2c', titleColor: '#ff3fa4', subColor: '#2fe0ff', rowColor: '#fff4e6', meColor: '#ffe45c', meBg: 'rgba(255,228,92,0.16)', barColor: '#ff3fa4',
+    bgDraw(g, W, H) {
+      const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#170b2c'); gr.addColorStop(0.65, '#2a0f40'); gr.addColorStop(1, '#5a1650');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      g.strokeStyle = 'rgba(255,63,164,0.2)'; g.lineWidth = 2;
+      for (let k = -14; k <= 14; k++) { g.beginPath(); g.moveTo(W / 2 + k * 22, 122); g.lineTo(W / 2 + k * 140, H); g.stroke(); }
+      for (let j = 1; j < 8; j++) { const y = 122 + (H - 122) * (j / 7) ** 1.8; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+      g.fillStyle = 'rgba(47,224,255,0.55)'; g.fillRect(0, 119, W, 3);
+    },
+    frame(bx, bz, bw, bh) {
+      for (const sx of [-1, 1]) metal.push({ geo: G.cylinder(0.14, 0.18, 3.3, 10, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 3.4, 0, bz - 0.2), color: c4('#d8dde4') });
+      matte.push({ geo: G.box(bw + 0.5, bh + 0.5, 0.3), matrix: M.m4translation(M.m4(), bx, 3.2 + bh / 2, bz - 0.2), color: c4('#120a20') });
+      const R = (o, hex) => { const x0 = bx - bw / 2 - o, x1 = bx + bw / 2 + o, y0 = 3.2 - o, y1 = 3.2 + bh + o, z = bz - 0.02; edge([x0, y0, z], [x1, y0, z], hex); edge([x1, y0, z], [x1, y1, z], hex); edge([x1, y1, z], [x0, y1, z], hex); edge([x0, y1, z], [x0, y0, z], hex); };
+      R(0.3, '#ff3fa4'); R(0.16, '#2fe0ff');
+    },
+  });
+  return { board, scenery: city };
 }
 
 // v0.4.8.5: the streets, the row buildings with their windows, shopfronts, signals and lights are street.js; the park

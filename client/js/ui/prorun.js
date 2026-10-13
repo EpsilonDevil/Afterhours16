@@ -381,7 +381,7 @@ async function startGame(app, career, spec) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setSuppressed(true); // like Pro-Am: no music in the Pro Run's games
+  music.setPlaylist('main'); music.setSuppressed(true); // like Pro-Am: no music in the Pro Run's games
   audio.surface = 'wood';
   app.setController(world, scene);
 }

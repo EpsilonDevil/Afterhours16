@@ -7,7 +7,7 @@
 // starts) and played from its buffer, at the same loudness as every other.
 //   pitch: each AI player's own pitch (applied on playback), rate: his tempo (rendered in), power: threes and big
 //   shots (louder, and the crowd goes up), pan, vol.
-import { Synth, midi as NOTE, hashStr } from './sfx.js';
+import { Synth, midi as NOTE, hashStr, reverb } from './sfx.js';
 
 export const GREEN_SOUNDS = {
   gsnd_basic: 'Classic Chime',
@@ -27,6 +27,7 @@ export const GREEN_SOUNDS = {
   gsnd_slide: 'Slide Whistle',
   cup_gsnd_pharaoh: "Pharaoh's Horn",
   jb_gsnd_bongos: 'Jungle Bongos',
+  bg_gsnd_808: 'Eight-O-Eight', // (v0.4.8.5 quick patch: And The Beat Goes On)
   // v0.4.7.5 quick patch
   gsnd_owl: 'Night Owl',
   gsnd_wolf: 'Wolf Howl',
@@ -450,6 +451,70 @@ const RECIPES = {
     // a far-off bird: two rising whistles
     for (const t0 of [1.05, 1.22]) { const o = D.osc(); D.play(t0, 0.11, t => o.sin(2600 + 900 * (t / 0.11)) * Math.sin(Math.PI * Math.min(1, t / 0.11)), 0.035, 0.6); }
     D.room = { decay: 1.7, damp: 0.5, wet: 0.85, lp: 7000 };
+  },
+
+  // v0.4.8.5 quick patch And The Beat Goes On exclusive: a drum machine and a polysynth from 1984. On the one an 808 kick (a
+  // click into a sine that drops into a long round boom) under a synth-brass stab (detuned saws and a sub, the filter
+  // snapping open and closing back); the 808 cowbell on the sixteenths after it; on the two the big snare in a gated
+  // room (the snare through a huge hall, the hall held wide open, then cut dead) with a second stab a step up; and out of
+  // the snare a quick arpeggio climbing two octaves to a held top note, its echoes trailing off
+  bg_gsnd_808(D) {
+    const kick = (t0, g) => {
+      const o = D.osc(0);
+      D.play(t0, 1.0, t => Math.tanh(2.2 * o.sin(47 + 150 * Math.exp(-t / 0.016))) * Math.exp(-t / 0.2) * Math.min(1, t * 2500, (1 - t) / 0.15), 0.8 * g, 0.04);
+      burst(D, t0, { f: 3200, q: 0.7, tau: 0.0012, gain: 0.35 * g });
+    };
+    // the 808 cowbell: two square waves a clank apart (587 / 845 Hz) through a band; a sharp hit and a short ring
+    const bell = (t0, g) => {
+      const a = D.osc(), b = D.osc(), bp = D.svf(1150, 0.8), hp = D.svf(420, 0.7);
+      D.play(t0, 0.4, t => hp.hp(bp.bp(a.pulse(587, 0.5) + 0.8 * b.pulse(845, 0.5))) * (0.6 * Math.exp(-t / 0.011) + 0.4 * Math.exp(-t / 0.09)), g, 0.12);
+    };
+    // the synth brass: each note two saws a few cents apart and one an octave down, through a resonant low-pass that
+    // snaps open on the attack and falls back; a little scoop up into the pitch
+    const stab = (t0, notes, len, g) => {
+      for (const n of notes) for (const det of [-9, 0, 9]) {
+        const o = D.osc(), lp = D.svf(900, 1.3), F = NOTE(n) * Math.pow(2, det / 1200) * (det ? 1 : 0.5);
+        D.play(t0, len + 0.16, t => {
+          const env = t < 0.005 ? t / 0.005 : t < len ? 1 - 0.3 * (t - 0.005) / len : 0.7 * Math.exp(-(t - len) / 0.035);
+          lp.set(650 + 5600 * Math.exp(-t / 0.06) + 700 * env, 1.4);
+          return lp.lp(o.saw(F * (1 - 0.015 * Math.exp(-t / 0.012)))) * env * (det ? 1 : 0.8);
+        }, g / notes.length, 0.22);
+      }
+    };
+    // the gated snare: the hit (a body and the wires) rendered on its own, through a big hall; the hall's tail held open a
+    // quarter of a second and shut off (the gate), the hit itself left to ring out dry
+    const snare = (t0, g) => {
+      const b1 = D.osc(0), b2 = D.osc(0), wires = D.svf(3900, 0.6), crack = D.svf(1700, 0.9);
+      const N = Math.ceil(0.45 * D.sr * D.ts), x = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const t = i / (D.sr * D.ts);
+        x[i] = (0.9 * b1.sin(190 * (1 + 0.35 * Math.exp(-t / 0.008))) * Math.exp(-t / 0.055) + 0.35 * b2.sin(335) * Math.exp(-t / 0.03)
+          + 1.1 * wires.bp(D.white()) * Math.exp(-t / 0.085) + 0.7 * crack.bp(D.white()) * Math.exp(-t / 0.01)) * Math.min(1, t * 3000);
+      }
+      const w = reverb(x, N, D.sr, { decay: 2.4 * D.ts, damp: 0.2, pre: 0.004, size: 1.25, hp: 220, lp: 9000 });
+      // (the tail brought up to just under the hit, whatever the hall's own gain)
+      const rms = (a, i0, i1) => { let q = 0; for (let i = i0; i < i1; i++) q += a[i] * a[i]; return Math.sqrt(q / Math.max(1, i1 - i0)); };
+      const sr = D.sr * D.ts, kw = 0.62 * rms(x, 0, Math.round(0.06 * sr)) / Math.max(1e-9, rms(w, Math.round(0.06 * sr), Math.round(0.22 * sr)));
+      const OPEN = 0.25, SHUT = 0.022;
+      D.play(t0, 0.45, (t, i) => (x[i] || 0) + (t < OPEN + SHUT ? (w[i] || 0) * kw * (t < OPEN ? 1 - 0.15 * t / OPEN : 0.85 * (0.5 + 0.5 * Math.cos(Math.PI * (t - OPEN) / SHUT))) : 0), g, 0.03);
+    };
+    // the arpeggio: a bright pulse with a plucked filter, each note echoed twice (the 80s delay)
+    const arp = (t0, f, len, g, last) => {
+      for (const [dt, eg] of [[0, 1], [0.165, 0.38], [0.33, 0.15]]) {
+        const o = D.osc(), lp = D.svf(f * 3, 2);
+        D.play(t0 + dt, len + 0.05, t => {
+          const env = (t < 0.003 ? t / 0.003 : Math.exp(-t / (last ? 0.32 : 0.075))) * (t > len ? Math.max(0, 1 - (t - len) / 0.05) : 1);
+          lp.set(f * (1.6 + 5 * Math.exp(-t / 0.04)), 2.2);
+          return lp.lp(o.pulse(f * (1 + (last && t > 0.08 ? 0.006 * Math.sin(TAU * 6.2 * t) : 0)), 0.3 + 0.1 * Math.sin(TAU * 3 * t))) * env;
+        }, g * eg, dt ? 0.5 : 0.25);
+      }
+    };
+    kick(0, 1); stab(0, [53, 57, 60, 65], 0.13, 0.85);
+    bell(0.09, 0.7); bell(0.18, 0.5); kick(0.27, 0.55);
+    snare(0.36, 1.05); stab(0.36, [55, 59, 62, 67], 0.19, 0.75);
+    [60, 64, 67, 72, 76, 79].forEach((n, i) => arp(0.5 + i * 0.048, NOTE(n), 0.045, 0.32));
+    arp(0.5 + 6 * 0.048, NOTE(84), 0.42, 0.34, true);
+    D.room = { decay: 0.9, damp: 0.35, wet: 0.6 };
   },
 
   // ---- v0.4.7.5 quick patch: sixteen more ----

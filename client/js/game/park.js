@@ -330,6 +330,7 @@ export class ParkHub {
     this.peers = new Peers(this); // v0.4.7.5 qp3 online: the real people at this park
     this.scene = new Scene();
     this.theme = THEMES[themeId];
+    music.setPlaylist(this.theme?.music || 'main'); // (v0.4.8.5 quick patch: an event park with a soundtrack of its own plays only that)
     // v0.4.7.5 qp3: the Event Park hall's sign names the running event (or, at an event park, your home park)
     const evOn = app.config?.event && EVENTS[app.config.event.id] ? EVENTS[app.config.event.id] : null, home = AFFILIATIONS[app.char()?.affiliation];
     this.venue = buildVenue(this.r, this.scene, themeId, { eventName: evOn?.park, eventColor: evOn?.color, eventAccent: evOn?.accent, homeName: home?.park, homeColor: home?.color });

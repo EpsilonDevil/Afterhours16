@@ -1,7 +1,7 @@
 // Runtime athlete: GPU meshes + materials + rig. Placed in world by (x, y, z, yaw).
 import { AthleteModel } from './athlete.js';
 import { Rig } from './rig.js';
-import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap, paintGorilla } from './looks.js';
+import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap, paintGorilla, paintShell } from './looks.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
 
@@ -74,20 +74,21 @@ export class AthleteView {
     const cut = this.model.topCut(top);
     // v0.4.5: the King Tut Cup mo-cap suit paints its own texture and glows (emissive map)
     const mocapTop = top.pattern === 'mocap', furTop = top.pattern === 'gorilla'; // (v0.4.7.5 qp3: the gorilla costume)
-    const topTex = own(mocapTop ? paintMocap(top, 'top') : furTop ? paintGorilla(top, 'top') : paintTop({ ...top, number: look.number, name: look.name, keep: cut.keep, hem: cut.hem, neckTop: cut.neckTop, res: detail < 1 ? 256 : undefined }), { aniso: 8 });
+    const shellTop = top.pattern === 'shellsuit'; // (v0.4.8.5 quick patch: the Beat Goes On windbreaker, shiny nylon)
+    const topTex = own(mocapTop ? paintMocap(top, 'top') : furTop ? paintGorilla(top, 'top') : shellTop ? paintShell(top, 'top', detail < 1 ? 256 : 512) : paintTop({ ...top, number: look.number, name: look.name, keep: cut.keep, hem: cut.hem, neckTop: cut.neckTop, res: detail < 1 ? 256 : undefined }), { aniso: 8 });
     yield;
     const glowOf = (spec, k = 2.4) => (spec.glow ? M.hexLinear(spec.glow).map(v => v * k) : [0, 0, 0]);
     const jersey = top.family === 'jersey';
     const topMat = new Material({
-      map: topTex, color: [0.86, 0.86, 0.86], roughness: jersey ? 0.6 : furTop ? 0.95 : 0.86, shading: 'cloth', sheen: jersey ? [0.22, 0.22, 0.22] : furTop ? [0.3, 0.26, 0.22] : [0.16, 0.16, 0.16],
-      detailMap: jersey ? meshDetail : knitDetail, detail: jersey ? [34, 26, 0.45] : furTop ? [40, 30, 0.7] : [60, 46, 0.35], character: true, doubleSided: true, layer: 3,
+      map: topTex, color: [0.86, 0.86, 0.86], roughness: jersey ? 0.6 : furTop ? 0.95 : shellTop ? 0.36 : 0.86, specular: shellTop ? 1.25 : 1, shading: 'cloth', sheen: jersey ? [0.22, 0.22, 0.22] : furTop ? [0.3, 0.26, 0.22] : shellTop ? [0.3, 0.3, 0.32] : [0.16, 0.16, 0.16],
+      detailMap: jersey ? meshDetail : knitDetail, detail: jersey ? [34, 26, 0.45] : furTop ? [40, 30, 0.7] : shellTop ? [60, 46, 0.12] : [60, 46, 0.35], character: true, doubleSided: true, layer: 3,
       emissiveMap: mocapTop ? own(paintMocap(top, 'top', true), {}) : null, emissive: mocapTop ? glowOf(top) : [0, 0, 0],
     });
     const bot = look.bottom || { family: 'shorts' };
-    const mocapBot = bot.pattern === 'mocap', furBot = bot.pattern === 'gorilla';
-    const botTex = own(mocapBot ? paintMocap(bot, 'bottom') : furBot ? paintGorilla(bot, 'bottom') : paintShorts(detail < 1 ? { ...bot, res: 256 } : bot), { aniso: 8 });
+    const mocapBot = bot.pattern === 'mocap', furBot = bot.pattern === 'gorilla', shellBot = bot.pattern === 'shellsuit';
+    const botTex = own(mocapBot ? paintMocap(bot, 'bottom') : furBot ? paintGorilla(bot, 'bottom') : shellBot ? paintShell(bot, 'bottom', detail < 1 ? 256 : 512) : paintShorts(detail < 1 ? { ...bot, res: 256 } : bot), { aniso: 8 });
     yield;
-    const botMat = new Material({ map: botTex, color: [0.86, 0.86, 0.86], roughness: furBot ? 0.95 : 0.62, shading: 'cloth', sheen: furBot ? [0.3, 0.26, 0.22] : [0.22, 0.22, 0.22], detailMap: bot.family === 'joggers' ? knitDetail : meshDetail, detail: furBot ? [40, 30, 0.7] : [30, 30, 0.35], character: true, doubleSided: true, layer: 2,
+    const botMat = new Material({ map: botTex, color: [0.86, 0.86, 0.86], roughness: furBot ? 0.95 : shellBot ? 0.36 : 0.62, specular: shellBot ? 1.25 : 1, shading: 'cloth', sheen: furBot ? [0.3, 0.26, 0.22] : shellBot ? [0.3, 0.3, 0.32] : [0.22, 0.22, 0.22], detailMap: bot.family === 'joggers' ? knitDetail : meshDetail, detail: furBot ? [40, 30, 0.7] : shellBot ? [30, 30, 0.12] : [30, 30, 0.35], character: true, doubleSided: true, layer: 2,
       emissiveMap: mocapBot ? own(paintMocap(bot, 'bottom', true), {}) : null, emissive: mocapBot ? glowOf(bot) : [0, 0, 0] });
     const gearMat = new Material({ color: [0.84, 0.84, 0.84], roughness: 0.5, specular: 0.7, character: true, layer: 4 });
     this.meshes = [];
@@ -113,6 +114,8 @@ export class AthleteView {
     const straps = geo.straps ? add(geo.straps, new Material({ ...topMat, viewBias: 0.018 }), 'straps') : null; // (same options as the top)
     const botM = add(geo.bottom, botMat, 'bottom');
     add(geo.gear, gearMat, 'gear');
+    // v0.4.8.5 quick patch: a terry-cloth band (the Neon Terry) is towelling: matte, fuzzy at the edges, a knit grain
+    if (geo.terry) add(geo.terry, new Material({ color: [1, 1, 1], roughness: 0.96, specular: 0.25, shading: 'cloth', sheen: [0.32, 0.3, 0.3], detailMap: knitDetail, detail: [1, 1, 0.9], character: true, layer: 4 }), 'terry');
     if (geo.shoes) {
       // v0.4.3: textured sneakers (one texture per design, shared by everyone wearing it)
       const sh = look.gear?.shoes || {};

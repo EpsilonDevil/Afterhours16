@@ -902,6 +902,8 @@ class Handler(BaseHTTPRequestHandler):
                         raise builds.Invalid("King Tut Cup exclusive. Win it in the Cup.")
                     if item.get("exclusive") == "jungle":
                         raise builds.Invalid("Jungle Ballers exclusive. Win it in the Jungle.")
+                    if item.get("exclusive") == "beat":
+                        raise builds.Invalid("And The Beat Goes On exclusive. Win it at the Beat Goes On park.")
                     if item.get("exclusive") == "icon":
                         raise builds.Invalid("Icon badge exclusive. It comes with the Icon badge; it cannot be bought.")
                     if item.get("exclusive"):

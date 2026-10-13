@@ -179,6 +179,10 @@ const sePow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), 2 / e);
 // line, the same as topCut's strap), how high they ride over the trapezius at the inner and outer edge (torso height
 // fractions), how round the rise is, and how far they run down over the panels (the seam: s past 0 or 1)
 const TANK_STRAP = { aI: 0.31, aO: 0.7, yIn: 0.842, yOut: 0.824, round: 0.55, ext: 0.06, drop: 0.026 };
+// v0.4.8.5 quick patch: the Boombox hi-top's velcro strap (buildShoe; paintShoe draws it in the same place): across the
+// top of the tongue between t0 and t1 (heel -> toe), down each side to v0, slanting back toward the heel by `slant` on the
+// way down; `thick` its thickness (H)
+export const SHOE_STRAP = { t0: 0.355, t1: 0.445, slant: 0.1, v0: 0.6, thick: 0.0026 };
 
 // limb radius profiles: t, radius (H units)
 const UPPER = [[-0.07, 0.027], [0.0, 0.033], [0.22, 0.031], [0.45, 0.0275], [0.68, 0.0275], [0.88, 0.0245], [1.02, 0.0225], [1.08, 0.021]];
@@ -795,8 +799,11 @@ export class AthleteModel {
   topCut(top) {
     const fam = top.family || 'jersey';
     const tank = fam === 'jersey';
-    const hem = fam === 'compression' ? 0.5 : top.tucked ? 0.565 : 0.47;
-    const neckTop = fam === 'hoodie' ? 0.856 : tank ? 0.83 : 0.843;
+    // v0.4.8.5 quick patch: 'shell' (the Beat Goes On windbreaker): an elastic waistband a touch higher, the panels up to
+    // the base of the neck (a stand-up collar of its own goes on top, closed by the zip, so no neckline cut)
+    const shell = fam === 'shell';
+    const hem = fam === 'compression' ? 0.5 : top.tucked ? 0.565 : shell ? 0.476 : 0.47;
+    const neckTop = fam === 'hoodie' ? 0.856 : tank ? 0.83 : shell ? 0.846 : 0.843;
     // v0.4.5: a basketball tank is cut along curves, not boxes: a U-shaped scoop neck in front, a shallower one in
     // back, wide straps over the trapezius and deep, rounded armholes. topY(phi) is the top edge of the fabric at
     // each angle around the body; the mesh columns run from the hem up to exactly that edge (no stair-steps).
@@ -813,10 +820,11 @@ export class AthleteModel {
       const s = Math.abs(Math.sin(phi)), front = Math.cos(phi) > 0;
       if (yf > neckTop + 1e-4 || yf < hem - 1e-4) return false;
       if (tank) return yf <= topY(phi) + 1e-4;
+      if (shell) return true;
       if (yf > 0.83 && front && s < 0.32) return false;
       return true;
     };
-    return { fam, tank, hem, neckTop, keep, topY };
+    return { fam, tank, hem, neckTop, keep, topY, shell };
   }
 
   // v0.4.7.5 quick patch: a tank's straps. They used to stop where the front and back panels did (a level edge across
@@ -856,15 +864,18 @@ export class AthleteModel {
   }
 
   buildTop(top) {
-    const { fam, tank, hem, neckTop, keep, topY } = this.topCut(top);
+    const { fam, tank, hem, neckTop, keep, topY, shell } = this.topCut(top);
     const gb = new GB(), H = this.d.H;
-    const base = fam === 'compression' ? 0.0025 : fam === 'hoodie' ? 0.016 : 0.009;
+    const base = fam === 'compression' ? 0.0025 : fam === 'hoodie' ? 0.016 : shell ? 0.014 : 0.009;
     const tucked = !!top.tucked && fam !== 'compression';
     // loose fit with soft vertical folds below the chest; fabric drapes over the bumps
     const loose = (yf, phi) => {
       const below = smooth(0.74, 0.55, yf);
       const folds = fam === 'compression' ? 0 : 0.0028 * below * (Math.sin(phi * 7 + 1.3) * 0.6 + Math.sin(phi * 12 + 0.4) * 0.4);
       let l = base * (yf > 0.8 ? 0.45 : 1) + folds;
+      // v0.4.8.5 quick patch: the windbreaker blouses out over its elastic waistband (a crinkled nylon shell: a few soft
+      // horizontal creases where it bunches), then the band gathers it back in at the hem
+      if (shell) l += 0.02 * bump(yf, 0.535, 0.075) +0.0013 * Math.sin(yf * 190 + phi * 3) * smooth(0.66, 0.52, yf) - 0.006 * smooth(0.5, 0.48, yf);
       // v0.4.4: an untucked top always hangs outside the shorts' waistband and seat (which sit at
       // 0.011-0.0185 off the body), so the shorts never poke through the hem; a tucked one stays inside them
       if (fam !== 'compression' && !tucked) l = Math.max(l, (0.017 + 0.0135 * smooth(0.57, 0.47, yf)) * smooth(0.66, 0.6, yf) + Math.abs(folds) * 0.5); // v0.4.5: more room over the shorts' legs
@@ -910,10 +921,32 @@ export class AthleteModel {
       const sleeveEnd = fam === 'tee' ? 0.48 : fam === 'compression' ? 0.92 : 1.0;
       for (const side of ['L', 'R']) {
         const clav = B['clav' + side], up = B['upper' + side], fo = B['fore' + side], ha = B['hand' + side];
-        const off = fam === 'compression' ? 0.0025 : fam === 'tee' ? 0.013 : 0.016;
+        const off = fam === 'compression' ? 0.0025 : fam === 'tee' ? 0.013 : shell ? 0.014 : 0.016;
         const flare = fam === 'tee' ? 0.006 : 0;
-        this.loftLimb(gb, up, fo, (t, p, ls) => this.upperArmR(t, p, ls) * (fam === 'compression' ? 1 : 0.92) + 0.004 + flare * smooth(0.1, sleeveEnd, t), this.jointBlend(clav, up, fo, 0.2), { t0: -0.07, t1: sleeveEnd > 0.9 ? 1.07 : sleeveEnd, offset: off, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.78 + t * 0.1] });
-        if (sleeveEnd > 0.9 && fam !== 'tee') this.loftLimb(gb, fo, ha, (t, p, ls) => this.foreArmR(t, p, ls), this.jointBlend(up, fo, ha, 0.12), { t0: -0.08, t1: 0.93, offset: off * 0.9, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.88 + t * 0.12] });
+        // v0.4.8.5 quick patch: the windbreaker's sleeves: full and crinkled (nylon), ballooning down the forearm into an
+        // elastic cuff gathered at the wrist; the cuff gets its own strip of the texture (v .955-1) to carry the rib
+        const crinkle = (t, p) => (shell ? 0.0006 * Math.sin(t * 29 + p * 2 + (side === 'L' ? 0 : 1.7)) + 0.0004 * Math.sin(t * 47 - p * 3) : 0);
+        const CUFF = 0.86, cuffV = t => (t < CUFF ? 0.88 + 0.075 * t / CUFF : 0.955 + 0.045 * (t - CUFF) / (1 - CUFF));
+        this.loftLimb(gb, up, fo, (t, p, ls) => this.upperArmR(t, p, ls) * (fam === 'compression' ? 1 : 0.92) + 0.004 + flare * smooth(0.1, sleeveEnd, t) + (shell ? 0.002 * smooth(0.2, 0.9, t) + crinkle(t, p) : 0), this.jointBlend(clav, up, fo, 0.2), { t0: -0.07, t1: sleeveEnd > 0.9 ? 1.07 : sleeveEnd, offset: off, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.78 + t * 0.1] });
+        if (sleeveEnd > 0.9 && fam !== 'tee') this.loftLimb(gb, fo, ha, (t, p, ls) => {
+          const r = this.foreArmR(t, p, ls); if (!shell) return r;
+          const k = 0.0035 * bump(t, 0.45, 0.42) + crinkle(t + 1.07, p) - 0.0088 * smooth(0.8, 0.86, t);
+          return [r[0] + k, r[1] + k];
+        }, this.jointBlend(up, fo, ha, 0.12), { t0: -0.08, t1: 0.93, offset: off * 0.9, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), shell ? cuffV(t) : 0.88 + t * 0.12] });
+      }
+      if (shell) {
+        // v0.4.8.5 quick patch: the windbreaker's stand-up collar: a band round the base of the neck, standing off it and
+        // flaring a little as it rises (lower in front, so a chin dropped to the chest clears it), its top edge rolled over
+        // to show its thickness; closed at the front by the zip (painted). uv: the strip between the panels and the
+        // sleeves (v .752-.778), so the collar carries its own colour
+        const cols = Math.round(44 * this.detail) + 12, rows = 6;
+        gb.grid(rows, cols, (r, c) => {
+          const u = c / cols, phi = u * Math.PI * 2 - Math.PI / 2, front = Math.max(0, Math.cos(phi));
+          const k = Math.min(1, r / (rows - 2)), roll = r === rows - 1, top = 0.869 - 0.012 * front * front;
+          const yf = lerp(0.836, top, k) - (roll ? 0.0045 : 0), lo = 0.0105 + 0.0055 * k + (roll ? 0.0024 : 0);
+          const p = this.torsoPoint(yf, phi, lo, 0);
+          return { p, uv: [u, 0.752 + 0.026 * (roll ? 1 : k)], w: this.torsoWeights(p[1], Math.sin(phi), p[0]) };
+        });
       }
       if (fam === 'hoodie') {
         const P = this.bind[B.chest];
@@ -936,6 +969,12 @@ export class AthleteModel {
     // v0.4.5: tights (the King Tut Cup mo-cap suit) hug the body: no drape over the hips, legs just over the skin
     const tight = bot.pattern === 'mocap' || bot.pattern === 'gorilla' || fam === 'tights'; // (qp3: the gorilla's fur legs hug too)
     const baggy = tight ? 0.002 : fam === 'joggers' ? 0.011 : 0.0165; // v0.4.5: a trimmer short (the old one read as a tube on a bent knee)
+    // v0.4.8.5 quick patch: the Beat Goes On track pants: crinkled nylon, the legs gathered into an elastic cuff that sits
+    // just above a high-top's collar (the fabric bunching over it). The legs get their own share of the texture: thigh
+    // v .5-.78, shin .78-.955, the cuff .955-1 (a jogger's thigh and shin both run to v 1, so a cuff there would ring
+    // the knee too)
+    const cuffed = bot.pattern === 'shellsuit', CUFF0 = 0.6, CUFF1 = 0.69;
+    const wrinkle = (t, p, k = 1) => (cuffed ? 0.0012 * k * Math.sin(t * 27 + p * 2) : 0);
     this.loftTorso(gb, {
       y0: 0.452, y1: waist, cols: Math.round(40 * this.detail) + 8, hang: tight ? 0 : 0.3,
       loose: tight ? () => 0.0035 : (yf, phi) => 0.011 + 0.006 * smooth(0.52, 0.47, yf) + 0.0015 * Math.sin(phi * 9) * smooth(0.56, 0.48, yf),
@@ -947,6 +986,8 @@ export class AthleteModel {
       this.loftLimb(gb, th, sh, (t, p, ls) => {
         // baggy shorts: cylinder that widens toward the hem, with soft folds
         if (tight) return this.thighR(t, p, ls) + 0.0045;
+        // (the track pants taper down the thigh into the shin's width at the knee: one leg, not shorts over leggings)
+        if (cuffed) return this.thighR(t, p, ls) + 0.0088 + 0.005 * smooth(0.35, -0.1, t) + wrinkle(t, p, smooth(0.1, 0.4, t));
         const r = Math.max(profile(THIGH, t) * Math.min(1.12, this.d.girth), profile(THIGH, 0.1) * 0.95) + baggy * (0.6 + t * 0.35);
         // v0.4.4: never tighter than the thigh underneath (heavy, muscular builds) so the leg can't poke through
         return Math.max(r + (fam === 'joggers' ? 0 : 0.0022 * Math.sin(p * 6 + t * 3) * smooth(0.2, 0.9, t)), this.thighR(t, p, ls) + 0.005);
@@ -954,7 +995,7 @@ export class AthleteModel {
         const base = this.jointBlend(-1, th, sh, 0.12)(t);
         const wh = 0.5 * (1 - smooth(-0.15, 0.15, t));
         return [[B.hips, wh], ...base.map(([b, w]) => [b, b === th ? w - wh : w])];
-      }, { t0: -0.12, t1: Math.min(1.14, fam === 'joggers' ? 1.04 : len), uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.5 + t * 0.5], rows: 12 });
+      }, { t0: -0.12, t1: Math.min(1.14, fam === 'joggers' ? 1.04 : len), uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.5 + t * (cuffed ? 0.28 : 0.5)], rows: 12 });
       // v0.4.5: a rolled hem that folds back in to the leg, so a driven knee never shows the inside of the
       // shorts (or the thigh through the opening)
       const hemT = Math.min(1.14, fam === 'joggers' ? 1.04 : len);
@@ -963,12 +1004,21 @@ export class AthleteModel {
         const wh = 0.5 * (1 - smooth(-0.15, 0.15, t));
         return [[B.hips, wh], ...base.map(([b, w]) => [b, b === th ? w - wh : w])];
       };
-      if (!tight) this.loftLimb(gb, th, sh, (t, p, ls) => {
+      if (!tight && !cuffed) this.loftLimb(gb, th, sh, (t, p, ls) => {
         const k = smooth(hemT - 0.04, hemT, t);     // 0 at the hem, 1 just inside it
         const outer = Math.max(profile(THIGH, t) * Math.min(1.12, this.d.girth), profile(THIGH, 0.1) * 0.95) + baggy * (0.6 + t * 0.35);
         return lerp(Math.max(outer, this.thighR(t, p, ls) + 0.005), this.thighR(t, p, ls) + 0.0035, k);
-      }, wfn, { t0: hemT - 0.04, t1: hemT, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.99 - t * 0.01], rows: 4 });
-      if (fam === 'joggers') {
+      }, wfn, { t0: hemT - 0.04, t1: hemT, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), cuffed ? 0.78 : 0.99 - t * 0.01], rows: 4 });
+      if (cuffed) {
+        // the shin: full, bunching over the cuff, then the elastic cuff hugging the sock, and a hem rolled back in under it
+        const r0 = (t, p, ls) => this.shinR(t, p, ls) * 0.85 + 0.0155 + 0.0045 * bump(t, 0.5, 0.14) + wrinkle(t, p, smooth(0.15, 0.45, t));
+        const rc = (t, p, ls) => this.shinR(t, p, ls) + 0.0068;
+        const tc = (CUFF0 + 0.02) / (CUFF1 + 0.02);
+        this.loftLimb(gb, sh, ft, (t, p, ls) => lerp(r0(t, p, ls), rc(t, p, ls), smooth(CUFF0 - 0.035, CUFF0 + 0.005, t)), this.jointBlend(th, sh, ft, 0.1),
+          { t0: -0.02, t1: CUFF1, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), t < tc ? 0.78 + 0.175 * t / tc : 0.955 + 0.045 * (t - tc) / (1 - tc)] });
+        this.loftLimb(gb, sh, ft, (t, p, ls) => lerp(rc(t, p, ls), this.shinR(t, p, ls) + 0.0042, smooth(CUFF1, CUFF1 + 0.012, t)), this.jointBlend(th, sh, ft, 0.1),
+          { t0: CUFF1, t1: CUFF1 + 0.012, rows: 3, uv: u => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.995] });
+      } else if (fam === 'joggers') {
         this.loftLimb(gb, sh, ft, (t, p, ls) => (tight ? this.shinR(t, p, ls) + 0.0045 : this.shinR(t, p, ls) * 0.85 + 0.012 - t * 0.004), this.jointBlend(th, sh, ft, 0.1), { t0: -0.02, t1: 0.95, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.75 + t * 0.25] });
       }
     }
@@ -978,13 +1028,16 @@ export class AthleteModel {
   // Gear: socks, shoes, sleeves, bands, pads — colored by vertex color
   buildGear(gear) {
     const gb = new GB(), sgb = new GB(), H = this.d.H;
-    this.shoeGeo = null;
+    this.shoeGeo = null; this.terryGeo = null;
     const sock = gear.socks ? [...hexLinear(gear.socks.color), 1] : [0.94, 0.94, 0.92, 1];
     // v0.4.4: an arm sleeve under a hoodie or a leg sleeve under joggers is left out (it could only poke through);
     // sleeves and pads worn over compression sleeves or joggers sit on top of the fabric so they stay fully visible
     const topFam = this.look.top?.family || 'jersey', botFam = this.look.bottom?.family || 'shorts';
-    const underHoodie = topFam === 'hoodie', overComp = topFam === 'compression' ? 0.006 : 0, joggers = botFam === 'joggers';
-    const sockLen = joggers ? 0.9 : gear.socks?.style === 'ankle' ? 0.9 : gear.socks?.style === 'tall' ? 0.45 : 0.64;
+    // (v0.4.8.5 quick patch: the windbreaker's long sleeves count as a hoodie's; under the track pants' cuffs the socks are
+    // pulled up to meet them, the 80s way)
+    const underHoodie = topFam === 'hoodie' || topFam === 'shell', overComp = topFam === 'compression' ? 0.006 : 0, joggers = botFam === 'joggers';
+    const cuffed = this.look.bottom?.pattern === 'shellsuit';
+    const sockLen = cuffed ? 0.56 : joggers ? 0.9 : gear.socks?.style === 'ankle' ? 0.9 : gear.socks?.style === 'tall' ? 0.45 : 0.64;
     for (const side of ['L', 'R']) {
       const th = B['thigh' + side], sh = B['shin' + side], ft = B['foot' + side];
       const fo = B['fore' + side], ha = B['hand' + side], up = B['upper' + side], clav = B['clav' + side];
@@ -998,7 +1051,9 @@ export class AthleteModel {
       }
       if (gear.wristband) {
         const wc = [...hexLinear(gear.wristband.color), 1];
-        this.loftLimb(gb, fo, ha, (t, p, ls) => { const r = this.foreArmR(t, p, ls); const o = 0.0068 + (topFam === 'hoodie' ? 0.0148 : topFam === 'compression' ? 0.0024 : 0); return [r[0] + o, r[1] + o]; }, this.jointBlend(up, fo, ha, 0.12), { t0: 0.76, t1: 0.95, col: () => wc, rows: 5 });
+        // (v0.4.8.5 quick patch: over the windbreaker it follows the sleeve into its gathered cuff: buildTop's forearm + 3 mm)
+        const shellWb = t => 0.0126 + 0.0035 * bump(t, 0.45, 0.42) - 0.0088 * smooth(0.8, 0.86, t) + 0.0032;
+        this.loftLimb(gb, fo, ha, (t, p, ls) => { const r = this.foreArmR(t, p, ls); const o = topFam === 'shell' ? shellWb(t) : 0.0068 + (topFam === 'hoodie' ? 0.0148 : topFam === 'compression' ? 0.0024 : 0); return [r[0] + o, r[1] + o]; }, this.jointBlend(up, fo, ha, 0.12), { t0: 0.76, t1: 0.95, col: () => wc, rows: topFam === 'shell' ? 8 : 5 });
       }
       if (gear.legSleeve && !joggers && side === (gear.legSleeve.side || 'L')) {
         const lc = [...hexLinear(gear.legSleeve.color), 1];
@@ -1015,14 +1070,33 @@ export class AthleteModel {
     if (gear.headband) {
       // v0.4.5: a glow-in-the-dark band (King Tut Cup) is painted brighter than any dye can be, so it blooms
       const hc = [...hexLinear(gear.headband.color).map(v => v * (gear.headband.glow ? 2.6 : 1)), 1], R = this.d.headR, c = this.headCenter();
-      const rows = 4, cols = 40;
-      gb.grid(rows, cols, (r, k) => {
-        const th = k / cols * Math.PI * 2, y = 0.36 + r / (rows - 1) * 0.17;
-        const n = norm([Math.sin(th), y, Math.cos(th)]);
-        const s = this.headShape(n, { skullOnly: true }), len = Math.hypot(...s);
-        const o = Math.max(0.03, this.hairOffsetAt(n) + 0.02); // on top of the hair, whatever the style
-        return { p: [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R], col: hc, w: [[B.head, 1]] };
-      });
+      const stripes = gear.headband.stripes;
+      if (stripes && stripes.length) {
+        // v0.4.8.5 quick patch: a terry-cloth sweatband (the Neon Terry): twice as tall and plush (it bulges out between its
+        // edges, so it reads as a thick towelling band, not a ribbon), in stripes round the head (top to bottom), each
+        // stripe its own rows so the edges stay crisp; the towelling loops a fine nubbly grain over the colour
+        // (its own mesh, this.terryGeo, drawn matte with a knit grain: view.js; uv tiles the grain round the band)
+        const n = stripes.length, sub = 5, cols = Math.round(72 * this.detail) + 24, cs = stripes.map(h => hexLinear(h).map(v => Math.min(1, v * 1.08))), tb = new GB();
+        const nub = (a, b) => { const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return x - Math.floor(x); };
+        tb.grid(n * sub, cols, (r, k) => {
+          const i = Math.floor(r / sub), f = (i + (r % sub) / (sub - 1)) / n, th = k / cols * Math.PI * 2, y = 0.74 - f * 0.47;
+          const nn = norm([Math.sin(th), y, Math.cos(th)]);
+          const s = this.headShape(nn, { skullOnly: true }), len = Math.hypot(...s), g = nub(r, k);
+          const o = Math.max(0.03, this.hairOffsetAt(nn) + 0.02) + 0.05 * Math.pow(Math.sin(Math.PI * f), 0.55) + 0.004 * (g - 0.5);
+          const kk = 0.88 + 0.14 * g;
+          return { p: [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R], uv: [k / cols * 14, f * 2.2], col: [cs[i][0] * kk, cs[i][1] * kk, cs[i][2] * kk, 1], w: [[B.head, 1]] };
+        }, { inward: true });
+        this.terryGeo = tb.finish();
+      } else {
+        const rows = 4, cols = 40;
+        gb.grid(rows, cols, (r, k) => {
+          const th = k / cols * Math.PI * 2, y = 0.36 + r / (rows - 1) * 0.17;
+          const n = norm([Math.sin(th), y, Math.cos(th)]);
+          const s = this.headShape(n, { skullOnly: true }), len = Math.hypot(...s);
+          const o = Math.max(0.03, this.hairOffsetAt(n) + 0.02); // on top of the hair, whatever the style
+          return { p: [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R], col: hc, w: [[B.head, 1]] };
+        });
+      }
       // v0.4.7.5 qp3 The Jungle Ballers Toucan band: a feather stitched over the right ear, sweeping up and back,
       // flat (a wide, thin tube), the band's trim colour with a dark tip and a pale quill
       if (gear.headband.feather) {
@@ -1047,7 +1121,7 @@ export class AthleteModel {
   buildChain(spec) {
     const H = this.d.H, top = this.look.top || { family: 'jersey' };
     const fam = top.family || 'jersey';
-    const fabric = fam === 'compression' ? 0.0025 : fam === 'hoodie' ? 0.016 : 0.009;
+    const fabric = fam === 'compression' ? 0.0025 : fam === 'hoodie' ? 0.016 : fam === 'shell' ? 0.014 : 0.009;
     const iced = spec.kind === 'ice';
     const drape = fam === 'compression' ? 0 : 0.8; // same drape as buildTop, so the chain follows the fabric
     const r = iced ? 0.0042 : 0.0036; // tube radius (H units)
@@ -1068,7 +1142,7 @@ export class AthleteModel {
       const front = Math.pow((1 + c0) / 2, 1.6);
       const yf = 0.838 - 0.072 * front;
       const xt = Math.abs(Math.sin(ang)) * (0.056 - 0.01 * front);
-      const cloth = fam === 'hoodie' ? fabric : yf > 0.8 ? fabric * 0.45 : fabric;
+      const cloth = fam === 'hoodie' || fam === 'shell' ? fabric : yf > 0.8 ? fabric * 0.45 : fabric; // (v0.4.8.5 quick patch: over the windbreaker's collar too)
       const loose = cloth + r + 0.0022;
       const phi = surf(yf, xt, c0 >= 0, loose) * side;
       const p = this.torsoPoint(yf, phi, loose, drape);
@@ -1122,6 +1196,17 @@ export class AthleteModel {
     const topH = t => lerp(collar, 0.03 * H, smooth(0.22, 0.72, t)) - 0.012 * H * smooth(0.86, 1, t);
     const midH = 0.018 * H;
     const sp = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
+    // (v0.4.8.5 quick patch: the surface as a function of (t, phi), for the Boombox strap below)
+    const surf = (t, phi) => {
+      const z = lerp(heelZ, toeZ, t), cy = Math.cos(phi), sx = Math.sin(phi), w = halfW(t), h = topH(t);
+      let x = sp(sx, 0.5) * w, y = cy >= 0 ? midH + sp(cy, 0.6) * (h - midH) : midH * (1 + cy);
+      const e = t < 0.1 ? Math.sqrt(Math.max(0, 1 - (1 - t / 0.1) ** 2)) : t > 0.9 ? Math.sqrt(Math.max(0, 1 - (1 - (1 - t) / 0.1) ** 2)) : 1;
+      const yc = midH * 0.9 + (t < 0.5 ? 0.012 * H : 0.004 * H);
+      x *= e; y = yc + (y - yc) * Math.pow(e, 0.8);
+      if (cy < 0.05) x *= 1.06;
+      y = Math.max(0, y) + 0.008 * H * smooth(0.82, 1, t) * (cy < 0 ? 1 : 0.6);
+      return [A[0] + x + sg * 0.0015 * H, y, z];
+    };
     for (const hs of [1, -1]) {
       const lateral = hs * sg > 0;
       gb.grid(rows, half, (r, c) => {
@@ -1147,6 +1232,27 @@ export class AthleteModel {
         return { p: [A[0] + x, y, z], uv: [u, 1 - v], col: [1, 1, 1, Math.max(0.55, ao)], w: [[ft, 1 - wt], [toe, wt]] };
       }, { inward: true });
     }
+    if (shoe.model === 'boombox') {
+      // v0.4.8.5 quick patch: the Boombox hi-top's velcro ankle strap. A band over the upper from low on the lateral side,
+      // up across the top of the tongue and down the medial side, slanting back toward the heel as it comes down the
+      // sides (the 80s strap), standing off the leather by its thickness with walls at its edges so it reads as a strap
+      // laid on, not a decal. Its uv is the upper's under it: paintShoe draws the strap there (STRAP).
+      const S = SHOE_STRAP, cols = 28, across = [0, 0, 0.25, 0.5, 0.75, 1, 1], lift = [0, 1, 1, 1.08, 1, 1, 0];
+      const at = (s, w) => { // s 0..1 lateral bottom -> top -> medial bottom; w 0..1 across (toe side to heel side)
+        const hs = s < 0.5 ? sg : -sg, q = s < 0.5 ? s / 0.5 : (1 - s) / 0.5, v = S.v0 + (1 - S.v0) * q;
+        const t = lerp(S.t0, S.t1, w) - (1 - q) * S.slant, phi = hs > 0 ? (1 - v) * Math.PI : -(1 - v) * Math.PI;
+        return { t, phi, v, lateral: hs * sg > 0 };
+      };
+      const e = 1e-3;
+      gb.grid(across.length, cols, (r, c) => {
+        const s = Math.min(1 - 1e-4, Math.max(1e-4, c / cols)), { t, phi, v, lateral } = at(s, across[r]);
+        const p = surf(t, phi), dt = sub(surf(t + e, phi), surf(t - e, phi)), dp = sub(surf(t, phi + e), surf(t, phi - e));
+        let n = norm(cross(dt, dp)); const out = sub(p, [A[0], p[1] * 0.5, p[2]]); if (dot(n, out) < 0) n = scale(n, -1);
+        const end = c === 0 || c === cols ? 0.4 : 1, P = addS(p, n, S.thick * H * lift[r] * end);
+        const wt = smooth(toeJ - 0.015 * H, toeJ + 0.02 * H, P[2]);
+        return { p: P, uv: [(lateral ? 0.008 : 0.508) + t * 0.484, 1 - v], col: [1, 1, 1, r === 0 || r === across.length - 1 ? 0.7 : 1], w: [[ft, 1 - wt], [toe, wt]] };
+      }, { inward: sg < 0 });
+    }
   }
 
   // v0.4.5 stage 7: the same parts, one per step (see AthleteView.staged)
@@ -1158,7 +1264,7 @@ export class AthleteModel {
     // in the game and the menus, never passed them on, so the strap mesh added in v0.4.7.5 was never drawn)
     out.top = this.buildTop(look.top || { family: 'jersey' }); out.straps = this.strapGeo; yield;
     out.bottom = this.buildBottom(look.bottom || { family: 'shorts' }); yield;
-    out.gear = this.buildGear(look.gear || {}); out.shoes = this.shoeGeo; out.chain = this.chainGeo;
+    out.gear = this.buildGear(look.gear || {}); out.shoes = this.shoeGeo; out.chain = this.chainGeo; out.terry = this.terryGeo; // (v0.4.8.5 quick patch: the Neon Terry band)
     return out;
   }
   buildAll() {
@@ -1174,6 +1280,7 @@ export class AthleteModel {
       gear: this.buildGear(look.gear || {}),
       shoes: this.shoeGeo,
       chain: this.chainGeo,
+      terry: this.terryGeo, // (v0.4.8.5 quick patch)
     };
   }
 }

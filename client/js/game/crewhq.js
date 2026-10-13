@@ -107,6 +107,7 @@ const levelOf = (level, xp) => ({ level, xp, floor: floorOf(level), next: level 
 
 export class CrewHQ {
   constructor(app, ui, from, opts = {}) {
+    music.setPlaylist('main'); // (v0.4.8.5 quick patch: the Crew HQ plays the main soundtrack, whichever park you came from)
     this.app = app; this.ui = ui; this.from = from; this.r = app.renderer;
     // (a friend's online crew: its name, colors and level; its members are the real ones)
     this.onlineCrew = opts.online || null;

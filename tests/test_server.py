@@ -299,16 +299,17 @@ class CupTests(unittest.TestCase):
                 self.assertIn(i, server_app.CATALOG)
                 self.assertEqual(server_app.CATALOG[i].get("exclusive"), "cup")
 
-    # v0.4.7.5 qp3: the event schedule (the King Tut Cup until the end of its last window, then The Jungle Ballers)
+    # v0.4.7.5 qp3: the event schedule (the King Tut Cup until the end of its last window, then The Jungle Ballers;
+    # v0.4.8.5 quick patch: And The Beat Goes On after the Jungle's window, see test_beat_event.py)
     def test_event_schedule_and_the_jungle_prizes(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle"])
+        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat"])
         cut = sched[0]["until"]
         self.assertEqual(sched[1]["from"], cut)
         self.assertEqual((cut - cup.EPOCH) % cup.WINDOW, 0)  # the handover is on a window boundary
         self.assertEqual(cup.active_event(cut - 1, sched)["id"], "kingtut")
         self.assertEqual(cup.active_event(cut, sched)["id"], "jungle")
-        self.assertEqual(cup.active_event(cut + 365 * 86400, sched)["id"], "jungle")
+        self.assertEqual(cup.active_event(sched[1]["until"] - 1, sched)["id"], "jungle")
         w = (cut - cup.EPOCH) // cup.WINDOW
         self.assertEqual(cup.event_for_window(w - 1, sched)["id"], "kingtut")
         self.assertEqual(cup.event_for_window(w, sched)["id"], "jungle")
@@ -830,7 +831,7 @@ class ApiTests(unittest.TestCase):
             cfg = self.call("/api/config")
             self.assertEqual(cfg["event"]["id"], "jungle")
             self.assertEqual(cfg["event"]["venue"], "jungle")
-            self.assertEqual(sorted(cfg["event_venues"]), ["jungle", "kingtut"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "jungle")
             self.assertEqual(st["prizes"][0]["label"], "King of the Jungle")

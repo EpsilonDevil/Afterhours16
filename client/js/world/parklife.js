@@ -9,6 +9,7 @@ import * as PR from './props.js';
 import { audio } from '../core/audio.js';
 import * as TX from '../gfx/textures.js';
 import { AVE, EL_Z, STEAM_VENTS } from './street.js';
+import * as RT from './retro.js';
 
 const lin = hex => M.hexLinear(hex);
 const col = hex => [...lin(hex), 1];
@@ -37,11 +38,14 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   const lanes = theme.style === 'coast'
     ? [{ z: 35.6, x0: -68, x1: 68 }, { z: -30.5, x0: -60, x1: 60 }, { z: 38.5, x0: -68, x1: 68 }]
     : theme.style === 'city' ? [{ z: -32.5, x0: -60, x1: 60 }, { z: 31, x0: -60, x1: 60 }, { z: -31, x0: -45, x1: 45 }]
-      : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
+      // (v0.4.8.5 quick patch: the Beat Goes On's sidewalks: the Strip's, the plaza front, and along the shops as far as
+      // the disco's crowd; jit: how far off the line they wander, y: the pavement's height)
+      : theme.style === 'retro' ? [{ z: 34.4, x0: -62, x1: 62, jit: 0.4, y: 0.1 }, { z: -35.0, x0: -62, x1: 62, jit: 0.25, y: 0.02 }, { z: -37.4, x0: -60, x1: 12, jit: 0.3, y: 0.02 }]
+        : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
   const people = [];
   for (let i = 0; i < 22; i++) {
     const ln = lanes[i % lanes.length], jog = rng.next() < 0.18;
-    const p = { ln, x: rng.range(ln.x0, ln.x1), dz: rng.range(-1, 1), dir: rng.next() < 0.5 ? 1 : -1, v: jog ? rng.range(2.6, 3.4) : rng.range(1.1, 1.6), jog, ph: rng.range(0, 6), stop: 0, s: rng.range(0.92, 1.08) };
+    const p = { ln, x: rng.range(ln.x0, ln.x1), dz: rng.range(-1, 1) * (ln.jit ?? 1), dir: rng.next() < 0.5 ? 1 : -1, v: jog ? rng.range(2.6, 3.4) : rng.range(1.1, 1.6), jog, ph: rng.range(0, 6), stop: 0, s: rng.range(0.92, 1.08) };
     p.mesh = add(personGeo, shirtMats[i % shirtMats.length]);
     if (rng.next() < 0.15) p.dog = add(geoOf([{ geo: G.box(0.18, 0.2, 0.5), matrix: T(0, 0.3, 0), color: col(rng.pick(['#5a4030', '#d9c7a0', '#1d1d1d'])) }, { geo: G.box(0.14, 0.16, 0.18), matrix: T(0, 0.45, 0.3), color: col('#3a2a20') }, ...[[-0.06, 0.18], [0.06, 0.18], [-0.06, -0.18], [0.06, -0.18]].map(([x, z]) => ({ geo: G.box(0.05, 0.2, 0.05), matrix: T(x, 0.1, z), color: col('#2a2018') }))]), vmat);
     people.push(p);
@@ -56,7 +60,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       p.ph += dt * (p.jog ? 9 : 6) * (p.stop > 0 ? 0 : 1);
       const bob = Math.abs(Math.sin(p.ph)) * (p.jog ? 0.07 : 0.03), z = p.ln.z + p.dz;
       const yaw = p.stop > 0 ? (p.ln.z > 0 ? Math.PI : 0) : (p.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
-      M.m4fromYaw(p.mesh.matrix, p.x, bob, z, yaw, p.s);
+      M.m4fromYaw(p.mesh.matrix, p.x, bob + (p.ln.y || 0), z, yaw, p.s);
       if (p.jog) { p.mesh.matrix[8] += 0.06 * p.dir; } // lean into the run
       if (p.dog) M.m4fromYaw(p.dog.matrix, p.x + p.dir * 0.9, Math.abs(Math.sin(p.ph * 1.6)) * 0.03, z + 0.5, yaw);
     }
@@ -64,6 +68,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
 
   // ---------- ambient traffic / boats / machinery (always running) ----------
   const movers = [], updExtra = [];
+  let retro = null, lifeT = 0; // (v0.4.8.5 quick patch: the Beat Goes On's park life, and a clock for it)
   const carParts = (body, cabin) => [
     { geo: G.box(1.8, 0.62, 4.3), matrix: T(0, 0.62, 0), color: col(body) },
     { geo: G.box(1.62, 0.55, 2.3), matrix: T(0, 1.2, -0.2), color: col(cabin) },
@@ -242,6 +247,9 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       }
     };
     updExtra.push(updAnimals);
+  } else if (theme.style === 'retro') {
+    // v0.4.8.5 quick patch: And The Beat Goes On: lowriders, dancers, skaters (retroLife, below)
+    retro = retroLife({ r, ctx, rng, add, geoOf, updExtra, city: opts.city, t: () => lifeT });
   } else {
     // industrial: a forklift shuttling along the container yard, and the crane trolley working
     const fork = add(geoOf([
@@ -476,6 +484,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     city: [() => train('el'), heli, () => birds('pigeon'), fireworksOrLights, plane, pursuit, pursuit],
     industrial: [() => train('freight'), () => train('freight'), sparks, steam, () => birds('crow')],
     tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
+    retro: retro ? retroEvents({ r, rng, add, geoOf, scene, city: opts.city, vmat }, retro) : null,
   }[theme.style] || [() => birds('pigeon')];
   let nextEvt = rng.range(6, 14);
   const start = make => {
@@ -485,7 +494,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
 
   return {
     update(dt) {
-      dt = Math.min(dt, 0.1);
+      dt = Math.min(dt, 0.1); lifeT += dt;
       updPeople(dt); updMovers(dt); for (const f of updExtra) f(dt);
       for (let i = events.length - 1; i >= 0; i--) {
         if (events[i].fn(dt)) continue;
@@ -499,5 +508,311 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     },
     trigger(i) { start(EVENTS[i % EVENTS.length]); },
     get eventCount() { return events.length; },
+    get retro() { return retro; }, // (v0.4.8.5 quick patch: the Beat Goes On's cars and dancers, for the tests and the dev views)
   };
 }
+
+// ---------------- v0.4.8.5 quick patch: And The Beat Goes On ----------------
+// Lowriders cruising the Strip and the avenues (now and then one hits its switches: the front pumping, or up on three
+// wheels), two in the lot by the disco hopping in place and one at the Strip's kerb bouncing its hood; b-boys taking
+// turns on the cardboard by the plaza (toprock, six-step, headspins, windmills, a freeze), a boombox crew popping and
+// locking, dancers spilling out of the disco's door, the line on the sidewalk with its bouncer, roller skaters circling
+// the block. Every figure is one mesh: its pose is a geometry swapped on the beat (retro.js dancer()), its moves the
+// mesh's matrix. env: the createParkLife closures. Returns what the retro events need.
+function retroLife(env) {
+  const { r, ctx, rng, add, geoOf, updExtra, city } = env;
+  const BPM = city?.BPM || 118, clock = () => (city ? city.t : env.t()) * BPM / 60; // beats (shared with the disco floor)
+  const lowMat = new Material({ color: [1, 1, 1], roughness: 0.2, metalness: 0.55, specular: 1.4 });
+  const dmat = new Material({ color: [1, 1, 1], roughness: 0.7, shading: 'cloth', sheen: [0.08, 0.08, 0.08] });
+  const { LOWRIDER: LW } = RT;
+  // ---- lowriders ----
+  // a car's pose: lift (m), pitch (front up, about the rear axle), roll (the left side up, about the long axis)
+  const carM = (m, x, z, yaw, lift = 0, pitch = 0, roll = 0) => M.m4mul(m, M.m4fromYaw(M.m4(), x, lift, z, yaw), M.m4mul(M.m4(), M.m4mul(M.m4(), M.m4translation(M.m4(), 0, LW.axle, LW.rear), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, -pitch))), M.m4mul(M.m4(), M.m4translation(M.m4(), 0, -LW.axle, -LW.rear), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, roll)))));
+  const lowrider = (paint, conv) => add(geoOf(() => RT.lowrider(paint, { convertible: conv, roof: conv ? null : rng.next() < 0.4 ? '#f4f1ea' : null }), 'lr' + paint + (conv ? 'c' : '')), lowMat);
+  // a hop: the front leaps h metres and lands, a couple of smaller bounces after; returns [lift, pitch] at time t (s)
+  const WB = LW.front - LW.rear;
+  const hop = (t, h) => {
+    const T = 0.45 + h * 0.35;
+    const seg = [[0, T, h], [T, T * 0.55, h * 0.22], [T * 1.55, T * 0.35, h * 0.06]];
+    for (const [t0, d, hh] of seg) if (t >= t0 && t < t0 + d) { const k = Math.sin((t - t0) / d * Math.PI), fh = hh * k; return [fh * 0.12, Math.atan2(fh, WB)]; }
+    return [0, 0];
+  };
+  const cars = [];
+  // cruisers: on the Strip's four lanes, the avenues, the street behind the shops
+  const ln = [...RT.STRIP.lanes.map(l => ({ axis: 'x', c: l.z, dir: l.dir })), ...[-1, 1].flatMap(s => RT.AVE.lanes.map(l => ({ axis: 'z', c: s * l.x, dir: s * l.dir }))), ...RT.SOUTH.lanes.map(l => ({ axis: 'x', c: l.z, dir: l.dir }))];
+  const spec = [[0, -60], [1, 40], [2, -20], [3, 70], [0, 120], [2, 100], [4, -40], [5, 60], [6, 10], [7, -90], [8, 30]];
+  spec.forEach(([li, p], i) => {
+    const L = ln[li], c = { mesh: lowrider(RT.CANDY[i % RT.CANDY.length], i % 3 === 1), L, p, v: rng.range(4.2, 6.5), mode: 'cruise', mt: rng.range(4, 14), t: 0, ph: rng.range(0, 6) };
+    cars.push(c);
+  });
+  // parked: two in the lot between the pizza place and the disco (nose to the plaza), one at the Strip's north kerb
+  const parked = [
+    { mesh: lowrider('#ff3f9a', false), x: 5.2, z: -46.5, yaw: 0, kind: 'hopper', t: rng.range(0, 6) },
+    { mesh: lowrider('#00a0a8', true), x: 10.4, z: -47, yaw: 0, kind: 'three', t: rng.range(0, 6) },
+    { mesh: lowrider('#d4a017', false), x: -8, z: 55.0, yaw: Math.PI / 2, kind: 'bounce', t: 0 },
+  ];
+  const pose = c => {
+    if (c.mode === 'bounce') return [0.02, 0.07 * Math.abs(Math.sin(c.t * 4.4)), 0];
+    if (c.mode === 'three') { const k = Math.min(1, c.t * 1.5, (c.mt) * 1.5); return [0.05 * k, 0.06 * k, 0.15 * k]; }
+    return [0, 0, 0];
+  };
+  updExtra.push(dt => {
+    for (const c of cars) {
+      c.t += dt; c.mt -= dt;
+      if (c.mt <= 0) { if (c.mode === 'cruise') { c.mode = rng.pick(['bounce', 'bounce', 'three']); c.mt = rng.range(2.5, 4.5); } else { c.mode = 'cruise'; c.mt = rng.range(8, 20); } c.t = 0; }
+      c.p += c.L.dir * c.v * dt; if (c.p > 185) c.p -= 370; if (c.p < -185) c.p += 370;
+      const [lift, pitch, roll] = pose(c), x = c.L.axis === 'x' ? c.p : c.L.c, z = c.L.axis === 'x' ? c.L.c : c.p;
+      const yaw = c.L.axis === 'x' ? (c.L.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (c.L.dir > 0 ? 0 : Math.PI);
+      carM(c.mesh.matrix, x, z, yaw, lift, pitch, roll);
+    }
+    for (const c of parked) {
+      c.t += dt;
+      let lift = 0, pitch = 0, roll = 0;
+      if (c.kind === 'hopper') { const cyc = c.t % 7.5, n = Math.floor(cyc / 1.6); if (n < 3) { const hh = [0.7, 1.0, 1.35][n], tt = cyc - n * 1.6; [lift, pitch] = hop(tt, hh); } }
+      else if (c.kind === 'three') { const cyc = c.t % 9, k = M.smooth(cyc / 1.2) * (1 - M.smooth((cyc - 5) / 1.2)); lift = 0.06 * k; pitch = 0.05 * k; roll = 0.17 * k; }
+      else { pitch = 0.075 * Math.abs(Math.sin(c.t * 4.6)); lift = 0.02; }
+      // sparks off the back bumper when the hopper's nose comes down from a big one
+      c.peak = Math.max(c.peak || 0, pitch);
+      if (c.kind === 'hopper' && c.peak > 0.15 && pitch < 0.01) { r.particles.burst(c.x, 0.15, c.z + LW.rear - 0.7, 14, { color: [6, 3, 0.9], speed: 3, life: 0.5, size: 0.04, gravity: -9 }); c.peak = 0; }
+      carM(c.mesh.matrix, c.x, c.z, c.yaw, lift, pitch, roll);
+    }
+  });
+
+  // ---- people ----
+  const OUT = RT.OUTFITS, P = RT.POSES;
+  const outfit = (i, skates = false) => (skates ? { ...OUT[i % OUT.length], skates: true } : OUT[i % OUT.length]);
+  const fig = (o, pose, key) => geoOf(() => RT.dancer(P[pose], o), 'dn' + key + pose);
+  // a dancer: style picks its pose on each beat; its matrix does the rest (bob, sway, spins)
+  const dancers = [];
+  const person = (x, z, yaw, oi, style, o = {}) => {
+    const of = outfit(oi, style === 'skate'), key = oi + (style === 'skate' ? 's' : '');
+    const d = { x, z, yaw, of, key, style, mesh: add(fig(of, 'stand', key), dmat), ph: rng.range(0, 4) | 0, pose: 'stand', t: rng.range(0, 10), s: rng.range(0.95, 1.06), ...o };
+    if (o.shadow) d.mesh.castShadow = true;
+    dancers.push(d); return d;
+  };
+  const setPose = (d, pose) => { if (d.pose !== pose) { d.pose = pose; d.mesh.geo = fig(d.of, pose, d.key); } };
+  const SEQ = {
+    disco: ['point', 'point', 'point2', 'point2', 'roll', 'roll', 'vee', 'shift'], popper: ['wave', 'wave2', 'robot', 'robot2', 'wave', 'robot2', 'wave2', 'robot'],
+    locker: ['lock', 'lock2', 'lock', 'point', 'lock2', 'lock', 'roll', 'lock2'], toprock: ['rock1', 'rock2'], runner: ['run1', 'run2'], clap: ['clap', 'stand'],
+    boombox: ['boombox'], idle: ['stand', 'shift', 'pockets', 'cross', 'shift', 'stand'], cheer: ['cheer', 'clap', 'cheer', 'clap'],
+  };
+  // the b-boys round their cardboard: one in the middle at a time, the rest on the edge
+  const BC = RT.SPOTS.breakers, breakers = [];
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + 0.4, x = BC.x + Math.sin(a) * 1.95, z = BC.z + Math.cos(a) * 1.95; breakers.push(person(x, z, Math.atan2(BC.x - x, BC.z - z), [0, 1, 4, 6][i], 'edge', { home: [x, z], shadow: true })); }
+  for (let i = 0; i < 3; i++) { const a = 2.2 + i * 0.9, x = BC.x + Math.sin(a) * 2.9, z = BC.z + Math.cos(a) * 2.9; person(x, z, Math.atan2(BC.x - x, BC.z - z), [3, 7, 2][i], 'clap', { shadow: true }); }
+  const brk = { turn: 0, t: 0, move: 'headspin', len: 10, battle: 0 };
+  // the boombox crew by the east end of the plaza, facing the park
+  const CR = RT.SPOTS.crew;
+  person(CR.x - 1.3, CR.z + 0.6, 0.15, 4, 'popper', { shadow: true }); person(CR.x + 1.3, CR.z + 0.4, -0.2, 5, 'locker', { shadow: true });
+  person(CR.x, CR.z + 1.6, 0, 2, 'popper', { ph: 2, shadow: true }); person(CR.x + 2.6, CR.z - 0.9, -0.7, 0, 'boombox', { shadow: true });
+  // the dancers spilling out of the disco's door, and the runner
+  const DR = RT.SPOTS.door;
+  for (const [dx, dz, oi, st] of [[-0.9, 0.4, 2, 'disco'], [1.0, 1.0, 5, 'disco'], [-3.2, 1.6, 7, 'disco'], [3.2, 1.9, 3, 'runner'], [-1.8, 2.6, 1, 'locker']]) person(DR.x + dx, DR.z + dz, rng.range(-0.5, 0.5), oi, st);
+  // roller skaters round the block: the Strip's sidewalk, the avenues', the plaza front
+  const loop = [[-64.6, 34.3], [64.6, 34.3], [64.6, -34.5], [-64.6, -34.5]], segs = loop.map((p, i) => { const q = loop[(i + 1) % 4]; return { p, q, len: Math.hypot(q[0] - p[0], q[1] - p[1]) }; }), LOOP = segs.reduce((a, s) => a + s.len, 0);
+  const along = s => { s = ((s % LOOP) + LOOP) % LOOP; for (const g of segs) { if (s <= g.len) { const k = s / g.len; return [g.p[0] + (g.q[0] - g.p[0]) * k, g.p[1] + (g.q[1] - g.p[1]) * k, Math.atan2(g.q[0] - g.p[0], g.q[1] - g.p[1])]; } s -= g.len; } return [loop[0][0], loop[0][1], 0]; };
+  const skaters = [];
+  for (let i = 0; i < 5; i++) skaters.push(person(0, 0, 0, i + 2, 'skate', { s0: i * LOOP / 5 + rng.range(-10, 10), v: rng.range(3.4, 5.2), dir: i % 2 ? -1 : 1 }));
+  // the line at the door (one mesh: they wait), the bouncer, the rope; the cardboard and the crew's boombox
+  {
+    const parts = [], at = (o, pose, x, z, yaw) => { for (const q of RT.dancer(P[pose], OUT[o])) parts.push({ geo: q.geo, matrix: M.m4fromYaw(M.m4(), x, 0.02, z, yaw), color: q.color }); };
+    const L = RT.SPOTS.line;
+    ['pockets', 'cross', 'shift', 'stand', 'pockets', 'shift', 'cross'].forEach((pz, i) => at(i % OUT.length, pz, L.x0 + 0.6 + i * 0.92, L.z + rng.range(-0.15, 0.15), -Math.PI / 2 + rng.range(-0.5, 0.4)));
+    for (const q of RT.dancer(P.cross, { skin: '#5d3a22', hair: '#0e0a08', style: 'flat', top: '#121216', bottom: '#121216', shoes: '#121216' })) parts.push({ geo: q.geo, matrix: M.m4mul(M.m4(), M.m4fromYaw(M.m4(), L.x0 - 1.1, 0.02, L.z - 0.1, 0.25), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1.15, 1.08, 1.2])), color: q.color });
+    for (let i = 0; i < 6; i++) parts.push({ geo: G.cylinder(0.04, 0.05, 0.95, 8, { y0: true }), matrix: T(L.x0 + i * 1.25, 0.02, L.z + 0.8), color: col('#d8dde4') });
+    for (let i = 0; i < 5; i++) { const x0 = L.x0 + i * 1.25, x1 = x0 + 1.25; parts.push({ geo: G.tube([[x0, 0.9, L.z + 0.8], [(x0 + x1) / 2, 0.72, L.z + 0.8], [x1, 0.9, L.z + 0.8]], 0.03, 5), color: col('#b0102a') }); }
+    parts.push({ geo: G.box(2.3, 0.02, 2.3), matrix: T(BC.x, 0.01, BC.z, 0.3), color: col('#a8865a') }, { geo: G.box(1.2, 0.022, 1.0), matrix: T(BC.x + 0.4, 0.012, BC.z - 0.5, 0.9), color: col('#9a7a4e') });
+    parts.push({ geo: G.box(0.7, 0.36, 0.2), matrix: T(CR.x + 0.2, 0.18, CR.z - 0.6, 0.2), color: col('#c9ced6') });
+    for (const sx of [-0.2, 0.2]) parts.push({ geo: G.cylinder(0.12, 0.12, 0.03, 12), matrix: M.m4mul(M.m4(), T(CR.x + 0.2 + sx * Math.cos(0.2), 0.18, CR.z - 0.6 - sx * Math.sin(0.2) + 0.1, 0.2), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2))), color: col('#1d1f26') });
+    const m = add(geoOf(() => PR.bake(parts), 'beatline'), dmat); m.castShadow = true;
+  }
+  // power moves: matrices that turn a standing-frame pose upside down or lay it on the floor
+  const powerM = (d, move, t) => {
+    const m = d.mesh.matrix;
+    if (move === 'headspin') return M.m4mul(m, M.m4translation(M.m4(), d.x, 1.86, d.z), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, Math.PI)), M.m4fromYaw(M.m4(), 0, 0, 0, t * 9)));
+    if (move === 'windmill') return M.m4mul(m, M.m4fromYaw(M.m4(), d.x, 0.32, d.z, t * 2.6), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, Math.PI / 2)), M.m4mul(M.m4(), M.m4fromYaw(M.m4(), 0, 0, 0, t * 7), M.m4translation(M.m4(), 0, -1.25, 0))));
+    if (move === 'freeze') return M.m4mul(m, M.m4fromYaw(M.m4(), d.x, 0.28, d.z, d.yaw), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, 2.3)), M.m4translation(M.m4(), 0, -1.5, 0)));
+    return M.m4fromYaw(m, d.x, 0, d.z, d.yaw, d.s);
+  };
+  updExtra.push(dt => {
+    const beat = clock(), bi = Math.floor(beat), bp = beat - bi, dip = Math.pow(1 - Math.abs(Math.cos(bp * Math.PI)), 2);
+    // the breakers' turns: toprock, drop, six-step, the power move, a freeze, back to the edge
+    brk.t += dt;
+    if (brk.t > brk.len) { brk.t = 0; brk.turn = (brk.turn + 1) % breakers.length; brk.move = rng.pick(['headspin', 'windmill', 'windmill', 'headspin']); brk.len = brk.battle > 0 ? 8.5 : 10.5; }
+    if (brk.battle > 0) brk.battle -= dt;
+    breakers.forEach((d, i) => {
+      if (i !== brk.turn) {
+        d.x = d.home[0]; d.z = d.home[1]; d.yaw = Math.atan2(BC.x - d.x, BC.z - d.z);
+        const st = brk.battle > 0 ? (i % 2 ? 'cheer' : 'toprock') : (i % 2 ? 'crouch' : 'toprock');
+        setPose(d, st === 'crouch' ? 'crouch' : SEQ[st][(bi + i) % SEQ[st].length]);
+        M.m4fromYaw(d.mesh.matrix, d.x, st === 'crouch' ? 0 : -0.03 * dip, d.z, d.yaw + (st === 'toprock' ? Math.sin(beat * Math.PI) * 0.25 : 0), d.s);
+        return;
+      }
+      const t = brk.t, cx = BC.x, cz = BC.z;
+      // walk in from the edge, and back out at the end
+      const k = M.smooth(t / 1.0) * (1 - M.smooth((t - (brk.len - 1.0)) / 1.0));
+      d.x = d.home[0] + (cx - d.home[0]) * k; d.z = d.home[1] + (cz - d.home[1]) * k;
+      if (t < 2.4 || t > brk.len - 1.0) { setPose(d, t > brk.len - 1.0 ? 'glide' : SEQ.toprock[bi % 2]); M.m4fromYaw(d.mesh.matrix, d.x, -0.03 * dip, d.z, d.yaw + Math.sin(beat * Math.PI) * 0.35, d.s); }
+      else if (t < 2.9) { setPose(d, 'crouch'); M.m4fromYaw(d.mesh.matrix, d.x, 0, d.z, d.yaw, d.s); }
+      else if (t < 5.2) { setPose(d, Math.floor(beat * 2) % 2 ? 'six1' : 'six2'); M.m4mul(d.mesh.matrix, M.m4fromYaw(M.m4(), d.x, 0, d.z, d.yaw + (t - 2.9) * 2.6), M.m4translation(M.m4(), 0, 0, -0.45)); }
+      else if (t < brk.len - 2.1) { setPose(d, brk.move); powerM(d, brk.move, t); }
+      else { setPose(d, 'freeze'); powerM(d, 'freeze', t); }
+    });
+    // everyone else on the beat
+    for (const d of dancers) {
+      if (d.style === 'edge') continue;
+      if (d.style === 'skate') {
+        d.s0 += d.dir * d.v * dt; const [x, z, yaw] = along(d.s0), push = Math.sin(d.s0 * 0.9);
+        d.x = x; d.z = z; d.yaw = M.dampAngle(d.yaw, d.dir > 0 ? yaw : yaw + Math.PI, 6, dt);
+        setPose(d, push > 0.35 ? 'skate1' : push < -0.35 ? 'skate2' : 'glide');
+        if (d.train != null) setPose(d, d.train === 0 ? (bi % 2 ? 'cheer' : 'glide') : 'train');
+        const m = M.m4fromYaw(d.mesh.matrix, x, z > 0 || Math.abs(x) > 63.6 ? 0.1 : 0.02, z, d.yaw, d.s), lean = (d.train != null ? Math.sin(d.s0 * 0.5) : -push) * 0.12;
+        m[4] += lean * Math.cos(d.yaw); m[6] -= lean * Math.sin(d.yaw); // (leaning into the push)
+        continue;
+      }
+      const seq = SEQ[d.style] || SEQ.idle;
+      setPose(d, seq[(bi + d.ph) % seq.length]);
+      let y = -0.035 * dip, yaw = d.yaw, x = d.x;
+      if (d.style === 'disco') { yaw += Math.sin(beat * Math.PI * 0.5 + d.ph) * 0.35; y += 0.02 * Math.sin(beat * Math.PI * 2); }
+      else if (d.style === 'popper') { if (bp < 0.12) y += 0.03; yaw += (bi % 4 < 2 ? 0.25 : -0.25); }
+      else if (d.style === 'locker') { yaw += Math.sin(beat * Math.PI * 0.25) * 0.5; }
+      else if (d.style === 'runner') { x += Math.sin(beat * Math.PI * 0.25) * 0.3; y = -0.05 * dip; }
+      else if (d.style === 'boombox') { y = -0.02 * dip; }
+      M.m4fromYaw(d.mesh.matrix, x, y, d.z, yaw, d.s);
+    }
+  });
+  const drop = list => { for (const d of list) { const i = dancers.indexOf(d); if (i >= 0) dancers.splice(i, 1); } };
+  return { cars, parked, breakers, brk, lowrider, carM, hop, person, dancers, drop, setPose, fig, outfit, along, LOOP, clock, SEQ, dmat, lowMat };
+}
+
+// the Beat Goes On's random events: a lowrider hop-off on the Strip, a breakdance battle, a roller-skate train round the
+// block, a neon blackout, a plane towing the event's banner, a blimp with a message board, the disco's light show,
+// fireworks over the Strip, and a lowrider parade
+function retroEvents(env, R) {
+  const { r, rng, add, geoOf, city, vmat } = env;
+  const DEG = Math.PI / 180;
+  // the hop-off: two roll up nose to nose on the Strip's near side, a crowd gathers, they take turns hopping higher each
+  // time (sparks off the back bumpers when the front comes down), and the winner rolls off up on three wheels
+  const hopOff = () => {
+    const z = 40.6, A = { mesh: R.lowrider(rng.pick(RT.CANDY), false), x0: 140, stop: 15, dir: -1 }, B = { mesh: R.lowrider(rng.pick(RT.CANDY), true), x0: -140, stop: -1, dir: 1 };
+    const crowd = [];
+    for (let i = 0; i < 11; i++) { const x = rng.range(-4, 17), zz = rng.next() < 0.65 ? rng.range(34.8, 36.6) : rng.range(45.2, 45.9); crowd.push(R.person(x, zz, Math.atan2(7 - x, z - zz), rng.int(0, 7), i % 3 ? 'cheer' : 'clap', { ph: rng.int(0, 3) })); }
+    const order = [B, A, B, A, B, A], H = [0.55, 0.8, 1.05, 1.35, 1.6, 1.95];
+    let t = 0;
+    return dt => {
+      t += dt;
+      for (const c of [A, B]) {
+        let lift = 0, pitch = 0, roll = 0, x;
+        if (t < 7) x = c.x0 + (c.stop - c.x0) * (1 - (1 - t / 7) ** 3);
+        else if (t < 25) {
+          x = c.stop; const i = Math.floor((t - 7) / 3), tt = (t - 7) - i * 3;
+          if (order[i] === c) { [lift, pitch] = R.hop(tt, H[i]); c.pk = Math.max(c.pk || 0, pitch); if (c.pk > 0.12 && pitch < 0.01) { r.particles.burst(x - c.dir * 2.9, 0.15, z, 20, { color: [6, 3, 0.9], speed: 3.5, life: 0.6, size: 0.045, gravity: -9 }); audio.rumble?.(0.12); c.pk = 0; } }
+        } else { const k = t - 25; x = c.stop + c.dir * 1.6 * k * k; if (c === A) { const e = Math.min(1, k * 1.2); roll = 0.17 * e; pitch = 0.05 * e; lift = 0.05 * e; } }
+        R.carM(c.mesh.matrix, x, z, c.dir > 0 ? Math.PI / 2 : -Math.PI / 2, lift, pitch, roll);
+      }
+      if (t > 34) { R.drop(crowd); return false; }
+      return true;
+    };
+  };
+  // the battle: a ring of onlookers forms round the cardboard, the b-boys take quicker turns, the others cheering
+  const breakBattle = () => {
+    const BC = RT.SPOTS.breakers, ring = [];
+    R.brk.battle = 26; R.brk.t = R.brk.len;
+    for (let i = 0; i < 11; i++) { const a = i / 11 * Math.PI * 2 + 0.2, rr = 3.15 + rng.range(-0.15, 0.25), x = BC.x + Math.sin(a) * rr, z = Math.max(-33.7, BC.z + Math.cos(a) * rr); ring.push(R.person(x, z, Math.atan2(BC.x - x, BC.z - z), (i + 3) % 8, i % 3 ? 'clap' : 'cheer', { ph: i % 2 })); }
+    let t = 0;
+    return dt => { if ((t += dt) > 26) { R.drop(ring); return false; } return true; };
+  };
+  // the skate train: eight skaters round the block, hands on the shoulders in front, the leader waving
+  const skateTrain = () => {
+    const s0 = rng.range(0, R.LOOP), dir = rng.next() < 0.5 ? 1 : -1, train = [];
+    for (let i = 0; i < 8; i++) train.push(R.person(0, 0, 0, i, 'skate', { s0: s0 - dir * i * 1.1, v: 5.4, dir, train: i }));
+    let t = 0;
+    return dt => { if ((t += dt) > 40) { R.drop(train); return false; } return true; };
+  };
+  // the neon blackout: every sign, tube and bulb in the city stutters out, stays dark, and comes back a block at a time
+  const neonBlackout = () => { city?.blackout(); audio.rumble?.(0.2); let t = 0; return dt => (t += dt) < 9; };
+  // a prop plane towing AND THE BEAT GOES ON past the north side
+  let bannerMat = null, ledMat = null;
+  const bannerPlane = () => {
+    bannerMat = bannerMat || new Material({ map: ctx2tex(env, 'beatbanner', () => TX.banner('AND THE BEAT GOES ON  ★', { w: 1024, h: 128, bg: '#fff4e6', color: '#ff3fa4', size: 84 })), roughness: 0.9, shading: 'cloth', doubleSided: true, sheen: [0.1, 0.1, 0.1] });
+    const plane = add(geoOf(() => [
+      { geo: G.box(1.0, 1.0, 6.2), matrix: T(0, 0, 0), color: col('#f4f1ea') }, { geo: G.box(1.02, 0.25, 6.22), matrix: T(0, 0.1, 0), color: col('#ff3fa4') },
+      { geo: G.box(10.5, 0.14, 1.5), matrix: T(0, 0.35, 0.8), color: col('#f4f1ea') }, { geo: G.box(3.4, 0.1, 0.9), matrix: T(0, 0.2, -2.8), color: col('#f4f1ea') },
+      { geo: G.box(0.1, 1.3, 1.0), matrix: T(0, 0.75, -2.8), color: col('#2fe0ff') }, { geo: G.box(2.2, 0.08, 0.12), matrix: T(0, 0, 3.15), color: col('#202226') },
+      { geo: G.box(0.05, 0.05, 3.2), matrix: M.m4mul(M.m4(), T(0, -0.4, -4.4), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, 0.2))), color: col('#3a3a3a') },
+    ], 'beatplane'), vmat);
+    const banner = add(geoOf(() => [{ geo: G.quad(28, 3.2), matrix: T(0, 0, 0) }], 'beatbannerq'), bannerMat);
+    const z = rng.range(70, 90); let t = 0;
+    return dt => {
+      t += dt; const x = -250 + 24 * t, y = 33 + Math.sin(t * 0.4) * 1.5;
+      M.m4fromYaw(plane.matrix, x, y, z, Math.PI / 2);
+      M.m4mul(banner.matrix, M.m4fromYaw(M.m4(), x - 20.5, y - 1.2, z, Math.PI), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.sin(t * 3.1) * 0.12), [1, 1, 1]));
+      return x < 290;
+    };
+  };
+  // the blimp, its message board scrolling down both flanks
+  const blimp = () => {
+    ledMat = ledMat || new Material({ map: ctx2tex(env, 'beatled', () => TX.ledBoard('AND THE BEAT GOES ON ★ DANCE ALL NIGHT ★ ', '#ff3fa4', '#ffe45c'), { wrap: 'repeat' }), color: [2.2, 2.2, 2.2], shading: 'unlit', fog: false });
+    const body = add(geoOf(() => [
+      { geo: G.sphere(1, 18, 12, { sx: 5, sy: 5, sz: 19 }), matrix: T(0, 0, 0), color: col('#d8dde4') },
+      ...[0, 1, 2, 3].map(k => ({ geo: G.box(0.2, 4.2, 3.4), matrix: M.m4mul(M.m4(), T(0, 0, -16.5), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, k * Math.PI / 2 + Math.PI / 4))), color: col(k % 2 ? '#ff3fa4' : '#2fe0ff') })),
+      { geo: G.box(1.6, 1.3, 4.5), matrix: T(0, -5.4, 1.5), color: col('#2a2a32') },
+    ], 'beatblimp'), vmat);
+    const board = add(geoOf(() => [-1, 1].map(s => { const q = G.quad(24, 3); for (let i = 0; i < 4; i++) q.uv[i * 2] *= 2; return { geo: q, matrix: T(s * 5.06, 0.4, 0, s * Math.PI / 2) }; }), 'beatblimpled'), ledMat);
+    const z = rng.range(85, 105), dir = rng.next() < 0.5 ? 1 : -1; let t = 0;
+    return dt => {
+      t += dt; const x = dir * (-230 + 9 * t), y = 46 + Math.sin(t * 0.3) * 1.2, m = M.m4fromYaw(body.matrix, x, y, z, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      board.matrix.set(m); ledMat.uvOffset[0] = (ledMat.uvOffset[0] + dt * 0.06) % 1;
+      return Math.abs(x) < 240 || t < 2;
+    };
+  };
+  // the disco's light show: searchlights all along its roof sweep and cross, lasers fan out over the plaza
+  const beamMats = {};
+  const discoShow = () => {
+    const D = city?.disco; if (!D) return () => false;
+    const f = D.face, H = RT.DISCO.h, hues = [[1.7, 0.3, 1.1], [0.3, 1.2, 1.8], [1.6, 1.3, 0.3], [1.0, 0.4, 1.9], [0.4, 1.7, 0.8], [1.8, 0.6, 0.3]];
+    const mat = (k, c) => beamMats[k] || (beamMats[k] = new Material({ color: c, shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true }));
+    const beams = [-9, -5.4, -1.8, 1.8, 5.4, 9].map((a, i) => { const [x, z] = f.P(a, -2); const m = add(geoOf(() => [{ geo: RT.beamGeo(170, 0.3, 6, 12, 0.22) }], 'showbeam'), mat('b' + i, hues[i])); m.cull = false; m.order = 5; return { m, x, z, i }; });
+    const lasers = Array.from({ length: 8 }, (_, i) => { const m = add(geoOf(() => [{ geo: RT.beamGeo(110, 0.03, 0.07, 5, 0.9) }], 'laser'), mat('l' + (i % 2), i % 2 ? [2.4, 0.3, 1.3] : [0.3, 2.4, 1.0])); m.cull = false; m.order = 5; return { m, i }; });
+    const [lx, lz] = f.P(0, 0.2), ly = H + 5.4, base = Math.atan2(f.nx, f.nz);
+    let t = 0;
+    return dt => {
+      t += dt; const on = t < 15.5 || Math.sin(t * 22) > 0;
+      for (const b of beams) { M.m4mul(b.m.matrix, M.m4fromYaw(M.m4(), b.x, H + 0.6, b.z, base + Math.sin(t * 1.3 + b.i * 1.1) * 1.4), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, 0.35 + 0.3 * Math.sin(t * 0.9 + b.i)), [1, 1, 1])); b.m.visible = on; }
+      // (the lasers fan up over the plaza into the sky, clear of the courts and their cameras)
+      for (const l of lasers) { M.m4mul(l.m.matrix, M.m4fromYaw(M.m4(), lx, ly, lz, base + (l.i - 3.5) * 0.16 + Math.sin(t * 2.2) * 0.3), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, (62 + Math.sin(t * 1.7 + l.i) * 8) * DEG), [1, 1, 1])); l.m.visible = on && Math.sin(t * 9 + l.i) > -0.6; }
+      return t < 16;
+    };
+  };
+  // fireworks over the Strip in the event's colours
+  const fireworks = () => {
+    let t = 0;
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 2.8) {
+        const x = rng.range(-75, 75), y = rng.range(30, 54), z = rng.range(68, 120), c = rng.pick([[4, 0.6, 2.4], [0.6, 3.4, 4], [4, 3.4, 0.8], [2.4, 0.8, 4], [0.8, 4, 1.6]]);
+        r.particles.burst(x, y, z, 36, { color: c, speed: 8, life: 1.5, size: 0.5, gravity: 2.4, drag: 0.6 });
+        if (rng.next() < 0.5) r.particles.burst(x, y, z, 14, { color: [4, 3.6, 3], speed: 4, life: 0.9, size: 0.3, gravity: 1, drag: 1 });
+        audio.rumble?.(0.05);
+      }
+      return t < 11;
+    };
+  };
+  // cruise night: a parade of lowriders rolls down the Strip's near lane, bouncing, one up on three wheels now and then
+  const cruise = () => {
+    const n = 6, parade = Array.from({ length: n }, (_, i) => ({ mesh: R.lowrider(RT.CANDY[(i * 3 + rng.int(0, 7)) % RT.CANDY.length], i % 2 === 1), off: i * 9.5, ph: rng.range(0, 6), three: i === 2 || i === 4 }));
+    const z = RT.STRIP.lanes[0].z; let t = 0;
+    return dt => {
+      t += dt; const head = 125 - 5.2 * t;
+      for (const c of parade) {
+        const x = head + c.off, b = Math.abs(Math.sin(t * 4.2 + c.ph)), th = c.three && Math.sin(t * 0.5 + c.ph) > 0.3;
+        R.carM(c.mesh.matrix, x, z, -Math.PI / 2, th ? 0.05 : 0.02 * b, th ? 0.05 : 0.07 * b, th ? 0.17 : 0);
+      }
+      return head + n * 9.5 > -130;
+    };
+  };
+  return [hopOff, breakBattle, skateTrain, neonBlackout, bannerPlane, blimp, discoShow, fireworks, cruise];
+}
+// a texture for the retro events, made once per GL context
+const evTex = new Map();
+function ctx2tex(env, key, make, opts = {}) { const ctx = env.r.ctx; let t = evTex.get(key); if (!t || t.ctx !== ctx) { t = { ctx, tex: ctx.texture(make(), opts) }; evTex.set(key, t); } return t.tex; }

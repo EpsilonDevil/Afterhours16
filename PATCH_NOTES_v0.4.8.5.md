@@ -138,4 +138,63 @@ The Pro Run's quarter length (games you play) now starts at **1 minute**: 1, 3, 
 
 ---
 
-*(Tests: 106 Python and 272 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown.)*
+## Quick patch (Oct 13): And The Beat Goes On
+
+The next park event, **And The Beat Goes On**, takes over from The Jungle Ballers the moment the Jungle's leaderboard closes: **October 14 at 00:00 UTC** (8 pm Eastern, 5 pm Pacific on October 13). Until then the Jungle runs as normal and pays its prizes as normal. After that its park closes, just as the King Tut Cup's did. Nothing of it is deleted, so it can come back for a future event.
+
+### The park: an 80s city at sundown
+- **The sun sits right on the horizon** and the whole city glows orange. The sky runs from deep indigo overhead through magenta and hot pink to orange at the horizon. A big striped synthwave sun sits low in the west-north-west, with pink clouds across it. The buildings in that direction are low, so you can see the sun above the roofs and down the boulevard between the palms. The shadows are long, but the courts stay bright and the players stay easy to read.
+- **Retro courts:** violet floors, hot-pink aprons, teal keys and cream lines, framed with sunset stripes. Memphis-style squiggles, triangles, dots and zigzags cover the aprons. At center court there's a sunset logo (a striped sun over a neon grid between palms, with BEAT in chrome), and "AND THE BEAT GOES ON" runs along the baselines. The hoops have pink rims and purple poles, and the benches are pink and teal.
+- **The city:**
+  - **Streets and buildings:** a palm-lined boulevard (the Strip) runs north of the park, with avenues on both sides. Pastel art-deco blocks have neon trim and racing stripes, and mirror-glass towers have neon crowns.
+  - **Places:** a strip of shops faces the plaza (a diner, a cocktail bar, a record store, a pizza place and a live-music club). There's also an arcade, a barrel-roofed roller rink, a motel with a chasing-arrow sign, and a hotel with an AND THE BEAT GOES ON billboard on the roof. The park's mural is now a boombox-and-cassette mural.
+  - **Neon everywhere:** some signs hold steady, some flicker, some change colour and some chase their bulbs.
+- **The disco bar:** a black-and-chrome front with DISCO in pink neon, framed by chasing bulbs. A big mirror ball turns over the door, throwing coloured beams down the sidewalk. Through the windows you see a light-up dance floor stepping on the beat, a second mirror ball and the DJ booth. Two searchlights sweep the sky. Dancers spill out of the door, and a line waits behind the velvet rope with a bouncer.
+- **Lowriders:** eleven candy-painted lowriders cruise the Strip and the avenues, and every now and then one pumps its front end or goes up on three wheels. In the lot by the disco, one hops in place (sparks when it lands) and another holds a three-wheel pose. A third bounces its hood at the kerb.
+- **Dancers:** four b-boys take turns on a square of cardboard by the plaza (toprock, six-steps, headspins, windmills and freezes) while people clap. There's also a boombox crew of poppers and a locker, a crowd dancing at the disco door, and roller skaters circling the block.
+- **Random events** (one every half minute or so):
+  - a lowrider hop-off on the Strip, with a crowd;
+  - a breakdance battle;
+  - a roller-skate train;
+  - a neon blackout that flickers back on;
+  - a plane towing an AND THE BEAT GOES ON banner;
+  - a blimp with a scrolling sign;
+  - a disco light show with searchlights and lasers in the sky;
+  - fireworks over the Strip;
+  - a lowrider parade.
+- **On a win streak the court turns into a disco:**
+  - **3 wins:** a mirror ball lowers over the court and two spotlights sweep the floor.
+  - **6 wins:** more spots, and coloured light on the players.
+  - **9 wins:** mirror-ball specks wheel round the court.
+  - **12 wins:** the full show, with every spot going, pools of light flashing on the beat, and beams into the sky.
+- The event's leaderboard stands in the park on a neon billboard.
+
+### Its own soundtrack (a first)
+- **The park has a soundtrack of its own:** 74 minutes of 80s R&B (the mix you sent: New Edition, Janet Jackson, Keith Sweat, Zapp & Roger and more), split into **28 tracks**.
+- **They play at the event park and nowhere else.** That includes the park games there. The menus, the other parks, the Crew HQ, Pro-Am and the Pro Run never play them. The event park plays nothing from the main soundtrack either.
+- **A new shuffle every time you arrive at the park.** The tracks you heard most recently go to the back of the order. When you leave, the main soundtrack picks up the song it was playing, from where it was.
+- **How the split was made:** the mix is one continuous DJ mix with no gaps between songs, so there were no silences to split at. The cuts are where the music changes most clearly: the key, the sound and the tempo all shift at once. Each cut is at the quietest moment within 4 seconds of the change, with a short fade in and out. That makes tracks of 1½ to 4½ minutes. A few cuts may fall in the middle of a DJ blend rather than exactly between two songs. The Now Playing ticker shows them as "80s R&B Jamz · Cut 1 of 28" and so on (the mix doesn't name its songs). To put song names on them, edit `client/audio/beat/tracks.json`.
+- The tracks are in their own folder, `client/audio/beat`. Without that folder the event park is simply quiet, as the rest of the game is without its music.
+
+### Rewards
+The same tiers and prizes per place as the King Tut Cup and the Jungle Ballers, with all-new items. None of them can be bought.
+
+| Place | VC | Items |
+|---|---|---|
+| 1st | 150,000 | the Beat Goes On tracksuit (windbreaker and track pants), Boombox Hi / Neon, Running Man, Neon Terry Headband, Disco Ball, Eight-O-Eight |
+| Top 3 | 60,000 | Boombox Hi / Neon, Running Man, Neon Terry Headband, Disco Ball, Eight-O-Eight |
+| Top 10 | 25,000 | Running Man, Neon Terry Headband, Eight-O-Eight |
+| Top 25 | 10,000 | Neon Terry Headband |
+| Top half / played | 3,000 / 1,000 | |
+
+- **The Beat Goes On tracksuit** (grand prize, unique to this event): a shiny nylon shell-suit windbreaker in purple, cyan, hot pink and yellow. It has a cyan zig-zag yoke, a hot-pink slash across the front, neon triangles, a rib-knit stand-up collar and cuffs, and a zip. The sleeves balloon into gathered cuffs. The matching track pants have colour-blocked side panels, a yellow pinstripe and elastic ankle cuffs. Both are a new garment shape with their own shiny nylon finish.
+- **Boombox Hi / Neon** (top 3): an 80s white leather high-top with a hot-pink velcro ankle strap, a pink zig-zag bolt down the side, a cyan collar and heel, and a perforated toe.
+- **Neon Terry Headband** (top 25): a plush terry-cloth sweatband in hot pink, yellow and cyan stripes.
+- **Celebration: Running Man** (top 10): the classic dance. You hop back on one foot as the other knee comes up, side to side, with your arms pumping and your shoulders bouncing.
+- **Disco Ball** (green FX, top 3): a mirror ball drops on a line over your head on the release. It spins, throwing pink, cyan, purple and yellow light around you and across the floor. It bursts into a shower of coloured light the moment the shot drops.
+- **Eight-O-Eight** (green sound, top 10): a drum machine from 1984. You hear a synth-brass stab over an 808 kick and cowbell, then a big gated-reverb snare, then a synth arpeggio climbing out of it.
+- The store lists them with ★ BEAT GOES ON, like the other event items.
+
+---
+
+*(Tests: 110 Python and 294 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patch: the event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sound measured against the other green sounds; and the schedule handover, the event soundtrack and the store labels.)*

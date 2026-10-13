@@ -1769,6 +1769,36 @@ const CELEB2 = {
       T[P.spine] = -0.22 * k; T[P.chest] = -0.12 * k; T[P.head] = -0.38 * k; T[P.pitchL] = 0.35 * q * k; T[P.pitchR] = 0.35 * q * k; T[P.root + 1] = 0.03 * q * k;
     }
   },
+  // v0.4.8.5 quick patch And The Beat Goes On: the Running Man. One knee up; on the beat that foot steps down in front as
+  // the standing foot hops back; then the back foot comes up to a knee as the front one slides back under him; and again
+  // with the other leg (0.8 s for both sides, two times through in a celebration). The hips dip on every beat and rise
+  // with the knee, the shoulders bounce, the arms pump like a runner's (fists at chest height, opposite to the knees),
+  // the head nods. Each foot: knee up (q 0) -> down in front (.25) -> slid back under him (.5) -> back (.75) -> up again.
+  runningman: (T, t, k) => {
+    const PER = 0.8, ph = (t + 0.1) / PER;
+    const foot = q => {
+      q = ((q % 1) + 1) % 1;
+      if (q < 0.25) { const e = sm(0, 1, q / 0.25); return [0.55 - 0.47 * e, 0.12 + 0.1 * e, 0.6 - 0.6 * e]; }  // stepping down in front
+      if (q < 0.75) { const e = sm(0, 1, (q - 0.25) / 0.5); return [0.08, 0.22 - 0.46 * e, 0]; }                  // the slide back
+      const e = (q - 0.75) / 0.25, a = sm(0, 1, e);                                                              // up off the back
+      return [0.08 + 0.47 * Math.sin(Math.PI / 2 * a) - 0.03 * Math.sin(Math.PI * a), -0.24 + 0.36 * a, 0.6 * a];
+    };
+    const L = foot(ph), R = foot(ph + 0.5);
+    mix3(T, 'footL', 0.12, L[0], L[1], k); mix3(T, 'footR', -0.12, R[0], R[1], k);
+    T[P.pitchL] = L[2] * k; T[P.pitchR] = R[2] * k;
+    set3(T, 'kneeL', 0.14, 0.4 * L[2], 1); set3(T, 'kneeR', -0.14, 0.4 * R[2], 1);
+    // the beat lands twice a cycle (each step down): the hips drop and spring back up with the knee
+    const beat = ((ph * 2 - 0.5) % 1 + 1) % 1, dip = Math.exp(-beat / 0.12) * sm(0, 0.04, beat) + 0.25 * Math.exp(-(1 - beat) / 0.05); // (a step lands at ph .25 and .75)
+    T[P.root + 1] = (-0.035 - 0.08 * dip + 0.03 * Math.sin(Math.PI * beat)) * k;
+    T[P.root + 2] = 0.02 * k;
+    // arms: fists pump opposite to the knees (the arm on the side of the back foot comes forward and up)
+    const sw = Math.sin(TAU * ph + 0.6), lift = 0.05 * dip;
+    mix3(T, 'handL', 0.27, 1.27 + 0.22 * Math.max(0, -sw) - lift, 0.16 - 0.22 * sw, k); mix3(T, 'handR', -0.27, 1.27 + 0.22 * Math.max(0, sw) - lift, 0.16 + 0.22 * sw, k);
+    set3(T, 'elbowL', 0.6, -0.5, -1); set3(T, 'elbowR', -0.6, -0.5, -1);
+    // shoulders bounce on the beat, the chest leans in a touch, the head nods with it
+    T[P.clavL + 2] = 0.12 * dip * k; T[P.clavR + 2] = -0.12 * dip * k;
+    T[P.spine] = 0.08 * k; T[P.chest] = 0.04 * k; T[P.chest + 1] = 0.12 * sw * k; T[P.head] = (0.04 + 0.08 * dip) * k;
+  },
   // swings a big hammer down overhead, twice
   hammer: (T, t, k) => { const ph = (t * 1.6) % 1, sw = ph < 0.6 ? ph / 0.6 : 1 - (ph - 0.6) / 0.4, y = 2.3 - 1.3 * sw * sw; mix3(T, 'handR', -0.1, y, 0.2 + 0.4 * sw, k); mix3(T, 'handL', -0.02, y - 0.12, 0.2 + 0.4 * sw, k); T[P.spine] = (0.35 * sw - 0.15) * k; T[P.root + 1] = -0.08 * sw * k; },
   // holds up three fingers, shaking them at the crowd

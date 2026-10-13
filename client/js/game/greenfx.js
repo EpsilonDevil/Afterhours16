@@ -26,6 +26,7 @@ export const GREEN_FX = {
   gfx_tornado: 'Twister',
   cup_gfx_ankh: 'Golden Ankh',
   jb_gfx_banana: 'Banana Peel',
+  bg_gfx_discoball: 'Disco Ball', // (v0.4.8.5 quick patch: And The Beat Goes On)
   // v0.4.7.5 quick patch
   gfx_phoenix: 'Phoenix',
   gfx_cash: 'Make It Rain',
@@ -44,6 +45,8 @@ export const GREEN_FX = {
 };
 export const GREEN_FX_IDS = Object.keys(GREEN_FX);
 
+// (v0.4.8.5 quick patch: the Disco Ball's lights and its mirror)
+const DISCO = { pink: [2.7, 0.45, 1.5], cyan: [0.35, 2.2, 2.8], purple: [1.5, 0.55, 2.9], yellow: [2.7, 2.25, 0.35], silver: [1.3, 1.37, 1.6] };
 const G = [0.35, 2.6, 0.9], GW = [1.4, 3.0, 1.5], GD = [0.12, 1.1, 0.35], GOLD = [2.6, 1.9, 0.45], WHITE = [2.2, 2.4, 2.2], ICE = [1.1, 2.6, 2.5], EMBER = [2.2, 2.6, 0.5];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -332,6 +335,76 @@ const EFFECTS = {
       for (let i = 0; i < 10; i++) { const [ax, ay] = arc(rnd(0.3, 1)), Q = place(ax, ay, rnd(-0.05, 0.05)); fx.emit({ x: Q[0], y: Q[1], z: Q[2], vx: rnd(-0.6, 0.6), vy: rnd(0.2, 0.9), vz: rnd(-0.6, 0.6), life: 0.9, size: 0.03, color: SKIN, gravity: -4, drag: 0.8 }); }
     });
     fx.at(dur - 0.05, () => { for (let i = 0; i < 30; i++) { const [ax, ay] = arc(rnd(0, 1)), P = place(ax, ay, rnd(-0.1, 0.1), 0.9); fx.emit({ x: P[0], y: P[1], z: P[2], vx: rnd(-0.4, 0.4), vy: rnd(0.6, 1.4), vz: rnd(-0.4, 0.4), life: 0.6, size: 0.025, color: i % 3 ? SKIN : FRUIT, flick: 12, gravity: -0.5 }); } });
+  },
+  // v0.4.8.5 quick patch And The Beat Goes On exclusive: a mirror ball. On the release it drops down over his head on its
+  // line, bounces on it, and hangs there turning: rows of silver facets that flash in pink, cyan, purple and yellow as they
+  // catch the light, throwing flecks of coloured light out all round and spots of colour that sweep round the floor at his
+  // feet. The moment the shot drops (fx.flight) it bursts: every facet flies off in its colour, a shower of coloured light
+  // rains down round him and the line whips back up out of sight.
+  bg_gfx_discoball(fx) {
+    const burstAt = Math.max(0.45, Math.min(1.8, fx.flight || 1.0)), R = 0.2, HANG = 0.5, DROP = 0.3, SPIN = 3.4, TOP = 3.2;
+    // (held particles dim over the last fifth of their life: the ball and its line are held a quarter longer and hidden
+    // at the burst, so they're at full brightness right up to it)
+    const HOLD = burstAt * 1.25 + 0.05;
+    const COLS = [DISCO.pink, DISCO.cyan, DISCO.purple, DISCO.yellow];
+    // the facets: rows of latitude, fewer toward the poles, every other row staggered (the mirror tiles)
+    const facets = [];
+    for (let i = 0; i < 9; i++) {
+      const lat = -Math.PI / 2 + (i + 0.5) / 9 * Math.PI, n = Math.max(4, Math.round(20 * Math.cos(lat)));
+      for (let j = 0; j < n; j++) facets.push({ lat, lon: (j + (i % 2) * 0.5) / n * Math.PI * 2, c: COLS[(i * 7 + j * 3) % 4], ph: rnd(0, 6.3) });
+    }
+    // where the ball is: it falls in from above (easing out), overshoots, springs back on its line, then hangs
+    const centre = t => {
+      const h = fx.head(), q = Math.min(1, t / DROP), fall = 1 - Math.pow(1 - q, 3);
+      const spring = t > DROP ? -0.07 * Math.exp(-(t - DROP) / 0.14) * Math.sin((t - DROP) * 21) : 0;
+      return [h[0], h[1] + HANG + (1 - fall) * 2.4 + spring, h[2]];
+    };
+    const toCam = () => { const [r, u] = fx.basis(); return [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2], r[0] * u[1] - r[1] * u[0]]; };
+    const facet = (f, t) => { const a = f.lon + t * SPIN, cl = Math.cos(f.lat); return [cl * Math.cos(a), Math.sin(f.lat), cl * Math.sin(a)]; };
+    // the ball: each facet silver, brighter facing you, flashing its colour as it turns through the light; the far side hidden
+    fx.hold(facets.length, HOLD, i => ({ size: 0.04, color: DISCO.silver.slice() }), (i, k, p) => {
+      const t = k * HOLD, f = facets[i], d = facet(f, t), c = centre(t), cv = toCam(), face = d[0] * cv[0] + d[1] * cv[1] + d[2] * cv[2];
+      setP(p, [c[0] + d[0] * R, c[1] + d[1] * R, c[2] + d[2] * R]);
+      const glint = Math.pow(Math.max(0, Math.sin(t * SPIN * 2.3 + f.ph * 3 + f.lat * 2)), 9), lit = 0.25 + 0.75 * Math.max(0, face);
+      for (let j = 0; j < 3; j++) p.color[j] = DISCO.silver[j] * lit * (1 - glint) + f.c[j] * 1.3 * glint;
+      p.size = face < -0.12 || t >= burstAt ? 0 : 0.036 + 0.018 * glint;
+    });
+    // its body: a dim silver glow behind the facets, so it reads as a ball, not a cloud of dots
+    fx.hold(3, HOLD, i => ({ size: [0.2, 0.15, 0.1][i], color: [0.16, 0.17, 0.21] }), (i, k, p) => { const t = k * HOLD; setP(p, centre(t)); p.size = t >= burstAt ? 0 : [0.2, 0.15, 0.1][i]; });
+    // its line: from the cap on top of the ball straight up out of the frame, and the cap
+    const NL = 40;
+    fx.hold(NL + 3, HOLD, i => ({ size: i < NL ? 0.011 : 0.026, color: i < NL ? [0.7, 0.7, 0.8] : DISCO.silver.slice() }), (i, k, p) => {
+      const t = k * HOLD, c = centre(t);
+      if (i < NL) setP(p, [c[0], c[1] + R + 0.03 + (TOP - R) * i / (NL - 1), c[2]]);
+      else setP(p, [c[0] + (i - NL - 1) * 0.02, c[1] + R + 0.015, c[2]]);
+      p.size = t >= burstAt ? 0 : i < NL ? 0.011 : 0.026;
+    });
+    // flecks of light thrown off it while it turns (each from a facet facing you, out along its facet)
+    fx.every(1 / 60, burstAt, k => {
+      const t = k * burstAt; if (t < DROP * 0.8) return;
+      const c = centre(t), cv = toCam();
+      for (let n = 0; n < 3; n++) {
+        const f = pick(facets), d = facet(f, t); if (d[0] * cv[0] + d[1] * cv[1] + d[2] * cv[2] < -0.2) continue;
+        const s = rnd(2.4, 4.2);
+        fx.emit({ x: c[0] + d[0] * R, y: c[1] + d[1] * R, z: c[2] + d[2] * R, vx: d[0] * s, vy: d[1] * s, vz: d[2] * s, life: rnd(0.3, 0.55), size: rnd(0.018, 0.03), grow: -0.5, color: f.c, gravity: 0, drag: 0.8 });
+      }
+    });
+    // spots of colour sweeping round the floor at his feet (two rings turning opposite ways), fading in as it arrives
+    const spots = Array.from({ length: 16 }, (_, i) => ({ r: [0.95, 1.55, 2.15][i % 3], a: i / 16 * Math.PI * 2 + rnd(-0.15, 0.15), c: COLS[i % 4], dir: i % 2 ? 1 : -0.7 }));
+    const SPOTS = burstAt + 0.4;
+    fx.hold(spots.length, SPOTS, i => ({ size: 0, color: spots[i].c }), (i, k, p) => {
+      const t = k * SPOTS, sp = spots[i], f = fx.feet(), a = sp.a + t * sp.dir * SPIN * 0.45, on = Math.min(1, Math.max(0, (t - DROP * 0.7) / 0.2));
+      setP(p, [f[0] + Math.cos(a) * sp.r, f[1] + 0.04, f[2] + Math.sin(a) * sp.r]); p.size = 0.11 * on * (t > burstAt ? 1 + 0.6 * Math.exp(-(t - burstAt) / 0.08) : 1);
+    });
+    // the make: the facets fly off in their colours, a flash, the shower, and the line whips up and away
+    fx.at(burstAt, () => {
+      const t = burstAt, c = centre(t);
+      fx.burst(c, 24, { color: WHITE, speed: 0.8, life: 0.2, size: 0.085, gravity: 0 });
+      for (const f of facets) { const d = facet(f, t), s = rnd(2.6, 4.6); fx.emit({ x: c[0] + d[0] * R, y: c[1] + d[1] * R, z: c[2] + d[2] * R, vx: d[0] * s, vy: d[1] * s + 0.6, vz: d[2] * s, life: rnd(0.6, 1.0), size: 0.034, color: f.c, flick: 14, gravity: -3, drag: 1.2 }); }
+      const n = Math.round(150 * fx.power);
+      for (let i = 0; i < n; i++) { const d = sphereDir(), s = rnd(0.8, 2.8); fx.emit({ x: c[0] + d[0] * 0.15, y: c[1] + d[1] * 0.15, z: c[2] + d[2] * 0.15, vx: d[0] * s, vy: d[1] * s + 1.4, vz: d[2] * s, life: rnd(1.0, 1.45), size: rnd(0.022, 0.034), color: pick(COLS), flick: rnd(8, 14), gravity: -5.5, drag: 0.9 }); }
+      for (let i = 0; i < NL; i += 2) fx.emit({ x: c[0], y: c[1] + R + (TOP - R) * i / (NL - 1), z: c[2], vy: 7, life: 0.22, size: 0.011, color: [0.55, 0.55, 0.62], gravity: 0, drag: 0 });
+    });
   },
   // ---- v0.4.7.5 quick patch: fourteen more ----
 

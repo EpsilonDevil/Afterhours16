@@ -445,7 +445,7 @@ import { ANKLE_REACT, millCircle } from '../client/js/sim/game.js';
 
 test('animations doubled in every category, a dozen movement styles, and the AI wears them', () => {
   const n = slot => list.filter(i => i.category === 'animation' && i.slot === slot).length;
-  assert.deepEqual([n('jumpshot'), n('release'), n('dunk'), n('sizeup'), n('layup'), n('celebration')], [31, 33, 29, 20, 8, 35]); // (qp3: + the Hash-Slinging Icon package, not for sale; + the Jungle Ballers' Chest Beat; v0.4.8: + the Sharp Eye base and release)
+  assert.deepEqual([n('jumpshot'), n('release'), n('dunk'), n('sizeup'), n('layup'), n('celebration')], [31, 33, 29, 20, 8, 36]); // (qp3: + the Hash-Slinging Icon package, not for sale; + the Jungle Ballers' Chest Beat; v0.4.8: + the Sharp Eye base and release; v0.4.8.5 qp: + the Beat Goes On's Running Man)
   assert.ok(n('movement') >= 13, 'standard plus at least 12 movement styles');
   const styles = new Set();
   for (let s = 0; s < 40; s++) { const b = makeBot(new RNG(s), { level: 0.7, catalog }); styles.add(b.build.equipment?.movement); }

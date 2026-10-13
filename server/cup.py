@@ -8,7 +8,7 @@ your account's AI world who entered this window. When a window closes, the final
 once: the top spot wins the event's grand-prize costume, plus exclusive gear and VC.
 
 Which event is on is a schedule (server/events.json): the King Tut Cup until the end of its last window, then
-The Jungle Ballers. An event that is off the schedule is disabled in the game (its park can't be entered, its
+The Jungle Ballers for one window, then (v0.4.8.5 quick patch) And The Beat Goes On. An event that is off the schedule is disabled in the game (its park can't be entered, its
 venue refuses games) but nothing of it is deleted: put it back on the schedule and it runs again. The window
 numbers keep counting whatever event is on, so a window's standings and prizes belong to the event that was
 running when it started (event_for_window).
@@ -55,12 +55,23 @@ PRIZES_JUNGLE = (
     (10, "Top 10", 25000, ("jb_celly_chestbeat", "jb_band_toucan", "jb_gsnd_bongos")),
     (25, "Top 25", 10000, ("jb_band_toucan",)),
 )
+# v0.4.8.5 quick patch And The Beat Goes On: the Beat Goes On tracksuit (windbreaker and track pants) for the winner, Boombox
+# hi-tops, the Running Man, the Neon Terry headband, the Disco Ball green release and the Eight-O-Eight
+PRIZES_BEAT = (
+    (1, "King of the Beat", 150000, ("bg_tracksuit_top", "bg_tracksuit_pants", "bg_shoes_boombox", "bg_celly_runningman", "bg_band_terry",
+                                     "bg_gfx_discoball", "bg_gsnd_808")),
+    (3, "Top 3", 60000, ("bg_shoes_boombox", "bg_celly_runningman", "bg_band_terry", "bg_gfx_discoball", "bg_gsnd_808")),
+    (10, "Top 10", 25000, ("bg_celly_runningman", "bg_band_terry", "bg_gsnd_808")),
+    (25, "Top 25", 10000, ("bg_band_terry",)),
+)
 PRIZES = PRIZES_KINGTUT  # (the original table; kept for the tests and for anything that still reads it)
 EVENTS = {
     "kingtut": {"id": "kingtut", "venue": "kingtut", "name": "The King Tut Cup", "short": "King Tut Cup", "exclusive": "cup",
                 "prizes": PRIZES_KINGTUT, "played": "Played the Cup", "blurb": "Glow-in-the-dark ante-ups among the pyramids."},
     "jungle": {"id": "jungle", "venue": "jungle", "name": "The Jungle Ballers", "short": "Jungle Ballers", "exclusive": "jungle",
                "prizes": PRIZES_JUNGLE, "played": "Played the Jungle", "blurb": "Ante-ups under the rainforest canopy, rain on every streak."},
+    "beat": {"id": "beat", "venue": "beat", "name": "And The Beat Goes On", "short": "Beat Goes On", "exclusive": "beat",
+             "prizes": PRIZES_BEAT, "played": "Played the Beat", "blurb": "Ante-ups in an 80s city at sundown, with its own soundtrack."},
 }
 EVENT_VENUES = {e["venue"] for e in EVENTS.values()}
 EVENT_BY_VENUE = {e["venue"]: e for e in EVENTS.values()}

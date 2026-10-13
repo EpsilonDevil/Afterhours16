@@ -702,7 +702,7 @@ export async function playProAm(app) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setSuppressed(true); // v0.4.4: the soundtrack sits out Pro-Am
+  music.setPlaylist('main'); music.setSuppressed(true); // v0.4.4: the soundtrack sits out Pro-Am
   audio.surface = 'wood';
   app.setController(world, scene);
 }
@@ -830,7 +830,7 @@ export async function playProAmOnline(app, setup, local) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setSuppressed(true);
+  music.setPlaylist('main'); music.setSuppressed(true);
   audio.surface = 'wood';
   app.setController(world, scene);
   const others = Object.values(setup.names || {}).filter(n => n !== net.you?.username);
