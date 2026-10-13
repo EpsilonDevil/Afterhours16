@@ -102,7 +102,7 @@ test('online crews: a member\'s game sends its crew XP (the crew share of its Re
 
 test('online: presence says where you are (a park, a crew HQ) and your round trip; the pieces are wired', () => {
   const app = { char: () => ({ name: 'Me', overall: 70, position: 'PG' }), world: { placeKey: () => 'hq:abc', mode: 'roam' }, net: { rtt: 61 } };
-  assert.deepEqual(whereNow(app), { name: 'Me', park: 'hq:abc', status: 'park', char: '70 PG', rtt: 50 });
+  assert.deepEqual(whereNow(app), { name: 'Me', park: 'hq:abc', status: 'park', char: '70 PG', rtt: 60 }); // (v0.4.8: to 5 ms)
   const park = src('client/js/game/park.js');
   for (const f of ['onCourts()', 'canStart(c)', 'startHubGame(c, aiOpp', 'runItBack(session)', 'watchGame(setup)', 'sendParkGame(c, sides', 'export class Peers']) assert.ok(park.includes(f), f);
   const hq = src('client/js/game/crewhq.js');

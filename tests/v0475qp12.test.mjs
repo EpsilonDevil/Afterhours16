@@ -210,7 +210,7 @@ test('online: a press is used once (its number), the alley-oop and a timed relea
 test('online: the input delay covers the two slowest players\' trip through the service, 3 to 15 ticks', () => {
   const tick = 1000 / (60 * GAME_SPEED);
   assert.equal(inputDelay([1, 1]), 3);
-  assert.equal(inputDelay([2, 60, 80]), Math.ceil((70 + 30) / tick));
+  assert.equal(inputDelay([2, 60, 80]), Math.ceil((70 + 25) / tick)); // (v0.4.8: 25 ms to spare)
   assert.equal(inputDelay([900, 900]), 15);
   assert.ok(inputDelay([null, 40]) >= inputDelay([0, 40]), 'an unknown round trip counts as a slow one');
 });

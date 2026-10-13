@@ -208,9 +208,15 @@ def prorun_completed(char):
 
 def max_ovr(char):
     """The OVR this build can reach with VC right now: 80, +1 per 3 Pro Run games, up to 90. Builds that were
-    already past 80 before v0.4.7.5 keep what they had (ovr_floor)."""
-    earned = BASE_OVR_CAP + prorun_completed(char) // PRORUN_GAMES_PER_OVR
-    return max(BASE_OVR_CAP, min(OVR_CAP, max(earned, int(char.get("ovr_floor") or 0))))
+    already past 80 before v0.4.7.5 keep what they had (ovr_floor), and (qp3, Oct 12) climb from there: every 3 Pro
+    Run games played since ovr_floor_at add +1 to the floor too. Before, a build kept at 86 needed 18 games before
+    the first one counted, while its meter went round and round."""
+    done = prorun_completed(char)
+    earned = BASE_OVR_CAP + done // PRORUN_GAMES_PER_OVR
+    floor = int(char.get("ovr_floor") or 0)
+    if floor:
+        floor += max(0, done - int(char.get("ovr_floor_at") or 0)) // PRORUN_GAMES_PER_OVR
+    return max(BASE_OVR_CAP, min(OVR_CAP, max(earned, floor)))
 
 
 def cap_breakers_unlocked(char):
@@ -394,6 +400,10 @@ def hof_init(char):
     prog = char.get("progression")
     if isinstance(prog, dict) and "prorun_completed" not in prog:
         prog["prorun_completed"] = prorun_completed(char)
+    # qp3 (Oct 12): a kept OVR climbs from here, every 3 Pro Run games (the ones toward the next +1 on the meter count)
+    if "ovr_floor_at" not in char:
+        done = prorun_completed(char)
+        char["ovr_floor_at"] = done - done % PRORUN_GAMES_PER_OVR
     return char
 
 

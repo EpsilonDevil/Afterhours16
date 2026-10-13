@@ -203,7 +203,7 @@ export class MatchSession {
     this.meterFreeze = null; this.meterHold = 0;
     this.lastPlant = new Map();
     this.prevBall = { x: 0, y: 1, z: 0 };
-    this.tagsOn = true;
+    this.tagsOn = true; // (qp3: Settings → Name tags is read every frame: settings.tags)
     this.onEnd = opts.onEnd;
     this.statsHud = null;
     this.background = !!opts.background;
@@ -542,13 +542,33 @@ export class MatchSession {
     this.hud.pushFeed(`Out of sync with ${m.name || 'a player'}: your screens may not match from here`, 'bad');
     logGameEvent?.({ type: 'feed', text: `online desync at tick ${m.k}` }, this.game);
   }
-  // the input for one tick ahead: yours (blank while the pause menu is up), normalized as it goes out (sim/wire.js)
-  onlineIntent() {
-    const P = this.pend;
-    for (const k in P) if (P[k].seq == null) P[k].seq = ++this.lk.seq;
+  // the input for tick t: yours (blank while the pause menu is up), normalized as it goes out (sim/wire.js)
+  onlineIntent(t) {
+    const P = this.pend, lk = this.lk;
+    for (const k in P) if (P[k].seq == null) P[k].seq = ++lk.seq;
     const it = this.paused || this.ended ? null : this.stepIntent();
-    if (it && this.lk.extra) it.dl = this.lk.extra; // (how much further ahead than the game's delay this one went out)
+    // (how many ticks later than the game's delay this one lands after what your screen showed as it was read: a release
+    // in it is graded at the moment you let go, whatever your frames, a wait or a catch-up did in between. v0.4.8: exact
+    // for every tick, where it used to be the send-ahead alone; sent while a shot or an alley-oop could use it)
+    if (it && this.timingNow()) { const dl = t - lk.D - 1 - (lk.seen ?? this.game.tick); if (dl > 0) it.dl = Math.min(24, dl); }
     return it ? normIntent(it) : {};
+  }
+  // whether your input could be timing something: the shot button (or the attack bind) down or just pressed, a timed
+  // shot or a free throw of yours up, or an alley-oop coming to you
+  timingNow() {
+    const me = this.game.human, inp = this.input, a = me?.action;
+    if (!me) return false;
+    if (this.pend?.shoot || this.pend?.oop || me.oopQte) return true;
+    if (inp?.isDown?.('shoot') || inp?.isDown?.('dunk') || inp?.gp?.dunkHeld) return true;
+    return !!a && !a.released && (a.type === 'shoot' || a.type === 'layup' || a.type === 'ftshot' || a.type === 'dunk');
+  }
+  // v0.4.8 online: the moment you let go of a timed shot on your screen, the meter there is kept as it is (updateHUD)
+  noteLetGo() {
+    const g = this.game, me = g.human, a = me?.action, inp = this.input;
+    if (!a || a.released || g.assist || (this.letGo && this.letGo.a === a)) return;
+    if (inp.isDown('shoot') || inp.isDown('dunk') || (inp.gp?.dunkHeld && inp.ctx === 'offense')) return;
+    const m = this.liveMeter(me, a);
+    if (m) this.letGo = { a, m };
   }
   // send your input up to tick upTo: every tick once, in order, one message for all of them
   sendOnline(upTo) {
@@ -556,7 +576,7 @@ export class MatchSession {
     if (lk.sent >= upTo) return;
     const k0 = lk.sent + 1, b = [];
     while (lk.sent < upTo) {
-      const t = ++lk.sent, it = this.onlineIntent();
+      const t = ++lk.sent, it = this.onlineIntent(t);
       lk.mine.set(t, it);
       b.push(intentDelta(lk.last, it));
       lk.last = it;
@@ -581,13 +601,15 @@ export class MatchSession {
     else lk.lowFor = 0;
     this.setExtra();
   }
-  // another screen waited ms on your inputs in the 2 s up to tick k: past 100 ms (5% of the time), yours go out a tick
-  // further ahead (once a window, however many screens say so; 4 at most); see calmOnline for the way back down
+  // another screen waited ms on your inputs in the 2 s up to tick k: past 60 ms (3% of the time; v0.4.8, it was 100),
+  // yours go out a tick further ahead (once a window, however many screens say so; 4 at most): a late input freezes
+  // everyone's screen for a moment, which is worse for the timing than a tick more delay for you alone. See calmOnline
+  // for the way back down
   lateReport(k, ms) {
     const lk = this.lk;
     if (typeof k !== 'number') return;
     lk.lateWin.set(k, Math.max(lk.lateWin.get(k) || 0, ms));
-    if (ms > 100 && k > lk.raisedAt) { lk.raisedAt = k; lk.netExtra = Math.min(4, lk.netExtra + 1); lk.calm = 0; this.setExtra(); }
+    if (ms > 60 && k > lk.raisedAt) { lk.raisedAt = k; lk.netExtra = Math.min(4, lk.netExtra + 1); lk.calm = 0; this.setExtra(); }
   }
   // at each state check: a window nobody waited on you for more than a blink in (the one before last: everyone's said by
   // then) counts toward coming back down a tick, three in a row (6 s): the delay is never more than it has to be
@@ -638,7 +660,9 @@ export class MatchSession {
       // (slow frames hold everyone up: lighter graphics until they're quick again, unless you'd rather not)
       if (settings.adaptiveGfx !== false && this.r?.govern?.(dt)) this.hud.pushFeed('Frames running slow: lighter graphics for now to keep the game smooth');
     }
-    if (!this.paused && !spec) this.captureInput();
+    // (v0.4.8: the tick on your screen as your input is read: every tick of it carries how much later it lands, dl)
+    lk.seen = g.tick;
+    if (!this.paused && !spec) { this.captureInput(); this.noteLetGo(); }
     // your input goes out first: up to the tick this frame gets to, plus the delay (on time even while we wait)
     if (!spec && !g.over && !lk.lost) this.sendOnline(g.tick + Math.floor(this.acc / DT + 1e-9) + lk.D + lk.extra);
     let steps = 0;
@@ -738,7 +762,7 @@ export class MatchSession {
       if (p.plantT > 0 && !this.lastPlant.get(p.id)) audio.squeak(this.pan(x));
       this.lastPlant.set(p.id, p.plantT > 0);
     }
-    if (!this.background) this.defArrows(dt, alpha);
+    if (!this.background) { this.defArrows(dt, alpha); this.clearGlow(dt); }
     // hoops (rim shake + nets) — pass ball in world coords (a background court's only while it can be seen)
     const hk = cull ? this.animDt(this.court, dt * this.timeScale, this.court.origin[0], this.court.origin[2], this.court.full ? 17 : 14) : dt * this.timeScale;
     if (hk > 0) for (const h of this.court.hoops) h.update(hk, ballW);
@@ -777,6 +801,30 @@ export class MatchSession {
       this._proxy.holder = () => { const h = g.holder(); return h ? { x: h.x + o[0], z: h.z + o[2], dist: q => h.dist(q) } : null; };
     }
     return this._proxy;
+  }
+
+  // v0.4.7.5 qp3: take it back. In a half-court park game the team that gets the ball off a miss (a shot off the board
+  // or the rim) or a steal has to take it out past the arc before it can score: the three-point line glows red, pulsing,
+  // until they do (the 'cleared' event), for both sides to see.
+  clearGlow(dt) {
+    const g = this.game;
+    if (!(g.mode === 'park' && g.half)) return;
+    if (!this.glowArc) {
+      const tex = cachedTexture(this.r.ctx, 'glowBand', () => T.glowBand(64), { wrap: 'clamp' });
+      const mat = new Material({ map: tex, color: M.hexLinear('#ff2a1a').map(v => v * 2.2), shading: 'unlit', blend: 'add', depthWrite: false, fog: false, emissive: [0, 0, 0], doubleSided: true, opacity: 0 });
+      this.glowArc = new Mesh(this.r.ctx.geometry(G.threeLineRibbon(0.7)), mat, { castShadow: false, reflect: false });
+      this.glowArc.order = 4; this.glowArc.visible = false; this.glowArc.k = 0;
+      this.scene.add(this.glowArc);
+    }
+    const A = this.glowArc, team = g.possession;
+    const want = !this.inIntro && !g.over && g.needsClear[team] && (g.phase === 'live' || g.phase === 'dead') ? 1 : 0;
+    A.k += (want - A.k) * Math.min(1, dt * (want ? 8 : 5));
+    A.visible = A.k > 0.02;
+    if (!A.visible) return;
+    const [ox, , oz] = this.origin, side = g.sideFor(team);
+    M.m4fromYaw(A.matrix, ox, 0.018, oz, side > 0 ? 0 : Math.PI, 1);
+    this.glowT = (this.glowT || 0) + dt;
+    A.material.opacity = A.k * (0.62 + 0.38 * Math.sin(this.glowT * 7));
   }
 
   // v0.4.7.5 quick patch: defensive assignment arrows. On defense, an arrow at the edge of your ring points at the man
@@ -996,7 +1044,9 @@ export class MatchSession {
         case 'move': if (e.combo && this.isMe(g.players[e.player])) hud.pushFeed(`${e.combo}!`, 'good'); break;
         case 'turnover': case 'violation':
           if (e.type === 'violation' && e.what === 'Traveling') { if (P && P.team === myTeam) hud.callout('TRAVELING', 'bad'); break; } // the turnover event that follows whistles and posts it
-          audio.whistle(); hud.pushFeed(e.why || e.what || 'Turnover', 'neutral'); break;
+          // (qp3: three seconds in the lane is called like traveling; the turnover says whose ball it is now)
+          if (e.type === 'violation' && e.what === 'Offensive 3 seconds') { if (P && P.team === myTeam) hud.callout('3 SECONDS', 'bad'); break; }
+          audio.whistle(); hud.pushFeed(`${e.why || e.what || 'Turnover'}${e.type === 'turnover' && e.team != null ? (e.team === myTeam ? ' · your ball' : ' · their ball') : ''}`, 'neutral'); break;
         case 'oob': audio.whistle(); break;
         case 'foul': audio.whistle(); break;
         case 'feed': hud.pushFeed(e.text, 'neutral'); break;
@@ -1115,12 +1165,15 @@ export class MatchSession {
     if (!a || g.assist || a.released || !a.tRel) return null;
     let W;
     if (a.type === 'ftshot') W = g.ftWindow(me);
-    else if (a.type === 'shoot' && a.kind !== 'close') W = g.jumperWindow(me, a, g.contestIfReleased(me));
-    else if (a.type === 'layup' && !a.oop && !a.untimed && a.releaseAt == null && a.t > 0.04) {
-      // (v0.4.7.5 quick patch: a finish can be smothered too: no window, measured the way the release measures it)
-      const c = g.layupContest(me, a, g.releaseYNext(me));
-      W = g.layupWindow(me, a, c.contest, c.guard);
-    } else return null;
+    else if (a.type === 'layup' && (a.releaseAt != null || a.t <= 0.04)) return null;
+    else {
+      // (v0.4.7.5 quick patch: a finish can be smothered too: no window, measured the way the release measures it.
+      // v0.4.8: one reading for the meter and the release (Game.meterRead): a shot out of the post with the shield the
+      // release gives it, and the hook, which is timed, with its meter)
+      const r = g.meterRead(me, a);
+      if (!r) return null;
+      W = r.W;
+    }
     return this.meterOf(W.total, W.natural, a.tRel, (a.releaseAt ?? a.t) - a.tRel, W.sure, !!W.smothered, '');
   }
   // windows (ms of action time, ± around the ideal) and the release error (s) → the meter's units (1 = ideal release)
@@ -1152,7 +1205,10 @@ export class MatchSession {
       const a = me.action;
       const pos = this.screenOf(me, me.phys.H * 0.62);
       const live = this.liveMeter(me, a);
-      if (live) hud.setMeter(settings.shotMeter === false ? null : { x: pos.x, y: pos.y, ...live });
+      // (v0.4.8 online: from the moment you let go, the meter stays where you let go, on the window you let go on: the
+      // release is graded right there when it lands a few ticks later, and the result comes up on that same picture)
+      const held = this.letGo && a && this.letGo.a === a && !a.released ? this.letGo.m : null;
+      if (live || held) hud.setMeter(settings.shotMeter === false ? null : { x: pos.x, y: pos.y, ...(held || live) });
       else if (this.meterHold > 0 && this.meterFreeze && settings.shotMeter !== false) {
         // after the release: frozen where you let go, on the exact window the release was graded against
         this.meterHold -= dt;
@@ -1171,19 +1227,22 @@ export class MatchSession {
       const to = me.takeover, TO = TAKEOVERS[to.kind];
       hud.setStatus(this.inIntro ? null : { hot: !!me.hot, cold: !!me.cold, takeover: TO && (to.active || to.prog > 0) ? { label: TO.label, active: to.active, left: Math.ceil(to.left), prog: to.prog, need: TAKEOVER_NEED } : null });
     }
-    // tags: names + icon numbers for passing
-    if (this.inIntro) hud.setTags([]);
-    else if (this.tagsOn) {
+    // tags: names + icon numbers for passing. (qp3: Settings → Name tags used to change nothing here; hidden, only the
+    // pass icons over your teammates stay up while you have the ball, without the names)
+    const names = settings.tags !== false;
+    if (this.inIntro || !this.tagsOn) hud.setTags([]);
+    else {
       const list = [];
       const mates = me ? g.mates(me) : [];
       const showIcons = me && g.ball.holder === me.id;
       for (const p of g.players) {
-        const s = this.screenOf(p, p.phys.H + 0.32 + p.y);
         const icon = showIcons ? mates.indexOf(p) : -1;
+        if (!names && icon < 0) continue;
+        const s = this.screenOf(p, p.phys.H + 0.32 + p.y);
         const team = this.teams[p.team];
  const mine = this.isMe(p), friend = !mine && p.human; // (online: the other people in the game, by their username)
         const nm = friend ? (this.online?.names?.[p.id] || p.name.split(' ').slice(-1)[0]) : p.name.split(' ').slice(-1)[0];
-        const txt = mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm);
+        const txt = !names ? this.iconPassGlyph(icon) : mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm);
         list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (mine ? 'me ' : friend ? 'friend ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
       }
       hud.setTags(list);
@@ -1198,6 +1257,7 @@ export class MatchSession {
     this.scene.remove(this.ballMesh);
     this.scene.remove(this.ballBlob);
     if (this.arrows) { this.scene.remove(this.arrows.mine); this.scene.remove(this.arrows.his); }
+    if (this.glowArc) { this.scene.remove(this.glowArc); this.r.ctx.disposeGeometry(this.glowArc.geo); }
     this.r.ctx.disposeGeometry(this.ballMesh.geo);
     if (!this.background) { this.hud.clear(); const h = document.getElementById('help-overlay'); if (h) h.remove(); }
     if (this.offNet) { this.offNet(); this.offNet = null; }

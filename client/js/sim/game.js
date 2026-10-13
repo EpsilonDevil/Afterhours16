@@ -410,9 +410,10 @@ export class Game {
     const k = this.speed * (p.human ? p.greenBonus ?? this.greenBonus : 1), ctx = { contest, lstyle: a.lstyle, greenK: this.greenK(p), smothered };
     const total = S.layupWindowMs(p.ratings.layup, p.badges, ctx) * k;
     const natural = S.layupWindowMs(this.natural(p).layup, {}, { ...ctx, greenK: 1, natural: true }) * k;
-    // v0.4.7.5 qp3: a wide-open layup (nobody within WIDE_OPEN of a contest) has a solid green window: a green goes
-    // in. Any coverage at all keeps the outlined window: a green is a boost, not a make
-    return { total, natural: Math.min(total, natural), sure: !smothered && contest <= WIDE_OPEN, smothered };
+    // v0.4.7.5 qp3: a wide-open layup has a solid green window: a green goes in. (Oct 12: wide open as the HUD says it,
+    // 10% guarded or less on the finish scale; it used to take a tenth of that. And an open one, 20% or less, for a
+    // Layup of 85 or better.) Anything more and the window is outlined: a green is a boost, smaller the more he's guarded
+    return { total, natural: Math.min(total, natural), sure: !smothered && S.layupSure(guard, (p.raw || p.ratings).layup), smothered };
   }
   // v0.4.7.5 quick patch: a finish's contest (as the make chance uses it) and how guarded it is (the HUD's %, and
   // Smothered), with the space a Contact Finisher push-off made taking 8% per tier off both
@@ -426,6 +427,49 @@ export class Game {
   // the contest a release on the next step would be graded with: releaseShot / releaseLayup measure it at the ball
   // after that step's action tick, so the meter looks one tick ahead and matches the grade frame for frame
   contestIfReleased(p) { return S.contestFor(p, this.opponents(p), this.rimFor(p.team), this.releaseYNext(p)); }
+  // a jumper's contest before the cap, with the shield a shot out of the post gets from the man (post.js postShotK)
+  shotRaw(p, a, y) {
+    const pk = a.post ? postShotK(p, a.post, !!a.postBeat) : null;
+    return S.contestRaw(p, this.opponents(p), this.rimFor(p.team), y) * (pk ? 1 - pk.shield : 1);
+  }
+  // v0.4.8: the shot meter's reading of a timed shot in progress: its window, and the defense measured the way a
+  // release on the next step measures it (at the ball, a tick ahead). The meter draws it (session.liveMeter) and, online,
+  // every tick of it is kept (noteMeters) so the release is graded against the reading the shooter saw when he let go.
+  // null: nothing timed on (an untimed finish, a lob, a close shot that isn't a hook).
+  meterRead(p, a = p.action) {
+    if (!a || a.released || !a.tRel) return null;
+    if (a.type === 'shoot' && (a.kind !== 'close' || a.post)) {
+      const raw = this.shotRaw(p, a, this.releaseYNext(p)), contest = Math.min(1.25, raw);
+      return { t: a.t, raw, contest, guard: S.guardFor(a.kind, raw), W: this.jumperWindow(p, a, contest) };
+    }
+    if (a.type === 'layup' && !a.oop && !a.untimed) {
+      const c = this.layupContest(p, a, this.releaseYNext(p));
+      return { t: a.t, contest: c.contest, guard: c.guard, W: this.layupWindow(p, a, c.contest, c.guard) };
+    }
+    return null;
+  }
+  // online, after every tick: each human's meter reading while his shot is up, the last 48 ticks of it (the most a
+  // let-go can take to land: the game's delay and the ticks his PC sent it further ahead)
+  noteMeters() {
+    for (const p of this.players) {
+      const a = p.action;
+      if (!p.human || !a || a.released || (a.type !== 'shoot' && a.type !== 'layup')) continue;
+      const r = this.meterRead(p, a);
+      if (!r) continue;
+      const m = a.meters || (a.meters = []);
+      m.push(r);
+      if (m.length > 48) m.shift();
+    }
+  }
+  // the reading a release that came out at action time `at` on his screen goes by: the one his meter showed the tick
+  // before (a release is measured a tick ahead). null offline, for the AI, or when there's none kept (the shot is
+  // released as it lands, measured live: the same thing offline)
+  seenRead(p, a, at) {
+    const m = a.meters;
+    if (!this.multi || !p.human || !m || at == null) return null;
+    for (const r of m) if (r.t >= at - 1e-6) return r.t < a.t - 1e-6 && r.t < at + DT - 1e-6 ? r : null;
+    return null;
+  }
   releaseYNext(p) {
     const a = p.action, t0 = a.t;
     a.t = t0 + DT;
@@ -644,6 +688,7 @@ export class Game {
     this.interactions(dt);
     this.rules(dt);
     this.updateAIGrades(dt);
+    if (this.multi && !this.assist) this.noteMeters(); // (v0.4.8: what each shooter's meter shows, for his release)
   }
 
   // ---------- v0.4.7.5 qp3 online: several humans ----------
@@ -703,8 +748,12 @@ export class Game {
   }
   // a timed release (the shot button let go): online, graded at the moment it was let go on the player's screen
   relAt(p, a) { return this.multi && p.human ? Math.max(0, a.t - this.lagOf(p)) : a.t; }
-  // (qp3 perf: how long his input took to land: the game's delay, plus the ticks his own PC sent it further ahead: dl)
-  lagOf(p) { return this.lag + Math.max(0, Math.min(8, p.intent?.dl | 0)) * DT; }
+  // (qp3 perf: how long his input took to land: the game's delay, plus the ticks his own PC sent it further ahead: dl.
+  // v0.4.8: dl is exact for every tick, counted from the tick his screen showed when the input was read, so a let-go
+  // after a hitch or a wait is still graded where he let go; up to 24 ticks)
+  lagOf(p) { return this.lag + Math.max(0, Math.min(24, p.intent?.dl | 0)) * DT; }
+  // (v0.4.8: a held shot comes out by itself this late, on his screen: online, that much later in the game)
+  lateBy(p) { return this.multi && p.human ? this.lagOf(p) : 0; }
   // online: the game state boiled down to a number, compared between the clients now and then (a desync check)
   stateHash() {
     let h = 2166136261 >>> 0;
@@ -1495,7 +1544,7 @@ export class Game {
           }
         }
         if (!a.released) {
-          if (p.human && !this.assist && a.releaseAt == null && a.t > a.tRel + 0.3) a.releaseAt = a.t;
+          if (p.human && !this.assist && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.3) a.releaseAt = a.t - this.lateBy(p);
           if (a.releaseAt != null && a.t >= a.releaseAt) {
             // pump fake: released very early before leaving the floor
             if (a.releaseAt < Math.min(0.16, a.takeoff * 0.8) && !a.jumped && p.human && !this.assist) {
@@ -1540,7 +1589,7 @@ export class Game {
         if (!a.released && b.holder === p.id) {
           // you're still holding it past the top: it comes out late
           const timing = p.human && !this.assist && !a.untimed && a.releaseAt == null;
-          if (timing && a.t > a.release + 0.3) { a.releaseAt = a.t; a.timed = true; }
+          if (timing && a.t - this.lateBy(p) > a.release + 0.3) { a.releaseAt = a.t - this.lateBy(p); a.timed = true; }
           // (the ball can't leave before he's off the floor: an early let-go comes out just after the takeoff)
           const at = a.releaseAt != null ? Math.max(a.releaseAt, Math.min(a.release, a.takeoff + 0.06)) : (timing ? Infinity : a.release);
           if (a.t >= at) this.releaseLayup(p, a);
@@ -1722,11 +1771,15 @@ export class Game {
     // v0.4.7.5 qp3: a shot out of the post is shielded from the man by the release (the hook off the far shoulder,
     // the fade away from him), more with a better package and a beaten defender (post.js postShotK)
     const pk = a.post ? postShotK(p, a.post, !!a.postBeat) : null;
-    const raw = S.contestRaw(p, this.opponents(p), rim, P.gy) * (pk ? 1 - pk.shield : 1), contest = Math.min(1.25, raw);
+    // v0.4.8: online, graded on what his meter showed when he let go on his screen (the window and the defense then: a
+    // closeout in the ticks his let-go took to land doesn't shrink the window after the fact); offline it's the same
+    // reading, measured now
+    const seen = this.seenRead(p, a, a.releaseAt);
+    const raw = seen ? seen.raw : this.shotRaw(p, a, P.gy), contest = Math.min(1.25, raw);
     // (v0.4.7.5 quick patch: guard is how guarded it was on the HUD's scale; a close shot is measured like a finish)
     const guard = S.guardFor(a.kind, raw), smothered = S.isSmothered(guard);
     // (a close shot isn't timed: no window, no Excellent — except the hook, which is timed like a jumper)
-    const W = this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
+    const W = seen ? seen.W : this.jumperWindow(p, a, contest), { three, d, corner } = W, win = W.total;
     let grade = a.kind === 'close' && !a.post ? 'none' : (a.aiGrade && this.isAI(p) ? this.aiGradeAtRelease(p, a, a.aiGrade, win, a.aiContest != null ? this.jumperWindow(p, a, a.aiContest).total : win) : S.gradeFromWindow(err, win));
     // no greens while smothered, and no makes: a release that would have been green gets a record scratch
     let scratch = false;
@@ -1779,7 +1832,11 @@ export class Game {
     const P = this.holdPoint(p);
     const d = Math.hypot(rim.x - p.x, rim.z - p.z);
     // (v0.4.7.5: the space a Contact Finisher push-off made takes 8% per tier off the contest)
-    const { contest, guard } = this.layupContest(p, a, P.gy), smothered = S.isSmothered(guard);
+    // v0.4.8: online, a timed finish goes by the meter reading he saw for the tick it came out (as releaseShot); an
+    // early let-go comes out just after the takeoff, so that's the tick it's read at
+    const out = a.timed && a.releaseAt != null ? Math.max(a.releaseAt, Math.min(a.release, a.takeoff + 0.06)) : null;
+    const seen = out != null ? this.seenRead(p, a, Math.max(a.releaseAt, out - DT)) : null;
+    const { contest, guard } = seen || this.layupContest(p, a, P.gy), smothered = S.isSmothered(guard);
     const blocker = this.checkBlockAtRelease(p, { x: P.x, y: P.gy, z: P.z }, 'layup');
     if (blocker) return;
     // v0.4.5 timed layups: graded like a jumper against the layup window (shots.js layupWindowMs); a green is a big
@@ -1789,7 +1846,7 @@ export class Game {
     if (a.type === 'layup' && !a.oop) {
       if (this.isAI(p) && a.aiGrade) grade = this.aiGradeAtRelease(p, a, a.aiGrade, this.layupWindow(p, a, contest, guard).total, a.aiContest != null ? this.layupWindow(p, a, Math.min(1.25, a.aiContest), S.insideGuard(a.aiContest)).total : null);
       else if (a.timed) {
-        W = this.layupWindow(p, a, contest, guard);
+        W = seen ? seen.W : this.layupWindow(p, a, contest, guard);
         grade = S.gradeFromWindow(err, W.total);
       }
       if (smothered && (a.timed || a.aiGrade)) {
@@ -1797,10 +1854,11 @@ export class Game {
         if (grade === 'excellent') grade = err < 0 ? 'early' : 'late';
       }
     }
-    let chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, stamina: p.stamina, badges: p.badges, hot: p.hot, grade, smothered });
+    let chance = S.finalChance({ type: 'layup', d, a: p.ratings, three: false, contest, guard, stamina: p.stamina, badges: p.badges, hot: p.hot, grade, smothered });
     if (a.postFinish && !smothered) { const pf = postShotK(p, 'hook', !!a.postFinish.beat); chance = Math.min(0.97, chance + pf.bonus * 0.6); } // (qp3: the power finish out of a post move)
-    // (qp3: a green on a wide-open layup is a make, like a green jumper inside 35 ft)
-    const sure = grade === 'excellent' && !!W?.sure;
+    // (qp3: a green on a wide-open layup is a make, like a green jumper inside 35 ft; Oct 12: an open one too with an 85+
+    // Layup, and for the AI's greens as well as yours)
+    const sure = grade === 'excellent' && a.type === 'layup' && !a.oop && !smothered && S.layupSure(guard, (p.raw || p.ratings).layup);
     if (sure) chance = 1;
     const foul = this.checkShootingFoul(p, contest, 'layup');
     const made = !smothered && (sure || this.rng.next() < chance);
@@ -1961,8 +2019,9 @@ export class Game {
       d.action.triedBlock = true;
       const behind = ((p.x - d.x) * Math.sin(p.facing) + (p.z - d.z) * Math.cos(p.facing)) > 0; // defender behind shooter
       const size = Math.max(-0.25, Math.min(0.3, d.phys.H - p.phys.H));
-      let pb = 0.07 + 0.24 * n(d.ratings.block) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.25) - (kind === 'dunk' ? 0.26 * S.trafficSkill(p, !!p.action?.standing) : 0.15 * n(p.ratings.layup)) + (hy - P.y) * 0.3 - dist / env * 0.14;
-      pb += bk(d.badges, 'rim_protector') * 0.025 + (behind ? bk(d.badges, 'chasedown') * 0.04 : 0);
+      // (qp3, Oct 12: the defender's side of it counts 3.75% more: S.blockUp)
+      let pb = 0.07 + S.blockUp(0.24 * n(d.ratings.block) + pw * 0.12 * n(d.ratings.interior_d)) + S.blockUp(pw * size * 0.25) - (kind === 'dunk' ? 0.26 * S.trafficSkill(p, !!p.action?.standing) : 0.15 * n(p.ratings.layup)) + (hy - P.y) * 0.3 - dist / env * 0.14;
+      pb += S.blockUp(bk(d.badges, 'rim_protector') * 0.025 + (behind ? bk(d.badges, 'chasedown') * 0.04 : 0));
       if (kind === 'dunk') pb -= bk(p.badges, 'posterizer') * 0.05;
       if (pb > bestPb) { bestPb = pb; best = d; bestBehind = behind; }
     }
@@ -2603,7 +2662,7 @@ export class Game {
           const shooter = this.players[b.info.shooter];
           // v0.4.3: Perimeter D outside, Interior D and size in the paint
           const pw = S.paintWeight(b.info.d ?? 6), size = Math.max(-0.25, Math.min(0.3, d.phys.H - shooter.phys.H));
-          const pb = 0.1 + 0.26 * n(d.ratings.block) + (1 - pw) * 0.06 * n(d.ratings.perimeter_d) + pw * (0.12 * n(d.ratings.interior_d) + size * 0.3) - 0.1 * n(shooter.ratings.three_point) + bk(d.badges, 'rim_protector') * 0.02 - dd * 0.25;
+          const pb = 0.1 + S.blockUp(0.26 * n(d.ratings.block) + (1 - pw) * 0.06 * n(d.ratings.perimeter_d) + pw * 0.12 * n(d.ratings.interior_d)) + S.blockUp(pw * size * 0.3) - 0.1 * n(shooter.ratings.three_point) + S.blockUp(bk(d.badges, 'rim_protector') * 0.02) - dd * 0.25;
           if (this.rng.next() < pb) {
             // qp3 (NBA rules): a hand on it on the way down, above the rim and over the basket, is goaltending: it counts
             const rim = rimOf(b.info.side);
@@ -2797,7 +2856,9 @@ export class Game {
   oopInput(p, btn) {
     const q = p.oopQte;
     if (!q || q.result) return null;
-    const t = this.time - q.t0 - (this.multi && p.human ? this.lagOf(p) : 0); // (online: when it was pressed on his screen)
+    // (online: when it was pressed on his screen; v0.4.8: a tick earlier than it was, as offline, where the press is read
+    // before the tick it's in)
+    const t = this.time - q.t0 - (this.multi && p.human ? this.lagOf(p) + DT : 0);
     q.at = t;
     q.result = btn !== q.btn ? 'wrong' : t < q.open ? 'early' : t > q.close ? 'late' : 'hit';
     this.emit({ type: 'oopQte', player: p.id, result: q.result, t: +t.toFixed(2) });
@@ -3113,13 +3174,20 @@ export class Game {
   // it to get out in time). Offense: three seconds is a turnover, unless he is driving, shooting or in the air; a shot
   // going up resets everyone. Defense (NBA rules: Pro-Am / the Pro Run): three seconds without an attacker within
   // RULES.def3Guard is a technical: one free throw for the offense and the ball. Returns true when it stopped play.
+  // (qp3, Oct 12: the offense's count runs only while it has the ball: in a player's hands or on a pass between them,
+  // never on a loose ball or a rebound; and everyone's count starts over when the ball changes hands, so a big who was
+  // in the paint on defense can't be called the moment his team steals it. The call is a turnover: the other team's
+  // ball, at the top (a check) or from the sideline, before anything else happens: turnover)
   laneRules(dt) {
     const b = this.ball, off = this.possession, side = this.sideFor(off), h = this.holder();
     const shotUp = b.mode === 'flight' && b.kind === 'shot';
+    if (this._laneTeam !== off) { this._laneTeam = off; for (const p of this.players) p.paintT = 0; }
+    const control = h ? h.team === off : b.mode === 'flight' && b.kind === 'pass' && b.info?.team === off;
     for (const p of this.players) {
       const inside = inLane(p.x, p.z, side, RULES.laneMargin);
       if (!inside || shotUp || p.airborne) { p.paintT = 0; continue; }
       if (p.team === off) {
+        if (!control) { p.paintT = 0; continue; }
         const act = p.action?.type, driving = p === h && (act === 'layup' || act === 'dunk' || act === 'shoot' || act === 'oop' || p.speed > RULES.driveSpeed);
         if (driving) { p.paintT = 0; continue; }
         p.paintT = (p.paintT || 0) + dt / this.speed;
@@ -3213,11 +3281,14 @@ export class Game {
 
   turnover(p, why) {
     p.stats.tov++;
-    this.emit({ type: 'turnover', player: p.id, why });
-    this.feedMsg(why);
     const team = 1 - p.team;
+    this.emit({ type: 'turnover', player: p.id, why, team });
+    this.feedMsg(why);
     const x = p.x, z = p.z;
+    // (the ball is dead where it is (no shot or pass leaves a hand without it), and it's the other team's from here:
+    // possession changes now, not when the restart comes)
     this.deadBall(1.3, () => this.restartFor(team, x, z));
+    if (this.possession !== team) { this.possession = team; this.shotClock = 24; }
   }
 
   // qp3: the park plays fouls streetball style: no free throws, the offense keeps the ball (an and-one counts and
@@ -3280,7 +3351,7 @@ export class Game {
     if (a && a.type === 'ftshot') {
       if (!a.released) {
         if (p.human && !this.assist && a.releaseAt == null && (p.intent.shoot === 'release' || !p.intent.shootHeld)) a.releaseAt = this.relAt(p, a);
-        if (p.human && !this.assist && a.releaseAt == null && a.t > a.tRel + 0.35) a.releaseAt = a.t;
+        if (p.human && !this.assist && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.35) a.releaseAt = a.t - this.lateBy(p);
         if (a.releaseAt != null && a.t >= a.releaseAt) {
           a.released = true;
           const W = this.ftWindow(p), win = W.total;

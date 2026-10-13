@@ -18,6 +18,7 @@ AFFILIATIONS = ("harbor", "brick", "foundry")
 PARK_VENUES = AFFILIATIONS
 STAT_KEYS = ("pts", "reb", "oreb", "ast", "stl", "blk", "tov", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "pf",
              "dunks", "greens", "ankles", "contested_makes", "posters", "putbacks", "chasedowns", "alleyoops")
+SCORING_KEYS = ("pts", "fgm", "fga", "tpm", "tpa", "ftm", "fta")  # (checked strictly: they must add up to the score)
 STAT_CAPS = {"pts": 150, "reb": 60, "oreb": 40, "ast": 50, "stl": 30, "blk": 30, "tov": 40, "fgm": 60, "fga": 120, "tpm": 40, "tpa": 80,
              "ftm": 40, "fta": 50, "pf": 10, "dunks": 40, "greens": 80, "ankles": 20, "contested_makes": 60, "posters": 20, "putbacks": 30,
              "chasedowns": 20, "alleyoops": 30}
@@ -104,11 +105,26 @@ def validate_summary(data, ticket):
     stats = me.get("stats")
     if not isinstance(stats, dict):
         raise Invalid("Invalid stats.")
+    # v0.4.7.5 qp3 (Oct 12): a long game with a clock (the Pro Run plays quarters up to 12 minutes) gets caps to match its
+    # length, and a counting stat past its cap is held at the cap instead of throwing the whole result out. A player who
+    # fouled 11 times in a 48-minute Pro Run game used to lose that game's VC, its badge progress and its count toward
+    # his max OVR ("pf must be an integer from 0 to 10"). Holding a number at its cap only ever pays less, and the
+    # scoring numbers are still checked strictly against each other and the score.
+    scale = 1.0
+    if mode in ("proam", "prorun"):
+        scale = max(1.0, ticket["meta"].get("quarter_len", 180) * ticket["meta"].get("quarters", 4) / 1200)
     clean = {}
     for k in STAT_KEYS:
         v = stats.get(k, 0)
-        clean[k] = integer(v, 0, STAT_CAPS[k], k)
-    if clean["fgm"] > clean["fga"] or clean["tpm"] > clean["tpa"] or clean["tpa"] > clean["fga"] or clean["ftm"] > clean["fta"] or clean["oreb"] > clean["reb"]:
+        cap = int(STAT_CAPS[k] * scale)
+        if k in SCORING_KEYS:
+            clean[k] = integer(v, 0, cap, k)
+        else:
+            clean[k] = min(integer(v, 0, 100000, k), cap)
+    if stats.get("oreb", 0) > stats.get("reb", 0):
+        raise Invalid("Inconsistent shooting or rebounding numbers.")
+    clean["oreb"] = min(clean["oreb"], clean["reb"])
+    if clean["fgm"] > clean["fga"] or clean["tpm"] > clean["tpa"] or clean["tpa"] > clean["fga"] or clean["ftm"] > clean["fta"]:
         raise Invalid("Inconsistent shooting or rebounding numbers.")
     if clean["pts"] != 2 * clean["fgm"] + clean["tpm"] + clean["ftm"]:
         raise Invalid("Points do not add up.")

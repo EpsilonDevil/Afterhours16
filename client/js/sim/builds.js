@@ -34,8 +34,10 @@ export const PRORUN_GAMES_PER_OVR = 3;
 export const prorunCompleted = c => { const p = c?.progression || {}; return (p.prorun_completed ?? p.prorun?.games ?? 0) | 0; };
 export function maxOvr(c = {}) {
   if (c.max_ovr != null) return c.max_ovr; // (the server's word, when the character came from it)
-  const earned = BASE_OVR_CAP + Math.floor(prorunCompleted(c) / PRORUN_GAMES_PER_OVR);
-  return Math.max(BASE_OVR_CAP, Math.min(OVR_CAP, Math.max(earned, c.ovr_floor | 0)));
+  const done = prorunCompleted(c), earned = BASE_OVR_CAP + Math.floor(done / PRORUN_GAMES_PER_OVR);
+  // (qp3, Oct 12: a kept OVR (ovr_floor) climbs from there too, every 3 games since ovr_floor_at: mirrors the server)
+  const floor = c.ovr_floor ? (c.ovr_floor | 0) + Math.floor(Math.max(0, done - (c.ovr_floor_at | 0)) / PRORUN_GAMES_PER_OVR) : 0;
+  return Math.max(BASE_OVR_CAP, Math.min(OVR_CAP, Math.max(earned, floor)));
 }
 export const COST_K = 0.65; // v0.4.5: everything costs 35% less
 export const HOF_LIMIT = 7;

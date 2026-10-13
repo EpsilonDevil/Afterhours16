@@ -28,10 +28,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "client"
 CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json").read_text())}
 VENUES = json.loads((ROOT / "server/venues.json").read_text())
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.7.5"
+VERSION = "0.4.8"
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
@@ -75,6 +75,34 @@ def compute_build(root=ROOT):
         h.update(p.relative_to(root).as_posix().encode() + b"\0")
         h.update(p.read_bytes().replace(b"\r\n", b"\n") + b"\0")
     return h.hexdigest()[:12]
+
+
+# v0.4.7.5 qp3 (Oct 12): the online server every copy of the game plays on by itself. online.json, at the top of the game
+# folder, holds its address and join code; a copy that isn't hosting connects there when it starts, and its players only
+# sign in (or make their online account: the join code goes with it). Nobody types an address any more.
+ONLINE_FILE = Path(os.environ.get("AFTERHOURS16_ONLINE_FILE") or ROOT / "online.json")  # (the variable: tests)
+
+
+def load_online_default(path=None):
+    """(the server's address as normalize_hub gives it, its join code) from online.json; (None, None) without one."""
+    try:
+        data = json.loads(Path(path or ONLINE_FILE).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    hub = normalize_hub(data["server"]) if isinstance(data.get("server"), str) and data["server"].strip() else None
+    code = data.get("joinCode").strip() if isinstance(data.get("joinCode"), str) else ""
+    return hub, (code if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", code) else None)
+
+
+def save_online_default(hub, code, path=None):
+    path = Path(path or ONLINE_FILE)
+    text = json.dumps({"_": "The online server every copy of Afterhours 16 connects to by itself, and its join code (README: Play online). "
+                            "Leave server empty to have none.", "server": hub or "", "joinCode": code or ""}, indent=2) + "\n"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 HUB_RE = re.compile(r"(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+(?::\d{1,5})?|\[[0-9A-Fa-f:.]+\](?::\d{1,5})?")
@@ -132,8 +160,16 @@ class Service:
         self.upnp = None  # upnp.PortMapper while hosting: the router forwards the port to this PC by itself
         self.build = compute_build()  # (qp3: the game's fingerprint, for the online version check)
         self.hub = online.Hub(self.db, self.online_auth)
-        self.hub_hosts = {r[0] for r in self.db.query("SELECT DISTINCT hub FROM hub_links")}  # (the CSP lets the page reach them)
+        self.hub_hosts = {r[0] for r in self.db.query("SELECT DISTINCT hub FROM hub_links") if r[0]}  # (the CSP lets the page reach them)
+        # qp3 (Oct 12): the game's own online server (online.json), for a copy that isn't hosting (see online_default)
+        self.default_hub, self.default_join = load_online_default()
+        if self.default_hub:
+            self.hub_hosts.add(self.default_hub)
         self.upgrade_characters()
+
+    def online_default(self):
+        """The server this copy connects to by itself, and its join code: online.json's, unless this copy hosts."""
+        return (None, None) if self.hosting else (self.default_hub, self.default_join)
 
     def upgrade_characters(self):
         """One-time, idempotent upgrade of saved v0.2 characters to the v0.3 schema."""
@@ -526,7 +562,9 @@ class Handler(BaseHTTPRequestHandler):
                     "icon_badges": progression.ICON_BADGES, "badge_rules": {"hof_limit": builds.HOF_LIMIT, "cap_breakers_per_hof": builds.CAP_BREAKERS_PER_HOF, "cap_breaker_hof_limit": builds.CAP_BREAKER_HOF_LIMIT, "ovr_cap": builds.OVR_CAP, "base_ovr_cap": builds.BASE_OVR_CAP, "prorun_games_per_ovr": builds.PRORUN_GAMES_PER_OVR, "legend_games_per_ovr": builds.LEGEND_GAMES_PER_OVR, "legend_ovr_cap": builds.LEGEND_OVR_CAP},
                     "boosts": {"categories": {k: {"name": v["name"], "attrs": v["attrs"]} for k, v in progression.BOOSTS.items()}, "amount": progression.BOOST_AMOUNT, "packs": progression.BOOST_PACKS, "max_games": progression.BOOST_MAX_GAMES},
                     "signed_in": bool(s.db.authenticate(self.token())),
-                    "online": {"hosting": s.hosting, "join_code": bool(s.join_code)}, "build": s.build,
+                    # (qp3, Oct 12: the server this copy plays on by itself, and its join code, for this PC's own page only)
+                    "online": {"hosting": s.hosting, "join_code": bool(s.join_code), "server": s.online_default()[0],
+                               "server_code": s.online_default()[1] if self.is_local() else None}, "build": s.build,
                 })
             if path == "/api/me":
                 return self.respond(200, s.profile(self.account()))
@@ -542,8 +580,11 @@ class Handler(BaseHTTPRequestHandler):
                                           **({"port": s.upnp.status()} if local and s.upnp else {})})
             if path == "/api/online-link":
                 # qp3: the friend's game this account plays online through (its address, your online account there)
-                rows = s.db.query("SELECT hub, username, token FROM hub_links WHERE account_id=?", (self.account(),))
-                return self.respond(200, {"link": dict(rows[0]) if rows else None, "build": s.build})
+                rows = s.db.query("SELECT hub, username, token, offline FROM hub_links WHERE account_id=?", (self.account(),))
+                link = dict(rows[0]) if rows else None
+                if link:
+                    link["offline"] = bool(link["offline"])
+                return self.respond(200, {"link": link, "build": s.build, "server": s.online_default()[0]})
             if path == "/api/hosting.txt":
                 # qp3: host.cmd's "your friends open ..." lines (this PC only; waits for the router's answer)
                 if not self.is_local():
@@ -726,11 +767,25 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256((self.token() or "").encode()).hexdigest(),))
                 return self.respond(200, {"ok": True}, "ah_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
             if path == "/api/online-link":
-                builds.strict_keys(data, ("hub", "username", "token", "clear"))
+                builds.strict_keys(data, ("hub", "username", "token", "clear", "offline"))
                 if data.get("clear"):
                     with db.transaction() as c:
                         c.execute("DELETE FROM hub_links WHERE account_id=?", (aid,))
                     return self.respond(200, {"link": None})
+                if "offline" in data and "hub" not in data:
+                    # qp3 (Oct 12): play offline (the link and its sign-in stay, for connecting again), or connect again
+                    off = bool(data["offline"])
+                    with db.transaction() as c:
+                        row = c.execute("SELECT hub, username, token FROM hub_links WHERE account_id=?", (aid,)).fetchone()
+                        if row:
+                            c.execute("UPDATE hub_links SET offline=?, updated_at=? WHERE account_id=?", (int(off), time.time(), aid))
+                        elif off:
+                            c.execute("INSERT INTO hub_links(account_id, hub, username, token, updated_at, offline) VALUES(?,?,?,?,?,1)", (aid, s.online_default()[0] or "", None, None, time.time()))
+                        row = c.execute("SELECT hub, username, token, offline FROM hub_links WHERE account_id=?", (aid,)).fetchone()
+                    link = dict(row) if row else None
+                    if link:
+                        link["offline"] = bool(link["offline"])
+                    return self.respond(200, {"link": link})
                 hub = normalize_hub(data.get("hub") if isinstance(data.get("hub"), str) else "")
                 if not hub:
                     raise builds.Invalid("Type the server's address: like https://203-0-113-7.sslip.io, or an IP like 203.0.113.7 (with :port if it isn't 8765).")
@@ -740,10 +795,26 @@ class Handler(BaseHTTPRequestHandler):
                 if tok is not None and (not isinstance(tok, str) or len(tok) > 200):
                     raise builds.Invalid("Invalid token.")
                 with db.transaction() as c:
-                    c.execute("INSERT INTO hub_links VALUES(?,?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET hub=excluded.hub, username=excluded.username, "
-                              "token=excluded.token, updated_at=excluded.updated_at", (aid, hub, user, tok, time.time()))
+                    c.execute("INSERT INTO hub_links(account_id, hub, username, token, updated_at, offline) VALUES(?,?,?,?,?,0) ON CONFLICT(account_id) DO UPDATE SET hub=excluded.hub, username=excluded.username, "
+                              "token=excluded.token, updated_at=excluded.updated_at, offline=0", (aid, hub, user, tok, time.time()))
                 s.hub_hosts.add(hub)
-                return self.respond(200, {"link": {"hub": hub, "username": user, "token": tok}})
+                return self.respond(200, {"link": {"hub": hub, "username": user, "token": tok, "offline": False}})
+            if path == "/api/online-default":
+                # qp3 (Oct 12): this copy's own player writes the server every copy connects to by itself into online.json
+                # (with its join code), to push to GitHub. Only from this PC, and not on a hosting or server copy
+                builds.strict_keys(data, ("server", "joinCode"))
+                if not self.is_local() or s.hosting or s.behind_proxy:
+                    raise HTTPError(403, "Only from the game on this PC.")
+                hub = normalize_hub(data.get("server") if isinstance(data.get("server"), str) else "")
+                code = data.get("joinCode").strip() if isinstance(data.get("joinCode"), str) else ""
+                if not hub:
+                    raise builds.Invalid("That isn't a server address.")
+                if code and not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", code):
+                    raise builds.Invalid("A join code is letters, digits, - _ and . only.")
+                save_online_default(hub, code or None)
+                s.default_hub, s.default_join = hub, code or None
+                s.hub_hosts.add(hub)
+                return self.respond(200, {"server": hub, "joinCode": code or None})
             if path == "/api/online/friend":
                 builds.strict_keys(data, ("username", "action"))
                 s.rate_limit(self.client_ip(), "friend")
@@ -1320,6 +1391,11 @@ def main():
             sys.exit(2)
     except OSError:
         pass
+    if args.online:
+        # v0.4.8: a hosted service hands the interpreter between its sockets' threads every 1 ms instead of 5, so an input
+        # that comes in while another thread is busy waits less to be passed on (the slowest 1% of relays: ~40% quicker
+        # in tests/load_hub.py at 20 players and 40 watchers, for the same CPU)
+        sys.setswitchinterval(0.001)
     service = Service(args.db, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc))
     service.hosting = bool(args.online)
     service.join_code = (args.join_code or "").strip() or None

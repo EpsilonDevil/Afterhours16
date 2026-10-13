@@ -84,6 +84,11 @@ def unmask(payload, mask):
 # frozen tab) is cut off once it's this far behind, and its player is handed to the AI like anyone who leaves.
 MAX_BACKLOG = 8 * 1024 * 1024   # bytes queued for one socket
 MAX_STALL = 10.0                # seconds one write may hang
+# v0.4.8: an input goes out on the thread that has it, straight away, when nothing is queued or being written for that
+# socket: a send that never waits (what the connection can't take right now is queued for its writer thread, as
+# before). That saves the hop to the writer thread, a few ms with a busy hub, on nearly every input. Where the system
+# has no such send (Windows), the writer thread sends everything, as before.
+DIRECT_SEND = hasattr(socket, "MSG_DONTWAIT")
 
 
 class WSConn:
@@ -106,7 +111,8 @@ class WSConn:
         self.aisquad = []     # the AI from his own game who run in his squad: [{"id", "name", "entry"}] (they're in his online squad too)
         self.ip = None
         self.connected_at = time.time()
-        self.stats = {"sent": 0, "frames": 0, "writes": 0}
+        self.stats = {"sent": 0, "frames": 0, "writes": 0, "direct": 0}
+        self.direct = DIRECT_SEND
         threading.Thread(target=self._writer, name="ws-writer", daemon=True).start()
 
     # ---- sending: queued, written by the writer thread ----
@@ -127,10 +133,26 @@ class WSConn:
                 self.alive = False
                 cut = True
             else:
+                cut = False
+                if self.direct and not self.out and ws is None:
+                    # (nothing ahead of it: out now, as much as the connection takes without waiting)
+                    try:
+                        n = self.sock.send(fr, socket.MSG_DONTWAIT)
+                    except (BlockingIOError, InterruptedError):
+                        n = 0
+                    except (OSError, ValueError, AttributeError):
+                        n = 0  # (gone: the writer's write finds out and closes it)
+                    if n:
+                        self.stats["sent"] += n
+                        self.stats["direct"] += 1
+                    if n == len(fr):
+                        self.stats["frames"] += 1
+                        self.stats["writes"] += 1
+                        return True
+                    fr = fr[n:]
                 self.out.append(fr)
                 self.out_bytes += len(fr)
                 self.cv.notify()
-                cut = False
         if cut:
             self._shutdown()  # (the reader stops too, and the hub sees him leave)
         return not cut

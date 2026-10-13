@@ -195,7 +195,8 @@ class ParkUI {
   // v0.4.7.5 qp3 online: the username over each real player walking around here (your squad's in gold)
   friendTags(hub) {
     const box = $('#friend-tags'); if (!box) return;
-    const ws = hub.peers && hub.mode === 'roam' && !hub.overview ? hub.peers.list() : [];
+    // (Settings → Name tags hides these too)
+    const ws = hub.peers && hub.mode === 'roam' && !hub.overview && settings.tags !== false ? hub.peers.list() : [];
     for (const [id, el] of this.fTag) if (!ws.some(w => w.id === id)) { el.remove(); this.fTag.delete(id); }
     for (const w of ws) {
       let el = this.fTag.get(w.id);
@@ -488,7 +489,7 @@ export function showResults(app, summary, result, won, opts = {}) {
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}
         ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ffd84a' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
         ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag badge-up ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${badgeSVG(b.id, b.tier, 22)}${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
-        ${Object.keys(r.badge_progress || {}).length ? `<div class="muted small">Badge progress: ${Object.entries(r.badge_progress).slice(0, 6).map(([k, v]) => `${esc(app.config.badges[k]?.name || k)} +${v}`).join(' · ')}</div>` : ''}` : '<p class="muted">This result was not recorded (see message).</p>'}
+        ${badgeProgressHTML(app, r)}` : '<p class="muted">This result was not recorded (see message).</p>'}
       ${peopleRow(app, opts.players)}
       <div class="row gap end">${opts.online && opts.park ? (opts.stay ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : opts.back ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-back>Stay with your squad</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : opts.park ? (won ? '<button class="btn ghost" data-leave>Leave court</button><button class="btn primary" data-stay>Run it back (stay on)</button>' : '<button class="btn primary" data-leave>Back to the park</button>') : `${r?.max_ovr_unlocked ? '<button class="btn ghost" data-upgrade>Upgrade attributes</button>' : ''}<button class="btn ghost" data-menu>${opts.menuLabel || 'Main menu'}</button>${opts.again ? '<button class="btn primary" data-again>Play again</button>' : ''}`}</div>
     </div>`, { close: false, cls: 'results-card' });
@@ -521,6 +522,22 @@ export function showResults(app, summary, result, won, opts = {}) {
   card.querySelectorAll('[data-addf]').forEach(b => b.onclick = () => {
     stopCountdown(); const id = b.dataset.addf; if (app.ai.addFriend(id)) { b.classList.add('on'); b.disabled = true; b.innerHTML = `★ ${esc(app.ai.entry(id).name)}`; toast(`${app.ai.entry(id).name} added to your friends.`); } });
   if (won) audio.ui('buy');
+}
+
+// qp3 (Oct 12): every badge this game moved, with where it stands now. It used to list the first six only, so in a big
+// Pro Run game (1.5x, a dozen badges moving) the rest looked like they hadn't counted
+const TIER_NAME = ['Unranked', 'Bronze', 'Silver', 'Gold', 'Hall of Fame'];
+function badgeProgressHTML(app, r) {
+  const gains = Object.entries(r.badge_progress || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  if (!gains.length) return '';
+  const ch = r.character || {};
+  const chip = ([k, v]) => {
+    const def = app.config.badges?.[k] || {}, b = ch.badges?.[k] || {}, tier = b.tier | 0, cap = ch.badge_caps?.[k] ?? 4;
+    const next = tier < cap ? def.tiers?.[tier] : null;
+    const where = next ? `${TIER_NAME[tier + 1]} ${b.progress ?? 0}/${next}` : tier ? `${TIER_NAME[tier]} · ${tier >= 4 ? 'maxed' : 'top tier for your build'}` : 'not for your build';
+    return `<span class="bp-chip"><b>${esc(def.name || k)}</b> +${v}<small>${esc(where)}</small></span>`;
+  };
+  return `<div class="badge-prog"><small class="muted">Badge progress${r.mode === 'prorun' ? ' (×1.5)' : ''}</small>${gains.map(chip).join('')}</div>`;
 }
 
 // v0.4.4: add the people you just played with (teammates first)

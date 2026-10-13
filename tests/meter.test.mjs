@@ -104,7 +104,10 @@ test('the solid core is the build\'s own ratings; badges, Icon badge, takeover a
   const lw = g.layupWindow(p, lay, 0.8);
   assert.ok(lw.total > lw.natural && lw.sure === false, 'a green layup under coverage is a boost, not automatic: outlined');
   assert.equal(g.layupWindow(p, lay, 0.05).sure, true, 'qp3: wide open, the window is solid: a green goes in');
-  assert.equal(g.layupWindow(p, lay, 0.12).sure, false, 'any coverage at all keeps it outlined');
+  // (qp3, Oct 12: wide open as the HUD says it, on the finish scale: raw 0.12 is 5% guarded, a sure green now; a light
+  // contest keeps it outlined, and so does an open one under an 85 Layup)
+  assert.equal(g.layupWindow(p, lay, 0.12).sure, true, 'wide open on the HUD: solid');
+  assert.equal(g.layupWindow(p, lay, 0.7).sure, false, 'a light contest keeps it outlined');
   p.badges = { green_machine: 2 };
   const fw = g.ftWindow(p);
   assert.ok(fw.total > fw.natural && fw.sure === true);

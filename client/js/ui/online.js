@@ -6,7 +6,7 @@
 // social phone's Online tab, the helpers every online game setup uses, and the start of an online game on each screen.
 // The games run in lockstep (game/session.js frameOnline); park games are set up in game/park.js, Pro-Am in
 // ui/modes.js, crew runs in game/crewhq.js.
-import { $$, esc, toast, closeModal } from './common.js';
+import { $$, esc, toast, closeModal, modal } from './common.js';
 import { Net } from '../core/netplay.js';
 import { THEMES } from '../world/themes.js';
 import { PARK_NAMES } from '../sim/world.js';
@@ -26,7 +26,7 @@ const placeOf = app => (app.world && app.world.placeKey ? app.world : null);
 // Which game you go online through: the friend's hosted game your own copy is linked to (your save stays yours), or
 // this page's own service when it's the hosted one (the host himself, or a friend who came in with join.cmd)
 export async function initOnline(app) {
-  if (app.net) { if (app.net.hub || app.config?.online?.hosting) app.net.start(); return app.net; }
+  if (app.net) { if ((app.net.hub && !app.net.offline) || app.config?.online?.hosting) app.net.start(); return app.net; }
   const net = app.net = new Net();
   net.entryFn = () => myEntry(app);
   net.on('note', m => toast(m.text));
@@ -57,14 +57,21 @@ export async function initOnline(app) {
   net.on('state', () => { if (!net.connected) placeOf(app)?.clearPeers?.(); });
   net.on('squad', () => followSquad(app));
   // signed in on the host's game from your own copy: keep the token for next time (in your own save)
-  net.on('autherror', m => toast(m.text, 'error'));
-  net.on('authed', m => { if (net.hub) toast(`Signed in on ${net.hub} as ${m.you?.username || ''}.`); });
+  net.on('autherror', m => { if (!document.querySelector('.ol-prompt')) toast(m.text, 'error'); signInPromptError(app, m); });
+  net.on('authed', m => { if (net.hub) toast(`Signed in online as ${m.you?.username || ''}.`); if (document.querySelector('.ol-prompt')) closeModal(); });
+  // (qp3, Oct 12: connected to the game's server and not signed in: one popup asks you to, the first time you're free)
+  net.on('state', () => maybePromptSignIn(app));
   net.on('authed', m => { if (net.hub) app.api.post('/api/online-link', { hub: net.hub, username: m.you?.username || null, token: m.token }).catch(() => {}); });
   let link = null;
   try { link = (await app.api.get('/api/online-link')).link; } catch { link = null; }
+  // qp3 (Oct 12): a copy that isn't hosting plays on the game's own online server (online.json) by itself, unless you
+  // linked it to another one or chose to play offline (the link remembers both, and your sign-in)
+  const server = app.config?.online?.server || null, hosting = !!app.config?.online?.hosting;
+  if (!link && server && !hosting) link = { hub: server, username: null, token: null, offline: false, auto: true };
   net.link = link;
+  net.offline = !!link?.offline;
   net.configure({ hub: link?.hub || null, token: link?.token || null, build: app.config?.build || null });
-  if (link || app.config?.online?.hosting) net.start();
+  if ((link?.hub && !net.offline) || hosting) net.start();
   // (just linked: the page reloaded so it may reach the host; back to the Online tab)
   try { if (sessionStorage.getItem('ah16.openOnline')) { sessionStorage.removeItem('ah16.openOnline'); setTimeout(() => import('./phone.js').then(P => P.openPhone(app, { tab: 'online' })), 700); } } catch { /* private mode */ }
   let lastChar = null, lastAI = null;
@@ -94,8 +101,15 @@ export function whereNow(app) {
   if (w) { park = w.placeKey(); status = w.mode === 'roam' ? 'park' : w.mode === 'match' || w.mode === 'starting' ? 'game' : 'busy'; }
   else if (app.mode === 'match') status = 'game';
   else if (app.world) status = 'busy';
-  // (the round trip in 25 ms steps: online games pick their input delay from everyone's)
-  return { name: c?.name || null, park, status, char: c ? `${c.overall} ${c.position}` : null, rtt: net?.rtt != null ? Math.min(2000, Math.round(net.rtt / 25) * 25) : null };
+  // (the round trip: online games pick their input delay from everyone's. v0.4.8: to 5 ms, where it used to be 25 ms
+  // steps, so a game's delay isn't a tick longer than it needs to be; told again only when it moves 4 ms or more)
+  return { name: c?.name || null, park, status, char: c ? `${c.overall} ${c.position}` : null, rtt: rttReport(net) };
+}
+export function rttReport(net) {
+  if (net?.rtt == null) return null;
+  const r = Math.min(2000, net.rtt);
+  if (net.rttRep == null || Math.abs(r - net.rttRep) >= 4) net.rttRep = Math.round(r / 5) * 5;
+  return net.rttRep;
 }
 // (straight away, when you arrive somewhere: the others see you, and you them, without waiting for the next second)
 export function touchWhere(app) { const net = app.net; if (net?.connected) net.where(whereNow(app)); }
@@ -113,12 +127,15 @@ const statusText = p => !p || !p.online ? 'Offline' : p.playing || p.status === 
 
 // ---------------- helpers for every online game's setup ----------------
 // the input delay (ticks) for a game: long enough for an input to go from the slowest player through the service
-// to the next slowest (half of each one's round trip) with a little to spare; 3 ticks (~45 ms) at the least
+// to the next slowest (half of each one's round trip) with a little to spare; 3 ticks (~44 ms) at the least.
+// v0.4.8: 25 ms to spare where it was 30 (a player whose inputs still come late sends his own further ahead: the
+// others don't all play with a longer delay for him)
+export const DELAY_SPARE_MS = 25;
 export function inputDelay(rtts) {
   const r = [...rtts].map(v => (typeof v === 'number' && v >= 0 ? v : 80)).sort((a, b) => b - a);
   const oneWay = ((r[0] || 0) + (r[1] || 0)) / 2;
   const tickMs = 1000 / (60 * GAME_SPEED);
-  return Math.max(3, Math.min(15, Math.ceil((oneWay + 30) / tickMs)));
+  return Math.max(3, Math.min(15, Math.ceil((oneWay + DELAY_SPARE_MS) / tickMs)));
 }
 export const newSeed = () => (Math.random() * 2147483646 | 0) + 1;
 // a real player in a setup: {id, username, entry} (you, or anyone the service told you about)
@@ -285,12 +302,14 @@ const av = (s, cls = '') => `<span class="ol-av ${cls}">${esc(String(s || '?').s
 export function phoneTab(app) {
   const net = app.net;
   if (!net) return '<p class="ph-empty">Online play starts when you sign in.</p>';
-  // your own copy, not linked to anyone's hosted game yet (and not hosting): where to connect
+  // (qp3, Oct 12: playing offline by choice: connect again, any time)
+  if (net.offline) return offlineForm(app);
+  // your own copy, not linked to anyone's hosted game yet (and no server of the game's own: online.json): where to connect
   if (!net.hub && !app.config?.online?.hosting) return linkForm();
-  if (net.hub && !net.connected) return signInForm(net);
+  if (net.hub && !net.connected) return signInForm(net, app);
   const conn = net.connected;
   const head = (conn
-    ? `<div class="ph-note">Signed in online as <b>${esc(net.you?.username || '')}</b>. Your friends add you by that username. ${net.hub ? `You're playing through <b>${esc(net.hub)}</b>: your players, VC and progress stay in your own game. <button class="linkish" data-ounlink>Disconnect</button>` : app.config?.online?.hosting ? 'This game is hosted for your friends.' : ''}</div>`
+    ? `<div class="ph-note">Signed in online as <b>${esc(net.you?.username || '')}</b>. Your friends add you by that username. ${net.hub ? `You're playing through <b>${esc(hostLabel(net.hub))}</b>: your players, VC and progress stay in your own game. <button class="linkish" data-ooffline>Play offline</button>` : app.config?.online?.hosting ? 'This game is hosted for your friends.' : ''}</div>${shareServerNote(app)}`
     : `<div class="ph-note">Connecting to the game service… ${net.state === 'off' ? 'retrying' : ''}</div>`) + hostNote(app);
   const fr = net.friends || [];
   const mine = fr.filter(f => f.status === 'friends'), inc = fr.filter(f => f.status === 'incoming'), out = fr.filter(f => f.status === 'requested');
@@ -374,6 +393,26 @@ export function bindPhoneTab(app, host, redraw) {
 }
 
 // ---------------- your own copy, linked to a friend's hosted game ----------------
+// qp3 (Oct 12): the server as people see it ('https://203-0-113-7.sslip.io' → '203-0-113-7.sslip.io')
+const hostLabel = hub => String(hub || '').replace(/^https:\/\//i, '');
+// the join code that goes with a new account on this server: the game's own (online.json), when it's that server
+const joinCodeFor = (app, hub) => (hub && hub === app.config?.online?.server ? app.config?.online?.server_code || null : null);
+function offlineForm(app) {
+  const net = app.net, hub = net.hub || app.config?.online?.server;
+  return `<div class="ph-sec">Playing offline</div>
+    <p class="ph-note">You're playing on your own: nobody online sees you, and your games are just yours. ${hub ? `Connect again any time: you'll be back on <b>${esc(hostLabel(hub))}</b>${net.token ? ' and signed in' : ''}.` : ''}</p>
+    ${hub ? `<div class="ph-acts"><button class="btn small primary" data-oonline>Connect</button>${app.config?.online?.server && hub !== app.config.online.server ? `<button class="btn small ghost" data-ohome>Use ${esc(hostLabel(app.config.online.server))} instead</button>` : ''}</div>` : ''}
+    <p class="ph-note">Another server? <button class="linkish" data-oother>Type its address</button></p>
+    <div data-ootherbox hidden>${linkForm()}</div>`;
+}
+// qp3 (Oct 12): connected to a server this copy doesn't know by itself yet: write it into online.json (with its join
+// code), push that to GitHub, and every copy that pulls it connects there by itself (README: Play online)
+function shareServerNote(app) {
+  const net = app.net;
+  if (!net.hub || !/^https:/i.test(net.hub) || app.config?.online?.server === net.hub || app.config?.online?.hosting) return '';
+  return `<form class="ol-share" data-oshare><div class="ph-note"><b>Everyone's server?</b> Save <b>${esc(hostLabel(net.hub))}</b> as the server this game connects to by itself (online.json). Push it to GitHub: everyone who pulls just signs in, no address or join code to type.</div>
+    <div class="ol-add"><input class="text" name="c" maxlength="64" placeholder="The server's join code" autocomplete="off"><button class="btn small" type="submit">Save to online.json</button></div></form>`;
+}
 function linkForm() {
   return `<div class="ph-sec">Play online with your friends</div>
     <p class="ph-note">Play from this game: your players, VC and progress stay in your own save, and the online server (or the
@@ -381,22 +420,69 @@ function linkForm() {
     <form class="ol-add" data-olink><input class="text" name="hub" maxlength="80" placeholder="Address, e.g. https://203-0-113-7.sslip.io" autocomplete="off"><button class="btn small primary" type="submit">Connect</button></form>
     <p class="ph-note">Hosting on your own PC instead? Quit the game and run <b>host.cmd</b>. (Your own online server: README, <i>Host on a server</i>.)</p>`;
 }
-function signInForm(net) {
+function signInForm(net, app) {
   const e = net.authError;
   const version = e?.code === 'version';
   const waiting = !net.signingIn && !version;
-  return `<div class="ph-sec">Online through ${esc(net.hub)}</div>
+  const code = joinCodeFor(app, net.hub);
+  return `<div class="ph-sec">Online through ${esc(hostLabel(net.hub))}</div>
     ${e ? `<div class="ol-host warn">${esc(e.text)}</div>` : ''}
     ${version ? '<p class="ph-note">Update this copy of the game to the host\'s (the same files he has), restart it, and open this tab again.</p>'
       : waiting ? `<p class="ph-note">Connecting to ${esc(net.hub)}… ${/^https:/i.test(net.hub) ? '(is the server up? Its status: README, <i>Host on a server</i>)' : '(is your friend\'s game running, and his port open?)'}</p>`
-      : `<p class="ph-note">Sign in with your online account on your friend's game, or make one: he gives you the join code. Your players stay in your own game either way.</p>
-      <form class="ol-signin" data-osignin>
+      : `<p class="ph-note">Sign in with your online account, or make one${code ? '' : ' (the server\'s join code is for new accounts)'}. Your friends add you by its username; your players stay in your own game either way.</p>
+      ${signInFields(code)}`}
+    <div class="ph-acts"><button class="btn small ghost" data-ooffline>Play offline</button><button class="btn small ghost" data-ounlink>Change server</button></div>`;
+}
+// the sign-in form's fields (the join code only when the game doesn't know it: online.json)
+function signInFields(code) {
+  return `<form class="ol-signin" data-osignin>
         <input class="text" name="u" maxlength="24" placeholder="Online username" autocomplete="username">
         <input class="text" name="p" type="password" maxlength="128" placeholder="Password (8+)" autocomplete="current-password">
-        <input class="text" name="c" maxlength="64" placeholder="Join code (new accounts)" autocomplete="off">
+        ${code ? '' : '<input class="text" name="c" maxlength="64" placeholder="Join code (new accounts)" autocomplete="off">'}
         <div class="ph-acts"><button class="btn small primary" data-omode="login" type="submit">Sign in</button><button class="btn small" data-omode="register" type="submit">Create account</button></div>
-      </form>`}
-    <div class="ph-acts"><button class="btn small ghost" data-ounlink>Change server</button></div>`;
+      </form>`;
+}
+// ---------------- qp3 (Oct 12): connected, not signed in: one popup asks, the first time you're free ----------------
+function maybePromptSignIn(app) {
+  const net = app.net;
+  if (!net || !net.hub || net.offline || !net.signingIn || net.token || net.prompted || net.authError?.code === 'version') return;
+  const busy = app.mode === 'match' || app.world?.mySession || !app.profile || !document.getElementById('modal')?.hidden;
+  if (busy) { clearTimeout(net.promptT); net.promptT = setTimeout(() => maybePromptSignIn(app), 3000); return; }
+  net.prompted = true;
+  const code = joinCodeFor(app, net.hub);
+  const card = modal(`<div class="eyebrow">PLAY ONLINE · ${esc(hostLabel(net.hub).toUpperCase())}</div><h2>Sign in to play online</h2>
+    <p class="muted">Sign in with your online account, or make one: your friends add you by its username. Your players, VC and progress stay in this game either way.</p>
+    <div class="ol-host warn" data-operr hidden></div>
+    ${signInFields(code)}
+    <div class="row gap"><button class="btn small ghost" data-ooffline>Play offline</button><button class="btn small ghost" data-close>Later</button></div>
+    <p class="muted small">Later: sign in from the social phone's Online tab any time.</p>`, { cls: 'ol-prompt' });
+  bindLink(app, card);
+}
+function signInPromptError(app, m) {
+  const box = document.querySelector('.ol-prompt [data-operr]');
+  if (box) { box.hidden = false; box.textContent = m.text || 'Couldn\'t sign in.'; }
+}
+// play offline (the link and your sign-in stay for next time), or connect again
+async function goOffline(app) {
+  const net = app.net;
+  try { await app.api.post('/api/online-link', { offline: true }); } catch (e) { toast(e.message, 'error'); return; }
+  net.offline = true; net.stop();
+  placeOf(app)?.clearPeers?.();
+  if (document.querySelector('.ol-prompt')) closeModal();
+  toast('Playing offline. Connect again any time from the Online tab.');
+  net.emit('state');
+}
+async function goOnline(app) {
+  const net = app.net;
+  let link = null;
+  try { link = (await app.api.post('/api/online-link', { offline: false })).link; } catch (e) { toast(e.message, 'error'); return; }
+  const hub = link?.hub || app.config?.online?.server || null;
+  if (!hub) { toast('No server to connect to: type its address.', 'error'); return; }
+  net.offline = false; net.prompted = false;
+  net.configure({ hub, token: link?.token || net.token || null, build: app.config?.build || null });
+  net.start();
+  toast(`Connecting to ${hostLabel(hub)}…`);
+  net.emit('state');
 }
 function bindLink(app, host) {
   const net = app.net;
@@ -418,11 +504,34 @@ function bindLink(app, host) {
     const f = new FormData(sf), mode = e.submitter?.dataset.omode || 'login';
     const u = f.get('u')?.toString().trim(), p = f.get('p')?.toString() || '', c = f.get('c')?.toString().trim() || '';
     if (!u || !p) { toast('Username and password, please.', 'error'); return; }
-    if (mode === 'register' && !c) { toast('A new account needs the host\'s join code.', 'error'); return; }
-    const ok = mode === 'register' ? net.register(u, p, c) : net.login(u, p);
-    if (!ok) toast('Not connected to the host yet.', 'error');
+    const code = c || joinCodeFor(app, net.hub) || '';
+    if (mode === 'register' && !code) { toast('A new account needs the server\'s join code.', 'error'); return; }
+    const ok = mode === 'register' ? net.register(u, p, code) : net.login(u, p);
+    if (!ok) toast('Not connected to the server yet.', 'error');
   };
+  $$('[data-ooffline]', host).forEach(b => b.onclick = () => goOffline(app));
+  $$('[data-oonline]', host).forEach(b => b.onclick = () => goOnline(app));
+  $$('[data-oother]', host).forEach(b => b.onclick = () => { const box = host.querySelector('[data-ootherbox]'); if (box) { box.hidden = false; b.disabled = true; } });
+  const shf = host.querySelector('[data-oshare]');
+  if (shf) shf.onsubmit = async e => {
+    e.preventDefault();
+    const joinCode = new FormData(shf).get('c')?.toString().trim() || '';
+    try {
+      const r = await app.api.post('/api/online-default', { server: net.hub, joinCode });
+      app.config.online = { ...(app.config.online || {}), server: r.server, server_code: r.joinCode };
+      toast('Saved to online.json: commit and push it (GitHub Desktop), and everyone who pulls connects here by themselves.');
+      net.emit('state');
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  // (back to the game's own server: forget the other one)
+  $$('[data-ohome]', host).forEach(b => b.onclick = async () => {
+    try { await app.api.post('/api/online-link', { clear: true }); } catch { /* ignore */ }
+    try { sessionStorage.setItem('ah16.openOnline', '1'); } catch { /* private mode */ }
+    net.stop(); setTimeout(() => location.reload(), 200);
+  });
   $$('[data-ounlink]', host).forEach(b => b.onclick = async () => {
+    // (qp3, Oct 12: with a server of the game's own, changing server goes through the offline view and its address box)
+    if (app.config?.online?.server) { await goOffline(app); return; }
     try { await app.api.post('/api/online-link', { clear: true }); } catch { /* ignore */ }
     try { sessionStorage.setItem('ah16.openOnline', '1'); } catch { /* private mode */ }
     net.stop(); setTimeout(() => location.reload(), 200);

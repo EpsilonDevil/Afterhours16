@@ -30,6 +30,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, sys.argv[3])
 from server import app as server_app
+sys.setswitchinterval(0.001)  # (as a hosted service runs: server/app.py main)
 s = server_app.Service(Path(sys.argv[1]), dev_accounts=False)
 s.hosting, s.join_code = True, "load"
 s.rate_limit = lambda ip, category: None

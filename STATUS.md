@@ -1,4 +1,4 @@
-# Status — v0.4.7.5 (complete, with its quick patch)
+# Status — v0.4.8 (online play: sign-in only, exact timing; v0.4.7.5 and its quick patch below)
 
 v0.4.7.5 was built in twelve stages (A–L), each committed with its own tests. The full player-facing list is in `PATCH_NOTES_v0.4.7.5.docx` (source: `PATCH_NOTES_v0.4.7.5.md`). Where things live:
 
@@ -57,6 +57,24 @@ Player-facing list: the "Quick patch" part of `PATCH_NOTES_v0.4.7.5.md` / `.docx
 | Stamina, HUD line | `sim/player.js` (STAMINA_RECOVER_K 1.2; part 3: REST_RECOVER_K 2.8 (was 1.4), MOVE_RECOVER_K 0.1 for any non-sprint movement (was neutral above 2.1 m/s, 0.6 below), hands up on the floor neutral, defensive slide still drains 0.2×), `game/hud.js` (LINE, setLine), `css/app.css` (.lg-stats 158 px = 1.2 × 132), `game/session.js` | the grade keeps its 132 px and moves left. Part 3 batch (12 park games): FG 43% / 3P 24% / 35.6 pts vs 40% / 30% / 36.4 before, within noise |
 
 Tests: `node --test tests/*.test.mjs` (225; new: `tests/v0475qp.test.mjs`, `v0475qp2.test.mjs`, `v0475qp3.test.mjs`, `v0475qp4.test.mjs`, `v0475qp5.test.mjs`, `v0475qp6`–`qp14`) and `python -m unittest discover -s tests` (68, with `tests/test_online.py`, `tests/test_upnp.py` and `tests/test_deploy.py`).
+
+## v0.4.8
+
+Player-facing list: `PATCH_NOTES_v0.4.8.docx` (source `PATCH_NOTES_v0.4.8.md`). Where things live:
+
+| Area | Files | Notes |
+|---|---|---|
+| Releases graded on the meter the shooter saw | `sim/game.js` (`shotRaw`, `meterRead` {t, raw, contest, guard, W}; `noteMeters` after every multi step, ≤ 48 readings per action in `a.meters`; `seenRead(p, a, at)`: the first reading at or after `at`, within a tick, from before this step; `releaseShot` reads it at `releaseAt`, `releaseLayup` at `max(releaseAt, out − DT)` with `out = max(releaseAt, min(release, takeoff + .06))`), `game/session.js` (`liveMeter` from `meterRead`; hooks get a meter) | offline the readings aren't kept: the live measurement is the same thing a tick apart |
+| The meter stops at the let-go | `game/session.js` (`noteLetGo` after `captureInput` in `frameOnline`: `letGo {a, m}`; `updateHUD` draws `letGo.m` until the release) | shoot48 E2E: 4 jumpers at 100 ms RTT, 0 frames moved, B graded identically |
+| Exact dl | `game/session.js` (`lk.seen = g.tick` before the capture; `onlineIntent(t)`: `dl = t − D − 1 − seen` while `timingNow()`; up to 24), `sim/game.js` (`lagOf` cap 24, `lateBy`; held-too-long jumper/layup/FT auto-release at `a.t − lateBy`; `oopInput` + DT online) | dl only on the wire while a shot / FT / dunk / alley-oop could use it |
+| Input delay | `ui/online.js` (`rttReport`: 5 ms, sent again at ≥ 4 ms; `DELAY_SPARE_MS` 25, was 30), `game/session.js` (`lateReport` raises netExtra past 60 ms, was 100) | |
+| Hub sends | `server/online.py` (`DIRECT_SEND` = MSG_DONTWAIT exists; `send_frame` sends straight out when nothing is queued or being written, the rest goes to the writer; `stats.direct`), `server/app.py` (`sys.setswitchinterval(0.001)` when hosting), `tests/load_hub.py` (same) | 20 players + 40 watchers: CPU ~43% → 27%, relay median 4.7 ms, p99 12–13 ms |
+| Name tags, three seconds, take-it-back glow | `game/session.js` (`settings.tags` in the tag loop, 3 SECONDS callout, `clearGlow`), `ui/modes.js` (friend tags), `sim/game.js` (`laneRules` team control + `_laneTeam` reset; `turnover` hands possession over at once), `gfx/geometry.js` `threeLineRibbon`, `gfx/textures.js` `glowBand` | |
+| Pro Run max OVR, results that count, badge progress | `server/builds.py` + `sim/builds.js` (`ovr_floor` + ⌊(done − ovr_floor_at)/3⌋), `server/progression.py` (`validate_summary`: caps scale with game length; counting stats clamped, scoring strict), `ui/modes.js` (`badgeProgressHTML`: every badge that moved) | |
+| Layups by contest, blocks | `sim/shots.js` (`layupState`, `LAYUP_GREEN_BOOST` {1, 1, .8, .55, 0}, `layupSure` open at Layup ≥ 85; `BLOCK_K` 1.0375, `blockUp`), `sim/game.js` (`layupWindow`/`releaseLayup`, 6 `blockUp` terms) | |
+| The game's own online server | `online.json`, `server/app.py` (`load_online_default`/`save_online_default`, `/api/config` online {server, server_code}, `/api/online-link` offline, `/api/online-default`), `server/migrations/012_v0475_hub_offline.sql`, `ui/online.js` (sign-in popup, Play offline / Connect, Save to online.json) | schema 12 |
+
+Tests: `node --test tests/*.test.mjs` (240; new: `tests/v0475qp15.test.mjs`, `tests/v048.test.mjs`) and `python -m unittest discover -s tests` (74).
 
 **Known limits:** the model is still the v0.4 low-poly athlete (faces and hands are next in the v0.5 overhaul); knees can still brush in some strides; the Juice WRLD freestyle has no pause to split at, so its part change is mid-verse (it plays straight through).
 

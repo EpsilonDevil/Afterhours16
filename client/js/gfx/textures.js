@@ -430,6 +430,15 @@ export function radialBlob(size = 128) {
   return c;
 }
 
+// v0.4.7.5 qp3: a soft band (bright in the middle, gone at both edges, across v): the take-it-back glow on the arc
+export function glowBand(size = 64) {
+  const c = canvas(4, size), g = ctx2d(c);
+  const gr = g.createLinearGradient(0, 0, 0, size);
+  gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.35)'); gr.addColorStop(0.5, 'rgba(255,255,255,1)'); gr.addColorStop(0.7, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, size);
+  return c;
+}
+
 export function ringTexture(size = 256) {
   const c = canvas(size, size), g = ctx2d(c);
   g.clearRect(0, 0, size, size);

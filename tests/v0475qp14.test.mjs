@@ -123,7 +123,7 @@ test('lockstep through the wire: both screens run the same game, a slow PC sendi
   const g = A.game, p = g.players[3];
   p.intent = { dl: 2 }; assert.ok(Math.abs(g.relAt(p, { t: 1 }) - (1 - 6 * DT)) < 1e-9);
   p.intent = {}; assert.ok(Math.abs(g.relAt(p, { t: 1 }) - (1 - 4 * DT)) < 1e-9);
-  p.intent = { dl: 99 }; assert.ok(Math.abs(g.relAt(p, { t: 1 }) - (1 - 12 * DT)) < 1e-9, 'capped');
+  p.intent = { dl: 99 }; assert.ok(Math.abs(g.relAt(p, { t: 1 }) - (1 - 28 * DT)) < 1e-9, 'capped (v0.4.8: at 24)');
 });
 
 test('a PC whose frames are slow sends further ahead: up at once, down a step after a few steady seconds', () => {

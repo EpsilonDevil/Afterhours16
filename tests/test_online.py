@@ -142,7 +142,7 @@ class OnlineTests(unittest.TestCase):
     def test_join_code_and_config(self):
         c = Client(self.base)
         st, cfg = c.call("/api/config")
-        self.assertEqual(cfg["online"], {"hosting": True, "join_code": True})
+        self.assertEqual(cfg["online"], {"hosting": True, "join_code": True, "server": None, "server_code": None})  # (a hosting copy plays on no other server)
         st, body = c.call("/api/register", {"username": "nocode", "password": "password123"})
         self.assertEqual(st, 403)
         st, body = c.call("/api/register", {"username": "nocode", "password": "password123", "join_code": "wrong"})
@@ -473,7 +473,7 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(c.call("/api/online-link", {"hub": "bad host!"})[0], 400)
         st, out = c.call("/api/online-link", {"hub": "203.0.113.7", "username": "linker", "token": "tok"})
         self.assertEqual(st, 200, out)
-        self.assertEqual(out["link"], {"hub": "203.0.113.7:8765", "username": "linker", "token": "tok"})
+        self.assertEqual(out["link"], {"hub": "203.0.113.7:8765", "username": "linker", "token": "tok", "offline": False})
         self.assertEqual(c.call("/api/online-link")[1]["link"]["hub"], "203.0.113.7:8765")
         # the page may open a socket to it (the CSP lists it)
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
@@ -508,6 +508,132 @@ class OnlineTests(unittest.TestCase):
         a.send({"t": "ping", "c": "x" * 300})
         self.assertEqual(len(a.until("pong")["c"]), 300)
         a.close()
+
+
+class OnlineDefaultTests(unittest.TestCase):
+    """qp3 (Oct 12): every copy plays on the game's own server (online.json) by itself; players only sign in. Playing
+    offline keeps the link (and the sign-in) for connecting again."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.file = Path(self.tmp.name) / "online.json"
+        self.file.write_text(json.dumps({"_": "x", "server": "https://203-0-113-7.sslip.io/", "joinCode": "hoops-42"}))
+        self.old = server_app.ONLINE_FILE
+        server_app.ONLINE_FILE = self.file
+        self.service = server_app.Service(Path(self.tmp.name) / "own.sqlite3")  # (a player's own copy: not hosting)
+        handler = type("QuietHandler", (server_app.Handler,), {"log_message": lambda *a: None})
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.server.daemon_threads = True
+        self.server.service = self.service
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+        self.c = Client(f"http://127.0.0.1:{self.server.server_address[1]}")
+
+    def tearDown(self):
+        server_app.ONLINE_FILE = self.old
+        self.server.shutdown()
+        self.server.server_close()
+        self.service.close()
+        self.tmp.cleanup()
+
+    def test_the_games_server_by_itself_offline_and_back(self):
+        self.assertEqual(server_app.load_online_default(self.file), ("https://203-0-113-7.sslip.io", "hoops-42"))
+        self.assertEqual(server_app.load_online_default(Path(self.tmp.name) / "none.json"), (None, None))
+        st, cfg = self.c.call("/api/config")
+        self.assertEqual((cfg["online"]["server"], cfg["online"]["server_code"]), ("https://203-0-113-7.sslip.io", "hoops-42"))
+        self.c.call("/api/dev-account", {})
+        req = urllib.request.Request(self.c.base + "/")
+        with self.c.opener.open(req) as r:
+            self.assertIn("wss://203-0-113-7.sslip.io", r.headers["Content-Security-Policy"], "the page may reach it without linking first")
+        st, body = self.c.call("/api/online-link")
+        self.assertEqual((body["link"], body["server"]), (None, "https://203-0-113-7.sslip.io"))
+        # signed in (the game posts the link with its token), then offline: the link and the token stay
+        st, body = self.c.call("/api/online-link", {"hub": "https://203-0-113-7.sslip.io", "username": "davey", "token": "tok"})
+        self.assertEqual(body["link"]["offline"], False)
+        st, body = self.c.call("/api/online-link", {"offline": True})
+        self.assertEqual((body["link"]["offline"], body["link"]["token"]), (True, "tok"))
+        st, body = self.c.call("/api/online-link")
+        self.assertTrue(body["link"]["offline"])
+        st, body = self.c.call("/api/online-link", {"offline": False})
+        self.assertEqual((body["link"]["offline"], body["link"]["hub"], body["link"]["token"]), (False, "https://203-0-113-7.sslip.io", "tok"))
+        # offline before ever signing in: remembered too (on the game's server)
+        self.c.call("/api/online-link", {"clear": True})
+        st, body = self.c.call("/api/online-link", {"offline": True})
+        self.assertEqual((body["link"]["hub"], body["link"]["offline"], body["link"]["token"]), ("https://203-0-113-7.sslip.io", True, None))
+        # a hosting copy (host.cmd) never plays on another server by itself
+        self.service.hosting = True
+        st, cfg = self.c.call("/api/config")
+        self.assertIsNone(cfg["online"]["server"])
+        self.service.hosting = False
+
+    def test_saving_the_server_into_online_json(self):
+        self.file.write_text("{}")
+        self.service.default_hub = self.service.default_join = None
+        self.c.call("/api/dev-account", {})
+        st, body = self.c.call("/api/online-default", {"server": "https://198-51-100-4.sslip.io", "joinCode": "abc-12"})
+        self.assertEqual((st, body["server"]), (200, "https://198-51-100-4.sslip.io"))
+        saved = json.loads(self.file.read_text())
+        self.assertEqual((saved["server"], saved["joinCode"]), ("https://198-51-100-4.sslip.io", "abc-12"))
+        st, cfg = self.c.call("/api/config")
+        self.assertEqual(cfg["online"]["server_code"], "abc-12")
+        st, body = self.c.call("/api/online-default", {"server": "not a server!", "joinCode": ""})
+        self.assertEqual(st, 400)
+        self.service.hosting = True
+        st, body = self.c.call("/api/online-default", {"server": "https://198-51-100-4.sslip.io", "joinCode": ""})
+        self.assertEqual(st, 403)
+        self.service.hosting = False
+
+
+class DirectSendTests(unittest.TestCase):
+    """v0.4.8: an input goes out on the thread that has it when nothing is queued for that socket (no hop to the writer
+    thread); what the connection can't take right then goes to the writer, in order, and a socket that stops reading is
+    still cut off once it's far enough behind."""
+
+    def pair(self):
+        a, b = socket.socketpair()
+        self.addCleanup(a.close)
+        self.addCleanup(b.close)
+        conn = online.WSConn(a.makefile("rb"), a.makefile("wb", buffering=0), a, None, "x")
+        self.addCleanup(conn.stop)
+        return conn, b
+
+    @unittest.skipUnless(online.DIRECT_SEND, "no non-blocking send here (Windows): the writer thread sends it all")
+    def test_straight_out_then_queued_in_order(self):
+        conn, peer = self.pair()
+        fr = online.encode({"t": "in", "k": 1})
+        self.assertTrue(conn.send_frame(fr))
+        self.assertEqual((conn.stats["direct"], conn.stats["writes"]), (1, 1))
+        self.assertEqual(peer.recv(4096), fr)
+        # a burst bigger than the socket takes at once: the rest goes to the writer, and it all arrives in order
+        peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        frames = [online.encode({"t": "in", "k": i, "pad": "x" * 2000}) for i in range(400)]
+        for f in frames:
+            self.assertTrue(conn.send_frame(f))
+        want = b"".join(frames)
+        got = b""
+        peer.settimeout(5)
+        while len(got) < len(want):
+            got += peer.recv(65536)
+        self.assertEqual(got, want)
+        self.assertTrue(conn.drain(2))
+        self.assertGreater(conn.stats["direct"], 1)
+
+    def test_a_socket_that_stops_reading_is_cut_off(self):
+        conn, peer = self.pair()
+        peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        old = online.MAX_BACKLOG
+        online.MAX_BACKLOG = 256 * 1024
+        try:
+            big = online.encode({"t": "in", "pad": "x" * 60000})
+            ok = True
+            for _ in range(200):
+                ok = conn.send_frame(big)
+                if not ok:
+                    break
+                time.sleep(0.002)
+            self.assertFalse(ok, "cut off")
+            self.assertFalse(conn.alive)
+        finally:
+            online.MAX_BACKLOG = old
 
 
 if __name__ == "__main__":

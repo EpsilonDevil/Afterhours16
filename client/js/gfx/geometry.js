@@ -1,5 +1,6 @@
 // Procedural geometry primitives. All return {position, normal, uv, index} typed arrays (+ optional color).
 import { m3normalFromM4 } from '../core/math.js';
+import { COURT } from '../sim/constants.js';
 
 function build(pos, nrm, uv, idx) {
   return { position: new Float32Array(pos), normal: new Float32Array(nrm), uv: new Float32Array(uv), index: pos.length / 3 > 65535 ? new Uint32Array(idx) : new Uint16Array(idx) };
@@ -38,6 +39,28 @@ export function plane(w, d, sx = 1, sz = 1, opts = {}) {
   for (let j = 0; j < sz; j++) for (let i = 0; i < sx; i++) {
     const a = j * (sx + 1) + i, b = a + 1, c = a + sx + 1, e = c + 1;
     idx.push(a, c, b, b, c, e);
+  }
+  return build(pos, nrm, uv, idx);
+}
+
+// v0.4.7.5 qp3: a flat ribbon on the floor along the three-point line of the +z basket (corner, arc, corner), w wide;
+// v runs across it (0 → 1), u along it in metres. For the take-it-back glow (session.js clearGlow)
+export function threeLineRibbon(w = 0.7, arcSeg = 56) {
+  const R = COURT.threeRadius, cx = COURT.cornerThree, hz = COURT.hoopZ, base = COURT.length / 2;
+  const zj = hz - Math.sqrt(R * R - cx * cx), a0 = Math.atan2(-cx, zj - hz); // (where the corner line meets the arc)
+  const pts = [];
+  for (let i = 0; i <= 6; i++) pts.push([-cx, base - (base - zj) * i / 6]);
+  const sweep = 2 * Math.PI + 2 * a0; // (round the front of the rim, through the top of the key)
+  for (let i = 1; i < arcSeg; i++) { const a = a0 - sweep * i / arcSeg; pts.push([R * Math.sin(a), hz + R * Math.cos(a)]); }
+  for (let i = 0; i <= 6; i++) pts.push([cx, zj + (base - zj) * i / 6]);
+  const pos = [], nrm = [], uv = [], idx = [];
+  let u = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[Math.min(pts.length - 1, i + 1)], o = pts[Math.max(0, i - 1)];
+    const tx = q[0] - o[0], tz = q[1] - o[1], tl = Math.hypot(tx, tz) || 1, nx = -tz / tl * w / 2, nz = tx / tl * w / 2;
+    if (i) u += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]);
+    pos.push(p[0] + nx, 0, p[1] + nz, p[0] - nx, 0, p[1] - nz); nrm.push(0, 1, 0, 0, 1, 0); uv.push(u, 0, u, 1);
+    if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   }
   return build(pos, nrm, uv, idx);
 }

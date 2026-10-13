@@ -83,6 +83,14 @@ export const LAYUP_SMOTHER = 1.72;
 export const insideGuard = raw => Math.min(1.25, (raw || 0) * SMOTHER / LAYUP_SMOTHER);
 export const guardFor = (kind, raw) => (kind === 'layup' || kind === 'close' ? insideGuard(raw) : Math.min(1.25, raw || 0));
 export const isSmothered = guard => (guard || 0) >= SMOTHER;
+// v0.4.7.5 qp3 (Oct 12): layups by how guarded they are, in the HUD's states on the finish scale (insideGuard). A green
+// on a wide-open finish is a make, and on an open one too for a Layup of LAYUP_SURE_OPEN or better (the meter draws
+// both solid: Game.layupWindow / releaseLayup). Anywhere else a green is a boost on top of what the contest leaves, and
+// the more he's guarded, the smaller the boost (LAYUP_GREEN_BOOST: the share of the usual green lift)
+export const WIDE_OPEN_GUARD = 0.1, OPEN_GUARD = 0.2, LIGHT_GUARD = 0.45, LAYUP_SURE_OPEN = 85;
+export const layupState = guard => { const g = guard || 0; return g <= WIDE_OPEN_GUARD ? 'wide' : g <= OPEN_GUARD ? 'open' : g <= LIGHT_GUARD ? 'light' : g < SMOTHER ? 'contested' : 'smothered'; };
+export const LAYUP_GREEN_BOOST = { wide: 1, open: 1, light: 0.8, contested: 0.55, smothered: 0 };
+export const layupSure = (guard, layupRating) => { const s = layupState(guard); return s === 'wide' || (s === 'open' && (layupRating ?? 0) >= LAYUP_SURE_OPEN); };
 // v0.4.7.5 quick patch: shooters and everyone else. Only the shooting archetypes (Sharpshooter, Stretch Big) get a
 // sure green from three: anybody else's green from 3PT range and beyond is a big boost, not a guaranteed make (the
 // meter draws it outlined), and every non-shooter's jumper window is 10% smaller on top of everything else.
@@ -90,6 +98,10 @@ export const SHOOTER_ARCH = new Set(['sharpshooter', 'stretch_big']);
 export const NON_SHOOTER_WIN = 0.9;
 export const isShooterArch = arch => !arch || SHOOTER_ARCH.has(arch);
 export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
+// v0.4.7.5 qp3 (Oct 12): blocks: what the defender brings to a block try (his Block and Interior D, his size over the
+// shooter, Rim Protector and Chase Down) counts 3.75% more. (A shorter defender's disadvantage isn't made bigger.)
+export const BLOCK_K = 1.0375;
+export const blockUp = v => (v > 0 ? v * BLOCK_K : v);
 // v0.4.5 final touch: every green window in the game is 10% smaller (jumpers, free throws, every badge and
 // package bonus included; the AI's green rate follows the same windows); the quick patch takes another 6.5% off
 // v0.4.7.5 quick patch: and every green window 10% smaller again, across the board
@@ -296,7 +308,7 @@ export function finalChance(o) {
   if (o.type === 'layup' && b.acrobat && o.contest > 0.5) p *= 1 + 0.05 * bk(b, 'acrobat');
   // v0.4.5 timed layups (an untimed tap, grade 'none', plays like it always did)
   if (o.type === 'layup') {
-    if (o.grade === 'excellent') p = p + (1 - p) * (0.45 + 0.2 * n(attr));
+    if (o.grade === 'excellent') p = p + (1 - p) * (0.45 + 0.2 * n(attr)) * (o.guard != null ? LAYUP_GREEN_BOOST[layupState(o.guard)] : 1);
     else if (o.grade === 'early' || o.grade === 'late') p *= 0.92;
     else if (o.grade === 'vearly' || o.grade === 'vlate') p *= 0.62;
   }

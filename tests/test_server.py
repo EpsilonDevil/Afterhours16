@@ -153,6 +153,47 @@ class ProgressionTests(unittest.TestCase):
         self.assertEqual(char["progression"]["prorun"], {"games": 1, "wins": 1})
         self.assertEqual(char["progression"]["career_modes"]["prorun"]["gp"], 1)
 
+    def test_a_long_pro_run_game_counts_whatever_its_counting_stats(self):
+        # qp3 (Oct 12): 11 fouls in a 48-minute Pro Run game used to throw the whole result out (VC, badge progress and
+        # the game toward max OVR). Counting stats past their caps are held at the caps; long games get longer caps
+        pr = {"mode": "prorun", "meta": {"quarter_len": 720, "quarters": 4}}
+        line = dict(pts=11, fgm=4, fga=9, tpm=3, tpa=5, pf=11, tov=12, reb=70, oreb=10)
+        s = progression.validate_summary(summary(mode="prorun", score=(98, 91), duration=2900, **line), pr)
+        self.assertEqual((s["stats"]["pf"], s["stats"]["reb"]), (11, 70), "a 48-minute game's caps are 2.4x")
+        s = progression.validate_summary(summary(mode="prorun", score=(98, 91), duration=2900, **{**line, "pf": 40}), pr)
+        self.assertEqual(s["stats"]["pf"], 24, "held at the cap, not refused")
+        s = progression.validate_summary(summary(score=(21, 15), pts=11, fgm=4, fga=9, tpm=3, tpa=5, pf=13, blk=45), PARK)
+        self.assertEqual((s["stats"]["pf"], s["stats"]["blk"]), (10, 30))
+        for bad in (dict(pf=-1), dict(pf="9"), dict(reb=3, oreb=5)):
+            with self.assertRaises(builds.Invalid, msg=str(bad)):
+                progression.validate_summary(summary(**bad), PARK)
+        with self.assertRaises(builds.Invalid):  # (the scoring numbers are still checked strictly)
+            progression.validate_summary(summary(score=(21, 15), pts=300, fgm=150, fga=150), PARK)
+
+    def test_a_kept_max_ovr_climbs_with_pro_run_games(self):
+        # qp3 (Oct 12): a build kept at 86 when the 80 OVR start came in used to need 18 Pro Run games before the first
+        # one counted (its meter went round and round). Now every 3 games played from here are +1 on top of it
+        char = builds.normalize({**builds.spec({}), "attributes": builds.starting_attributes(builds.spec({}))})
+        char["ovr_floor"] = 86
+        char["progression"]["prorun_completed"] = 7
+        del char["ovr_floor_at"]
+        builds.hof_init(char)
+        self.assertEqual(char["ovr_floor_at"], 6, "games toward the next +1 on the meter (7 % 3 = 1) still count")
+        self.assertEqual(builds.max_ovr(char), 86)
+        pr = {"mode": "prorun", "meta": {"quarter_len": 300, "quarters": 4}}
+        s = progression.validate_summary(summary(mode="prorun", score=(60, 52), duration=1200, pts=11, fgm=4, fga=9, tpm=3, tpa=5), pr)
+        ups = []
+        for _ in range(5):
+            out = progression.apply_progress(char, s, progression.rewards(s, pr, char))
+            ups.append(out["max_ovr_unlocked"])
+        self.assertEqual(builds.max_ovr(char), 88, "12 games: 2 toward the first +1 (with the one before), 3 for the next")
+        self.assertEqual([u and u["to"] for u in ups], [None, 87, None, None, 88])
+        self.assertEqual(builds.describe(char)["prorun_to_next"], 3)
+        # a build without a kept OVR is unchanged: 80 + 1 every 3
+        fresh = builds.normalize({**builds.spec({}), "attributes": builds.starting_attributes(builds.spec({}))})
+        fresh["progression"]["prorun_completed"] = 7
+        self.assertEqual(builds.max_ovr(fresh), 82)
+
     def test_inconsistent_or_impossible_results_are_rejected(self):
         bad = [
             summary(pts=10, fgm=4, fga=9),                    # points don't add up
@@ -346,7 +387,7 @@ class LegacySaveTests(unittest.TestCase):
             svc = server_app.Service(p, dev_accounts=False)
             try:
                 db = svc.db
-                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 11)
+                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 12)
                 self.assertEqual(db.query("SELECT balance FROM wallets")[0][0], 996500)
                 self.assertEqual(len(db.query("SELECT * FROM ledger WHERE kind='welcome_grant'")), 1)
                 self.assertEqual(db.query("SELECT item_id FROM inventory")[0][0], "jersey_coral")
@@ -360,7 +401,7 @@ class LegacySaveTests(unittest.TestCase):
             # reopening is a no-op
             svc = server_app.Service(p, dev_accounts=False)
             try:
-                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 11)
+                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 12)
             finally:
                 svc.close()
 
