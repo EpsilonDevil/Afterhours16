@@ -85,14 +85,15 @@ test('take it back: the red glow runs along the three-point line (corner, arc, c
   assert.match(ses, /g\.needsClear\[team\] && \(g\.phase === 'live' \|\| g\.phase === 'dead'\)/);
 });
 
-test('the Pro Run: a kept max OVR climbs every 3 games from where it is (client mirror); the results list every badge that moved', () => {
+test('the Pro Run: a kept max OVR climbs every 3 games from where it is (client mirror); the results keep their badge progress line', () => {
   assert.equal(maxOvr({ ovr_floor: 86, ovr_floor_at: 6, progression: { prorun_completed: 8 } }), 86);
   assert.equal(maxOvr({ ovr_floor: 86, ovr_floor_at: 6, progression: { prorun_completed: 9 } }), 87);
   assert.equal(maxOvr({ ovr_floor: 86, ovr_floor_at: 6, progression: { prorun_completed: 30 } }), 90);
   assert.equal(maxOvr({ progression: { prorun_completed: 7 } }), 82);
+  // (v0.4.8: the results screen's badge line as it always was; the fix is that Pro Run games count: tests/test_server.py)
   const modes = src('client/js/ui/modes.js');
-  assert.match(modes, /function badgeProgressHTML\(app, r\)/);
-  assert.doesNotMatch(modes, /Object\.entries\(r\.badge_progress\)\.slice\(0, 6\)/, 'not only the first six');
+  assert.match(modes, /<div class="muted small">Badge progress: \$\{Object\.entries\(r\.badge_progress\)\.slice\(0, 6\)/);
+  assert.doesNotMatch(modes, /badgeProgressHTML|bp-chip/);
 });
 
 test('layups by contest: wide open greens are makes, open ones too with an 85+ Layup; anything more and a green is a smaller boost', () => {

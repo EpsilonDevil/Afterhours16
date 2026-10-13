@@ -11,7 +11,8 @@ Online play, made simple and exact (full list in `PATCH_NOTES_v0.4.8.docx`):
 - **Just sign in:** your copy connects to the game's own online server by itself (`online.json`) and asks you to sign in once. **Play offline** and **Connect** are in the Online tab.
 - **Green windows stay what you saw:** online, a release is graded on the window and the defense your meter showed when you let go, so a late closeout can't shrink the green after the fact. Your meter stops where you let go, and a let-go during a hitch is still graded where you made it.
 - **Less input delay:** round trips are measured finer and games keep less spare, so many start a tick quicker. A player whose inputs arrive late sends his own further ahead, so the others don't freeze. The server relays inputs with about a third less CPU.
-- **Fixes:** Name tags off really hides them, offensive three seconds hands the ball over at once, Pro Run games count toward your max OVR again (and long ones aren't thrown out), and badge progress lists every badge that moved.
+- **Fixes:** Name tags off really hides them, offensive three seconds hands the ball over at once, and Pro Run games count toward your max OVR and your badges again (long ones aren't thrown out).
+- **Quick patch:** Handles for Days is Hall of Fame at 115 games and Deadeye at 135 contested makes, and five new mixes (almost 8 hours) are on the soundtrack.
 - **The take-it-back glow:** in half-court games a red glow runs along the three-point line while you have to clear it.
 - **Layups and blocks:** an open green layup is a sure make with an 85+ Layup, more coverage shrinks a green's boost, and blocks are 3.75% stronger.
 

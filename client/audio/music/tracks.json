@@ -321,6 +321,69 @@
     "juice-wrld-on-and-on-1.mp3",
     "juice-wrld-on-and-on-2.mp3"
    ]
+  },
+  {
+   "file": "family-tree-vol-10-orosa-1.mp3",
+   "title": "Family Tree Vol. 10 \u00b7 OROSA (Live Mix)",
+   "artist": "The Family Tree",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 3374,
+   "parts": [
+    "family-tree-vol-10-orosa-1.mp3",
+    "family-tree-vol-10-orosa-2.mp3"
+   ]
+  },
+  {
+   "file": "soulection-626-full-crate-1.mp3",
+   "title": "Show #626 (Full Crate Takeover) \u00b7 Timeless Sounds, Reggae Blends & Edits",
+   "artist": "Soulection",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 7239,
+   "parts": [
+    "soulection-626-full-crate-1.mp3",
+    "soulection-626-full-crate-2.mp3",
+    "soulection-626-full-crate-3.mp3",
+    "soulection-626-full-crate-4.mp3",
+    "soulection-626-full-crate-5.mp3"
+   ]
+  },
+  {
+   "file": "soulection-631-olea-1.mp3",
+   "title": "Show #631 (Olea Takeover) \u00b7 Timeless Blends, Edits & Classics",
+   "artist": "Soulection",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 7247,
+   "parts": [
+    "soulection-631-olea-1.mp3",
+    "soulection-631-olea-2.mp3",
+    "soulection-631-olea-3.mp3",
+    "soulection-631-olea-4.mp3",
+    "soulection-631-olea-5.mp3"
+   ]
+  },
+  {
+   "file": "soulection-611-keyrah-1.mp3",
+   "title": "Soulection Radio Show #611 (Keyrah Takeover)",
+   "artist": "Soulection",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 7248,
+   "parts": [
+    "soulection-611-keyrah-1.mp3",
+    "soulection-611-keyrah-2.mp3",
+    "soulection-611-keyrah-3.mp3",
+    "soulection-611-keyrah-4.mp3"
+   ]
+  },
+  {
+   "file": "the-playlist-finds-you-1.mp3",
+   "title": "The Playlist Finds You",
+   "artist": "djmaithai",
+   "album": "Afterhours 16 Soundtrack",
+   "duration": 3488,
+   "parts": [
+    "the-playlist-finds-you-1.mp3",
+    "the-playlist-finds-you-2.mp3"
+   ]
   }
  ]
 }

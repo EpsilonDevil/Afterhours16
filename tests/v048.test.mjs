@@ -163,3 +163,17 @@ test('the hub sends an input straight out when nothing is queued for that socket
   // (players whose inputs come late raise their own send-ahead sooner: past 60 ms of waiting in 2 s)
   assert.match(src('client/js/game/session.js'), /if \(ms > 60 && k > lk\.raisedAt\)/);
 });
+
+test('v0.4.8 quick patch: five new mixes on the soundtrack, each in parts that play back to back (every part under 30 MB)', () => {
+  const dir = new URL('../client/audio/music/', import.meta.url);
+  const list = JSON.parse(fs.readFileSync(new URL('tracks.json', dir))).tracks;
+  const want = { 'family-tree-vol-10-orosa': 2, 'soulection-626-full-crate': 5, 'soulection-631-olea': 5, 'soulection-611-keyrah': 4, 'the-playlist-finds-you': 2 };
+  for (const [slug, n] of Object.entries(want)) {
+    const t = list.find(x => x.file === `${slug}-1.mp3`);
+    assert.ok(t, slug);
+    assert.deepEqual(t.parts, Array.from({ length: n }, (_, i) => `${slug}-${i + 1}.mp3`));
+    assert.ok(t.title && t.artist && t.duration > 3000, slug);
+    for (const f of t.parts) { const u = new URL(f, dir); if (fs.existsSync(u)) assert.ok(fs.statSync(u).size < 30e6, f); }
+  }
+  assert.equal(new Set(list.map(t => t.file)).size, list.length, 'no track twice');
+});

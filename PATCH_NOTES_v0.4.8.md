@@ -64,7 +64,6 @@ Every screen runs the same game in lockstep. Players and the ball are exactly wh
 - **The Pro Run counts again:**
   - A build that was already past 80 OVR keeps its max OVR, and that max now goes up by 1 every 3 Pro Run games from where it is. Before, the progress meter cycled every 3 games without the +1.
   - A long Pro Run game with a big counting line (many fouls or rebounds, for example) used to be rejected whole, so it gave no OVR progress, no badge progress and no rewards. Those numbers are now limited to what fits the game's length and the game counts. Points and shooting are still checked strictly.
-- **Badge progress after a game** lists every badge that moved, not just the first six. Each one shows its progress to the next tier, "top tier for your build", or "not for your build".
 
 ---
 
@@ -78,8 +77,28 @@ Every screen runs the same game in lockstep. Players and the ball are exactly wh
 
 ---
 
+## Quick patch (Oct 13)
+
+- **Badge progress after a game** looks the way it always did, one line under the results. The fix is underneath it: every Pro Run game counts toward your badges, a long one with a big stat line included (see **The Pro Run counts again**). A new test plays two long Pro Run games through the game's service and checks that both land on the player's badges.
+- **Hall of Fame sooner:**
+  - **Handles for Days** at **115 games played** (was 160).
+  - **Deadeye** at **135 contested makes** (was 220).
+  - A player already past the new mark gets the upgrade (and its cap breakers) after his next game.
+- **Soundtrack:** five new mixes, almost 8 hours in all. Each one is split into parts under 30 MB at a quiet moment, and the parts play back to back.
+
+| Mix | Artist | Length | Parts |
+|---|---|---|---|
+| Family Tree Vol. 10 · OROSA (Live Mix) | The Family Tree | 56 min | 2 |
+| Show #626 (Full Crate Takeover) | Soulection | 2 h | 5 |
+| Show #631 (Olea Takeover) | Soulection | 2 h | 5 |
+| Soulection Radio Show #611 (Keyrah Takeover) | Soulection | 2 h | 4 |
+| The Playlist Finds You | djmaithai | 58 min | 2 |
+
+---
+
 ## Technical (for the repository)
 
 - Version 0.4.8 (`server/app.py`, `package.json`). Database schema 12 (`server/migrations/012_v0475_hub_offline.sql`: playing offline is remembered).
 - New: `online.json` at the root; `tests/v048.test.mjs` (8 tests: release grading under a closeout for jumpers and layups, the meter stopping at the let-go, exact dl, lagged timing, meter/release parity, round trips, the server's send path); `tests/v0475qp15.test.mjs` (7: name tags, three seconds, the glow, Pro Run max OVR, layups, blocks, the online pieces); Python tests for the direct send path, a long Pro Run game, a climbing max OVR and online.json.
-- Tests: 240 Node and 74 Python.
+- Quick patch: `server/progression.py` (`BADGES` handles_for_days and deadeye tiers; `apply_progress` also moves up a badge whose progress already meets a lower requirement), `client/js/ui/modes.js` and `client/css/menus.css` (the results' badge line as before), `client/audio/music/` (18 new parts, `tracks.json`), tests (`test_server.py`: two Pro Run games through the service, the new Hall of Fame marks; `v048.test.mjs`: the new mixes).
+- Tests: 241 Node and 75 Python.

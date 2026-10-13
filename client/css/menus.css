@@ -211,12 +211,6 @@ table.controls td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,
 .reward { flex: 1; padding: 12px; border-radius: 12px; background: rgba(255,216,74,.08); border: 1px solid rgba(255,216,74,.25); text-align: center; }
 .reward b { display: block; font-family: var(--display); font-size: 26px; color: var(--accent); } .reward small { font-size: 10px; letter-spacing: .16em; color: var(--muted); }
 .badge-ups { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
-/* qp3 (Oct 12): every badge a game moved, with where it stands */
-.badge-prog { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px; max-height: 120px; overflow-y: auto; }
-.badge-prog > small { width: 100%; }
-.bp-chip { display: inline-flex; flex-direction: column; padding: 3px 8px; border-radius: 8px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); font-size: 12px; line-height: 1.25; }
-.bp-chip b { font-weight: 600; }
-.bp-chip small { opacity: .62; font-size: 10.5px; }
 .tag { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; background: rgba(255,255,255,.08); }
 .tag.hot { background: var(--accent); color: #111; font-weight: 700; } .tag.bronze { background: #8a5329; } .tag.silver { background: #8d98a6; color: #111; } .tag.gold { background: #c8961d; color: #111; }
 .help-overlay { position: fixed; right: 20px; top: 80px; z-index: 12; width: min(560px, 90vw); max-height: 80vh; overflow: auto; background: rgba(10,12,16,.92); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }

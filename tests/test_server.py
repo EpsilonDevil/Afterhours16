@@ -936,6 +936,26 @@ class ApiTests(unittest.TestCase):
             self.assertIsNone(res["crew"])
             self.assertEqual(res["vc"], int((160 + 180 + 88) * progression.VC_K * 1.5))
             self.assertEqual(res["character"]["progression"]["prorun"]["games"], 1)
+            # v0.4.8: a Pro Run game's badge progress (1.5x) lands on the character, game after game, a big counting line
+            # included (it used to throw the whole result out past the park caps)
+            self.assertEqual(res["badge_progress"]["catch_shoot"], 4)   # 3 threes x 1.5, rounded
+            self.assertEqual(res["badge_progress"]["handles_for_days"], 2)  # a game x 1.5
+            got = {k: v["progress"] for k, v in res["character"]["badges"].items()}
+            self.assertEqual(got["catch_shoot"], 4)
+            t2 = self.call("/api/matches", {"key": self.key(), "character_id": cid, "mode": "prorun", "venue": "arena", "format": 5, "quarter_len": 720})
+            big = dict(pts=30, fgm=12, fga=25, tpm=4, tpa=9, ftm=2, fta=2, pf=13, reb=70, oreb=12, contested_makes=61, greens=81, stl=5)
+            server_app.TIME_SLACK = 100_000
+            try:
+                r2 = self.call(f"/api/matches/{t2['id']}/complete", {"key": self.key(), "summary": summary(mode="prorun", score=(101, 96), duration=2880, **big)})
+            finally:
+                server_app.TIME_SLACK = old_slack
+            self.assertEqual(r2["badge_progress"]["deadeye"], 60, "61 contested makes x 1.5, held at the per-game 60")
+            self.assertEqual(r2["badge_progress"]["catch_shoot"], 6)
+            got2 = {k: v["progress"] for k, v in r2["character"]["badges"].items()}
+            self.assertEqual(got2["catch_shoot"], 10, "4 + 6: both games counted")
+            self.assertEqual(got2["handles_for_days"], 4)
+            self.assertEqual(got2["deadeye"], 60)
+            self.assertEqual(r2["character"]["progression"]["prorun"]["games"], 2)
             # reset: the career is gone
             self.call("/api/prorun", {"key": self.key(), "character_id": cid, "career": None})
             self.assertIsNone(self.call(f"/api/prorun?character_id={cid}")["career"])
@@ -1172,6 +1192,31 @@ class V045ProgressionTests(unittest.TestCase):
             if room > 0:
                 builds.apply_cap_breakers(char, a, room)
         self.assertGreater(builds.overall(char["attributes"], char["position"]), 90)
+
+    def test_handles_for_days_and_deadeye_hall_of_fame_come_sooner(self):
+        # v0.4.8: Handles for Days is Hall of Fame at 115 games (was 160), Deadeye at 135 contested makes (was 220).
+        # A build already past the new mark moves up with its next game, whatever that game counted
+        self.assertEqual(progression.BADGES["handles_for_days"]["tiers"][3], 115)
+        self.assertEqual(progression.BADGES["deadeye"]["tiers"][3], 135)
+        for b in progression.BADGES.values():
+            self.assertEqual(list(b["tiers"]), sorted(set(b["tiers"])), b["name"])
+        char = builds.normalize({**builds.spec({"archetype": "sharpshooter", "height": 77}), "attributes": builds.starting_attributes(builds.spec({"archetype": "sharpshooter", "height": 77}))})
+        builds.hof_init(char)
+        char["badges"]["handles_for_days"] = {"progress": 120, "tier": 3}
+        char["badges"]["deadeye"] = {"progress": 140, "tier": 3}
+        char["badges"]["limitless"] = {"progress": 120, "tier": 2}  # (not changed: nothing to move up to)
+        caps = builds.badge_caps(char)
+        s = progression.validate_summary(summary(pts=2, fgm=1, fga=3), PARK)
+        out = progression.apply_progress(char, s, progression.rewards(s, PARK, char))
+        moved = {u["id"]: u["tier"] for u in out["badges_upgraded"]}
+        self.assertEqual(moved.get("deadeye"), min(4, caps["deadeye"]))
+        self.assertEqual(char["badges"]["handles_for_days"]["progress"], 121)
+        self.assertEqual(char["badges"]["handles_for_days"]["tier"], min(4, caps["handles_for_days"]))
+        self.assertNotIn("limitless", moved)
+        self.assertGreaterEqual(out["cap_breakers_awarded"], 5)
+        # and the next game doesn't move them again
+        out2 = progression.apply_progress(char, s, progression.rewards(s, PARK, char))
+        self.assertEqual([u["id"] for u in out2["badges_upgraded"]], [])
 
     def test_existing_hof_badges_are_credited_once(self):
         char = self._char()

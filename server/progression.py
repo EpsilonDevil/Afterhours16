@@ -28,7 +28,7 @@ REP_TIERS = ("Rookie", "Pro", "All-Star", "Superstar", "Legend")
 REP_THRESHOLDS = [int(round(160 * (i ** 1.55))) for i in range(21)]
 
 BADGES = {
-    "deadeye": {"name": "Deadeye", "group": "Shooting", "stat": "contested_makes", "tiers": (12, 40, 100, 220), "desc": "Contested jumpers are less affected by the defender."},
+    "deadeye": {"name": "Deadeye", "group": "Shooting", "stat": "contested_makes", "tiers": (12, 40, 100, 135), "desc": "Contested jumpers are less affected by the defender."},  # (v0.4.8: Hall of Fame at 135, was 220)
     "catch_shoot": {"name": "Catch & Shoot", "group": "Shooting", "stat": "tpm", "tiers": (15, 50, 120, 260), "desc": "Boost on jumpers taken right off the catch."},
     "corner_specialist": {"name": "Corner Specialist", "group": "Shooting", "stat": "tpm", "tiers": (25, 70, 160, 320), "desc": "Boost on corner threes."},
     "limitless": {"name": "Limitless Range", "group": "Shooting", "stat": "tpm", "tiers": (30, 90, 200, 400), "desc": "Extends range on deep threes."},
@@ -39,7 +39,7 @@ BADGES = {
     "acrobat": {"name": "Acrobat", "group": "Finishing", "stat": "fgm", "tiers": (45, 130, 300, 600), "desc": "Boost on heavily contested layups."},
     "ankle_breaker": {"name": "Ankle Breaker", "group": "Playmaking", "stat": "ankles", "tiers": (3, 12, 30, 70), "desc": "Dribble moves drop defenders more often."},
     "dimer": {"name": "Dimer", "group": "Playmaking", "stat": "ast", "tiers": (25, 80, 200, 420), "desc": "Teammates shoot better off your passes."},
-    "handles_for_days": {"name": "Handles for Days", "group": "Playmaking", "stat": "games", "tiers": (10, 30, 80, 160), "desc": "Dribble moves cost less stamina."},
+    "handles_for_days": {"name": "Handles for Days", "group": "Playmaking", "stat": "games", "tiers": (10, 30, 80, 115), "desc": "Dribble moves cost less stamina."},  # (v0.4.8: Hall of Fame at 115, was 160)
     "pick_pocket": {"name": "Pick Pocket", "group": "Defense", "stat": "stl", "tiers": (15, 50, 120, 250), "desc": "Better steal odds and faster reach recovery."},
     "interceptor": {"name": "Interceptor", "group": "Defense", "stat": "stl", "tiers": (20, 60, 150, 300), "desc": "Deflect and pick off more passes."},
     "rim_protector": {"name": "Rim Protector", "group": "Defense", "stat": "blk", "tiers": (10, 35, 90, 200), "desc": "More blocks at the rim."},
@@ -248,7 +248,13 @@ def apply_progress(char, summary, rw):
     cap_breakers_awarded = 0
     icon_unlocked = None
     caps = badge_caps(char)
-    for bid, inc in rw["badges"].items():
+    # (v0.4.8: a badge whose progress already reaches a lower requirement (Handles for Days and Deadeye's Hall of Fame)
+    # moves up with the next game, whatever that game counted for it)
+    todo = dict(rw["badges"])
+    for bid, b in badges.items():
+        if bid in BADGES and bid not in todo and isinstance(b, dict) and b.get("tier", 0) < min(caps.get(bid, 4), sum(1 for t in BADGES[bid]["tiers"] if b.get("progress", 0) >= t)):
+            todo[bid] = 0
+    for bid, inc in todo.items():
         b = badges.setdefault(bid, {"progress": 0, "tier": 0})
         b["progress"] += inc
         tiers = BADGES[bid]["tiers"]
