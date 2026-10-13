@@ -13,6 +13,9 @@ Online play, made simple and exact (full list in `PATCH_NOTES_v0.4.8.docx`):
 - **Less input delay:** round trips are measured finer and games keep less spare, so many start a tick quicker. A player whose inputs arrive late sends his own further ahead, so the others don't freeze. The server relays inputs with about a third less CPU.
 - **Fixes:** Name tags off really hides them, offensive three seconds hands the ball over at once, and Pro Run games count toward your max OVR and your badges again (long ones aren't thrown out).
 - **Quick patch:** Handles for Days is Hall of Fame at 115 games and Deadeye at 135 contested makes, and five new mixes (almost 8 hours) are on the soundtrack.
+- **Quick patch 2:**
+  - On 1v1 and 2v2 courts, every defensive rebound, steal and loose ball lights the arc, and nobody can shoot until the ball is taken back behind it.
+  - **Sharp Eye** (the Sharpshooter Icon badge) brings its own jumpshot base and release, for that build alone: a quick hop higher than any other base and a crane release at the top. Every green that goes in gets a backflip.
 - **The take-it-back glow:** in half-court games a red glow runs along the three-point line while you have to clear it.
 - **Layups and blocks:** an open green layup is a sure make with an 85+ Layup, more coverage shrinks a green's boost, and blocks are 3.75% stronger.
 
@@ -180,7 +183,7 @@ Instead of hosting on your PC (host.cmd and a forwarded port), you can rent a sm
 
 - **Rules:**
   - **3v3 is full court:** a jump ball, inbounds after scores, a 24-second shot clock.
-  - **2v2 and 1v1 are half court:** check ball at the top, take it back past the arc after a change of possession.
+  - **2v2 and 1v1 are half court:** check ball at the top. After any change of possession (a defensive rebound, a steal, a loose ball) the arc glows red: take it back past it before you shoot (until then the shot button only calls out TAKE IT BACK).
   - All park games are 2s and 3s, first to 11, 15 or 21.
   - **Park rules, with the contact calls kept:** reach-in and shooting fouls are called (no free throws; the offense keeps the ball) and offensive three seconds in the paint is a turnover; no backcourt rules in the park. Pro-Am and the Pro Run play under the full NBA book: defensive three seconds (a technical), charges, goaltending, the inbounder's 5 seconds and free throws on every shooting foul.
 - **Win streaks:** win and you can **Run it back**. Each straight win multiplies the VC *and* Rep you earn: ×1.0 for the first win, then +0.15 per win, up to ×2.5 at an 11-game streak. The results card shows your multiplier.
@@ -221,7 +224,7 @@ v0.4.4 adds 16 animation packages.
 - **Celebrations:** Goggles, Dust Off, Airplane, Mic Drop, Take a Bow, Roar.
 - **Layups:** Basic (free), Euro Step, Finger Roll, Scoop.
 - **Every package is its own** (the v0.4.5 final pass). Each jump-shot base carries the ball on its own path (Silk, the Daily Spin base, no longer shares Skyline's). Each release has its own follow-through, release time and launch angle, held for its full time even after you land. Each dunk package has a signature finish no other package has: the store shows it first and it's about half of the package's dunks in games. Rim Rocker, Contact Dunks, Showtime and High Flyer got new signature finishes. Each size-up has its own dribble height, width, rhythm and in-place combos.
-- **Icon badge animations** can't be bought at all: your archetype's Icon badge brings its own. Sharp Eye's jumper and fanned follow-through, Hash-Slinging's six-finish dunk package, Oprah's one-handed whip pass, The Clamp's two-hand clamp, The General's salute, Big Brother's cocked-arm swat, Open Arms' two-hand rebound rip and Sexy Red's post back-down.
+- **Icon badge animations** can't be bought at all: your archetype's Icon badge brings its own. Sharp Eye's own jumpshot base and crane release (with a backflip after every green that goes in; only the holder's build ever sees them), Hash-Slinging's six-finish dunk package, Oprah's one-handed whip pass, The Clamp's two-hand clamp, The General's salute, Big Brother's cocked-arm swat, Open Arms' two-hand rebound rip and Sexy Red's post back-down.
 
 **v0.4.5 look.** Jerseys are cut on curves — a U-shaped scoop in front, a shallower one in back, wide straps and deep armholes — with a rolled binding around the neck and armholes, so they no longer look strapless. Shorts have a rolled hem that folds back to the leg, so a driven knee can't show the inside of them. Players are a touch slimmer through the chest and waist. In the parks the shops are real buildings with a counter, stocked shelves, an awning and a worker inside; the trees, palms, benches, bins and street lamps were all rebuilt; and the sea at Harbor Point has moving swells, a surf line and sailboats with real hulls and sails.
 

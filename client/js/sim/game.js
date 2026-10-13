@@ -91,6 +91,8 @@ export const SCREEN = {
 // `grace` seconds after it, and you go up and finish. The wrong button, too early or no press is a mistimed jump
 // (`lateBy` seconds late, `hopK` of the height): the ball comes off your hands or sails over you (loose ball).
 export const OOP_QTE = { open: 0.25, grace: 0.05, hopK: 0.4, lateBy: 0.22 };
+// v0.4.8 the Sharp Eye backflip after a green: s from the start to the takeoff, the jump (m), the whole thing (s)
+export const FLIP = { takeoff: 0.16, h: 0.7, dur: 1.25 };
 export const COST = { shot: 0.009 * STAMINA_K, layup: 0.012 * STAMINA_K, dunk: 0.018 * STAMINA_K, pass: 0.004 * STAMINA_K, steal: 0.009 * STAMINA_K, jump: 0.015 * STAMINA_K, move: 0.024 * STAMINA_K, screen: 0.004 * STAMINA_K };
 export const GAME_SPEED = 1.15 * 1.0375 * (1 - 0.0185) * (1 - 0.0075) * (1 - 0.0375) * 1.025; // (v0.4.5 quick patch: −3.75%; v0.4.7.5 quick patch: +2.5%)
 // v0.4.5 final: the user's rebound / block jump assist (reach toward the ball, mid-air steer) is 3.75% stronger
@@ -133,6 +135,8 @@ export const SHOT_PATH = {
   dip: { py: 0.4, sx: 0.08, sz: 0.3, ks: 0.7, back: 0.018 },
   leaner: { py: 0.6, sx: 0.06, sz: 0.3, ks: 0.6, rz: 0.02, back: 0 },
   bicycle: { py: 0.59, sx: 0.1, sz: 0.2, ks: 0.6, back: 0.02 },
+  // v0.4.8 Sharp Eye (the Sharpshooter Icon's own): one smooth line from the hip straight up through a high set
+  sharpeye: { py: 0.62, sx: 0.02, sz: 0.14, line: true, back: 0.01 },
 };
 // v0.4.7.5 ankle-breaker reactions (the victim's animation) and how long each keeps him out of the play
 export const ANKLE_REACT = { sit: { dur: 1.4 }, slip: { dur: 1.3 }, tangle: { dur: 1.15 }, split: { dur: 1.5 }, lean: { dur: 1.0 }, stagger: { dur: 1.2 }, spun: { dur: 1.1 }, faceplant: { dur: 1.6 }, knee: { dur: 1.4 } };
@@ -660,7 +664,7 @@ export class Game {
     this.events.length = 0;
     for (const p of this.players) { p.prevX = p.x; p.prevZ = p.z; p.prevY = p.y; p.prevFacing = p.facing; p.landed = false; }
     this.ball.px = this.ball.x; this.ball.py = this.ball.y; this.ball.pz = this.ball.z;
-    if (this.over) { this.overT = (this.overT || 0) + dt; for (const p of this.players) { p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); return; }
+    if (this.over) { this.overT = (this.overT || 0) + dt; for (const p of this.players) { p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); this.startFlips(); return; }
     this.time += dt; this.tick++;
     for (const p of this.players) {
       if (p.human && !this.assist) { p.intent = this.multi ? this.multiIntent(p) : { ...this.humanIntent }; }
@@ -688,7 +692,31 @@ export class Game {
     this.interactions(dt);
     this.rules(dt);
     this.updateAIGrades(dt);
+    this.startFlips();
     if (this.multi && !this.assist) this.noteMeters(); // (v0.4.8: what each shooter's meter shows, for his release)
+  }
+
+  // v0.4.8 the Sharp Eye package (the Sharpshooter Icon's own jumpshot base and release): a green jumper of his that
+  // goes in is followed by a backflip, as soon as he's back on the floor and free (within a couple of seconds)
+  // (v0.4.8: a green that only Sharp Eye's 5% made: the Icon badge pops up, so the badge is seen doing its job)
+  sharpEyeSave(p, grade, err, win) {
+    if (p.icon !== 'sharp_eye' || grade !== 'excellent' || !(win > 0) || err == null) return;
+    const gk = this.greenK(p), without = win * (gk - (ICON_BADGES.sharp_eye.green || 0)) / gk;
+    if (Math.abs(err) * 1000 > without) this.emit({ type: 'badge', player: p.id, badge: 'sharp_eye', tier: 5, icon: true });
+  }
+  flipsFor(p) { return p.icon === 'sharp_eye' && (p.shotPkg?.style === 'sharpeye' || p.shotPkg?.release === 'sharpeye'); }
+  startFlips() {
+    for (const p of this.players) {
+      if (p.flipBy == null) continue;
+      if (this.time > p.flipBy) { p.flipBy = null; continue; }
+      const a = p.action;
+      if (p.airborne || this.ball.holder === p.id) continue;
+      if (a && !(a.type === 'catch' || a.type === 'celebrate' || (a.type === 'shoot' && a.released))) continue;
+      p.flipBy = null;
+      p.action = null; p.vx = p.vz = 0;
+      p.startAction('flip', FLIP.dur, { takeoff: FLIP.takeoff, h: FLIP.h, jumped: false });
+      this.emit({ type: 'backflip', player: p.id });
+    }
   }
 
   // ---------- v0.4.7.5 qp3 online: several humans ----------
@@ -896,17 +924,21 @@ export class Game {
       }
       if (this.phase === 'check') return;
       if (p.postUp && it.postMove) { this.startPostMove(p, it.postMove.move, it.postMove.side); return; }
+      // (v0.4.8: no shot before the ball's been taken back, in a half-court game: the press only gets the call; a pass
+      // or a move made meanwhile still goes)
+      const shoot = it.shoot === 'press' && !this.mustClear(p);
+      if (it.shoot === 'press' && !shoot) this.clearFirst(p);
       // (qp3) out of a post move he's facing the rim: the next press is the power finish (a dunk if he has one, else the
       // layup), or from further out a face-up jumper. Otherwise, posting up, it's a shot out of the post
-      if (it.shoot === 'press' && this.postFaceUp(p)) {
+      if (shoot && this.postFaceUp(p)) {
         const rim = this.rimFor(p.team), dR = Math.hypot(rim.x - p.x, rim.z - p.z), beat = !!p.postMoveBeat;
         p.postMoveEnd = null; this.startShot(p, { ...it, attack: dR < 3.4, sprint: false, forceJumper: dR >= 3.4 });
         const na = p.action; if (na && (na.type === 'layup' || na.type === 'dunk' || na.type === 'shoot')) { na.postFinish = { beat }; if (na.type === 'shoot') { na.post = 'turn'; na.postBeat = beat; } }
         this.emit({ type: 'postfinish', player: p.id, kind: na?.type, beat });
         return;
       }
-      if (it.shoot === 'press' && p.postUp && !it.attack) { this.startPostShot(p, it.postShot || this.postShotFor(p, it)); return; }
-      if (it.shoot === 'press') { this.startShot(p, it); return; }
+      if (shoot && p.postUp && !it.attack) { this.startPostShot(p, it.postShot || this.postShotFor(p, it)); return; }
+      if (shoot) { this.startShot(p, it); return; }
       if (it.pass) { this.startPass(p, it.pass); return; }
       if (it.move && b.mode === 'dribble') { this.startMove(p, it.move); return; }
       // (v0.4.5: any move out of triple threat starts the dribble, as long as he hasn't already picked it up)
@@ -939,6 +971,7 @@ export class Game {
         case 'post': lock = 1; break; // (qp3: a post move drives him)
         case 'catch': lock = 0.12; break;
         case 'celebrate': lock = 0.0; break;
+        case 'flip': lock = 1; break;
       }
     }
     if (has && this.ball.mode === 'held' && p.dribble.used) lock = Math.max(lock, 0.92); // picked up dribble: pivot only
@@ -946,7 +979,7 @@ export class Game {
     if (a && (a.type === 'layup' || a.type === 'dunk' || a.type === 'oop' || a.type === 'move' || a.type === 'post')) this.drive(p, a, dt);
     if (a && a.type === 'pass' && a.face != null && !a.released) p.intent.face = a.face; // (turning to the receiver)
     if (a && a.type === 'shoot' && a.hopVX != null && !a.jumped) { const on = a.t < a.hopEnd; p.vx = on ? a.hopVX : p.vx * 0.6; p.vz = on ? a.hopVZ : p.vz * 0.6; }
-    if (a && a.type === 'hang') { p.vx = p.vz = 0; }
+    if (a && (a.type === 'hang' || a.type === 'flip')) { p.vx = p.vz = 0; }
     p.move(dt, has, lock);
     if (a && a.type === 'hang') {
       const k = Math.min(1, dt * 16);
@@ -1169,8 +1202,7 @@ export class Game {
     const jumpH = p.phys.vertical * (close ? 0.4 : pkg.jumpK * 0.52) * (dRim > 7 ? 0.9 : 1) * (0.85 + 0.15 * p.stamina);
     const tUp = Math.sqrt(2 * jumpH / GRAVITY);
     const a = p.startAction('shoot', tRel + 0.55, {
-      icon: p.icon === 'sharp_eye' ? 'sharpeye' : null,
-      tRel, takeoff: Math.max(close ? 0.1 : 0.2, tRel - tUp * 0.9), jumpH, dRim,
+      tRel, takeoff: Math.max(close ? 0.1 : 0.2, tRel - tUp * (close ? 0.9 : pkg.apexK ?? 0.9)), jumpH, dRim, // (v0.4.8: Sharp Eye lets go right at the top)
       kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback || hustle === 'runfade', stepback, startX: p.x, startZ: p.z, moving: p.speed, hustle,
       catchShoot: this.lastPass && this.lastPass.to === p.id && this.time - this.lastPass.time < 1.2 && !p.dribble.used && this.ball.mode === 'held',
     });
@@ -1287,6 +1319,8 @@ export class Game {
       type = 'lob';
       if (p.human && !this.assist) this.feedMsg('Too far out for an alley-oop: lob pass');
     }
+    // (v0.4.8: and no alley-oop before the ball's been taken back: it goes up as a lob)
+    if (type === 'alley' && this.mustClear(p)) { type = 'lob'; if (p.human && !this.assist) this.clearFirst(p); }
     const flick = type === 'chest' && p.speed > 3.5;
     const P = PASS[type] || PASS.chest;
     p.spend(COST.pass); this.endMoveChain(p);
@@ -1746,6 +1780,12 @@ export class Game {
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
+      case 'flip': {
+        // v0.4.8 the Sharp Eye backflip: a quick load, straight up and over, and a soft landing
+        if (!a.jumped && a.t >= a.takeoff) { a.jumped = true; p.jump(a.h); p.vx = p.vz = 0; }
+        if (a.t >= a.dur && !p.airborne) p.action = null;
+        break;
+      }
       case 'stumble': case 'pumpfake': case 'catch': case 'celebrate': case 'bump': case 'ftwait':
         if (a.t >= a.dur) p.action = null;
         break;
@@ -1794,6 +1834,7 @@ export class Game {
     // and (v0.4.7.5 quick patch) a non-shooter's green from three, which is a boost
     const sure = grade === 'excellent' && W.sure;
     if (sure) chance = 1;
+    this.sharpEyeSave(p, grade, err, win);
     const foul = this.checkShootingFoul(p, contest, 'jumper');
     const made = !smothered && (sure || this.rng.next() < chance);
     const plan = S.planShot(this.rng, P, rim, side, made, a.post ? POST_SHOTS[a.post].arc : a.kind === 'close' ? 58 : p.shotPkg.arc, { halfOnly: this.half, surface: b.surface, swish: sure, guarantee: sure, bad: grade === 'vearly' || grade === 'vlate', bank: a.kind === 'close' && (a.post !== 'hook' || Math.abs(p.x) > 0.6) });
@@ -1860,6 +1901,7 @@ export class Game {
     // Layup, and for the AI's greens as well as yours)
     const sure = grade === 'excellent' && a.type === 'layup' && !a.oop && !smothered && S.layupSure(guard, (p.raw || p.ratings).layup);
     if (sure) chance = 1;
+    if (W) this.sharpEyeSave(p, grade, err, W.total);
     const foul = this.checkShootingFoul(p, contest, 'layup');
     const made = !smothered && (sure || this.rng.next() < chance);
     const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8, guarantee: sure });
@@ -2589,6 +2631,8 @@ export class Game {
         this.deadBall(1.4, () => this.startCheck(1 - team));
         return;
       }
+      // (v0.4.8: a green jumper of a Sharp Eye package holder that goes in: the backflip, once he's down)
+      if (shooter && shooter.team === team && !info.ft && info.grade === 'excellent' && info.type === 'jumper' && this.flipsFor(shooter)) shooter.flipBy = this.time + 2;
       if (this.practice) {
         this.emit({ type: 'score', team, pts, player: shooter?.id, kind: info.type, three: !!info.three, swish: e.clean });
         if (shooter) { shooter.stats.pts += pts; if (!info.ft) shooter.stats.fgm++; if (info.three) shooter.stats.tpm++; }
@@ -2633,6 +2677,16 @@ export class Game {
     const b = this.ball;
     if (b.holder >= 0) { b.holder = -1; b.mode = 'dead'; }
     else if (b.mode === 'flight') { b.mode = 'dead'; }
+  }
+
+  // v0.4.8: in a half-court game, after a defensive rebound, a steal or a loose ball the defense comes up with, the ball
+  // has to be taken back past the arc before the team can go at the rim: no shot, layup, dunk or alley-oop until then
+  mustClear(p) { return this.mode === 'park' && this.half && !!this.needsClear[p.team]; }
+  // (a press that wants a shot before the ball is cleared: nothing happens but the call, once in a while)
+  clearFirst(p) {
+    if ((p.clearCallT ?? -9) > this.time - 0.8) return;
+    p.clearCallT = this.time;
+    this.emit({ type: 'mustClear', player: p.id, team: p.team });
   }
 
   changePossessionTo(p, reason) {
@@ -2735,13 +2789,13 @@ export class Game {
             const passer = this.players[info.from];
             passer.stats.tov++; p.stats.stl++;
             this.emit({ type: 'steal', player: p.id, victim: passer.id, intercept: true });
-            this.catchBall(p);
             this.changePossessionTo(p, 'steal');
+            this.catchBall(p);
             return;
           }
           continue;
         }
-        if (isT && info.type === 'alley' && p.action?.type === 'oop' && p.airborne) {
+        if (isT && info.type === 'alley' && p.action?.type === 'oop' && p.airborne && !this.mustClear(p)) {
           this.catchOop(p);
           return;
         }
@@ -2796,6 +2850,8 @@ export class Game {
         const w = cands[0].p;
         const wasShot = kind === 'shot' || (b.info && b.info.shooter != null && !b.info.poke);
         const offensive = b.info && b.info.team === w.team;
+        const change = w.team !== this.possession;
+        if (change) this.changePossessionTo(w, wasShot ? 'rebound' : 'recover');
         this.catchBall(w);
         if (wasShot && !(b.info && b.info.ft)) {
           w.stats.reb++; if (offensive) w.stats.oreb++;
@@ -2803,8 +2859,7 @@ export class Game {
         } else {
           this.emit({ type: 'recover', player: w.id });
         }
-        if (w.team !== this.possession) this.changePossessionTo(w, 'rebound');
-        else if (!this.half && offensive) this.shotClock = Math.max(this.shotClock, 14);
+        if (!change && !this.half && offensive) this.shotClock = Math.max(this.shotClock, 14);
         if (this.phase === 'tip' || this.phase === 'inbound') this.phase = 'live';
         return;
       }
@@ -2822,7 +2877,10 @@ export class Game {
     if (!p.action || p.action.type === 'catch' || p.action.type === 'rebound' || p.action.type === 'block') {
       if (!p.airborne) { p.action = null; p.startAction('catch', 0.2, {}); }
     }
-    if (this.possession !== p.team) { this.possession = p.team; this.shotClock = 24; }
+    // (v0.4.8: a change of hands goes through changePossessionTo, so in a half-court game the ball has to be taken back
+    // after a defensive rebound, a loose ball the defense comes up with or a pass it picks off; it used to set the
+    // possession straight here, and the take-it-back rule only ever came in after a clean steal)
+    if (this.possession !== p.team) this.changePossessionTo(p, 'catch');
     if ((this.phase === 'inbound' && p !== this.inbounder) || this.phase === 'tip') { this.phase = 'live'; this.emit({ type: 'live' }); }
     if (this.practice && p.team === 1) this.practiceReturn(0.9);
     if (this.isAI(p)) { const m = this.ai.m(p); m.next = Math.max(m.next, 0.35 + this.rng.range(0, 0.45)); m.plan = null; }
@@ -3356,6 +3414,7 @@ export class Game {
           a.released = true;
           const W = this.ftWindow(p), win = W.total;
           const grade = a.aiGrade && this.isAI(p) ? a.aiGrade : S.gradeFromWindow(a.releaseAt - a.tRel, win);
+          if (!a.aiGrade) this.sharpEyeSave(p, grade, a.releaseAt - a.tRel, win);
           let chance = S.finalChance({ type: 'ft', d: 4.19, a: p.ratings, grade, stamina: p.stamina, badges: p.badges, clutch: this.isClutch(p.team) });
           if (grade === 'excellent') chance = 1;
           const made = grade === 'excellent' || this.rng.next() < chance;

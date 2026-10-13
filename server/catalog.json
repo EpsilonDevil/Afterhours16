@@ -3532,6 +3532,26 @@
   }
  },
  {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "id": "js_base_sharpeye",
+  "name": "Jumpshot Base: Sharp Eye",
+  "slot": "jumpshot",
+  "price": 0,
+  "set_height": 1.15,
+  "push": 0.05,
+  "jump": 1.0,
+  "apex": 1.0,
+  "style": "sharpeye",
+  "description": "The Sharpshooter Icon's own: an effortless quick hop that takes him higher than any other base, and the ball goes at the very top. Comes with the Sharp Eye Icon badge, for that build only; it cannot be bought.",
+  "exclusive": "icon",
+  "icon": "sharp_eye",
+  "secret": true,
+  "v048": true
+ },
+ {
   "id": "release_flickup",
   "name": "Flick Up Release",
   "category": "animation",
@@ -3779,6 +3799,25 @@
   "family": "release",
   "rep_required": 0,
   "v0475": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "id": "release_sharpeye",
+  "name": "Sharp Eye Release",
+  "slot": "release",
+  "price": 0,
+  "release_seconds": 0.605,
+  "arc": 55.75,
+  "family": "release",
+  "follow": "crane",
+  "description": "Butter at the apex: both wrists arched over like a crane dipping into a bucket, and held there all the way down. A green that goes in gets a backflip. Comes with the Sharp Eye Icon badge, for that build only; it cannot be bought.",
+  "exclusive": "icon",
+  "icon": "sharp_eye",
+  "secret": true,
+  "v048": true
  },
  {
   "category": "animation",

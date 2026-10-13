@@ -613,6 +613,43 @@ class ApiTests(unittest.TestCase):
         finally:
             self.opener = prev
 
+    def test_sharp_eye_package_is_the_holders_alone(self):
+        # v0.4.8: the Sharpshooter Icon's jumpshot base and release: never sold (and never listed: "secret"), put on at
+        # the unlock or, for a build that already held Sharp Eye, once on its next profile (it can change them after),
+        # and a build without the badge can't wear them even though the account owns them
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        prev, self.opener = self.opener, opener
+        try:
+            prof = self.call("/api/register", {"username": "sharp_" + uuid.uuid4().hex[:6], "password": "longpassword1"})
+            for iid in ("js_base_sharpeye", "release_sharpeye"):
+                self.assertNotIn(iid, prof["inventory"])
+                it = server_app.CATALOG[iid]
+                self.assertEqual((it["exclusive"], it["icon"], it["secret"], it["price"]), ("icon", "sharp_eye", True, 0))
+            build = {"name": "Sharp Guy", "position": "SG", "archetype": "sharpshooter", "height": 77, "weight": 195, "wingspan": 80}
+            cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
+            self.call("/api/store/purchase", {"key": self.key(), "item_id": "js_base_sharpeye", "character_id": cid}, expect=400)
+            self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "jumpshot", "item_id": "js_base_sharpeye"}, expect=400)
+            aid = self.service.db.query("SELECT account_id FROM characters WHERE id=?", (cid,))[0][0]
+            with self.service.db.transaction() as c:
+                char = json.loads(c.execute("SELECT data FROM characters WHERE id=?", (cid,)).fetchone()[0]); char["icon_badge"] = "sharp_eye"
+                c.execute("UPDATE characters SET data=? WHERE id=?", (json.dumps(char), cid))
+            prof = self.call("/api/me")
+            self.assertIn("js_base_sharpeye", prof["inventory"]); self.assertIn("release_sharpeye", prof["inventory"])
+            ch = next(x for x in prof["characters"] if x["id"] == cid)
+            self.assertEqual((ch["equipment"]["jumpshot"], ch["equipment"]["release"]), ("js_base_sharpeye", "release_sharpeye"), "put on once")
+            # he goes back to his own jumper: it stays that way
+            self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "jumpshot", "item_id": "js_base_standard"})
+            ch = next(x for x in self.call("/api/me")["characters"] if x["id"] == cid)
+            self.assertEqual(ch["equipment"]["jumpshot"], "js_base_standard")
+            self.assertEqual(self.call(f"/api/characters/{cid}/equip", {"key": self.key(), "slot": "jumpshot", "item_id": "js_base_sharpeye"})["character"]["equipment"]["jumpshot"], "js_base_sharpeye")
+            # another build on the account: not his
+            build2 = {"name": "Other Guy", "position": "PF", "archetype": "glass_cleaner", "height": 81, "weight": 235, "wingspan": 85}
+            cid2 = self.call("/api/characters", {"key": self.key(), "build": build2})["character"]["id"]
+            self.call(f"/api/characters/{cid2}/equip", {"key": self.key(), "slot": "release", "item_id": "release_sharpeye"}, expect=400)
+            self.assertTrue(aid)
+        finally:
+            self.opener = prev
+
     def test_block_packages_are_in_the_store_with_the_height_break(self):
         # v0.4.7.5 qp3 (revised): five Block Packages, one a tier; the tall need a tier less of Block, the small a tier more
         pk = [i for i in server_app.CATALOG.values() if i.get("slot") == "block"]
@@ -643,7 +680,11 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(char["equipment"]["dunk"], "dunk_hash_slinging")
             self.assertEqual(self.service.grant_icon_items(c, aid, "hash_slinging", char, equip=True), ["dunk_hash_slinging"])  # idempotent
             self.assertEqual(c.execute("SELECT COUNT(*) FROM inventory WHERE account_id=?", (aid,)).fetchone()[0], 1)
-            self.assertEqual(self.service.grant_icon_items(c, aid, "sharp_eye", {"equipment": {}}, equip=True), [])  # no items yet for the others
+            # (v0.4.8: Sharp Eye brings its own jumpshot base and release, put on at the unlock)
+            se = {"equipment": {"jumpshot": "js_base_standard", "release": "release_classic"}}
+            self.assertEqual(sorted(self.service.grant_icon_items(c, aid, "sharp_eye", se, equip=True)), ["js_base_sharpeye", "release_sharpeye"])
+            self.assertEqual((se["equipment"]["jumpshot"], se["equipment"]["release"]), ("js_base_sharpeye", "release_sharpeye"))
+            self.assertEqual(self.service.grant_icon_items(c, aid, "oprah", {"equipment": {}}, equip=True), [])  # no items yet for the others
             self.assertEqual(self.service.grant_icon_items(c, aid, None), [])
 
     def test_bug_reports_land_in_a_text_file_next_to_the_exe(self):

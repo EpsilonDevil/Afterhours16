@@ -126,3 +126,8 @@ export function capBadges(tiers = {}, b = null) {
 export const hofCapacity = b => Object.values(badgeCaps(b)).filter(v => v >= 4).length;
 // Hall of Fame badges needed for the Icon badge: the 7th, or every one the build can reach if that's fewer
 export const iconNeed = b => Math.max(1, Math.min(HOF_LIMIT, hofCapacity(b)));
+
+// v0.4.8: an Icon badge's secret package (the Sharp Eye jumpshot base and release) is never in the store, and shows in
+// the Inventory only for the build that holds that Icon badge (the server only lets that build put it on: app.eligible)
+export const inStore = i => !i.secret;
+export const forBuild = (i, c) => !i.secret || (!!c && c.icon_badge === i.icon);

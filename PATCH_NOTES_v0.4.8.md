@@ -96,9 +96,33 @@ Every screen runs the same game in lockstep. Players and the ball are exactly wh
 
 ---
 
+## Quick patch 2 (Oct 13)
+
+### Take it back (1v1 and 2v2 courts)
+- **The arc lights up after every change of hands.** In half-court games, a defensive rebound, a pass picked off, a steal or a loose ball the defense comes up with now all mean the ball has to go back behind the three-point line, and the red glow runs along the line until it does. Before, only a clean steal set it off, because a rebound or a catch changed hands without the rule. An offensive rebound still doesn't need clearing.
+- **No shot until it's cleared.** Pressing shoot (or attack) before the ball is behind the arc does nothing but call out **TAKE IT BACK**, and the arc flares up. A lob thrown for an alley-oop before the clear goes up as a plain lob, and it can't be finished as an oop. Passes and dribble moves work as normal while you take it back. The old safety net stays in place: a basket that somehow goes in without the clear is still waved off.
+- **The AI takes it back too.** In 1v1 and 2v2 games played out to the end, neither side ever started a shot before clearing.
+- The 3v3 courts are full-court games, so the rule doesn't apply there.
+
+### Sharp Eye (the Sharpshooter Icon badge)
+- **5% bigger green window on every shot, everywhere on the court.** This was already in place for jumpers, free throws and layups. It now also counts on the hardest shots, where the window had bottomed out at its minimum. When a green only happened thanks to that 5%, the Sharp Eye badge pops up so you can see it working. A smothered shot still has no window at all, whatever adds to it.
+- **The Sharp Eye jumpshot package, for the holder alone:**
+  - **Jumpshot Base: Sharp Eye.** An effortless quick hop: barely a dip, feet together, and up higher than any other base in the game. It's the quickest base there is, and the ball goes right at the very top of the jump.
+  - **Sharp Eye Release.** Butter at the apex: both wrists arch all the way over, like a crane dipping into a bucket, eased into slowly and held all the way down.
+  - **The backflip.** A green jumper of yours that goes in is followed by a backflip as soon as you're back on the floor. It happens on every screen in online games too.
+- **Only that build ever sees them.** They're never in the store or anywhere else, and they can't be bought. They show in the Inventory (and My Player's animations) only for the build that holds Sharp Eye. Another build on the same account can't see them or put them on.
+- **Getting them:**
+  - They're put on the moment the badge unlocks.
+  - A build that already holds Sharp Eye gets them put on once, the next time the game loads. You can switch back to your own jumper in the Inventory.
+  - An AI Sharp Eye holder shoots the package as well.
+- The Icon badge's description now names what it unlocks. (The old "flashy" touches it used to add to any jumper are replaced by the package.)
+
+---
+
 ## Technical (for the repository)
 
 - Version 0.4.8 (`server/app.py`, `package.json`). Database schema 12 (`server/migrations/012_v0475_hub_offline.sql`: playing offline is remembered).
 - New: `online.json` at the root; `tests/v048.test.mjs` (8 tests: release grading under a closeout for jumpers and layups, the meter stopping at the let-go, exact dl, lagged timing, meter/release parity, round trips, the server's send path); `tests/v0475qp15.test.mjs` (7: name tags, three seconds, the glow, Pro Run max OVR, layups, blocks, the online pieces); Python tests for the direct send path, a long Pro Run game, a climbing max OVR and online.json.
 - Quick patch: `server/progression.py` (`BADGES` handles_for_days and deadeye tiers; `apply_progress` also moves up a badge whose progress already meets a lower requirement), `client/js/ui/modes.js` and `client/css/menus.css` (the results' badge line as before), `client/audio/music/` (18 new parts, `tracks.json`), tests (`test_server.py`: two Pro Run games through the service, the new Hall of Fame marks; `v048.test.mjs`: the new mixes).
-- Tests: 241 Node and 75 Python.
+- Quick patch 2: `client/js/sim/game.js` (`catchBall` changes hands through `changePossessionTo`; `mustClear`/`clearFirst` hold back shots and alley-oops; `FLIP`, `startFlips`, `flipsFor`, the `flip` action; `sharpEyeSave`; `SHOT_PATH.sharpeye`; the takeoff at `apexK`), `client/js/sim/shots.js` (`BASE_FEEL.sharpeye`, `SHARP_EYE_PKG`, `jumpshotPackage` plays an Icon's package only for its holder, the window floor scales with Sharp Eye), `client/js/sim/player.js` (AI holders shoot the package), `client/js/char/animator.js` (the base, the crane release, the backflip pose, `flipAngle`), `client/js/char/view.js` (`placeFlipped`), `client/js/sim/builds.js` (`inStore`, `forBuild`), the store, Inventory and My Player lists, `client/js/game/session.js` (TAKE IT BACK, the glow flare, the crowd on a backflip), `server/catalog.json` (`js_base_sharpeye`, `release_sharpeye`: `exclusive` icon, `secret`), `server/app.py` (the package put on once for builds that already hold Sharp Eye), the Icon badge's description in `server/progression.py` and `client/js/sim/badges.js`. Tests: `tests/v048qp2.test.mjs` (6), `test_server.py` (the package is the holder's alone; the unlock puts it on), `stage7`/`v0475` counts.
+- Tests: 247 Node and 76 Python.

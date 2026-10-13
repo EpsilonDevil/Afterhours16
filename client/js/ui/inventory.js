@@ -4,7 +4,7 @@ import { $, $$, esc, money } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
 import { playGreenSound } from '../core/greensound.js';
-import { CATS, catTabs, inCat, swatch, tryOn, equip, itemExtra, optionalSlot, catOf } from './store.js';
+import { CATS, catTabs, inCat, swatch, tryOn, equip, itemExtra, optionalSlot, catOf, forBuild } from './store.js';
 
 export function render(app, root, params = {}) {
   const c = app.char();
@@ -12,7 +12,7 @@ export function render(app, root, params = {}) {
   let cat = params.cat || (params.sel && app.catalog[params.sel] ? catOf(app.catalog[params.sel]) : 'top'), sel = params.sel || null;
   const draw = () => {
     const inv = new Set(app.profile.inventory);
-    const owned = Object.values(app.catalog).filter(i => inv.has(i.id));
+    const owned = Object.values(app.catalog).filter(i => inv.has(i.id) && forBuild(i, c));
     const count = k => owned.filter(i => inCat(i, k)).length;
     // equipped first, then the rest by name
     const items = owned.filter(i => inCat(i, cat)).sort((a, b) => (c.equipment[b.slot] === b.id) - (c.equipment[a.slot] === a.id) || a.name.localeCompare(b.name));

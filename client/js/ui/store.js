@@ -21,6 +21,8 @@ export const GROUPS = ['Apparel', 'Animations', 'Green Releases'];
 const ACC_SLOTS = new Set(['socks', 'headband', 'sleeve', 'leg_sleeve', 'wristband', 'knee_pad', 'chain']);
 export const inCat = (i, cat) => cat === 'accessory' ? ACC_SLOTS.has(i.slot) : i.slot === cat;
 export const catOf = i => (ACC_SLOTS.has(i.slot) ? 'accessory' : i.slot);
+import { inStore, forBuild } from '../sim/builds.js';
+export { inStore, forBuild };
 // the slots you can leave empty (everything else always has something on)
 export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup', 'post', 'block'].includes(i.slot) && !(i.category === 'green' && i.price === 0 && !i.exclusive);
 
@@ -35,7 +37,7 @@ export function render(app, root, params = {}) {
   let cat = params.cat || 'top', filter = params.filter || 'all', sel = params.sel || null;
   const draw = () => {
     const inv = new Set(app.profile.inventory);
-    const items = Object.values(app.catalog).filter(i => inCat(i, cat)).filter(i => filter === 'all' || (filter === 'owned' ? inv.has(i.id) : !inv.has(i.id))).sort((a, b) => a.price - b.price || a.name.localeCompare(b.name));
+    const items = Object.values(app.catalog).filter(i => inStore(i) && inCat(i, cat)).filter(i => filter === 'all' || (filter === 'owned' ? inv.has(i.id) : !inv.has(i.id))).sort((a, b) => a.price - b.price || a.name.localeCompare(b.name));
     if (!sel || !items.find(i => i.id === sel)) sel = items[0]?.id || null;
     const item = sel ? app.catalog[sel] : null;
     root.innerHTML = `<section class="panel store">

@@ -5,6 +5,17 @@ import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, 
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
 
+// v0.4.8 the Sharp Eye backflip: the whole body turned head over heels (angle about his own left-right axis; negative
+// is backwards) round a point py up from his feet, then placed and turned to face where he faces
+const _qy = [0, 0, 0, 1], _qx = [0, 0, 0, 1], _q = [0, 0, 0, 1], _p = [0, 0, 0];
+export function placeFlipped(o, x, y, z, yaw, angle, py) {
+  M.qaxis(_qy, 0, 1, 0, yaw); M.qaxis(_qx, 1, 0, 0, angle); M.qmul(_q, _qy, _qx);
+  // (the pivot stays put: what the turn moves it by, taken back off, in the world)
+  const dy = py * (1 - Math.cos(angle)), dz = -py * Math.sin(angle);
+  _p[0] = x + dz * Math.sin(yaw); _p[1] = y + dy; _p[2] = z + dz * Math.cos(yaw);
+  return M.m4compose(o, _p, _q);
+}
+
 // textures shared by every athlete on a GL context (detail normals, body skin per tone)
 const shared = new WeakMap();
 function sharedTex(ctx, key, make, opts) {
@@ -153,7 +164,8 @@ export class AthleteView {
   // Solve pose and place in world
   update(pose, x, y, z, yaw, opts) {
     this.rig.solve(pose, opts);
-    M.m4fromYaw(this.world, x, y, z, yaw);
+    if (opts?.flip) placeFlipped(this.world, x, y, z, yaw, opts.flip, (opts.flipY ?? 0.5) * this.H);
+    else M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
     const c = [x, y + this.H * 0.5, z];
     for (const m of this.meshes) { m.boundsOverride.center = c; }

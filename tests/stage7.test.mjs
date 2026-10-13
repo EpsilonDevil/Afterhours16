@@ -136,8 +136,10 @@ async function tracer() {
   const rigFor = build => { const model = new AthleteModel(build, {}, 1), rig = new Rig(model); return { model, rig, view: { H: model.d.H, model, rig, y: 0, update(pose, x, y, z, yaw, o) { rig.solve(pose, o); this.y = y; } } }; };
   const sample = (rig, y, ball) => [...J.map(j => [rig.pos[j][0], rig.pos[j][1] + y, rig.pos[j][2]]), ball ? [ball.x, ball.y, ball.z] : [0, -1, 0]];
   // the store preview
+  // (v0.4.8: an Icon badge's own package plays only for a holder of that badge: traced on one)
+  const iconOf = equip => { for (const id of Object.values(equip)) if (catalog[id]?.icon) return { icon_badge: catalog[id].icon }; return {}; };
   const preview = (equip, kind, opts, dur) => {
-    const build = { ...base, equipment: { ...base.equipment, ...equip } };
+    const build = { ...base, equipment: { ...base.equipment, ...equip }, ...iconOf(equip) };
     const sim = new PreviewSim(); sim.setPlayer(build, catalog); sim.setPreview(kind, opts);
     const { view } = rigFor(build), anim = new Animator(view), out = [];
     for (let i = 0; i < Math.round(dur * 60); i++) {
@@ -152,6 +154,7 @@ async function tracer() {
     const rng = new RNG(3), me = makeTeam(rng, 1, { catalog, level: 0.8 })[0];
     Object.assign(me.build, { height: 78, weight: 210, wingspan: 82, hand: 'R' });
     me.build.equipment = { ...me.build.equipment, ...base.equipment, ...equip };
+    Object.assign(me.build, iconOf(equip));
     me.human = true;
     const g = new Game({ mode: 'practice', seed: 3, rosters: [[me], []], catalog });
     const p = g.players[0], { view } = rigFor(me.build), anim = new Animator(view), out = [];

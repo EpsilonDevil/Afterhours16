@@ -37,11 +37,19 @@ export const BASE_FEEL = {
   heel: { speed: 0.99, win: 1.0 }, turbo: { speed: 0.9, win: 0.95 }, onestep: { speed: 1.0, win: 1.03 }, tilt: { speed: 1.02, win: 0.96 },
   catapult: { speed: 1.05, win: 0.98 }, statue: { speed: 1.04, win: 1.04 }, bounce: { speed: 0.97, win: 1.02 }, whip: { speed: 0.95, win: 0.97 },
   dip: { speed: 1.06, win: 1.05 }, leaner: { speed: 0.98, win: 0.99 }, bicycle: { speed: 1.03, win: 1.0 },
+  // v0.4.8 Sharp Eye (the Sharpshooter Icon's own): the quickest hop there is, an even window
+  sharpeye: { speed: 0.9, win: 1.0 },
 };
-export function jumpshotPackage(build, catalog) {
+// v0.4.8 the Sharp Eye package: the Sharpshooter Icon badge's own jumpshot base and release (server/catalog.json:
+// "exclusive": "icon", "secret": true: never in the store, only in the holder's inventory)
+export const SHARP_EYE_PKG = { jumpshot: 'js_base_sharpeye', release: 'release_sharpeye' };
+// icon: the Icon badge he holds (an AI player's comes with his entry, not his build). v0.4.8: an Icon badge's own base or
+// release (the Sharp Eye package) only ever plays for someone who holds that badge: anyone else shoots the standard
+export function jumpshotPackage(build, catalog, icon = build?.icon_badge) {
   const eq = build.equipment || {};
-  const base = catalog?.[eq.jumpshot] || null;
-  const rel = catalog?.[eq.release] || null;
+  const mine = i => (i && (!i.icon || i.icon === icon) ? i : null);
+  const base = mine(catalog?.[eq.jumpshot]);
+  const rel = mine(catalog?.[eq.release]);
   const relSec = rel?.release_seconds ?? 0.72;
   const style = base?.style || 'standard', feel = BASE_FEEL[style] || BASE_FEEL.standard;
   const setH = base?.set_height ?? 1.05;
@@ -51,6 +59,7 @@ export function jumpshotPackage(build, catalog) {
     setH, // ×H
     push: base?.push ?? 0.1,
     jumpK: base?.jump ?? 0.75,
+    apexK: base?.apex ?? 0.9, // (where in the rise he lets go: 0.9 just before the top, 1 right at it)
     relK: 0.93 + (setH - 1.05) * 0.3, // release height ×reach: high-set bases let it go higher
     winK: feel.win,
     style,
@@ -145,7 +154,8 @@ export function greenWindowMs(attr, badges = {}, ctx = {}) {
   if (ctx.catchShoot && b.catch_shoot) w *= 1 + 0.05 * bk(b, 'catch_shoot');
   if (ctx.corner && b.corner_specialist) w *= 1 + 0.05 * bk(b, 'corner_specialist');
   if ((ctx.d || 0) > DEEP_D) return Math.max(0, w * (1 - deepK(ctx.d))) * GREEN_K; // (no 9 ms floor out there)
-  return Math.max(9, w) * GREEN_K;
+  // (v0.4.8: the floor grows with Sharp Eye / a takeover too: their 5% counts on the hardest shots as well)
+  return Math.max(9 * (ctx.greenK || 1), w) * GREEN_K;
 }
 
 // which hand finishes a layup: the far hand when a defender is on one side or at the rim (the animator draws it)

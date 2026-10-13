@@ -1,7 +1,7 @@
 // MyPlayer: attribute upgrades (VC), badges, appearance, animations, player management.
 import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor } from './common.js';
 import { ATTR_GROUPS, ATTR_LABEL, ATTRS, overall } from '../sim/ratings.js';
-import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted } from '../sim/builds.js';
+import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild } from '../sim/builds.js';
 import { badgeSVG, iconBadgeSVG } from './badgeart.js';
 import { appearanceEditor } from './builder.js';
 import { settings, saveSettings } from '../core/settings.js';
@@ -179,7 +179,7 @@ function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
     ${ANIM_SLOTS.map(([slot, label, preview]) => {
-      const owned = Object.values(app.catalog).filter(i => i.slot === slot && inv.has(i.id));
+      const owned = Object.values(app.catalog).filter(i => i.slot === slot && inv.has(i.id) && forBuild(i, c));
       const cur = c.equipment[slot];
       return `<div class="anim-slot"><h5>${label}</h5><div class="chips">${owned.map(i => `<button class="chip ${cur === i.id ? 'on' : ''}" data-equip="${slot}" data-id="${i.id}">${esc(i.name.split(': ').pop())}</button>`).join('') || '<span class="muted small">None owned</span>'}
         <button class="chip ghost" data-preview="${preview}" data-slot="${slot}">Preview ▶</button></div></div>`;

@@ -197,7 +197,20 @@ class Service:
         with self.db.lock:
             conn = self.db.conn
             account = conn.execute("SELECT id,username,created_at FROM accounts WHERE id=?", (account_id,)).fetchone()
-            chars = [self.describe(builds.normalize(json.loads(r[0]))) for r in conn.execute("SELECT data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,))]
+            rows = conn.execute("SELECT id, data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,)).fetchall()
+            chars = []
+            for cid, data in rows:
+                char = builds.normalize(json.loads(data))
+                # v0.4.8: a build that already held Sharp Eye gets the Icon's new package (jumpshot base and release)
+                # put on once, as a build that unlocks it now does (it can change them back in its Inventory)
+                if char.get("icon_badge") and not char.get("icon_pkg_v048"):
+                    pkg = [i for i in CATALOG.values() if i.get("icon") == char["icon_badge"] and i.get("v048") and i.get("slot") in builds.EQUIP_SLOTS]
+                    char["icon_pkg_v048"] = True
+                    for i in pkg:
+                        conn.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (account_id, i["id"], time.time()))
+                        char.setdefault("equipment", {})[i["slot"]] = i["id"]
+                    conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                chars.append(self.describe(char))
             # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
             # that earned the Icon before this patch pick theirs up here
             for ch in chars:

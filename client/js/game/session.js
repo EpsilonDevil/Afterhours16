@@ -824,7 +824,8 @@ export class MatchSession {
     const [ox, , oz] = this.origin, side = g.sideFor(team);
     M.m4fromYaw(A.matrix, ox, 0.018, oz, side > 0 ? 0 : Math.PI, 1);
     this.glowT = (this.glowT || 0) + dt;
-    A.material.opacity = A.k * (0.62 + 0.38 * Math.sin(this.glowT * 7));
+    this.glowFlash = Math.max(0, (this.glowFlash || 0) - dt * 1.6);
+    A.material.opacity = Math.min(1, A.k * (0.62 + 0.38 * Math.sin(this.glowT * 7)) + 0.6 * this.glowFlash);
   }
 
   // v0.4.7.5 quick patch: defensive assignment arrows. On defense, an arrow at the edge of your ring points at the man
@@ -1057,6 +1058,10 @@ export class MatchSession {
         case 'inbound': this.rig.snap(); break;
         case 'cleared': if (e.team === myTeam) hud.pushFeed('Ball cleared', 'neutral'); break;
         case 'possession': if (g.mode === 'park' && g.half && e.team === myTeam && e.reason !== 'check') hud.pushFeed('Take it back past the arc!', 'neutral'); break;
+        // (v0.4.8 the Sharp Eye backflip after a green: the crowd goes)
+        case 'backflip': audio.cheer(mine ? 1.2 : 0.8); if (mine) this.rig.shake?.(0.05, 0.25); break;
+        // (v0.4.8: a shot asked for before the ball's been taken back: the call, and the arc flares up)
+        case 'mustClear': if (P && P === g.human) { hud.callout('TAKE IT BACK', 'bad'); if (this.glowArc) this.glowFlash = 1; } break;
         case 'noCount': audio.whistle(); break;
         case 'buzzer': audio.buzzer(); break;
         case 'period': hud.callout(g.quarter > g.quarters ? 'OVERTIME' : ['', '1ST', '2ND', '3RD', '4TH'][g.quarter] + ' QUARTER', ''); break;

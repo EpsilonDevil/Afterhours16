@@ -3,7 +3,7 @@ import { HS_PKG } from './hashsling.js';
 import { physical } from './ratings.js';
 import { bodyDims } from '../char/skeleton.js';
 import { DT, GRAVITY, COURT } from './constants.js';
-import { jumpshotPackage } from './shots.js';
+import { jumpshotPackage, SHARP_EYE_PKG } from './shots.js';
 
 import { rk as pd } from './ratings.js';
 import { effectiveRatings, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
@@ -53,7 +53,10 @@ export class Player {
     // v0.4.5 quick patch: the body model's real shoulder and arm (char/skeleton.js), so a ball held at the top of a
     // shot is somewhere the hands can actually be (see Game.reachTop)
     { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen, armScale: d.armScale }; }
-    this.shotPkg = jumpshotPackage(entry.build, catalog);
+    // (v0.4.8: an AI Sharp Eye holder (a park legend, say) shoots the Icon's own package; a human shoots what he wears,
+    // and an Icon's package only for a holder of that Icon: shots.js jumpshotPackage)
+    const sePkg = this.icon === 'sharp_eye' && !entry.human && catalog?.[SHARP_EYE_PKG.jumpshot] && catalog?.[SHARP_EYE_PKG.release];
+    this.shotPkg = jumpshotPackage(sePkg ? { ...entry.build, equipment: { ...(entry.build.equipment || {}), ...SHARP_EYE_PKG } } : entry.build, catalog, this.icon);
     // (qp3: a Hash-Slinging Icon holder with no dunk package of his own, a park legend say, carries the Icon's package)
     this.dunkPkg = entry.build.equipment?.dunk || (this.icon === 'hash_slinging' && catalog?.[HS_PKG] ? HS_PKG : 'dunk_basic');
     // qp3: the Block Package he wears (sim/blocks.js: none → his tier's, by Block rating and height)
