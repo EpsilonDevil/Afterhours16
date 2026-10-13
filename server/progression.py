@@ -4,6 +4,7 @@ The match itself is simulated in the client at 60 Hz (for responsiveness). The s
 ticket, then checks the submitted summary for internal consistency and plausibility before paying
 anything. Rewards, Rep and badges are computed here, never trusted from the client.
 """
+import math
 import re
 import time
 from .cup import EVENT_VENUES
@@ -15,13 +16,14 @@ MODES = {"park": {"formats": (1, 2, 3), "min_seconds": 40}, "proam": {"formats":
 # v0.4.5 The Pro Run: VC and badge progress at 1.5x the park rate (no Rep: the Pro Run is its own career)
 PRORUN_K = 1.5
 AFFILIATIONS = ("harbor", "brick", "foundry")
+TRAVEL_REP_LEVEL = 5  # v0.4.8.5: a build plays in its home park until Pro 1 (mirrors client/js/world/themes.js travelLock)
 PARK_VENUES = AFFILIATIONS
 STAT_KEYS = ("pts", "reb", "oreb", "ast", "stl", "blk", "tov", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "pf",
-             "dunks", "greens", "ankles", "contested_makes", "posters", "putbacks", "chasedowns", "alleyoops")
+             "dunks", "greens", "ankles", "contested_makes", "posters", "putbacks", "chasedowns", "alleyoops", "screens")
 SCORING_KEYS = ("pts", "fgm", "fga", "tpm", "tpa", "ftm", "fta")  # (checked strictly: they must add up to the score)
 STAT_CAPS = {"pts": 150, "reb": 60, "oreb": 40, "ast": 50, "stl": 30, "blk": 30, "tov": 40, "fgm": 60, "fga": 120, "tpm": 40, "tpa": 80,
              "ftm": 40, "fta": 50, "pf": 10, "dunks": 40, "greens": 80, "ankles": 20, "contested_makes": 60, "posters": 20, "putbacks": 30,
-             "chasedowns": 20, "alleyoops": 30}
+             "chasedowns": 20, "alleyoops": 30, "screens": 40}
 
 REP_TIERS = ("Rookie", "Pro", "All-Star", "Superstar", "Legend")
 # cumulative rep needed for level i (0 = Rookie 1 … 20 = Legend)
@@ -35,17 +37,18 @@ BADGES = {
     "green_machine": {"name": "Green Machine", "group": "Shooting", "stat": "greens", "tiers": (20, 70, 180, 400), "desc": "Wider Excellent release window."},
     "clutch": {"name": "Clutch Shooter", "group": "Shooting", "stat": "fgm", "tiers": (40, 120, 280, 550), "desc": "Boost on shots late in close games."},
     "posterizer": {"name": "Posterizer", "group": "Finishing", "stat": "dunks", "tiers": (8, 30, 80, 180), "desc": "Better odds to dunk on contesting defenders."},
-    "contact_finisher": {"name": "Contact Finisher", "group": "Finishing", "stat": "fgm", "tiers": (30, 100, 250, 500), "desc": "Contested layups are less affected."},
-    "acrobat": {"name": "Acrobat", "group": "Finishing", "stat": "fgm", "tiers": (45, 130, 300, 600), "desc": "Boost on heavily contested layups."},
+    "contact_finisher": {"name": "Contact Finisher", "group": "Finishing", "stat": "fgm", "tiers": (30, 100, 150, 300), "desc": "Contested layups are less affected."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 250 and 500)
+    "acrobat": {"name": "Acrobat", "group": "Finishing", "stat": "fgm", "tiers": (45, 130, 180, 360), "desc": "Boost on heavily contested layups."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 300 and 600)
     "ankle_breaker": {"name": "Ankle Breaker", "group": "Playmaking", "stat": "ankles", "tiers": (3, 12, 30, 70), "desc": "Dribble moves drop defenders more often."},
-    "dimer": {"name": "Dimer", "group": "Playmaking", "stat": "ast", "tiers": (25, 80, 200, 420), "desc": "Teammates shoot better off your passes."},
+    "dimer": {"name": "Dimer", "group": "Playmaking", "stat": "ast", "tiers": (13, 40, 100, 210), "desc": "Teammates shoot better off your passes."},  # (v0.4.8.5: every tier halved, was 25/80/200/420)
     "handles_for_days": {"name": "Handles for Days", "group": "Playmaking", "stat": "games", "tiers": (10, 30, 80, 115), "desc": "Dribble moves cost less stamina."},  # (v0.4.8: Hall of Fame at 115, was 160)
     "pick_pocket": {"name": "Pick Pocket", "group": "Defense", "stat": "stl", "tiers": (15, 50, 120, 250), "desc": "Better steal odds and faster reach recovery."},
     "interceptor": {"name": "Interceptor", "group": "Defense", "stat": "stl", "tiers": (20, 60, 150, 300), "desc": "Deflect and pick off more passes."},
-    "rim_protector": {"name": "Rim Protector", "group": "Defense", "stat": "blk", "tiers": (10, 35, 90, 200), "desc": "More blocks at the rim."},
-    "chasedown": {"name": "Chase-Down Artist", "group": "Defense", "stat": "blk", "tiers": (15, 50, 120, 250), "desc": "Blocks from behind on breakaways."},
-    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "games", "tiers": (10, 35, 90, 180), "desc": "Screens and bumps hit harder."},
-    "rebound_chaser": {"name": "Rebound Chaser", "group": "Rebounding", "stat": "reb", "tiers": (40, 140, 350, 700), "desc": "Track down more boards."},
+    "rim_protector": {"name": "Rim Protector", "group": "Defense", "stat": "blk", "tiers": (7, 23, 59, 130), "desc": "More blocks at the rim."},  # (v0.4.8.5: every tier 35% lower, was 10/35/90/200)
+    "chasedown": {"name": "Chase-Down Artist", "group": "Defense", "stat": "blk", "tiers": (8, 25, 60, 125), "desc": "Blocks from behind on breakaways."},  # (v0.4.8.5: every tier halved, was 15/50/120/250)
+    # v0.4.8.5: Brick Wall levels up from successful screens set (screens that catch the defender), not games played
+    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "screens", "tiers": (25, 90, 220, 450), "desc": "Screens and bumps hit harder."},
+    "rebound_chaser": {"name": "Rebound Chaser", "group": "Rebounding", "stat": "reb", "tiers": (16, 56, 140, 280), "desc": "Track down more boards."},  # (v0.4.8.5: every tier 60% lower, was 40/140/350/700)
 }
 
 # v0.4.5 Archetype Icon badges (mirrors client/js/sim/badges.js ICON_BADGES): unlocked by a build's 7th HOF badge
@@ -83,6 +86,103 @@ def rep_info(points):
 
 def badge_tiers(char):
     return {k: v.get("tier", 0) for k, v in char.get("badges", {}).items() if v.get("tier", 0) > 0}
+
+
+# ---------------- v0.4.8.5: Pro-Am ranks (per build) ----------------
+# Bronze to Grandmaster by RP (ranked points), no divisions. The same table as client/js/sim/ranks.js RANKS
+# (tests/v0485proam.test.mjs checks they match). RP are only ever worked out here: the client reports the strength of
+# the team it faced (opp_rating, clamped), never RP.
+PROAM_RANKS = (("bronze", "Bronze", 0), ("silver", "Silver", 400), ("gold", "Gold", 800), ("platinum", "Platinum", 1200),
+               ("diamond", "Diamond", 1600), ("master", "Master", 2000), ("grandmaster", "Grandmaster", 2400))
+PROAM_RANK_SPAN = 2       # friends in an online Pro-Am squad play together within 2 ranks (checked in the client)
+PROAM_RATING_MAX = 3200   # an opponent rating is 0..3200
+PROAM_SEED_MAX = 1199     # a build from before ranks starts between Bronze and Gold
+PROAM_FORFEIT_RP = 20     # Forfeit & leave (or a game left running when the next one starts)
+PROAM_WIN_MIN, PROAM_LOSS_MIN, PROAM_LOSS_MAX = 5, 2, 40
+
+
+def _jsround(x):
+    """Math.round: halves go up (Python's round() goes to even)."""
+    return int(math.floor(x + 0.5))
+
+
+def proam_rank(rp):
+    """{tier, id, name, floor, next, rp} for an RP total (next: the RP the next rank starts at, None at the top)."""
+    rp = max(0, int(rp or 0))
+    tier = max(i for i, r in enumerate(PROAM_RANKS) if rp >= r[2])
+    rid, name, floor = PROAM_RANKS[tier]
+    return {"tier": tier, "id": rid, "name": name, "floor": floor, "next": PROAM_RANKS[tier + 1][2] if tier + 1 < len(PROAM_RANKS) else None, "rp": rp}
+
+
+def proam_seed(games, wins):
+    """RP a build that played Pro-Am before ranks starts with: 25 a win, -15 a loss, 0..1199."""
+    games = max(0, int(games or 0))
+    wins = max(0, min(games, int(wins or 0)))
+    return max(0, min(PROAM_SEED_MAX, 25 * wins - 15 * (games - wins)))
+
+
+def proam_state(char):
+    """The build's Pro-Am record with its RP (char["progression"]["proam"]): RP is seeded once, lazily, from the record
+    of a build from before ranks (a new build has none: 0)."""
+    pa = char.setdefault("progression", {}).setdefault("proam", {"games": 0, "wins": 0})
+    rp = pa.get("rp")
+    if isinstance(rp, bool) or not isinstance(rp, int) or rp < 0:
+        pa["rp"] = proam_seed(pa.get("games", 0), pa.get("wins", 0))
+    best = pa.get("best_rp")
+    if isinstance(best, bool) or not isinstance(best, int) or best < pa["rp"]:
+        pa["best_rp"] = pa["rp"]
+    return pa
+
+
+def game_score(s):
+    """Hollinger game score of a validated stat line."""
+    return (s["pts"] + 0.4 * s["fgm"] - 0.7 * s["fga"] - 0.4 * (s["fta"] - s["ftm"]) + 0.7 * s["oreb"] + 0.3 * (s["reb"] - s["oreb"])
+            + s["stl"] + 0.7 * s["ast"] + 0.7 * s["blk"] - 0.4 * s["pf"] - s["tov"])
+
+
+def proam_performance(stats, game_secs):
+    """Personal performance, -8..+12 RP: game score per 20 minutes of game clock, 8 is par."""
+    gs20 = game_score(stats) * 1200 / max(60, game_secs or 0)
+    return max(-8, min(12, _jsround((gs20 - 8) * 0.8)))
+
+
+def proam_rp_change(rp, opp_rating, won, stats, game_secs):
+    """RP for a Pro-Am game played to the end. result: +10 a win, -6 a loss; competition (Elo): 30 x (S - E), E the
+    expected score against a team rated opp_rating; performance: proam_performance. A win pays at least 5, a loss costs
+    2 to 40, and RP never go below 0; adjust is what those rules changed, so the parts always add up to the total."""
+    rp = max(0, int(rp))
+    opp = max(0, min(PROAM_RATING_MAX, int(opp_rating)))
+    expected = 1 / (1 + 10 ** ((opp - rp) / 400))
+    result = 10 if won else -6
+    competition = _jsround(30 * ((1 if won else 0) - expected))
+    performance = proam_performance(stats, game_secs)
+    raw = result + competition + performance
+    total = max(PROAM_WIN_MIN, raw) if won else max(-PROAM_LOSS_MAX, min(-PROAM_LOSS_MIN, raw))
+    total = max(total, -rp)
+    return {"result": result, "competition": competition, "performance": performance, "adjust": total - raw, "total": total,
+            "expected": round(expected, 3), "opp_rating": opp}
+
+
+def proam_apply(char, change, kind="game"):
+    """Put an RP change on the build (kind: game, forfeit or abandoned): {rp_before, rp_after, delta, parts, rank_before,
+    rank_after, promoted, demoted}. change: proam_rp_change's dict, or {"total": -n} for a forfeit."""
+    pa = proam_state(char)
+    before = pa["rp"]
+    after = max(0, before + int(change["total"]))
+    pa["rp"] = after
+    pa["best_rp"] = max(pa.get("best_rp", 0), after)
+    rb, ra = proam_rank(before), proam_rank(after)
+    parts = {k: change.get(k, 0) for k in ("result", "competition", "performance", "adjust")}
+    if kind != "game":
+        parts = {"forfeit": after - before}
+    pa["last"] = {"kind": kind, "delta": after - before, "parts": parts, "opp_rating": change.get("opp_rating"), "at": int(time.time())}
+    return {"rp_before": before, "rp_after": after, "delta": after - before, "parts": parts, "kind": kind, "opp_rating": change.get("opp_rating"),
+            "rank_before": rb, "rank_after": ra, "promoted": ra["tier"] > rb["tier"], "demoted": ra["tier"] < rb["tier"]}
+
+
+def proam_forfeit(char, kind="forfeit"):
+    """A Pro-Am game left before the end: 20 RP (never below 0)."""
+    return proam_apply(char, {"total": -PROAM_FORFEIT_RP}, kind)
 
 
 def validate_summary(data, ticket):
@@ -206,8 +306,88 @@ def rewards(summary, ticket, char):
     return out
 
 
+def _raise_badges(char, todo):
+    """Add progress (todo: {badge id: increment}) and raise every badge the progress now earns. Returns
+    (upgraded, cap breakers awarded, icon unlocked)."""
+    upgraded = []
+    badges = char.setdefault("badges", {})
+    hof_init(char)
+    cap_breakers_awarded = 0
+    icon_unlocked = None
+    caps = badge_caps(char)
+    # (v0.4.8: a badge whose progress already reaches a lower requirement moves up whatever this game counted for it)
+    todo = dict(todo)
+    for bid, b in badges.items():
+        if bid in BADGES and bid not in todo and isinstance(b, dict) and b.get("tier", 0) < min(caps.get(bid, 4), sum(1 for t in BADGES[bid]["tiers"] if b.get("progress", 0) >= t)):
+            todo[bid] = 0
+    for bid, inc in todo.items():
+        b = badges.setdefault(bid, {"progress": 0, "tier": 0})
+        b["progress"] += inc
+        tiers = BADGES[bid]["tiers"]
+        # v0.4.7.5: a badge stops at the highest tier its build allows (archetype and height)
+        new_tier = min(caps.get(bid, 4), sum(1 for t in tiers if b["progress"] >= t))
+        # v0.4.5: a build holds at most 7 Hall of Fame badges; others stop at Gold
+        if new_tier >= 4 and b["tier"] < 4 and hof_count(char) >= HOF_LIMIT:
+            new_tier = 3
+        if new_tier > b["tier"]:
+            reached_hof = new_tier >= 4 and b["tier"] < 4
+            upgraded.append({"id": bid, "name": BADGES[bid]["name"], "tier": new_tier})
+            b["tier"] = new_tier
+            if reached_hof:
+                n = hof_count(char)
+                # the first 5 Hall of Fame badges each bring 5 cap breakers; the 7th unlocks the Icon badge
+                if n <= CAP_BREAKER_HOF_LIMIT:
+                    cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
+                    cb["earned"] = cb.get("earned", 0) + CAP_BREAKERS_PER_HOF
+                    cb["available"] = cb.get("available", 0) + CAP_BREAKERS_PER_HOF
+                    cap_breakers_awarded += CAP_BREAKERS_PER_HOF
+                if n >= icon_need(char) and not char.get("icon_badge"):
+                    char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
+                    icon_unlocked = char["icon_badge"]
+    return upgraded, cap_breakers_awarded, icon_unlocked
+
+
+# v0.4.8.5: Brick Wall's old requirements, in games (it counts successful screens now)
+BRICK_WALL_GAMES_TIERS = (10, 35, 90, 180)
+
+
+def convert_progress(progress, old, new):
+    """Carry a badge's progress over to a new requirement table: the same share of the way between the same two tiers."""
+    lo_o = lo_n = 0
+    for o, n in zip(old, new):
+        if progress < o:
+            return int(lo_n + (n - lo_n) * (progress - lo_o) / (o - lo_o))
+        lo_o, lo_n = o, n
+    return int(new[-1] + (progress - old[-1]) * new[-1] / old[-1])
+
+
+def sync_badges(char):
+    """v0.4.8.5: bring a build's badges up to date with the current requirements, without waiting for a game.
+    * Handles for Days counts games: its progress is at least the games the build has played.
+    * Brick Wall moved from games to successful screens: progress already made carries over at the same share of the
+      way to the next tier (once), and a tier already earned is never taken away.
+    * Then every badge whose progress meets a requirement (lowered ones included) moves up, with the usual rules: the
+      build's badge caps, the Hall of Fame limit, cap breakers and the Icon badge.
+    Returns {"upgraded", "cap_breakers_awarded", "icon_unlocked"} (empty when nothing changed)."""
+    badges = char.setdefault("badges", {})
+    if not char.get("badges_v0485"):
+        char["badges_v0485"] = True
+        bw = badges.get("brick_wall")
+        if isinstance(bw, dict) and bw.get("progress", 0) > 0:
+            bw["progress"] = convert_progress(bw.get("progress", 0), BRICK_WALL_GAMES_TIERS, BADGES["brick_wall"]["tiers"])
+    games = int(char.get("progression", {}).get("games", 0) or 0)
+    for bid, b in BADGES.items():
+        if b["stat"] == "games" and games > 0:
+            cur = badges.setdefault(bid, {"progress": 0, "tier": 0})
+            cur["progress"] = max(int(cur.get("progress", 0) or 0), games)
+    upgraded, cb, icon = _raise_badges(char, {})
+    return {"upgraded": upgraded, "cap_breakers_awarded": cb, "icon_unlocked": icon} if upgraded else {}
+
+
 def apply_progress(char, summary, rw):
     prog = char.setdefault("progression", {})
+    # v0.4.8.5: a build whose progress already meets a requirement moves up first (counted with this game's upgrades)
+    pre = sync_badges(char)
     # v0.4.7.5: every 3 Pro Run games played to the end raise the build's max OVR by 1 (80 -> 90)
     ovr_before = max_ovr(char)
     icon_before = bool(char.get("icon_badge"))
@@ -242,42 +422,11 @@ def apply_progress(char, summary, rw):
         split["wins"] = split.get("wins", 0) + (1 if rw["won"] else 0)
         for k, v in summary["stats"].items():
             split[k] = split.get(k, 0) + v
-    upgraded = []
-    badges = char.setdefault("badges", {})
-    hof_init(char)
-    cap_breakers_awarded = 0
-    icon_unlocked = None
-    caps = badge_caps(char)
-    # (v0.4.8: a badge whose progress already reaches a lower requirement (Handles for Days and Deadeye's Hall of Fame)
-    # moves up with the next game, whatever that game counted for it)
-    todo = dict(rw["badges"])
-    for bid, b in badges.items():
-        if bid in BADGES and bid not in todo and isinstance(b, dict) and b.get("tier", 0) < min(caps.get(bid, 4), sum(1 for t in BADGES[bid]["tiers"] if b.get("progress", 0) >= t)):
-            todo[bid] = 0
-    for bid, inc in todo.items():
-        b = badges.setdefault(bid, {"progress": 0, "tier": 0})
-        b["progress"] += inc
-        tiers = BADGES[bid]["tiers"]
-        # v0.4.7.5: a badge stops at the highest tier its build allows (archetype and height)
-        new_tier = min(caps.get(bid, 4), sum(1 for t in tiers if b["progress"] >= t))
-        # v0.4.5: a build holds at most 7 Hall of Fame badges; others stop at Gold
-        if new_tier >= 4 and b["tier"] < 4 and hof_count(char) >= HOF_LIMIT:
-            new_tier = 3
-        if new_tier > b["tier"]:
-            reached_hof = new_tier >= 4 and b["tier"] < 4
-            upgraded.append({"id": bid, "name": BADGES[bid]["name"], "tier": new_tier})
-            b["tier"] = new_tier
-            if reached_hof:
-                n = hof_count(char)
-                # the first 5 Hall of Fame badges each bring 5 cap breakers; the 7th unlocks the Icon badge
-                if n <= CAP_BREAKER_HOF_LIMIT:
-                    cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
-                    cb["earned"] = cb.get("earned", 0) + CAP_BREAKERS_PER_HOF
-                    cb["available"] = cb.get("available", 0) + CAP_BREAKERS_PER_HOF
-                    cap_breakers_awarded += CAP_BREAKERS_PER_HOF
-                if n >= icon_need(char) and not char.get("icon_badge"):
-                    char["icon_badge"] = ICON_FOR_ARCH.get(char.get("archetype"), "the_general")
-                    icon_unlocked = char["icon_badge"]
+    upgraded, cap_breakers_awarded, icon_unlocked = _raise_badges(char, rw["badges"])
+    if pre:
+        upgraded = pre["upgraded"] + upgraded
+        cap_breakers_awarded += pre["cap_breakers_awarded"]
+        icon_unlocked = icon_unlocked or pre["icon_unlocked"]
     ovr_after = max_ovr(char)
     # v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games played to the end are +1 OVR
     # (to 99), placed by the build system (builds.legend_raise). The game that unlocks the Icon doesn't count.

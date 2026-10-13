@@ -1,5 +1,5 @@
 // v0.4.4 soundtrack: the player-supplied tracks in client/audio/music (listed in tracks.json) play
-// shuffled through the menus, the park, park games and practice. They fade out for Pro-Am (the arena has its
+// shuffled (v0.4.8.5: a new shuffle every startup, see shuffleQueue) through the menus, the park, park games and practice. They fade out for Pro-Am (the arena has its
 // own crowd) and pick up where they left off afterwards. Each new track gets an early-2000s style
 // "now playing" ticker in the bottom-left corner for its first few seconds.
 import { settings, volumeGain } from './settings.js';
@@ -75,14 +75,9 @@ export class Soundtrack {
   next() {
     if (!this.tracks.length || this.bad.size >= this.tracks.length) return;
     this.queue = this.queue.filter(i => !this.bad.has(this.tracks[i].file));
-    if (!this.queue.length) {
-      // shuffle, never repeating the track that just played
-      const q = this.tracks.map((_, i) => i).filter(i => !this.bad.has(this.tracks[i].file));
-      for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
-      if (this.current && q[0] === this.tracks.indexOf(this.current) && q.length > 1) q.push(q.shift());
-      this.queue = q;
-    }
+    if (!this.queue.length) this.queue = shuffleQueue(this.tracks, this.bad, this.current, recentTracks());
     const t = this.tracks[this.queue.shift()];
+    rememberTrack(t, this.tracks.length);
     this.current = t; this.part = 0; this.preloaded = null;
     const el = this.element();
     el.src = 'audio/music/' + (t.parts ? t.parts[0] : t.file);
@@ -142,6 +137,34 @@ export class Soundtrack {
     clearTimeout(this.tickerT);
     this.tickerT = setTimeout(() => { box.classList.remove('on'); box.classList.add('out'); }, 6500);
   }
+}
+
+// v0.4.8.5: a fresh shuffle on every startup that also remembers what played last time. The order is drawn with
+// crypto randomness, and the tracks heard most recently (in this session or the last ones, kept in localStorage)
+// go to the back of the new order, so a new session never opens with the same songs in the same order.
+const RECENT_KEY = 'ah16.music.recent';
+export function recentTracks() {
+  try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(f => typeof f === 'string') : []; } catch { return []; }
+}
+function rememberTrack(t, total) {
+  try {
+    const keep = Math.max(1, Math.floor(total / 2));
+    const list = [t.file, ...recentTracks().filter(f => f !== t.file)].slice(0, keep);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch { /* private window: the shuffle still works, it just can't remember */ }
+}
+const rand = n => {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; } catch { return Math.floor(Math.random() * n); }
+};
+export function shuffleQueue(tracks, bad = new Set(), current = null, recent = []) {
+  const q = tracks.map((_, i) => i).filter(i => !bad.has(tracks[i].file));
+  for (let i = q.length - 1; i > 0; i--) { const j = rand(i + 1); [q[i], q[j]] = [q[j], q[i]]; }
+  // (recent ones last, the most recent at the very end; never the track that just played first)
+  const age = new Map(recent.map((f, k) => [f, recent.length - k]));
+  const fresh = q.filter(i => !age.has(tracks[i].file)), old = q.filter(i => age.has(tracks[i].file)).sort((a, b) => age.get(tracks[a].file) - age.get(tracks[b].file));
+  const out = [...fresh, ...old];
+  if (current && out[0] === tracks.indexOf(current) && out.length > 1) out.push(out.shift());
+  return out;
 }
 
 export const music = new Soundtrack();

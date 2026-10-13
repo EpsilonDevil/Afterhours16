@@ -68,6 +68,8 @@ export function swatch(i) {
 }
 
 export function lockReason(app, c, i) {
+  // (v0.4.8.5: an Icon badge's own items need that Icon badge, as the server's equip check says)
+  if (i.icon && c.icon_badge !== i.icon) return `the ${app.config.icon_badges?.[i.icon]?.name || 'Icon'} Icon badge`;
   if ((i.min_overall || 0) > c.overall) return `${i.min_overall} OVR`;
   if ((i.rep_required || 0) > c.rep.level) { const tiers = app.config.rep_tiers; const lvl = i.rep_required; return lvl >= 20 ? 'Legend' : `${tiers[Math.floor(lvl / 5)]} ${lvl % 5 + 1}`; }
   for (const [k, v] of Object.entries(minAttrFor(i, c.height || c.build?.height))) if ((c.attributes[k] || 0) < v) return `${v} ${title(k)}`; // (qp3: the Block Packages by height)

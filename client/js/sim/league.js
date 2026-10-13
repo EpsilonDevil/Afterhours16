@@ -65,7 +65,7 @@ export const COLLEGES = [
 ];
 
 // sim customization (the Pro Run's "sim settings")
-export const QUARTERS = [[180, '3 min'], [300, '5 min'], [480, '8 min'], [720, '12 min']];
+export const QUARTERS = [[60, '1 min'], [180, '3 min'], [300, '5 min'], [480, '8 min'], [720, '12 min']]; // (v0.4.8.5: 1-minute quarters)
 export const DIFFS = [[0.35, 'Rookie'], [0.6, 'Pro'], [0.8, 'All-Star'], [0.95, 'Hall of Fame']];
 export const PLAYOFF_FORMATS = { '7777': [7, 7, 7, 7], '5777': [5, 7, 7, 7], '3577': [3, 5, 7, 7], '1111': [1, 1, 1, 1] };
 export const MINUTES = { auto: null, starter: 34, sixth: 26, bench: 16 };

@@ -179,6 +179,15 @@ function drawSeason(app, root, career, state, redraw) {
   const rs = $('[data-restart]', root); if (rs) rs.onclick = () => restart(app);
 }
 
+// v0.4.8.5: the career's next game you play, if there is one right now (none on draft night, at the end of your
+// regular season while the league finishes, once you're out of the playoffs, or in the offseason)
+function nextGame(app, career) {
+  if (career.phase === 'college') { const n = career.college.games.filter(g => g.result).length; return n < career.college.games.length ? () => playCollegeGame(app, career, n) : null; }
+  if (career.phase === 'season') return L.nextMyGame(career) >= 0 ? () => playLeagueGame(app, career) : null;
+  if (career.phase === 'playoffs') return L.myPlayoffStatus(career)?.alive && L.mySeries(career) ? () => playLeagueGame(app, career) : null;
+  return null;
+}
+
 // sim your next game (and everything before it)
 function simMyNext(career) {
   if (career.phase === 'season') {
@@ -307,7 +316,7 @@ function playLeagueGame(app, career) {
   let gi, playoffs = career.phase === 'playoffs';
   if (playoffs) gi = L.prepareMyPlayoffGame(career);
   else { gi = L.nextMyGame(career); if (gi >= 0) L.simBefore(career, gi); }
-  if (gi < 0) { toast('No game to play right now.', 'error'); return; }
+  if (gi < 0) { toast('No game to play right now.', 'error'); Screens.go(app, 'prorun'); return; } // (v0.4.8.5: an auto-start with nothing to play goes back to the Pro Run)
   saveCareer(app, career); // the games before yours are in the books even if you quit this one
   const [, h, a] = (playoffs ? career.po.games : career.sched)[gi];
   const home = h === career.myTeam, oppT = home ? a : h;
@@ -359,7 +368,8 @@ async function startGame(app, career, spec) {
       spec.record({ ...summary, quarterLen: ticket.meta.quarter_len }, ids);
       await saveCareer(app, career);
       const won = summary.winner === summary.me.team;
-      showResults(app, sub, result, won, { grade, menuLabel: 'Back to the Pro Run', menu: () => Screens.go(app, 'prorun') });
+      // (v0.4.8.5: the next game of the career starts by itself after 10 seconds, as in the park)
+      showResults(app, sub, result, won, { grade, menuLabel: 'Back to the Pro Run', menu: () => Screens.go(app, 'prorun'), again: nextGame(app, career), againLabel: 'Next game', autoNext: true });
     },
   });
   const world = {

@@ -15,7 +15,7 @@ function detail(char, mode) {
   const tiles = [['GP', L.gp], ['W-L', `${L.wins}-${L.losses}`], ['PPG', f1(L.ppg)], ['RPG', f1(L.rpg)], ['APG', f1(L.apg)], ['SPG', f1(L.spg)], ['BPG', f1(L.bpg)], ['TOV', f1(L.tpg)],
     ['FG%', fmtPct(L.fg)], ['3P%', fmtPct(L.tp)], ['FT%', fmtPct(L.ft)], ['eFG%', fmtPct(L.efg)], ['TS%', fmtPct(L.ts)], ['MIN', L.min == null ? '—' : f1(L.min)]];
   const tot = ['pts', 'reb', 'oreb', 'ast', 'stl', 'blk', 'tov', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'pf'];
-  const extra = ['dunks', 'greens', 'contested_makes', 'ankles', 'posters', 'putbacks', 'chasedowns', 'alleyoops'];
+  const extra = ['dunks', 'greens', 'contested_makes', 'ankles', 'posters', 'putbacks', 'chasedowns', 'alleyoops', 'screens'];
   return `
     <div class="st-tiles">${tiles.map(([k, v]) => `<div><b>${esc(v)}</b><small>${k}</small></div>`).join('')}</div>
     <div class="st-cols">

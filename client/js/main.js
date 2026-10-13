@@ -98,6 +98,21 @@ function afterLogin() {
   if (!chars.length) { app.selectedId = null; Screens.go(app, 'create'); return; }
   app.selectedId = chars.find(c => c.id === settings.character)?.id || chars[0].id;
   Screens.go(app, 'home');
+  noteBadgeUpdates(app);
+}
+
+// v0.4.8.5: badges that caught up with the current requirements as the profile loaded (a lowered mark, Handles for
+// Days counting games already played): said once, the way a game's results say it
+function noteBadgeUpdates(app) {
+  const ups = app.profile?.badge_updates || [];
+  const names = ['', 'Bronze', 'Silver', 'Gold', 'Hall of Fame'];
+  // (one line per build: the toast shows one message at a time)
+  ups.forEach((u, k) => setTimeout(() => {
+    const parts = (u.upgraded || []).map(b => `${b.name} is now ${names[b.tier] || 'up'}`);
+    if (u.icon_unlocked) parts.push(`Icon badge unlocked: ${app.config.icon_badges?.[u.icon_unlocked]?.name || u.icon_unlocked}`);
+    if (u.cap_breakers_awarded) parts.push(`+${u.cap_breakers_awarded} cap breakers`);
+    if (parts.length) toast(`${u.name}: ${parts.join(' · ')}`, 'good');
+  }, 900 + k * 4200));
 }
 
 app.char = () => app.profile?.characters.find(c => c.id === app.selectedId) || null;

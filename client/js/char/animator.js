@@ -387,6 +387,9 @@ export class Animator {
     else if (has && bmode === 'dribble') { crouch = -0.08 - (speed < 1 ? 0.04 : 0); stanceW = 0.19; stagger = 0.05; }
     else if (has) { crouch = -0.07; stanceW = 0.2; stagger = 0.08; }
     if (p.stamina < 0.18 && !has && speed < 0.3 && !defense && !a) crouch -= 0.05;
+    // v0.4.8.5: setting a screen (a person holding B off the ball, or an AI big planted for one): a wide, low, braced base
+    const screenK = !has && !defense && !a && p.screening > 0 && speed < 0.7;
+    if (screenK) { crouch = -0.12; stanceW = 0.27; stagger = 0.02; }
     if (!defense) { crouch += MS.crouch; stanceW += MS.wide; }
     const restL = [stanceW, 0.08, stagger], restR = [-stanceW, 0.08, -stagger];
     // gait feet: [x, y, z, pitch, toeBend]
@@ -488,6 +491,8 @@ export class Animator {
       set3(T, 'handL', 0.5, 1.22 + w, 0.28); set3(T, 'handR', -0.5, 1.22 - w, 0.28);
       set3(T, 'elbowL', 0.8, -0.6, -0.4); set3(T, 'elbowR', -0.8, -0.6, -0.4);
     }
+    // (v0.4.8.5: the screener's arms crossed low in front of him, elbows in, braced for the hit)
+    if (screenK) { set3(T, 'handL', -0.07, 1.02, 0.2); set3(T, 'handR', 0.07, 0.98, 0.23); set3(T, 'elbowL', 0.6, -0.5, -0.1); set3(T, 'elbowR', -0.6, -0.5, -0.1); }
     // (v0.4.7.5: hands up stays alive: a little reach and sway, one hand a touch higher, elbows soft)
     if (p.handsUp && !a) { const hw = Math.sin(this.time * 4 + p.id); set3(T, 'handL', 0.22 + 0.03 * hw, 2.2 + 0.04 * hw, 0.22); set3(T, 'handR', -0.2 + 0.03 * hw, 2.28 - 0.04 * hw, 0.24); set3(T, 'elbowL', 0.7, -0.1, -0.5); set3(T, 'elbowR', -0.7, -0.1, -0.5); }
     else if (p.handsSide && !a) {

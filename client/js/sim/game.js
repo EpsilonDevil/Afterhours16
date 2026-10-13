@@ -430,9 +430,10 @@ export class Game {
   }
   // the contest a release on the next step would be graded with: releaseShot / releaseLayup measure it at the ball
   // after that step's action tick, so the meter looks one tick ahead and matches the grade frame for frame
-  contestIfReleased(p) { return S.contestFor(p, this.opponents(p), this.rimFor(p.team), this.releaseYNext(p)); }
+  contestIfReleased(p) { return S.contestFor(p, this.opponents(p), this.rimFor(p.team), this.releaseYNext(p) - (p.action?.showK || 0) * Math.max(0, p.y)); }
   // a jumper's contest before the cap, with the shield a shot out of the post gets from the man (post.js postShotK)
   shotRaw(p, a, y) {
+    y -= (a.showK || 0) * Math.max(0, p.y); // (v0.4.8.5: the Sharp Eye hop's extra height doesn't count against the defense)
     const pk = a.post ? postShotK(p, a.post, !!a.postBeat) : null;
     return S.contestRaw(p, this.opponents(p), this.rimFor(p.team), y) * (pk ? 1 - pk.shield : 1);
   }
@@ -759,6 +760,28 @@ export class Game {
     if ((p.action && p.action.type !== 'catch') || p.airborne || this.over) return false;
     return this.ball.holder !== p.id && !(this.phase === 'inbound' && this.inbounder === p);
   }
+  // v0.4.8.5: a person off the ball on offense holds B (the bounce-pass button) to set a screen. He goes to the spot
+  // beside the ball handler's defender (the side the AI's screens are set on: a step up from him, toward the middle)
+  // and, once there, plants: feet still, chest to the defender, for as long as the button is held. That's a set, called
+  // screen (screenQuality's called bonus and anchor, and it counts toward Brick Wall), and an AI ball handler uses it
+  // (ai_screen) as he does his own bigs' screens. With no teammate on the ball, or no defender on him, he plants
+  // where he is. While he's planted the screen doesn't follow the defender (no moving screens); let go and he's free.
+  humanScreen(p, it) {
+    if (!it.screen || this.phase !== 'live' || p.airborne || (p.action && p.action.type !== 'catch') || this.possession !== p.team) { p.screenSet = false; return; }
+    const h = this.holder();
+    const hd = h && h.team === p.team && h !== p ? this.opponents(h).reduce((a, q) => (!a || q.dist(h) < a.dist(h) ? q : a), null) : null;
+    const live = hd && hd.dist(h) < 2.6 && p.dist(h) < 9;
+    if (!p.screenSet && live) {
+      const side = this.attackDir[p.team];
+      let sx = hd.x - (h.x - hd.x) * 0.15 + (h.x > 0 ? -0.6 : 0.6), sz = hd.z - side * 0.55;
+      if (this.ai?.clampCourt) [sx, sz] = this.ai.clampCourt(sx, sz, this.half);
+      const dx = sx - p.x, dz = sz - p.z, d = Math.hypot(dx, dz);
+      if (d > 0.55) { const k = Math.min(1, d / 0.45); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 2.4; it.face = null; it.stickFace = true; return; }
+    }
+    p.screenSet = true;
+    it.mx = 0; it.mz = 0; it.sprint = false;
+    if (live) { it.face = Math.atan2(hd.x - p.x, hd.z - p.z); it.stickFace = false; h.ai_screen = { by: p.id, until: this.time + 0.8 }; }
+  }
   // the user calls for a screen: the nearest big without a job comes to set it
   callScreenFor(me) {
     const big = this.mates(me).filter(m => !m.human).sort((a, b) => (b.phys.H - a.phys.H) || (a.dist(me) - b.dist(me)))[0];
@@ -885,6 +908,7 @@ export class Game {
     // (qp3) the gesture after a block is for show: the moment he wants to move or jump, it's over
     { const a = p.action; if (a && a.type === 'block' && a.hit && !p.airborne && a.t > (a.jumpAt || 0) + (a.air || 0.6) && (it.jump || it.steal || Math.hypot(it.mx || 0, it.mz || 0) > 0.6)) p.action = null; }
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
+    if (p.human && !this.assist && !has) this.humanScreen(p, it); // (v0.4.8.5: hold B off the ball to set a screen)
     // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
     if (has && p.speed < 2.2) {
       const rim = this.rimFor(p.team), dr = Math.hypot(rim.x - p.x, rim.z - p.z);
@@ -1201,8 +1225,12 @@ export class Game {
     const dRim = Math.hypot(rim.x - p.x, rim.z - p.z);
     const jumpH = p.phys.vertical * (close ? 0.4 : pkg.jumpK * 0.52) * (dRim > 7 ? 0.9 : 1) * (0.85 + 0.15 * p.stamina);
     const tUp = Math.sqrt(2 * jumpH / GRAVITY);
+    // v0.4.8.5: the Sharp Eye base hops twice as high (jump 2.0). The extra height is for the eye: the defense is measured
+    // as if he'd risen as high as before (showK, the share of his height that's show), and the hop gets off the floor
+    // quicker so the ball still goes at the top
+    const showK = !close && pkg.jumpK > 1 ? 1 - 1 / pkg.jumpK : 0;
     const a = p.startAction('shoot', tRel + 0.55, {
-      tRel, takeoff: Math.max(close ? 0.1 : 0.2, tRel - tUp * (close ? 0.9 : pkg.apexK ?? 0.9)), jumpH, dRim, // (v0.4.8: Sharp Eye lets go right at the top)
+      tRel, takeoff: Math.max(close ? 0.1 : showK ? 0.12 : 0.2, tRel - tUp * (close ? 0.9 : pkg.apexK ?? 0.9)), jumpH, dRim, showK, // (v0.4.8: Sharp Eye lets go right at the top)
       kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback || hustle === 'runfade', stepback, startX: p.x, startZ: p.z, moving: p.speed, hustle,
       catchShoot: this.lastPass && this.lastPass.to === p.id && this.time - this.lastPass.time < 1.2 && !p.dribble.used && this.ball.mode === 'held',
     });
@@ -1571,7 +1599,7 @@ export class Game {
         // AI bailout: smothered at the top of a jumper and a teammate is open -> kick it out
         if (a.jumped && !a.bailChecked && !a.released && this.isAI(p) && a.kind !== 'close') {
           a.bailChecked = true;
-          const c = S.contestFor(p, this.opponents(p), this.rimFor(p.team), p.phys.reach * 0.93 + (a.jumpH || 0));
+          const c = S.contestFor(p, this.opponents(p), this.rimFor(p.team), p.phys.reach * 0.93 + (a.jumpH || 0) * (1 - (a.showK || 0)));
           if (c >= 0.95 && this.mates(p).length && this.rng.next() < 0.3 + 0.25 * n(p.ratings.pass_accuracy)) {
             const t = this.ai.bestPassTarget(p, null);
             if (t && this.ai.openness(t) > 1.6) { this.bailout(p, { target: t.id, type: 'chest' }); return; }
@@ -3041,6 +3069,7 @@ export class Game {
       d.startAction('bump', 0.3, {}); // (a stagger)
     }
     this.emit({ type: 'screen', player: s.id, victim: d.id, q: +q.toFixed(2), v: +approach.toFixed(2), knock, stun, called: !!r.called, incidental });
+    if (!incidental) s.stats.screens = (s.stats.screens || 0) + 1; // (v0.4.8.5: a successful screen counts toward Brick Wall)
     if (!incidental && r.bw) this.badgeFx(s, 'brick_wall');
     if (!incidental && r.dbw) this.badgeFx(d, 'brick_wall');
     return { q, knock, stun, incidental };
@@ -3473,7 +3502,7 @@ export class Game {
     this.deadBall(2.5, () => {
       this.quarter++;
       const ot = this.quarter > this.quarters;
-      this.gameClock = ot ? 120 : this.quarterLen;
+      this.gameClock = ot ? Math.min(120, this.quarterLen) : this.quarterLen; // (v0.4.8.5: 1-minute quarters get 1-minute overtimes)
       this.teamFouls = [0, 0];
       if (this.quarter === Math.floor(this.quarters / 2) + 1 && !ot) this.attackDir = [-this.attackDir[0], -this.attackDir[1]];
       const team = (this.firstPossession + q) % 2;

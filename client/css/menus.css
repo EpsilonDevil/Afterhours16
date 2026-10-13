@@ -169,6 +169,8 @@ select { background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(
 .aff-k { font-size: 11px; letter-spacing: .2em; color: rgba(255,255,255,.75); }
 .aff b { font-family: var(--display); font-size: 24px; } .aff small { color: rgba(255,255,255,.75); font-size: 13px; }
 .aff-grid.small .aff { min-height: 110px; padding: 14px; } .aff.home { box-shadow: 0 0 0 2px var(--accent); }
+/* v0.4.8.5: other parks stay locked until Pro 1 */
+.aff.locked { filter: grayscale(.75) brightness(.7); cursor: not-allowed; } .aff.locked:hover { transform: none; }
 .proam-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .roster { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .roster-row { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
@@ -641,6 +643,9 @@ table.controls tr.sec td { color: var(--accent); font-size: 11px; letter-spacing
 .owned-tag { display: inline-flex; align-items: center; padding: 0 10px; border-radius: 8px; background: rgba(61,220,132,.12); color: var(--good); font-size: 13px; letter-spacing: .04em; }
 .item.equipped { border-color: rgba(61,220,132,.45); }
 .item.equipped small { color: var(--good); }
+/* v0.4.8.5: owned, but this build doesn't meet the item's requirements */
+.inventory .item.locked { opacity: .62; }
+.inventory .item.locked small { color: var(--warn, #f2c14e); }
 .inv-empty { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 18px 4px; }
 
 /* ---------- v0.4.7.5 polish: one bar, calmer panels, cleaner controls (same Afterhours look) ---------- */
@@ -724,3 +729,39 @@ select { background-color: rgba(255,255,255,.06); }
 .ol-host b { color: #fff; user-select: all; } .ol-host.ok { background: rgba(54,224,122,.1); color: #9fe9bd; } .ol-host.warn { background: rgba(255,170,60,.1); color: #ffcf8f; }
 .ol-signin { display: grid; gap: 6px; margin: 6px 4px 8px; }
 .linkish { background: none; border: 0; padding: 0; color: #7fd3ff; text-decoration: underline; font: inherit; cursor: pointer; }
+/* v0.4.8.5 Pro-Am ranks: the rank card (Pro-Am screen), the RP block and banner (results), rank chips (squads) */
+.rank-em { flex: none; display: block; overflow: visible; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+.pa-rank { display: flex; align-items: center; gap: 18px; margin: 0 0 6px; padding: 14px 18px; border-radius: 14px; background: linear-gradient(110deg, color-mix(in srgb, var(--rc) 20%, transparent), rgba(255,255,255,.02) 70%); border: 1px solid color-mix(in srgb, var(--rc) 45%, transparent); }
+.pa-rank-main { flex: 1; min-width: 0; }
+.pa-rank-k { font-size: 11px; letter-spacing: .2em; color: var(--muted); }
+.pa-rank-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 6px; }
+.pa-rank-name b { font-family: var(--display); font-size: 32px; line-height: 1; color: var(--rc); letter-spacing: .02em; }
+.pa-rank-name span { font-family: var(--display); font-size: 20px; }
+.pa-rank-name em { font-style: normal; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(61,220,132,.16); color: var(--good); }
+.pa-rank-name em.down { background: rgba(255,91,87,.14); color: #ff8f8a; }
+.pa-rank-bar { display: block; height: 8px; border-radius: 4px; }
+.pa-rank-bar i { border-radius: 4px; background: linear-gradient(90deg, var(--rd), var(--rc)); }
+.pa-rank-sub { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 7px; font-size: 12px; color: var(--muted); }
+.pa-rank-sub b { color: var(--text); font-weight: 600; }
+.pa-ladder { display: flex; gap: 2px; align-self: flex-end; }
+.pa-ladder span { opacity: .28; filter: grayscale(.7); transition: opacity .15s; } .pa-ladder span.past { opacity: .6; filter: none; }
+.pa-ladder span.on { opacity: 1; filter: none; transform: translateY(-3px) scale(1.12); }
+.pa-rank-rule { margin: 4px 2px 10px; }
+.rp-line { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--rc) 10%, rgba(255,255,255,.02)); border: 1px solid color-mix(in srgb, var(--rc) 35%, transparent); }
+.rp-main { flex: 1; min-width: 0; }
+.rp-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-family: var(--display); margin-bottom: 5px; }
+.rp-top b { font-size: 20px; color: var(--rc); }
+.results .rp-parts { margin-top: 6px; } .rp-parts b { color: var(--text); font-weight: 600; }
+.reward.rp { background: rgba(61,220,132,.08); border-color: rgba(61,220,132,.35); } .reward.rp b { color: var(--good); white-space: nowrap; }
+.reward.rp b i { font-style: normal; font-size: .62em; letter-spacing: .04em; }
+.reward.rp.neg { background: rgba(255,91,87,.08); border-color: rgba(255,91,87,.35); } .reward.rp.neg b { color: #ff8f8a; }
+.rank-banner { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 0 10px; padding: 8px 14px; border-radius: 12px; font-family: var(--display); font-size: 22px; letter-spacing: .1em; background: linear-gradient(90deg, rgba(61,220,132,.04), rgba(61,220,132,.22), rgba(61,220,132,.04)); border: 1px solid rgba(61,220,132,.5); color: #9ff0c2; animation: rankIn .5s ease-out; }
+.rank-banner.down { background: linear-gradient(90deg, rgba(255,91,87,.04), rgba(255,91,87,.18), rgba(255,91,87,.04)); border-color: rgba(255,91,87,.45); color: #ffb0ac; }
+@keyframes rankIn { from { transform: scale(.92); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rank-banner { animation: none; } }
+.rk-chip { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; vertical-align: -3px; font-size: 11px; font-weight: 600; color: var(--text); }
+.rk-chip .rank-em { filter: none; }
+.rk-chip.r0 { color: #e9a26a; } .rk-chip.r1 { color: #dfe5ec; } .rk-chip.r2 { color: #ffd458; } .rk-chip.r3 { color: #72e8d6; } .rk-chip.r4 { color: #7cc4ff; } .rk-chip.r5 { color: #c792ff; } .rk-chip.r6 { color: #ff7a6b; }
+.rk-warn { color: #ffcf8f; }
+.btn .rk-cost { font-size: 11px; letter-spacing: .06em; color: #ff8f8a; text-transform: none; }
+@media (max-width: 760px) { .pa-ladder { display: none; } .pa-rank { gap: 12px; padding: 12px; } }

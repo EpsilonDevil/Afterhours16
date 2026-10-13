@@ -174,7 +174,7 @@ test('the Sharp Eye package: its own base and release, for the holder only (neve
   assert.ok(bases.every(b => b === base || b.jump < base.jump), 'higher than any other base');
   const build = icon => ({ icon_badge: icon, equipment: { jumpshot: base.id, release: rel.id } });
   const pk = S.jumpshotPackage(build('sharp_eye'), catalog);
-  assert.equal(pk.style, 'sharpeye'); assert.equal(pk.release, 'sharpeye'); assert.equal(pk.jumpK, 1); assert.equal(pk.apexK, 1);
+  assert.equal(pk.style, 'sharpeye'); assert.equal(pk.release, 'sharpeye'); assert.equal(pk.jumpK, 2); assert.equal(pk.apexK, 1); // (v0.4.8.5: twice the hop, was 1)
   for (const b of bases) if (b !== base) assert.ok(S.jumpshotPackage({ icon_badge: 'sharp_eye', equipment: { jumpshot: b.id, release: rel.id } }, catalog).tRel >= pk.tRel - 1e-9, `quicker than ${b.id}`);
   assert.ok(SHOT_PATH.sharpeye.line, 'one smooth line up through the set');
   assert.ok(S.BASE_FEEL.sharpeye.speed <= Math.min(...Object.values(S.BASE_FEEL).map(f => f.speed)), 'the quickest feel there is');

@@ -3,7 +3,7 @@
 // passing, steals, boards and blocks per game, and how often your twos, threes and free throws go in.
 import { tendenciesFor } from './bots.js';
 
-export const STAT_LABELS = { pts: 'PTS', reb: 'REB', oreb: 'OREB', ast: 'AST', stl: 'STL', blk: 'BLK', tov: 'TOV', pf: 'PF', fgm: 'FGM', fga: 'FGA', tpm: '3PM', tpa: '3PA', ftm: 'FTM', fta: 'FTA', dunks: 'Dunks', greens: 'Greens', ankles: 'Ankle breakers', contested_makes: 'Contested makes', posters: 'Posters', putbacks: 'Putbacks', chasedowns: 'Chase-down blocks', alleyoops: 'Alley-oops' };
+export const STAT_LABELS = { pts: 'PTS', reb: 'REB', oreb: 'OREB', ast: 'AST', stl: 'STL', blk: 'BLK', tov: 'TOV', pf: 'PF', fgm: 'FGM', fga: 'FGA', tpm: '3PM', tpa: '3PA', ftm: 'FTM', fta: 'FTA', dunks: 'Dunks', greens: 'Greens', ankles: 'Ankle breakers', contested_makes: 'Contested makes', posters: 'Posters', putbacks: 'Putbacks', chasedowns: 'Chase-down blocks', alleyoops: 'Alley-oops', screens: 'Screens set' };
 // per-game averages the sim produces for a typical player in each mode (the "league average" the profile is
 // measured against)
 export const MODE_BASE = {

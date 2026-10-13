@@ -272,6 +272,7 @@ export function controlsTable(app) {
     ['Hesitation · step-back', K('stickUp', 'stickDown'), `Flick ${G('RS')} up / down`],
     ['Spin · behind-the-back', K('spin', 'btb'), `Rotate ${G('RS')} / flick down while moving`],
     ['Call screen · call for the ball', `${K('screen')} · ${K('pass')} (no ball)`, `Tap ${P('mod')} · ${P('pass')} (no ball)`],
+    ['Set a screen (off the ball): your man goes to the ball handler\'s defender and plants until you let go', `Hold ${K('bounce')} (no ball)`, `Hold ${P('bounce')} (no ball)`],
     // v0.4.7.5 qp3: post moves
     ['Post up with the ball — back to the basket; the stick toward the rim backs him down', `Hold ${K('post')}`, `Hold ${P('post')}`],
     ['Post moves (posting): drop step left / right · spin · up-and-under', `${K('stickLeft')} / ${K('stickRight')} · ${K('stickUp')} · ${K('stickDown')}`, `${G('RS')} left / right · up · down`],

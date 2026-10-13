@@ -382,6 +382,7 @@ export class MatchSession {
     if (has && inp.isDown('post')) { it.post = true; it.postStick = [wx, wz]; if (P.post) { it.postMove = { move: P.post.move, side: P.post.side }; } }
     if (P.steal) { it.steal = true; if (P.steal.dir) it.stealDir = P.steal.dir; if (P.steal.low) it.stealLow = true; }
     if (P.call) it.call = true;
+    if (offense && !has && inp.screenHeld && inp.screenHeld()) it.screen = true; // (v0.4.8.5: hold B off the ball to set a screen)
     if (this.online) {
       // online: the one-off calls go with the input, and every press carries its number (Game.multiIntent drops it on
       // the ticks after it was used)

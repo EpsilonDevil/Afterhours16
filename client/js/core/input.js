@@ -214,6 +214,12 @@ export class Input {
   isDown(action) { if (this.capturing) return false; return (this.keymap[action] || [action]).some(k => this.down.has(k)) || this.gpDown(action); }
   wasPressed(action) { if (this.capturing) return false; return (this.keymap[action] || [action]).some(k => this.pressed.has(k)) || this.gpPressed(action); }
   wasReleased(action) { return (this.keymap[action] || [action]).some(k => this.released.has(k)); }
+  // v0.4.8.5: off the ball on offense, holding the bounce-pass button (B / Circle, R on the keyboard) sets a screen
+  screenHeld() {
+    if (this.capturing || this.ctx !== 'offball') return false;
+    if ((this.keymap.bounce || []).some(k => this.down.has(k))) return true;
+    return this.gp.connected && this.gpBtn(this.pb('bounce')) && !this.gpBtn(this.pb('mod'));
+  }
   get usingPad() { return this.lastDevice === 'gamepad' && this.gp.connected; }
 
   // ---------------- gamepad ----------------

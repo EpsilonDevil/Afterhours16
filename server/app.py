@@ -31,7 +31,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8"
+VERSION = "0.4.8.5"
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
@@ -185,12 +185,16 @@ class Service:
         rows = c.execute(query, (char_id, account_id)).fetchall() if c else self.db.query(query, (char_id, account_id))
         if not rows:
             raise HTTPError(404, "Player not found.")
-        return builds.normalize(json.loads(rows[0][0]))
+        char = builds.normalize(json.loads(rows[0][0]))
+        progression.proam_state(char)  # v0.4.8.5: Pro-Am RP (seeded once from an older build's record; saved with it)
+        return char
 
     def describe(self, char):
+        rp = progression.proam_state(char)["rp"]  # v0.4.8.5: Pro-Am RP and rank
         out = dict(char)
         out.update(builds.describe(char))
         out["rep"] = progression.rep_info(char.get("progression", {}).get("rep", 0))
+        out["proam_rank"] = progression.proam_rank(rp)
         return out
 
     def profile(self, account_id):
@@ -198,9 +202,17 @@ class Service:
             conn = self.db.conn
             account = conn.execute("SELECT id,username,created_at FROM accounts WHERE id=?", (account_id,)).fetchone()
             rows = conn.execute("SELECT id, data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,)).fetchall()
-            chars = []
+            chars, badge_updates = [], []
             for cid, data in rows:
                 char = builds.normalize(json.loads(data))
+                # v0.4.8.5: badges catch up with the current requirements as the profile loads (a lowered Hall of Fame
+                # mark, Handles for Days counting the games already played, Brick Wall's move to screens), not a game later
+                had_v0485 = bool(char.get("badges_v0485"))
+                sync = progression.sync_badges(char)
+                if sync or not had_v0485:
+                    conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                if sync:
+                    badge_updates.append({"character_id": cid, "name": char.get("name"), **sync})
                 # v0.4.8: a build that already held Sharp Eye gets the Icon's new package (jumpshot base and release)
                 # put on once, as a build that unlocks it now does (it can change them back in its Inventory)
                 if char.get("icon_badge") and not char.get("icon_pkg_v048"):
@@ -221,6 +233,7 @@ class Service:
                     "inventory": [r[0] for r in conn.execute("SELECT item_id FROM inventory WHERE account_id=?", (account_id,))],
                     "characters": chars,
                     "proam_team": json.loads(team[0]) if team else None,
+                    "badge_updates": badge_updates,
                     "daily_spin": self.spin_status(conn, account_id),
                     "locker_codes": [{"code": r["code"], "used": r["count"], "max": progression.LOCKER_CODES.get(r["code"], {}).get("max_per_account", r["count"]),
                                       "label": progression.LOCKER_CODES.get(r["code"], {}).get("label", "")}
@@ -279,6 +292,17 @@ class Service:
             char = builds.normalize(json.loads(crow[0]))
             char["progression"].setdefault("cup", {"games": 0, "wins": 0})["streak"] = 0
             c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char_id))
+
+    # v0.4.8.5: a Pro-Am game forfeited (Forfeit & leave), or left running when the next game starts, costs its build RP
+    @staticmethod
+    def proam_forfeit(c, char_id, kind="forfeit"):
+        crow = c.execute("SELECT data FROM characters WHERE id=?", (char_id,)).fetchone()
+        if not crow:
+            return None
+        char = builds.normalize(json.loads(crow[0]))
+        out = progression.proam_forfeit(char, kind)
+        c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char_id))
+        return {**out, "character_id": char_id}
 
     def cup_seed(self, conn, account_id):
         w = self.load_ai_world(conn, account_id)
@@ -856,7 +880,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise builds.Invalid("Up to four players per account.")
                     char = builds.normalize({**build, "id": str(uuid.uuid4()), "attributes": builds.starting_attributes(build),
                                              "equipment": dict(builds.DEFAULT_EQUIPMENT), "schema": 3, "badges": {}, "affiliation": None,
-                                             "progression": {"games": 0, "wins": 0, "xp": 0, "rep": 0, "park": {"games": 0, "wins": 0, "streak": 0, "best_streak": 0}, "proam": {"games": 0, "wins": 0}, "career": {}}})
+                                             "progression": {"games": 0, "wins": 0, "xp": 0, "rep": 0, "park": {"games": 0, "wins": 0, "streak": 0, "best_streak": 0}, "proam": {"games": 0, "wins": 0, "rp": 0, "best_rp": 0}, "career": {}}})
                     c.execute("INSERT INTO characters VALUES(?,?,?,?)", (char["id"], aid, encode(char), time.time()))
                     return {"character": s.describe(char)}
                 return self.respond(200, db.once(aid, data.get("key"), "character_create", build, create))
@@ -1161,10 +1185,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def start_match(self, aid, data):
         s, db = self.service, self.service.db
-        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante", "bounty_streak"))
+        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante", "bounty_streak", "opp_rating"))
         mode = data.get("mode", "park")
         if mode not in ("park", "proam", "prorun"):
             raise builds.Invalid("Mode must be park, proam or prorun.")
+        if "opp_rating" in data and mode != "proam":
+            raise builds.Invalid("An opponent rating is for Pro-Am games.")
         char = s.character(aid, data.get("character_id"))
         venue = data.get("venue", "brick")
         if venue not in {v["id"] for v in VENUES}:
@@ -1173,6 +1199,10 @@ class Handler(BaseHTTPRequestHandler):
         if fmt not in progression.MODES[mode]["formats"]:
             raise builds.Invalid("Unsupported team size for this mode.")
         meta = {"format": fmt, "venue": venue}
+        # v0.4.8.5: until Pro 1 a build's park games are in its home park (park events are open to everyone)
+        if mode == "park" and venue in progression.AFFILIATIONS and char.get("affiliation") and venue != char["affiliation"] \
+                and progression.rep_level(char.get("progression", {}).get("rep", 0)) < progression.TRAVEL_REP_LEVEL:
+            raise builds.Invalid("Reach Pro 1 to play at other parks; until then your games are in your home park.")
         if mode == "park":
             target = builds.integer(data.get("target", 21), 11, 21, "Target")
             if target not in (11, 15, 21):
@@ -1202,10 +1232,10 @@ class Handler(BaseHTTPRequestHandler):
         elif venue in cup.EVENT_VENUES:
             raise builds.Invalid(cup.EVENT_BY_VENUE[venue]["name"] + " only runs park games.")
         elif mode == "prorun":
-            # v0.4.5 The Pro Run: college and pro games, 3- to 12-minute quarters
+            # v0.4.5 The Pro Run: college and pro games, 3- to 12-minute quarters (v0.4.8.5: from 1 minute)
             if venue != "arena":
                 raise builds.Invalid("Pro Run games are played in the arena.")
-            meta["quarter_len"] = builds.integer(data.get("quarter_len", 300), 120, 720, "Quarter length")
+            meta["quarter_len"] = builds.integer(data.get("quarter_len", 300), 60, 720, "Quarter length")
             meta["quarters"] = 4
         else:
             ql = builds.integer(data.get("quarter_len", 180), 120, 420, "Quarter length")
@@ -1214,6 +1244,10 @@ class Handler(BaseHTTPRequestHandler):
             row = db.query("SELECT data FROM proam_teams WHERE account_id=?", (aid,))
             if not row:
                 raise builds.Invalid("Create your Pro-Am team first.")
+            # v0.4.8.5: how strong the other team is (RP-like, 0..3200: the client's AI level or its players' RP), for the
+            # competition part of the RP this game pays; without one, a team as strong as you
+            opp = data.get("opp_rating")
+            meta["opp_rating"] = progression.proam_state(char)["rp"] if opp is None else builds.integer(opp, 0, progression.PROAM_RATING_MAX, "Opponent rating")
         diff = data.get("difficulty", 0.6)
         if not isinstance(diff, (int, float)) or isinstance(diff, bool) or not 0.2 <= diff <= 1.0:
             raise builds.Invalid("Difficulty must be 0.2-1.0.")
@@ -1222,7 +1256,8 @@ class Handler(BaseHTTPRequestHandler):
         def create(c):
             # abandoning an unfinished game forfeits it (no reward, resets park streak)
             for old in c.execute("SELECT id, mode, character_id, venue FROM matches WHERE account_id=? AND status='running'", (aid,)).fetchall():
-                c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "abandoned", "reward": 0}), time.time(), old["id"]))
+                rank = s.proam_forfeit(c, old["character_id"], "abandoned") if old["mode"] == "proam" else None  # v0.4.8.5: -20 RP
+                c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "abandoned", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), old["id"]))
                 if old["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, old["character_id"])
             # v0.4.5: the Cup stake comes out of the wallet now; it's only paid back on a win
@@ -1279,14 +1314,21 @@ class Handler(BaseHTTPRequestHandler):
     def finish_match(self, aid, match_id, action, data):
         s, db = self.service, self.service.db
         if action == "cancel":
-            builds.strict_keys(data, ())
+            # v0.4.8.5: forfeit (Forfeit & leave from the pause menu) costs a Pro-Am game's RP; a lost connection doesn't
+            builds.strict_keys(data, ("forfeit",))
+            if not isinstance(data.get("forfeit", False), bool):
+                raise builds.Invalid("forfeit must be true or false.")
+            rank, char_out = None, None
             with db.transaction() as c:
                 row = c.execute("SELECT status, result, mode, character_id, venue FROM matches WHERE id=? AND account_id=?", (match_id, aid)).fetchone()
                 if not row:
                     raise HTTPError(404, "Game not found.")
                 if row["status"] != "running":
                     return self.respond(200, {"status": row["status"], "result": json.loads(row["result"] or "null")})
-                c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "player_left", "reward": 0}), time.time(), match_id))
+                if row["mode"] == "proam" and data.get("forfeit"):
+                    rank = s.proam_forfeit(c, row["character_id"])
+                    char_out = s.describe(s.character(aid, row["character_id"], c)) if rank else None
+                c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "forfeit" if rank else "player_left", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), match_id))
                 if row["mode"] == "park" and row["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, row["character_id"])  # the stake is already gone
                 elif row["mode"] == "park":
@@ -1295,7 +1337,7 @@ class Handler(BaseHTTPRequestHandler):
                         char = builds.normalize(json.loads(crow[0]))
                         char["progression"].setdefault("park", {})["streak"] = 0
                         c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), row["character_id"]))
-            return self.respond(200, {"status": "cancelled", "reward": 0})
+            return self.respond(200, {"status": "cancelled", "reward": 0, **({"proam_rank": rank, "character": char_out} if rank else {})})
         builds.strict_keys(data, ("key", "summary", "mates", "crew_mates"))
         mates = data.get("mates") or []
         crew_mates = data.get("crew_mates") or 0  # (qp3: real crew members who ran with you in an online game)
@@ -1319,6 +1361,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise builds.Invalid("Reported game time exceeds the time since the game started.")
             char = s.character(aid, row["character_id"], c)
             rw = progression.rewards(summary, ticket, char)
+            # v0.4.8.5: Pro-Am RP (worked out before apply_progress counts this game in the build's record): win or loss,
+            # how strong the other team was, and how you played; a forfeited result costs what Forfeit & leave does
+            proam_rank = None
+            if row["mode"] == "proam":
+                if summary["forfeit"]:
+                    proam_rank = progression.proam_forfeit(char)
+                else:
+                    pa = progression.proam_state(char)
+                    secs = ticket["meta"].get("quarter_len", 180) * ticket["meta"].get("quarters", 4)
+                    change = progression.proam_rp_change(pa["rp"], ticket["meta"].get("opp_rating", pa["rp"]), rw["won"], summary["stats"], secs)
+                    proam_rank = progression.proam_apply(char, change)
             prog = progression.apply_progress(char, summary, rw)
             icon_items = s.grant_icon_items(c, aid, prog["icon_unlocked"], char, equip=True) if prog["icon_unlocked"] else []
             balance = db.change_wallet(c, aid, rw["vc"], "match_reward", "match:" + match_id) if rw["vc"] > 0 else c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]
@@ -1361,7 +1414,7 @@ class Handler(BaseHTTPRequestHandler):
                       "streak": rw["streak"], "bounty": rw.get("bounty", 0), "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
                       "badges_upgraded": prog["badges_upgraded"], "badge_progress": rw["badges"], "stats": summary["stats"],
                       "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "icon_items": icon_items, "max_ovr_unlocked": prog["max_ovr_unlocked"],
-                      "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team}
+                      "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team, "proam_rank": proam_rank}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result
         return self.respond(200, db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete))

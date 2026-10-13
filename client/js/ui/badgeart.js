@@ -7,6 +7,7 @@
 // full-spectrum design inside.
 // Everything is inline SVG with its own gradient ids, so a badge can be dropped into any element.
 import { esc, TIER_CLS } from './common.js';
+import { RANKS as RANK_COLORS } from '../sim/ranks.js';
 
 let uid = 0;
 const nid = p => `${p}${(++uid).toString(36)}`;
@@ -108,9 +109,11 @@ const ICON_ART = {
   sharp_eye: a => `<circle cx="32" cy="32" r="29" fill="url(#${a}w)" stroke="url(#${a}g)" stroke-width="3"/>
     ${[0, 90, 180, 270].map(d => `<rect x="30.5" y="1" width="3" height="9" rx="1" fill="url(#${a}g)" transform="rotate(${d} 32 32)"/>`).join('')}
     <circle cx="32" cy="32" r="19.5" fill="#fff" stroke="url(#${a}g)" stroke-width="1.6"/>
-    <g>${conic(32, 32, 17, 30, 6.5)}<animateTransform attributeName="transform" type="rotate" from="0 32 32" to="360 32 32" dur="14s" repeatCount="indefinite"/></g>
+    <g>${conic(32, 32, 17, 30, 6.5)}<animateTransform attributeName="transform" type="rotate" from="0 32 32" to="360 32 32" dur="9s" repeatCount="indefinite"/></g>
     <circle cx="32" cy="32" r="6.5" fill="#0f1116"/><circle cx="29.6" cy="29.6" r="1.9" fill="#fff"/>
-    <path d="M32 9v9M32 46v9M9 32h9M46 32h9" stroke="url(#${a}g)" stroke-width="2" stroke-linecap="round"/>`,
+    <path d="M32 9v9M32 46v9M9 32h9M46 32h9" stroke="url(#${a}r)" stroke-width="3.2" stroke-linecap="round"/>`,
+  // (v0.4.8.5: the reticle in the same living spectrum as Hash-Slinging's slashes, the iris turning at the same 9 s, so
+  // the two Icon badges' activations move alike)
   // Slasher: a kite-shaped blade with three spectrum slashes tearing through it and a gold ball at the tip.
   hash_slinging: a => `<path d="M32 2L58 30 32 62 6 30Z" fill="url(#${a}w)" stroke="url(#${a}g)" stroke-width="3" stroke-linejoin="round"/>
     <path d="M32 9L51 30 32 54 13 30Z" fill="none" stroke="url(#${a}g)" stroke-width="1" opacity=".7"/>
@@ -167,4 +170,27 @@ export function iconBadgeSVG(id, size = 64, opts = {}) {
 // a badge chip (name with its mini icon) for lists: intros, the phone, results
 export function badgeChip(id, tier, name, opts = {}) {
   return `<span class="ib ${TIER_CLS[tier] || 'none'}${opts.extra ? ` ${opts.extra}` : ''}">${badgeSVG(id, tier, opts.size || 15)}<span>${esc(name)}</span></span>`;
+}
+
+// v0.4.8.5 Pro-Am rank emblems (sim/ranks.js): a shield in the rank's colours. Bronze, Silver and Gold carry one, two and
+// three chevrons; Platinum adds wings; Diamond a cut gem, Master a star, Grandmaster a crown on a gold-rimmed shield
+// with a starburst behind it.
+const RANK_SHIELD = 'M32 4L50 11V31C50 45 42 54 32 60 22 54 14 45 14 31V11Z';
+const RANK_WING = 'M15 13C7.5 15 3 22 2 31 5.5 28.5 9 27.5 13 27.5 8 30.5 5 35.5 5 42 8.5 38.5 12 37 15 37Z';
+export function rankEmblemSVG(rank, size = 48) {
+  const t = Math.max(0, Math.min(6, (typeof rank === 'number' ? rank : rank?.tier) | 0)), r = RANK_COLORS[t], a = nid('rk');
+  const ink = t === 6 ? '#ffe9a0' : '#fffaf0';
+  // (chevrons: light, on a dark edge, so they read on the pale ranks too)
+  const chev = n => Array.from({ length: n }, (_, i) => { const y = 34 - (n - 1) * 4 + i * 8 - 4; return `<path d="M22.5 ${y + 7}L32 ${y}l9.5 ${7}"/>`; }).join('');
+  const glyph = t <= 3 ? `<g fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="${r.dark}" stroke-width="6.8">${chev(Math.min(3, t + 1))}</g><g stroke="${ink}" stroke-width="3.6">${chev(Math.min(3, t + 1))}</g></g>`
+    : t === 4 ? `<g stroke="${ink}" stroke-width="1.6" stroke-linejoin="round"><path d="M21.5 25L26.5 18H37.5L42.5 25 32 43Z" fill="${ink}" fill-opacity=".9"/><path d="M21.5 25H42.5M26.5 18L29 25 32 43 35 25 37.5 18" fill="none" stroke="${r.dark}" stroke-width="1.2"/></g>`
+    : t === 5 ? `<polygon points="${starPts(32, 30, 5, 13, 5.6)}" fill="${ink}" stroke="${r.dark}" stroke-width="1.2" stroke-linejoin="round"/>`
+    : `<path d="M20.5 40L18.5 21.5 26 29 32 17.5 38 29 45.5 21.5 43.5 40Z" fill="${ink}" stroke="#8a5a05" stroke-width="1.4" stroke-linejoin="round"/><rect x="20.5" y="41.5" width="23" height="4.5" rx="1.2" fill="${ink}" stroke="#8a5a05" stroke-width="1.2"/><circle cx="32" cy="31" r="2.6" fill="${r.color}"/>`;
+  const wings = t >= 3 ? `<g fill="url(#${a}w)" stroke="${r.dark}" stroke-width="1.2" stroke-linejoin="round"><path d="${RANK_WING}"/><path d="${RANK_WING}" transform="matrix(-1 0 0 1 64 0)"/></g>` : '';
+  const burst = t === 6 ? `<polygon points="${starPts(32, 32, 12, 31, 20)}" fill="#ffd458" opacity=".35"/>` : '';
+  return `<svg class="rank-em r${t}" viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true"><defs>
+    <linearGradient id="${a}f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${r.color}"/><stop offset="1" stop-color="${r.dark}"/></linearGradient>
+    <linearGradient id="${a}w" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${r.color}"/><stop offset="1" stop-color="${r.dark}" stop-opacity=".8"/></linearGradient></defs>
+    ${burst}${wings}<path d="${RANK_SHIELD}" fill="url(#${a}f)" stroke="${t === 6 ? '#ffd458' : r.dark}" stroke-width="${t === 6 ? 3 : 2}" stroke-linejoin="round"/>
+    <path d="M32 9L45.5 14.2V31C45.5 42 39 49.5 32 54.5 25 49.5 18.5 42 18.5 31V14.2Z" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="1.2"/>${glyph}</svg>`;
 }

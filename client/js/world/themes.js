@@ -15,11 +15,22 @@ export const EVENTS = {
 // name/colors for any park id, affiliation or event
 export const parkInfo = id => AFFILIATIONS[id] || EVENTS[id] || null;
 
+// v0.4.8.5: a new build plays in its home park until it reaches Pro 1 (Rep level 5); from then on it can visit the other
+// affiliation parks whenever it likes. A running park event, the Crew HQ and every other mode are open from the start.
+// Mirrors server/progression.py TRAVEL_REP_LEVEL. Returns null when the build may go, else why not.
+export const TRAVEL_REP_LEVEL = 5;
+export function travelLock(char, parkId) {
+  if (!AFFILIATIONS[parkId] || !char) return null; // (events and anything that isn't an affiliation park)
+  if (!char.affiliation || parkId === char.affiliation) return null;
+  if ((char.rep?.level ?? 0) >= TRAVEL_REP_LEVEL) return null;
+  return `Reach Pro 1 to visit ${AFFILIATIONS[parkId].park}. Until then your home park is ${AFFILIATIONS[char.affiliation]?.park || 'your home court'}.`;
+}
+
 export const THEMES = {
   harbor: {
     id: 'harbor', kind: 'park', name: 'Harbor Point', style: 'coast',
     court: { surface: 'asphalt', court: '#2f8a8c', apron: '#e6c79a', paint: '#ef7d3c', lines: '#fbf5e6', arcTint: 'rgba(255,255,255,0.05)', wear: 0.55, logo: { shape: 'crown', color: '#ef7d3c', accent: '#fbf5e6', text: 'HK', size: 1.35 }, baselineText: 'HARBOR KINGS', asphaltTint: '#d8d2c8' },
-    ground: '#c7b392',
+    ground: '#fff3e2', // (v0.4.8.5: a warm tint over the sand texture)
     sky: { top: [0.16, 0.2, 0.42], horizon: [1.0, 0.56, 0.32], ground: [0.35, 0.25, 0.2], stars: 0 },
     sun: { dir: [-0.75, 0.32, 0.55], color: [1.0, 0.68, 0.42], intensity: 3.4 },
     ambient: { sky: [0.42, 0.36, 0.48], ground: [0.32, 0.22, 0.16] },
@@ -31,7 +42,7 @@ export const THEMES = {
   brick: {
     id: 'brick', kind: 'park', name: 'Old Brick Yard', style: 'city',
     court: { surface: 'asphalt', court: '#7a2e2a', apron: '#3a3634', paint: '#e8dcc0', lines: '#f6efdd', wear: 0.75, logo: { shape: 'shield', color: '#2b2523', accent: '#f0e2c4', text: 'OBS', size: 1.4 }, baselineText: 'OLD BRICK SOCIETY', asphaltTint: '#b8b2aa' },
-    ground: '#57534f',
+    ground: '#e4e0dc', // (v0.4.8.5: a tint over the street asphalt texture)
     sky: { top: [0.01, 0.015, 0.04], horizon: [0.09, 0.08, 0.12], ground: [0.03, 0.03, 0.03], stars: 1 },
     sun: { dir: [0.18, 1, 0.24], color: [0.95, 0.93, 1.0], intensity: 2.6 },
     ambient: { sky: [0.12, 0.13, 0.2], ground: [0.08, 0.06, 0.05] },
@@ -47,7 +58,7 @@ export const THEMES = {
     sky: { top: [0.12, 0.12, 0.2], horizon: [0.62, 0.4, 0.42], ground: [0.12, 0.11, 0.1], stars: 0.15 },
     sun: { dir: [0.6, 0.38, -0.5], color: [1.0, 0.72, 0.5], intensity: 2.4 },
     ambient: { sky: [0.26, 0.24, 0.32], ground: [0.14, 0.11, 0.09] },
-    fog: { color: [0.42, 0.32, 0.34], density: 0.01 },
+    fog: { color: [0.42, 0.32, 0.34], density: 0.0075 }, // (v0.4.8.5: a touch thinner so the plant's skyline shows through)
     env: { top: '#25263a', horizon: '#a8686a', ground: '#2a2522', skyline: '#1e1d22' },
     exposure: 1.1, bloom: { strength: 0.1, threshold: 1.0, radius: 1 }, grade: { saturation: 0.95, contrast: 1.08, vignette: 0.65 },
     floodlights: true, lightColor: [1.0, 0.72, 0.42], envIntensity: 0.7,

@@ -3542,7 +3542,7 @@
   "price": 0,
   "set_height": 1.15,
   "push": 0.05,
-  "jump": 1.0,
+  "jump": 2.0,
   "apex": 1.0,
   "style": "sharpeye",
   "description": "The Sharpshooter Icon's own: an effortless quick hop that takes him higher than any other base, and the ball goes at the very top. Comes with the Sharp Eye Icon badge, for that build only; it cannot be bought.",

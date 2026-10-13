@@ -8,13 +8,15 @@
 // ui/modes.js, crew runs in game/crewhq.js.
 import { $$, esc, toast, closeModal, modal } from './common.js';
 import { Net } from '../core/netplay.js';
-import { THEMES } from '../world/themes.js';
+import { THEMES, travelLock } from '../world/themes.js';
 import { PARK_NAMES } from '../sim/world.js';
 import { resolveLook } from '../sim/bots.js';
 import { GAME_SPEED } from '../sim/game.js';
 import { settings } from '../core/settings.js';
 import { badgeTiers } from '../game/park.js';
 import { boostedBuild } from '../sim/ratings.js';
+import { rankOf, rpOf, entryRP, rankSpan, spanMessage } from '../sim/ranks.js';
+import { rankEmblemSVG } from './badgeart.js';
 
 export const MAX_SQUAD = 5;
 export const parkName = id => !id ? 'somewhere' : String(id).startsWith('hq:') ? 'a Crew HQ' : PARK_NAMES[id] || THEMES[id]?.name || 'a park';
@@ -38,7 +40,8 @@ export async function initOnline(app) {
   }));
   net.on('challenge', m => popInvite(app, 'ch', {
     eyebrow: 'PRO-AM CHALLENGE', title: m.name || m.username, text: `${m.username}${m.size > 1 ? `'s squad of ${m.size}` : ''} wants to run Pro-Am against ${net.squad ? 'your squad' : 'you'} in the arena`,
-    yes: 'Accept', onYes: () => net.send({ t: 'challenge-reply', from: m.from, ok: true }), onNo: () => net.send({ t: 'challenge-reply', from: m.from, ok: false }),
+    // (v0.4.8.5: your squad's real players have to be within 2 Pro-Am ranks of each other to take it)
+    yes: 'Accept', onYes: () => { const bad = squadRankProblem(app); if (bad) toast(bad, 'error'); net.send({ t: 'challenge-reply', from: m.from, ok: !bad }); }, onNo: () => net.send({ t: 'challenge-reply', from: m.from, ok: false }),
   }));
   net.on('challenge-go', m => import('./modes.js').then(Modes => Modes.startProAmOnline(app, m.opp)).catch(e => { console.error(e); toast(e.message, 'error'); }));
   net.on('crewinvite', m => popInvite(app, 'crew', {
@@ -79,7 +82,7 @@ export async function initOnline(app) {
     if (!net.connected) { lastChar = null; lastAI = null; return; }
     net.where(whereNow(app));
     // (another player picked, or a new look: the people where you are see you with it)
-    const c = app.char(), key = c ? `${c.id}|${c.overall}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}` : null;
+    const c = app.char(), key = c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}` : null;
     if (key !== lastChar) { lastChar = key; net.sendEntry(); }
     // (your AI squad mates: they walk with you on everyone's screen and run in your online squad)
     const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}`).join(',');
@@ -120,7 +123,8 @@ export function myEntry(app) {
   if (!c) return null;
   // (your active boosts play, as in any game: the game's ticket uses one game of each up)
   const boosts = Object.keys(c.boosts || {}).filter(k => (c.boosts[k] | 0) > 0).sort();
-  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false };
+  // (v0.4.8.5: proam_rp: your Pro-Am RP, for your squad's rank check and the other team's strength in a Pro-Am game)
+  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false, proam_rp: rpOf(c) };
 }
 
 const statusText = p => !p || !p.online ? 'Offline' : p.playing || p.status === 'game' ? 'In a game' : p.park ? `At ${parkName(p.park)}${p.status === 'busy' ? ' · busy' : ''}` : 'In the menus';
@@ -149,10 +153,11 @@ export function personOf(app, id) {
 // a roster entry as it goes into a setup: his look resolved (the same on every screen), human or not
 export function setupEntry(app, e, human, username = null) {
   const out = { build: e.build, name: e.name, look: e.look || resolveLook({ ...e.build, name: e.name }, app.catalog), badges: e.badges || {}, human: !!human };
-  // (an AI player plays with his own basketball IQ, jersey number and Icon badge, the same as in his owner's games)
-  for (const k of ['iq', 'number', 'icon']) if (e[k] != null) out[k] = e[k];
+  // (an AI player plays with his own basketball IQ, jersey number and Icon badge, the same as in his owner's games;
+  // v0.4.8.5: his level, and a real player's Pro-Am RP, rate the team for Pro-Am RP: sim/ranks.js teamRating)
+  for (const k of ['iq', 'number', 'icon', 'level']) if (e[k] != null) out[k] = e[k];
   if (e.sq) out.sq = e.sq; // (an AI squad mate: whose, and who he is in his owner's game)
-  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; }
+  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; if (entryRP(e) != null) out.proam_rp = entryRP(e); }
   return out;
 }
 // slots, names and shot-meter settings of a setup's people: rosters are team 0 then team 1; people: [{id, username}]
@@ -174,6 +179,23 @@ export function freeSquad(app, here = false) {
 }
 export const netOn = app => !!app.net?.connected;
 
+// ---------------- v0.4.8.5: Pro-Am ranks in an online squad ----------------
+// a squad member's Pro-Am rank (you: your player's; a friend: the RP in his entry), null when it isn't known
+export function memberRank(app, id) {
+  const net = app.net, rp = id === net?.myId ? rpOf(app.char()) : entryRP(net?.entryOf(id));
+  return rp == null ? null : rankOf(rp);
+}
+export const rankChip = (rk, size = 14) => (rk ? `<span class="rk-chip r${rk.tier}">${rankEmblemSVG(rk, size)}${esc(rk.name)}</span>` : '');
+// The friends rule: the real players who'd suit up together (you and your free squad mates) are within 2 ranks of each
+// other. '' when they are, else what to tell the player. (AI squad mates have no rank: never checked)
+export function squadRankProblem(app) {
+  const net = app.net;
+  if (!net?.squad) return '';
+  const members = [{ name: app.char()?.name || net.you?.username, rp: rpOf(app.char()), you: true },
+    ...freeSquad(app).map(m => ({ name: m.name || m.username, rp: entryRP(net.entryOf(m.id)) }))];
+  return spanMessage(rankSpan(members));
+}
+
 // Your AI squad mates (the friends from your own game's world who run with you): in the online squad they're your
 // squad's too, so they go to the hosted game with you: [{id, name, entry}] (entry without your world's ids)
 export function myAISquad(app) {
@@ -182,7 +204,7 @@ export function myAISquad(app) {
   return w.activeSquad().slice(0, 4).map(id => {
     const e = w.gameEntry(id);
     const entry = { build: e.build, name: e.name, badges: e.badges || {} };
-    for (const k of ['iq', 'number', 'icon']) if (e[k] != null) entry[k] = e[k];
+    for (const k of ['iq', 'number', 'icon', 'level']) if (e[k] != null) entry[k] = e[k];
     return { id, name: e.name, entry };
   });
 }
@@ -227,6 +249,9 @@ function followSquad(app) {
   const hq = target.startsWith('hq:');
   if (hq && net.crew?.id !== target.slice(3)) return; // (a crew's HQ is for its members)
   if (hq ? false : THEMES[target]?.event && app.config?.event?.id !== target) return;
+  // v0.4.8.5: a build that hasn't reached Pro 1 stays in its home park (it's told where the squad is, once)
+  const lock = hq ? null : travelLock(app.char(), target);
+  if (lock) { net.following = target; toast(`Your squad is at ${parkName(target)}. ${lock}`, 'error'); return; }
   net.following = target;
   if (w && w.mode === 'roam' && !app.modalOpen()) {
     toast(`Following ${lead.name || lead.username} to ${hq ? 'the Crew HQ' : parkName(target)}…`);
@@ -342,9 +367,11 @@ export function squadHTML(app) {
   const lead = net.isLeader();
   // (each member's AI squad mates from his own game run in the squad too)
   const aiRows = m => (m.ai || []).map(a => `<div class="ol-mem ol-ai"><span class="ol-av ai">${esc(String(a.name || '?').slice(0, 1))}</span><span class="ph-who"><b>${esc(a.name)}</b><small>AI · ${a.ovr ?? ''} ${esc(a.pos || '')} · with ${esc(m.name || m.username)}</small></span></div>`).join('');
-  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>${aiRows(m)}`).join('');
+  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}${rankChip(memberRank(app, m.id))}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>${aiRows(m)}`).join('');
   const nAI = sq.members.reduce((s, m) => s + (m.ai?.length || 0), 0);
+  const rankBad = squadRankProblem(app);
   return `<div class="ol-room"><div class="ph-sec">Your squad · ${sq.members.length}/${MAX_SQUAD}${nAI ? ` · ${nAI} AI` : ''}</div>${rows}
+    ${rankBad ? `<p class="ph-note rk-warn">${esc(rankBad)} Pro-Am waits until you are.</p>` : ''}
     <p class="ph-note">${lead ? 'You lead: you call Got Next for the squad, and Pro-Am games start when you start one.' : `${esc(sq.members.find(m => m.id === sq.leader)?.name || 'Your leader')} leads: you go where he goes, and play when he starts a game.`}</p>
     <div class="ph-acts"><button class="btn small ghost" data-osqleave>Leave squad</button></div></div>`;
 }
@@ -379,10 +406,15 @@ export function bindPhoneTab(app, host, redraw) {
   };
   const once = (b, label) => { b.disabled = true; b.textContent = label; };
   $$('[data-osq]', host).forEach(b => b.onclick = () => { send({ t: 'sq-invite', to: b.dataset.osq }); once(b, 'Sent'); });
-  $$('[data-och]', host).forEach(b => b.onclick = () => { send({ t: 'challenge', to: b.dataset.och }); once(b, 'Sent'); });
+  $$('[data-och]', host).forEach(b => b.onclick = () => {
+    const bad = squadRankProblem(app); // (v0.4.8.5: your squad has to be within 2 Pro-Am ranks to run it)
+    if (bad) { toast(bad, 'error'); return; }
+    send({ t: 'challenge', to: b.dataset.och }); once(b, 'Sent');
+  });
   $$('[data-ocrew]', host).forEach(b => b.onclick = () => { send({ t: 'crew-invite', to: b.dataset.ocrew }); once(b, 'Sent'); });
   $$('[data-ogo]', host).forEach(b => b.onclick = () => {
     if (app.world?.mySession || app.mode === 'match') { toast('Finish your game first.', 'error'); return; }
+    const lock = travelLock(app.char(), b.dataset.ogo); if (lock) { toast(lock, 'error'); return; } // (v0.4.8.5)
     travel(app, b.dataset.ogo);
   });
   $$('[data-okick]', host).forEach(b => b.onclick = () => send({ t: 'sq-kick', id: b.dataset.okick }));

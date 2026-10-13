@@ -92,7 +92,7 @@ export class Player {
     this.dribble = { hand: this.hand, phase: 0, live: true, used: false };
     this.cool = { steal: 0, block: 0, move: 0, pass: 0, call: 0 };
     this.intent = blankIntent();
-    this.stats = { pts: 0, reb: 0, oreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, pf: 0, dunks: 0, greens: 0, ankles: 0, contested_makes: 0, posters: 0, putbacks: 0, chasedowns: 0, alleyoops: 0 };
+    this.stats = { pts: 0, reb: 0, oreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, pf: 0, dunks: 0, greens: 0, ankles: 0, contested_makes: 0, posters: 0, putbacks: 0, chasedowns: 0, alleyoops: 0, screens: 0 }; // (v0.4.8.5: screens = successful screens set, for Brick Wall)
     this.plantT = 0;
     this.airborne = false;
     this.hot = 0; // v0.4.5: 0 or 1 (on fire)

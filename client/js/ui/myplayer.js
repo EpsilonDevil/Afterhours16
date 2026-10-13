@@ -170,7 +170,7 @@ function badges(app, root, c) {
       return `<div class="badge ${TIER_CLS[tier]} ${cap < 4 ? 'capped' : ''}"><div class="badge-art">${badgeSVG(id, tier, 58, { cap })}</div>
         <div class="badge-info"><b>${esc(b.name)}</b><small>${tier ? TIER[tier] : 'Not earned'}${over} · ${esc(b.desc)}</small>
         <div class="pips">${pips(tier, cap)}${cap < 4 ? `<em>Max ${TIER[cap]}</em>` : ''}</div>
-        <span class="bar small"><i style="width:${pct}%"></i></span><small class="muted">${next ? `${st.progress}/${next} ${b.stat.replace('_', ' ')}` : tier >= cap && cap < 4 ? 'Maxed for this build' : 'Maxed'}</small></div></div>`;
+        <span class="bar small"><i style="width:${pct}%"></i></span><small class="muted">${next ? `${st.progress}/${next} ${b.stat.replace('_', ' ')}${tier === 3 && st.progress >= next && hof >= rules.hof_limit ? ` · Hall of Fame limit reached (${hof}/${rules.hof_limit})` : ''}` : tier >= cap && cap < 4 ? 'Maxed for this build' : 'Maxed'}</small></div></div>`;
     }).join('')}</div>`).join('')}`;
 }
 

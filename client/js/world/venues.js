@@ -9,6 +9,9 @@ import * as PR from './props.js';
 import { createParkLife } from './parklife.js';
 import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, PARK_HALL, HQ } from './themes.js';
 import { COURT } from '../sim/constants.js';
+import { harborGround, harborPalms, waterlineZ } from './harbor.js';
+import { streetGround, cityStreets } from './street.js';
+import { industrialSprawl } from './industry.js';
 
 const lin = hex => M.hexLinear(hex);
 
@@ -55,14 +58,20 @@ function buildPark(r, scene, theme, opts) {
   const mats = commonMats(ctx);
   const matte = [], metal = [], foliage = [], lamps = [], neon = [];
   const courts = [], hoops = [];
-  // ground
-  const conc = cachedTexture(ctx, 'concrete', () => T.concrete({ joints: true }).color, {});
-  const concN = cachedTexture(ctx, 'concreteN', () => T.concrete({ joints: true }).normal, { srgb: false });
-  const groundGeo = G.plane(160, 140, 1, 1);
-  for (let i = 0; i < groundGeo.uv.length; i += 2) { groundGeo.uv[i] *= 160 / 4; groundGeo.uv[i + 1] *= 140 / 4; }
-  const ground = new Mesh(ctx.geometry(groundGeo), new Material({ color: lin(theme.ground), map: conc, normalMap: concN, normalScale: 0.6, roughness: theme.style === 'city' ? 0.55 : 0.85 }), { castShadow: false, reflect: false });
-  ground.matrix[13] = -0.005; ground.order = -2;
-  scene.add(ground);
+  water_anim.length = 0; // (v0.4.8.5: every park starts its own list of scrolling materials)
+  // ground. v0.4.8.5: Harbor Point is sand down to the water, the Old Brick Yard a real street, Foundry Works' yard
+  // runs out under the industrial sprawl; the event parks keep the jointed concrete
+  if (theme.style === 'coast') harborGround(ctx, scene, theme);
+  else if (theme.style === 'city') streetGround(ctx, scene, theme);
+  else {
+    const conc = cachedTexture(ctx, 'concrete', () => T.concrete({ joints: true }).color, {});
+    const concN = cachedTexture(ctx, 'concreteN', () => T.concrete({ joints: true }).normal, { srgb: false });
+    const groundGeo = G.plane(160, 140, 1, 1);
+    for (let i = 0; i < groundGeo.uv.length; i += 2) { groundGeo.uv[i] *= 160 / 4; groundGeo.uv[i + 1] *= 140 / 4; }
+    const ground = new Mesh(ctx.geometry(groundGeo), new Material({ color: lin(theme.ground), map: conc, normalMap: concN, normalScale: 0.6, roughness: theme.style === 'city' ? 0.55 : 0.85 }), { castShadow: false, reflect: false });
+    ground.matrix[13] = -0.005; ground.order = -2;
+    scene.add(ground);
+  }
   // courts (v0.4.2: three full courts + two 2v2 and one 1v1 half courts)
   const fenceTex = cachedTexture(ctx, 'chainlink', () => T.chainlink(256), {});
   const fenceRuns = [];
@@ -191,15 +200,18 @@ function buildPark(r, scene, theme, opts) {
   scene.add(hallSign);
   // perimeter scenery by style
   const lightsOut = [];
-  let board = null;
+  let board = null, scenery = null; // (v0.4.8.5: scenery.update(dt) animates the city's signals, neon and windows,
+  // and the industrial sprawl's machines, plumes and low fog)
   if (theme.style === 'coast') coastScenery(ctx, scene, rng, matte, metal, foliage);
-  else if (theme.style === 'city') cityScenery(ctx, scene, rng, matte, metal, theme);
+  else if (theme.style === 'city') scenery = cityScenery(ctx, scene, rng, matte, metal, theme);
   else if (theme.style === 'tut') board = tutScenery(ctx, scene, rng, matte, metal, neon, foliage);
   else if (theme.style === 'jungle') board = jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps);
-  else industrialScenery(ctx, scene, rng, matte, metal, theme);
+  else scenery = industrialScenery(ctx, scene, rng, matte, metal, theme);
   // trees/palms scattered around plaza
   for (let i = 0; i < 14; i++) {
-    const x = rng.range(-50, 50), z = rng.next() < 0.5 ? rng.range(-34, -22) : rng.range(20, 30);
+    if (theme.style === 'coast') break; // (v0.4.8.5: Harbor Point places its own palms, clear of the game cameras: harbor.js)
+    let x = rng.range(-50, 50), z = rng.next() < 0.5 ? rng.range(-34, -22) : rng.range(20, 30);
+    if (theme.style === 'city' && z > 0) z = 31.3 + (z - 20) * 0.08; // (v0.4.8.5: street trees on Brick Row's sidewalk, not in the road)
     if (Math.abs(x) < 10 && z < -18) continue;
     if (Math.abs(x) > 38 && z > 18) continue; // annex courts / practice slab
     if (theme.style === 'tut' && (z > 18 || (x < -30 && z < -30))) continue; // mini-golf strip / leaderboard
@@ -213,7 +225,8 @@ function buildPark(r, scene, theme, opts) {
   // murals on a wall behind the west court
   const muralTex = cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
   const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1] }));
-  M.m4mul(wall.matrix, M.m4translation(M.m4(), -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
+  // (v0.4.8.5: at the Old Brick Yard the west avenue runs where it stood: the mural is on the building line across it)
+  M.m4mul(wall.matrix, M.m4translation(M.m4(), theme.style === 'city' ? -75.15 : -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
   scene.add(wall);
   batch(ctx, scene, matte, mats.matte);
   batch(ctx, scene, metal, mats.metal);
@@ -252,6 +265,7 @@ function buildPark(r, scene, theme, opts) {
       wheel.update(dt);
       life.update(dt);
       if (board) board.update(dt);
+      if (scenery) scenery.update(dt, r);
       gotNextMat.emissive = [0, 0, 0];
       gotNextMat.opacity = 0.7 + Math.sin(t * 3) * 0.25;
     },
@@ -261,44 +275,48 @@ function buildPark(r, scene, theme, opts) {
 // materials whose UVs scroll every frame (water, surf)
 const water_anim = [];
 function coastScenery(ctx, scene, rng, matte, metal, foliage) {
-  water_anim.length = 0;
   // ocean beyond the north boardwalk
   // v0.4.5: real water. Two scrolling swell layers (crossing each other) over a deep-blue base, plus a line
   // of surf where it meets the sand.
-  const water = G.plane(400, 160, 1, 1);
-  for (let i = 0; i < water.uv.length; i += 2) { water.uv[i] *= 34; water.uv[i + 1] *= 14; }
+  // v0.4.8.5: the sea is wider (the sand runs 300 m either way now) and the surf sits on the new waterline
+  const SEA_W = 700, wl = waterlineZ();
+  const water = G.plane(SEA_W, 160, 1, 1);
+  for (let i = 0; i < water.uv.length; i += 2) { water.uv[i] *= 34 * SEA_W / 400; water.uv[i + 1] *= 14; }
   const wn = cachedTexture(ctx, 'waterN2', () => T.waterNormal({ seed: 41 }), { srgb: false });
   const seaMat = new Material({ color: lin('#15566e'), normalMap: wn, normalScale: 0.65, roughness: 0.07, specular: 1.5, metalness: 0.08 });
   const sea = new Mesh(ctx.geometry(water), seaMat, { castShadow: false, reflect: false });
   M.m4translation(sea.matrix, 0, -0.6, 115);
   scene.add(sea);
-  const water2 = G.plane(400, 160, 1, 1);
-  for (let i = 0; i < water2.uv.length; i += 2) { water2.uv[i] *= 19; water2.uv[i + 1] *= 9; }
+  const water2 = G.plane(SEA_W, 160, 1, 1);
+  for (let i = 0; i < water2.uv.length; i += 2) { water2.uv[i] *= 19 * SEA_W / 400; water2.uv[i + 1] *= 9; }
   const seaMat2 = new Material({ color: lin('#2b7f92'), normalMap: wn, normalScale: 0.5, roughness: 0.1, specular: 1.3, blend: 'alpha', opacity: 0.4, depthWrite: false });
   const sea2 = new Mesh(ctx.geometry(water2), seaMat2, { castShadow: false, reflect: false });
   M.m4translation(sea2.matrix, 0, -0.55, 115);
   sea2.order = 1;
   scene.add(sea2);
   // surf line along the beach
-  const surf = G.plane(400, 5, 1, 1);
-  for (let i = 0; i < surf.uv.length; i += 2) { surf.uv[i] *= 46; surf.uv[i + 1] *= 1; }
+  const surf = G.plane(SEA_W, 5, 1, 1);
+  for (let i = 0; i < surf.uv.length; i += 2) { surf.uv[i] *= 46 * SEA_W / 400; surf.uv[i + 1] *= 1; }
   const surfMat = new Material({ color: [1.1, 1.15, 1.18], normalMap: wn, normalScale: 0.3, roughness: 0.25, blend: 'alpha', opacity: 0.55, depthWrite: false });
   const surfM = new Mesh(ctx.geometry(surf), surfMat, { castShadow: false, reflect: false });
-  M.m4translation(surfM.matrix, 0, -0.5, 36.5);
+  M.m4translation(surfM.matrix, 0, -0.55, wl + 1.6);
   surfM.order = 2;
   scene.add(surfM);
   water_anim.push([seaMat, 0.016, 0.03], [seaMat2, -0.026, 0.018], [surfMat, 0.0, 0.14]);
-  // sand strip
-  matte.push({ geo: G.box(400, 0.5, 12), matrix: M.m4translation(M.m4(), 0, -0.3, 40), color: [...lin('#e2c99a'), 1] });
+  // (v0.4.8.5: the old sand strip is gone: the sand ground itself runs down the wet slope into the water, harbor.js)
   // boardwalk railing
   for (let x = -66; x <= 66; x += 2.5) metal.push({ geo: G.cylinder(0.04, 0.04, 1.1, 6, { y0: true }), matrix: M.m4translation(M.m4(), x, 0, 33.5), color: [...lin('#e8e3d8'), 1] });
   metal.push({ geo: G.tube([[-66, 1.1, 33.5], [66, 1.1, 33.5]], 0.04, 6), color: [...lin('#e8e3d8'), 1] });
   // pier & low beach houses to the sides
+  const houses = [];
   for (let i = 0; i < 6; i++) {
     const x = -70 + i * 28, z = -46 - rng.range(0, 8);
     matte.push({ geo: G.box(14, 7 + rng.range(0, 6), 10), matrix: M.m4translation(M.m4(), x, 4, z), color: [...lin(rng.pick(['#e9d8c0', '#f2c6a8', '#c9e0dd', '#f5e6b8'])), 1] });
     matte.push({ geo: G.box(15, 0.6, 11), matrix: M.m4translation(M.m4(), x, 8 + rng.range(0, 6), z), color: [...lin('#b65c3a'), 1] });
+    houses.push({ x, z, w: 15, d: 11 });
   }
+  // v0.4.8.5: palms everywhere outside the courts (harbor.js); the far groves get their own batch (no shadows)
+  harborPalms(ctx, scene, new RNG(4242), foliage, houses, new Material({ color: [1, 1, 1], roughness: 0.9, shading: 'cloth', sheen: [0.05, 0.08, 0.04] }));
 }
 
 // ---------------- v0.4.5 The King Tut Cup ----------------
@@ -571,22 +589,18 @@ function jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps) {
   return { solids: [], set: board.set, update: board.update };
 }
 
+// v0.4.8.5: the streets, the row buildings with their windows, shopfronts, signals and lights are street.js; the park
+// keeps its two brick walls
 function cityScenery(ctx, scene, rng, matte, metal, theme) {
-  const f1 = T.facade({ wall: '#5c3b33', lit: 0.4, seed: 3 }), f2 = T.facade({ wall: '#3c3f47', lit: 0.3, seed: 9, cols: 8, rows: 10, glass: '#1d2833' });
-  const m1 = new Material({ map: ctx.texture(f1.color), emissiveMap: ctx.texture(f1.emissive), emissive: [2.2, 1.9, 1.4], roughness: 0.85 });
-  const m2 = new Material({ map: ctx.texture(f2.color), emissiveMap: ctx.texture(f2.emissive), emissive: [1.8, 1.7, 1.5], roughness: 0.7 });
-  const b1 = [], b2 = [];
-  for (let i = 0; i < 9; i++) { const w = 12 + rng.range(0, 8), h = 14 + rng.range(0, 26); (i % 2 ? b1 : b2).push(PR.building(-64 + i * 16, -50 - rng.range(0, 10), w, 12, h)); }
-  for (let i = 0; i < 8; i++) { const w = 12 + rng.range(0, 8), h = 12 + rng.range(0, 30); (i % 2 ? b2 : b1).push(PR.building(-60 + i * 17, 46 + rng.range(0, 10), w, 12, h)); }
-  for (let i = 0; i < 4; i++) { b1.push(PR.building(-74, -30 + i * 18, 12, 14, 16 + rng.range(0, 14))); b2.push(PR.building(74, -30 + i * 18, 12, 14, 16 + rng.range(0, 14))); }
-  scene.add(new Mesh(ctx.geometry(G.merge(b1, false)), m1));
-  scene.add(new Mesh(ctx.geometry(G.merge(b2, false)), m2));
+  const streets = cityStreets(ctx, scene, rng);
   // brick wall segments
   const br = T.brick({});
   const brickMat = new Material({ map: ctx.texture(br.color), normalMap: ctx.texture(br.normal, { srgb: false }), roughness: 0.9 });
-  const wall = G.box(140, 3, 0.5); for (let i = 0; i < wall.uv.length; i += 2) { wall.uv[i] *= 46; wall.uv[i + 1] *= 1.2; }
+  // (v0.4.8.5: the walls stop at the avenues' kerbs instead of running across the traffic lanes)
+  const wall = G.box(126.6, 3, 0.5); for (let i = 0; i < wall.uv.length; i += 2) { wall.uv[i] *= 46 * 126.6 / 140; wall.uv[i + 1] *= 1.2; }
   const w1 = new Mesh(ctx.geometry(wall), brickMat); M.m4translation(w1.matrix, 0, 1.5, 33); scene.add(w1);
   const w2 = new Mesh(w1.geo, brickMat); M.m4translation(w2.matrix, 0, 1.5, -36); scene.add(w2);
+  return streets;
 }
 
 function industrialScenery(ctx, scene, rng, matte, metal, theme) {
@@ -610,6 +624,8 @@ function industrialScenery(ctx, scene, rng, matte, metal, theme) {
   // shipping containers
   const cc = ['#b5482f', '#2f6b8a', '#c8962f', '#4d6b3a', '#7a7f85'];
   for (let i = 0; i < 12; i++) matte.push({ geo: G.box(6, 2.6, 2.45), matrix: M.m4fromYaw(M.m4(), -60 + (i % 6) * 7, 1.3 + Math.floor(i / 6) * 2.6, -40 - (i % 3) * 3, rng.range(-0.05, 0.05)), color: [...lin(rng.pick(cc)), 1] });
+  // v0.4.8.5: and all round it the industrial district, the low fog over everything (industry.js)
+  return industrialSprawl(ctx, scene, rng);
 }
 
 // ---------------- Pro-Am arena ----------------

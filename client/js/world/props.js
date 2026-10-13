@@ -82,9 +82,79 @@ export function tree(x, z, s = 1, rng = new RNG(1), leaf = '#3f6b3a', trunk = '#
   return parts;
 }
 
+// v0.4.8.5: one pinnate palm frond: a blade folded down along its midrib (a Λ section, both faces built so it reads
+// from above and below), with zigzag edges for the leaflet tips. Arches up out of the crown, then droops; droop
+// sets how hard it falls away (dead fronds hang almost straight down). Returns a part for G.merge.
+export function palmFrond(top, a, L, up, droop, w, color, steps = 14, serrate = true) {
+  const pos = [], idx = [];
+  const sx = Math.sin(a), sz = Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+  const sec = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = top[1] + up * Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.55) - t * t * t * droop;
+    const cx = top[0] + sx * L * t * (1 - t * t * droop * 0.06), cz = top[2] + sz * L * t * (1 - t * t * droop * 0.06);
+    let wd = w * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.06)) + 0.01;
+    if (serrate && i % 2) wd *= 0.5;
+    const fold = 0.35 + t * 0.5; // the leaflets hang lower toward the tip
+    sec.push([[cx - rx * wd, y - fold * wd, cz - rz * wd], [cx, y + 0.02, cz], [cx + rx * wd, y - fold * wd, cz + rz * wd], [cx, y - 0.02, cz]]);
+  }
+  // top face: L, Ctop, R (3 verts a section); bottom face: L, Cbot, R
+  const topB = 0; for (const s of sec) pos.push(...s[0], ...s[1], ...s[2]);
+  const botB = pos.length / 3; for (const s of sec) pos.push(...s[0], ...s[3], ...s[2]);
+  for (let i = 0; i < steps; i++) {
+    const a0 = topB + i * 3, a1 = a0 + 3, b0 = botB + i * 3, b1 = b0 + 3;
+    // (winding: the top face's normals point up, the bottom's down; checked in tests/v0485parks)
+    idx.push(a0, a1, a0 + 1, a0 + 1, a1, a1 + 1, a0 + 1, a1 + 1, a0 + 2, a0 + 2, a1 + 1, a1 + 2);
+    idx.push(b0, b0 + 1, b1, b0 + 1, b1 + 1, b1, b0 + 1, b0 + 2, b1 + 1, b0 + 2, b1 + 2, b1 + 1);
+  }
+  const g = { position: new Float32Array(pos), normal: new Float32Array(pos.length), uv: new Float32Array(pos.length / 3 * 2), index: new Uint16Array(idx) };
+  G.computeNormals(g);
+  return { geo: g, color: col(color) };
+}
+
+// v0.4.8.5: the Harbor Point palm (palm() with opts): a ridged trunk banded light and dark (vertex colours along one
+// tube, so a leaning trunk keeps its rings square to it), leaning over and turning back up at the top (opts.lean =
+// [x, z] metres of lean), opts.height metres tall, pinnate fronds, a few dead ones hanging under the crown, and
+// opts.coconuts nuts. opts.mid / opts.lite: cheaper versions for the rows past the fences and the far groves.
+function palmLeaning(x, z, s, rng, o) {
+  const parts = [], lite = !!o.lite, mid = !!o.mid; // (lite: the far groves; mid: in view but out past the fences)
+  const h = (o.height ?? (6.5 + rng.next() * 4)) * s;
+  const [lx, lz] = o.lean || [rng.range(-0.6, 0.6), rng.range(-0.6, 0.6)];
+  const n = lite ? 5 : mid ? 8 : 12, path = [];
+  for (let i = 0; i <= n; i++) { const t = i / n, k = 1.5 * t - 0.5 * t * t; path.push([x + lx * k, h * t, z + lz * k]); }
+  const seg = lite ? 5 : mid ? 6 : 7;
+  const trunk = G.tube(path, t => 0.21 * s * (1 - t * 0.38) * (lite ? 1 : 1 + 0.07 * ((Math.round(t * n) % 2) ? 1 : -1)), seg);
+  const ca = col('#7d6447'), cb = col('#5f4c35'), cTop = col('#8f7a58');
+  trunk.color = new Float32Array(trunk.position.length / 3 * 4);
+  for (let k = 0; k <= n; k++) for (let i = 0; i <= seg; i++) trunk.color.set(k > n - 2 ? cTop : k % 2 ? cb : ca, (k * (seg + 1) + i) * 4);
+  parts.push({ geo: trunk });
+  const top = path[n];
+  // crown shaft and the leaf bases round it
+  parts.push({ geo: G.cylinder(0.19 * s, 0.13 * s, 0.6 * s, seg, { y0: true, open: true }), matrix: T(top[0], top[1] - 0.2 * s, top[2]), color: col('#6f7d45') });
+  const nf = o.fronds ?? (lite ? 7 : mid ? 9 : 11);
+  const greens = o.greens || ['#3f7a3a', '#4f8a42', '#5f9a4a', '#4a8240'];
+  for (let k = 0; k < nf; k++) {
+    const a = k / nf * Math.PI * 2 + rng.range(0, 0.35);
+    const L = (2.8 + rng.next() * 1.1) * s, up = (0.5 + rng.next() * 0.45) * s, droop = (1.6 + rng.next() * 1.3) * s;
+    parts.push(palmFrond([top[0], top[1] + 0.32 * s, top[2]], a, L, up, droop, 0.42 * s, rng.pick(greens), lite ? 5 : mid ? 6 : 8, !lite));
+  }
+  if (!lite && !mid) for (let k = 0; k < (o.dead ?? rng.int(1, 3)); k++) {
+    const a = rng.range(0, Math.PI * 2);
+    parts.push(palmFrond([top[0], top[1] + 0.05 * s, top[2]], a, (1.6 + rng.next() * 0.6) * s, 0.05 * s, (2.6 + rng.next()) * s, 0.3 * s, rng.pick(['#8a6f45', '#9c8156', '#7a5f3a']), 6, true));
+  }
+  const nc = o.coconuts ?? (lite ? 0 : mid ? 3 : rng.int(3, 6));
+  for (let k = 0; k < nc; k++) {
+    const a = k / nc * Math.PI * 2 + rng.range(0, 0.5), rr = (0.2 + rng.next() * 0.08) * s;
+    parts.push({ geo: G.sphere(0.13 * s, 5, 4), matrix: T(top[0] + Math.sin(a) * rr, top[1] - (0.12 + rng.next() * 0.15) * s, top[2] + Math.cos(a) * rr), color: col(rng.pick(['#6b5a32', '#7a6a38', '#5f6b30'])) });
+  }
+  return parts;
+}
+
 // v0.4.5: the palm gets a ringed, thickening trunk, a crown shaft, fronds that arch up before they droop
 // (each with a visible midrib), and a cluster of coconuts.
-export function palm(x, z, s = 1, rng = new RNG(2)) {
+// v0.4.8.5: palm(x, z, s, rng, opts) with opts builds the leaning beach palm (palmLeaning); without, as before.
+export function palm(x, z, s = 1, rng = new RNG(2), opts = null) {
+  if (opts) return palmLeaning(x, z, s, rng, opts);
   const parts = [];
   const h = (6 + rng.next() * 3) * s;
   const lean = rng.range(-0.4, 0.4), leanZ = rng.range(-0.3, 0.3);
@@ -119,6 +189,108 @@ export function palm(x, z, s = 1, rng = new RNG(2)) {
     parts.push({ geo: G.sphere(0.13 * s, 7, 6), matrix: T(top[0] + Math.sin(a) * 0.22 * s, top[1] - 0.2 * s, top[2] + Math.cos(a) * 0.22 * s), color: col('#6b5a32') });
   }
   return parts;
+}
+
+// v0.4.8.5: bake parts' matrices into their geometry with correct normals before G.merge. (G.merge transforms
+// normals with M.m3normalFromM4, which returns the inverse rotation rather than the inverse transpose: a part turned
+// by a yaw of 90 degrees gets its side normals mirrored, so it is lit from the wrong side. The v0.4.8.5 scenery bakes
+// its own pieces here; the normal matrix is (A^-1)^T, whose columns are the cross products of A's columns.)
+export function bake(parts) {
+  const cr = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  return parts.map(p => {
+    if (!p.matrix) return p;
+    const m = p.matrix, g = G.clone(p.geo), pos = g.position, nrm = g.normal;
+    const c0 = [m[0], m[1], m[2]], c1 = [m[4], m[5], m[6]], c2 = [m[8], m[9], m[10]], n0 = cr(c1, c2), n1 = cr(c2, c0), n2 = cr(c0, c1);
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+      pos[i] = m[0] * x + m[4] * y + m[8] * z + m[12]; pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13]; pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+      const a = nrm[i], b = nrm[i + 1], c = nrm[i + 2];
+      const nx = n0[0] * a + n1[0] * b + n2[0] * c, ny = n0[1] * a + n1[1] * b + n2[1] * c, nz = n0[2] * a + n1[2] * b + n2[2] * c, l = Math.hypot(nx, ny, nz) || 1;
+      nrm[i] = nx / l; nrm[i + 1] = ny / l; nrm[i + 2] = nz / l;
+    }
+    return { geo: g, color: p.color };
+  });
+}
+
+// ---------------- v0.4.8.5 street vehicles (the Old Brick Yard) ----------------
+// All face +z with the wheels on the ground. Bodies are parts for G.merge; carLights() gives the lamps as vertex
+// coloured parts for one unlit mesh (white heads, red tails, plus extras such as a taxi's roof sign).
+const wheel = (x, z, r = 0.33, w = 0.24) => {
+  const m = M.m4mul(M.m4(), T(x, r, z), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, Math.PI / 2)));
+  return [{ geo: G.cylinder(r, r, w, 9), matrix: m, color: col('#111214') }, { geo: G.cylinder(r * 0.55, r * 0.55, w + 0.02, 6), matrix: m, color: col('#6a6d70') }];
+};
+export function car(paint = '#7a1f1c', o = {}) {
+  const L = 4.4, p = [], glass = o.glass || '#121820';
+  const body = o.body || (() => [{ geo: G.box(1.8, 0.5, L), matrix: T(0, 0.55, 0), color: col(paint) }]);
+  p.push(...body());
+  p.push({ geo: G.box(1.74, 0.12, 1.25), matrix: T(0, 0.86, 1.5), color: col(o.hood || paint) });      // hood
+  p.push({ geo: G.box(1.74, 0.1, 0.9), matrix: T(0, 0.85, -1.7), color: col(o.hood || paint) });       // trunk lid
+  p.push({ geo: G.box(1.6, 0.52, 2.1), matrix: T(0, 1.06, -0.15), color: col(glass) });               // the glasshouse
+  p.push({ geo: G.box(1.52, 0.07, 1.8), matrix: T(0, 1.355, -0.2), color: col(o.roof || paint) });    // roof
+  for (const sx of [-1, 1]) {
+    p.push({ geo: G.box(0.06, 0.5, 0.1), matrix: T(sx * 0.79, 1.06, 0.88), color: col(o.roof || paint) });   // A pillar
+    p.push({ geo: G.box(0.06, 0.5, 0.12), matrix: T(sx * 0.79, 1.06, -1.18), color: col(o.roof || paint) }); // C pillar
+    p.push({ geo: G.box(0.18, 0.1, 0.08), matrix: T(sx * 0.95, 0.98, 0.78), color: col(paint) });             // mirror
+  }
+  for (const sz of [-1, 1]) p.push({ geo: G.box(1.84, 0.18, 0.12), matrix: T(0, 0.42, sz * 2.22), color: col('#1a1b1d') });
+  for (const [x, z] of [[-0.8, 1.35], [0.8, 1.35], [-0.8, -1.35], [0.8, -1.35]]) p.push(...wheel(x, z));
+  if (o.taxi) {
+    p.push({ geo: G.box(0.9, 0.24, 0.32), matrix: T(0, 1.51, -0.1), color: col('#1d1d1d') });
+    for (const sx of [-1, 1]) for (let i = 0; i < 8; i++) p.push({ geo: G.box(0.02, 0.07, 0.25), matrix: T(sx * 0.905, 0.72, -1.0 + i * 0.25), color: col(i % 2 ? '#111111' : '#f0f0ea') });
+  }
+  return p;
+}
+export function carLights(L = 4.4, o = {}) {
+  const p = [-0.62, 0.62].map(x => ({ geo: G.box(0.3, 0.13, 0.04), matrix: T(x, 0.72, L / 2 + 0.01), color: [1, 0.95, 0.82, 1] }));
+  p.push(...[-0.64, 0.64].map(x => ({ geo: G.box(0.32, 0.12, 0.04), matrix: T(x, 0.78, -L / 2 - 0.01), color: [1, 0.06, 0.04, 1] })));
+  if (o.taxi) p.push({ geo: G.box(0.86, 0.2, 0.34), matrix: T(0, 1.52, -0.1), color: [1, 0.85, 0.45, 1] });
+  return p;
+}
+// a police cruiser: black front and back, white doors and roof, a push bar and the light bar's housing. The body is
+// drawn with the door-panel texture (T.policeDoor): every part but the door panels samples its white corner, so
+// vertex colours paint it. Returns {body, bar}: bar = the two lamp banks (red, blue) for their own flashing mesh.
+export function cruiser() {
+  const pin = parts => parts.map(q => { const g = G.clone(q.geo); for (let i = 0; i < g.uv.length; i += 2) { g.uv[i] = 0.5; g.uv[i + 1] = 0.12; } return { ...q, geo: g }; });
+  const body = car('#f2f2ee', {
+    hood: '#121315', roof: '#f2f2ee',
+    body: () => [
+      { geo: G.box(1.8, 0.5, 1.45), matrix: T(0, 0.55, 1.475), color: col('#121315') },
+      { geo: G.box(1.8, 0.5, 1.5), matrix: T(0, 0.55, 0), color: col('#f2f2ee') },
+      { geo: G.box(1.8, 0.5, 1.45), matrix: T(0, 0.55, -1.475), color: col('#121315') },
+    ],
+  });
+  body.push({ geo: G.box(1.5, 0.32, 0.08), matrix: T(0, 0.62, 2.34), color: col('#0c0c0d') });            // push bar
+  for (const sx of [-0.5, 0.5]) body.push({ geo: G.box(0.08, 0.36, 0.2), matrix: T(sx, 0.62, 2.26), color: col('#0c0c0d') });
+  body.push({ geo: G.box(1.34, 0.1, 0.34), matrix: T(0, 1.44, -0.25), color: col('#1c1d20') });           // light bar base
+  body.push({ geo: G.box(0.04, 0.5, 0.04), matrix: T(-0.5, 1.6, -1.3), color: col('#1c1d20') });          // aerial
+  const out = pin(body);
+  // the door panels (POLICE over a stripe), one each side, facing out
+  for (const sx of [-1, 1]) out.push({ geo: G.quad(1.48, 0.42), matrix: T(sx * 0.905, 0.6, 0, sx * Math.PI / 2), color: [1, 1, 1, 1] });
+  const bar = [
+    { geo: G.box(0.58, 0.12, 0.28), matrix: T(-0.33, 1.55, -0.25), color: [1, 0.04, 0.0, 1] },
+    { geo: G.box(0.58, 0.12, 0.28), matrix: T(0.33, 1.55, -0.25), color: [0.0, 0.16, 1, 1] },
+  ];
+  return { body: out, bar };
+}
+// a city bus (11.5 m): two-tone body, a band of windows (lit inside: busLights), wheels; facing +z
+export function bus(paint = '#2457a5') {
+  const L = 11.5, p = [];
+  p.push({ geo: G.box(2.5, 1.0, L), matrix: T(0, 0.85, 0), color: col(paint) });
+  p.push({ geo: G.box(2.46, 1.05, L - 0.9), matrix: T(0, 1.88, -0.3), color: col('#111820') });
+  p.push({ geo: G.box(2.5, 0.55, L), matrix: T(0, 2.68, 0), color: col('#e8e6e0') });
+  p.push({ geo: G.box(2.3, 0.16, L - 0.8), matrix: T(0, 3.02, -0.2), color: col('#9a9c9e') });
+  p.push({ geo: G.box(2.34, 1.25, 0.06), matrix: T(0, 1.9, L / 2 + 0.01), color: col('#111820') });   // windscreen
+  for (const sx of [-1, 1]) for (let i = 0; i < 7; i++) p.push({ geo: G.box(0.03, 1.05, 0.08), matrix: T(sx * 1.245, 1.88, -L / 2 + 1 + i * 1.55), color: col('#e8e6e0') }); // window posts
+  for (const sz of [-1, 1]) p.push({ geo: G.box(2.54, 0.25, 0.14), matrix: T(0, 0.45, sz * (L / 2 + 0.04)), color: col('#1a1b1d') });
+  for (const [x, z] of [[-1.05, 3.6], [1.05, 3.6], [-1.05, -3.4], [1.05, -3.4]]) p.push(...wheel(x, z, 0.5, 0.32));
+  return p;
+}
+export function busLights() {
+  const L = 11.5, p = carLights(L);
+  for (const q of p) q.matrix[13] += 0.05;
+  for (const sx of [-1, 1]) p.push({ geo: G.box(0.02, 0.82, L - 1.6), matrix: T(sx * 1.236, 1.92, -0.4), color: [0.15, 0.125, 0.09, 1] }); // the lit inside, through the windows
+  p.push({ geo: G.box(1.7, 0.26, 0.04), matrix: T(0, 2.68, L / 2 + 0.03), color: [1, 0.55, 0.08, 1] }); // destination sign
+  return p;
 }
 
 // Chain-link fence run between two points (posts + rails); mesh part separately (alpha texture)

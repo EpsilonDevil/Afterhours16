@@ -7,6 +7,8 @@ import * as M from '../core/math.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as PR from './props.js';
 import { audio } from '../core/audio.js';
+import * as TX from '../gfx/textures.js';
+import { AVE, EL_Z, STEAM_VENTS } from './street.js';
 
 const lin = hex => M.hexLinear(hex);
 const col = hex => [...lin(hex), 1];
@@ -71,20 +73,70 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     ...[-0.6, 0.6].map(x => ({ geo: G.box(0.3, 0.14, 0.04), matrix: T(x, 0.7, 2.16), color: [1, 1, 1, 1] })),
   ];
   const tailsFor = () => [-0.6, 0.6].map(x => ({ geo: G.box(0.3, 0.12, 0.04), matrix: T(x, 0.72, -2.16), color: [1, 1, 1, 1] }));
+  // v0.4.8.5 Old Brick Yard: police cruisers (a generic black-and-white livery, POLICE on the doors) with light bars
+  // that flash red and blue, throwing coloured light on the street round them; one parked at the kerb with its
+  // lights going and an officer beside it; taxis and a bus in the traffic; steam from the manholes; a pursuit now
+  // and then (parklife EVENTS.city). cops: every cruiser on the street, for the flash update.
+  const cops = [];
+  const lightsMat = new Material({ color: [2.6, 2.6, 2.6], shading: 'unlit', fog: false });
+  let liveryMat = null, poolTex = null;
+  const cruiserMeshes = (parked = false, own = true) => {
+    if (!liveryMat) { liveryMat = new Material({ map: ctx.texture(TX.policeDoor(), {}), roughness: 0.38, specular: 0.9 }); poolTex = ctx.texture(TX.glowSpot(128, 1.4), { wrap: 'clamp' }); }
+    const cr = PR.cruiser();
+    const body = add(geoOf(() => PR.bake(cr.body), 'cruiser'), liveryMat), lights = add(geoOf(() => PR.carLights(), 'carlights'), lightsMat);
+    const barMat = new Material({ color: [0.3, 0.1, 0.3], shading: 'unlit', fog: false });
+    const bar = add(geoOf(cr.bar, 'cruiserbar'), barMat);
+    const poolMat = new Material({ map: poolTex, color: [0, 0, 0], shading: 'unlit', blend: 'add', depthWrite: false, fog: false });
+    const pool = add(geoOf(() => [{ geo: G.plane(15, 15), matrix: T(0, 0.03, 0) }], 'coppool'), poolMat);
+    pool.order = 1;
+    const cop = { barMat, poolMat, pool, on: parked || rng.next() < 0.5, t: rng.range(5, 25), ph: rng.range(0, 1), parked };
+    if (own) cops.push(cop); // (a pursuit's cruisers flash from the event itself)
+    return { meshes: [body, lights, bar, pool], cop };
+  };
+  // the light bar's pattern: red twice, blue twice, round again (~1.1 s)
+  const flash = (cop, dt) => {
+    if (!cop.parked && cop.t !== Infinity) { cop.t -= dt; if (cop.t <= 0) { cop.on = !cop.on; cop.t = cop.on ? rng.range(10, 30) : rng.range(15, 45); } }
+    cop.ph = (cop.ph + dt / 1.1) % 1;
+    const p = cop.ph, R = cop.on && (p < 0.09 || (p > 0.14 && p < 0.23)), B = cop.on && ((p > 0.5 && p < 0.59) || (p > 0.64 && p < 0.73));
+    cop.barMat.color = cop.on ? [0.5 + (R ? 11 : 0), 0.25 + (R || B ? 1.2 : 0), 0.5 + (B ? 12 : 0)] : [0.25, 0.08, 0.3];
+    cop.pool.visible = R || B;
+    cop.poolMat.color = R ? [1.1, 0.06, 0.04] : [0.05, 0.2, 1.4];
+  };
   if (theme.style === 'city') {
-    // streets on the east and west edges, plus an elevated train line (viaduct) above the north wall
+    // streets on the east and west edges, plus an elevated train line (viaduct) above the north street
     const roads = [{ x: -66, dir: 1 }, { x: -68.5, dir: -1 }, { x: 66, dir: -1 }, { x: 68.5, dir: 1 }];
     const paints = ['#c8322f', '#e8e3d8', '#1d2731', '#f2c14e', '#3b5873', '#6b6f75', '#2f6b54'];
-    for (let i = 0; i < 10; i++) {
-      const rd = roads[i % roads.length], paint = rng.pick(paints);
-      const body = add(geoOf(() => carParts(paint, '#1b2028'), 'car' + paint), vmat);
-      const hl = add(geoOf(lightsFor, 'hl'), glow), tl = add(geoOf(tailsFor, 'tl'), red);
-      movers.push({ meshes: [body, hl, tl], x: rd.x, z: rng.range(-60, 60), dir: rd.dir, v: rng.range(8, 13), axis: 'z' });
-    }
+    // v0.4.8.5: cars, three taxis, a bus and two cruisers (14 in all), spread out along the four lanes
+    const kinds = ['car', 'car', 'taxi', 'cruiser', 'car', 'car', 'taxi', 'bus', 'car', 'car', 'taxi', 'cruiser', 'car', 'car'];
+    kinds.forEach((kind, i) => {
+      const rd = roads[i % roads.length], z = -80 + (Math.floor(i / 4) + rng.next() * 0.6) * 40, v = kind === 'bus' ? 7.5 : rng.range(8, 13);
+      let meshes;
+      if (kind === 'cruiser') meshes = cruiserMeshes().meshes;
+      else if (kind === 'bus') meshes = [add(geoOf(() => PR.bake(PR.bus()), 'bus'), vmat), add(geoOf(() => PR.busLights(), 'buslights'), lightsMat)];
+      else {
+        const paint = kind === 'taxi' ? '#f2b81c' : rng.pick(paints);
+        meshes = [add(geoOf(() => PR.bake(PR.car(paint, { taxi: kind === 'taxi' })), 'car' + kind + paint), vmat), add(geoOf(() => PR.carLights(4.4, { taxi: kind === 'taxi' }), 'carlights' + kind), lightsMat)];
+      }
+      movers.push({ meshes, x: rd.x, z, dir: rd.dir, v, axis: 'z' });
+    });
+    // the parked cruiser: at the east avenue's kerb by Brick Row, lights going, an officer on the sidewalk
+    const pc = cruiserMeshes(true);
+    for (const m of pc.meshes) M.m4fromYaw(m.matrix, AVE.park + 1.35, 0, 21.5, 0);
+    const officer = add(personGeo, new Material({ color: lin('#1c2a44'), roughness: 0.8, shading: 'cloth', sheen: [0.05, 0.05, 0.08] }));
+    M.m4fromYaw(officer.matrix, AVE.x1 + 1.2, 0.15, 22.8, -Math.PI / 2 + 0.4, 1.04);
     const via = [];
-    for (let x = -120; x <= 120; x += 12) via.push({ geo: G.box(1.2, 8.4, 1.2), matrix: T(x, 4.2, 37), color: col('#2b2d31') });
-    via.push({ geo: G.box(260, 0.9, 4.2), matrix: T(0, 8.85, 37), color: col('#34373c') });
+    for (let x = -120; x <= 120; x += 12) via.push({ geo: G.box(1.2, 8.4, 1.2), matrix: T(x, 4.2, EL_Z), color: col('#2b2d31') });
+    via.push({ geo: G.box(260, 0.9, 4.2), matrix: T(0, 8.85, EL_Z), color: col('#34373c') });
     add(geoOf(via), vmat, { castShadow: true });
+    // steam from the manholes: soft puffs that rise, spread and drift
+    let steamAcc = 0;
+    updExtra.push(dt => {
+      for (const cop of cops) flash(cop, dt);
+      steamAcc += dt;
+      if (steamAcc < 0.12) return;
+      steamAcc = 0;
+      for (const [x, z] of STEAM_VENTS) r.particles.emit({ x: x + rng.range(-0.25, 0.25), y: 0.1, z: z + rng.range(-0.25, 0.25), vx: 0.45 + rng.range(-0.2, 0.2), vy: rng.range(1.4, 2.1), vz: rng.range(-0.2, 0.2), life: rng.range(4, 6), size: rng.range(0.32, 0.48), color: [0.05, 0.05, 0.056], gravity: 0.05, drag: 0.22, grow: 3.6, fade: 1 });
+    });
   } else if (theme.style === 'coast') {
     // v0.4.5: proper sailboats — a tapered hull with a keel line and a cabin, a boom, and two curved sails
     // (main and jib) built from lofted rings rather than flat boxes.
@@ -258,7 +310,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   };
   const train = (kind) => {
     // a train rolls past behind the park: elevated commuter train (city) or freight (industrial)
-    const cars = [], n = kind === 'freight' ? 10 : 6, len = kind === 'freight' ? 13 : 15, y = kind === 'freight' ? 0.3 : 9.3, z = kind === 'freight' ? 62 : 37;
+    const cars = [], n = kind === 'freight' ? 10 : 6, len = kind === 'freight' ? 13 : 15, y = kind === 'freight' ? 0.3 : 9.3, z = kind === 'freight' ? 62 : EL_Z;
     const dir = rng.next() < 0.5 ? 1 : -1, v = kind === 'freight' ? 9 : 16;
     const carGeo = kind === 'freight'
       ? null : geoOf(() => [{ geo: G.box(3, 3.2, len - 0.6), matrix: T(0, 1.6, 0), color: col('#9aa3ad') }, { geo: G.box(3.05, 0.5, len - 0.4), matrix: T(0, 2.4, 0), color: col('#b8322f') }], 'elcar');
@@ -400,10 +452,28 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       return t < 12;
     };
   };
+  // v0.4.8.5: a pursuit down one of the avenues: a car flat out over the centre line, two cruisers on its tail with
+  // their lights going (and the light washing red and blue over the street as they pass)
+  const pursuit = () => {
+    const s = rng.next() < 0.5 ? 1 : -1, dir = rng.next() < 0.5 ? 1 : -1, x = s * AVE.center, v = rng.range(22, 27);
+    const runner = [add(geoOf(() => PR.bake(PR.car('#d8d4cc')), 'car-runner'), vmat), add(geoOf(() => PR.carLights(), 'carlights'), lightsMat)];
+    const chase = [cruiserMeshes(false, false), cruiserMeshes(false, false)];
+    for (const c of chase) { c.cop.on = true; c.cop.t = Infinity; }
+    let z = -dir * 175, t = 0;
+    const yaw = dir > 0 ? 0 : Math.PI;
+    return dt => {
+      t += dt; z += dir * v * dt;
+      const weave = Math.sin(t * 2.3) * 0.45;
+      for (const m of runner) M.m4fromYaw(m.matrix, x + weave, 0, z, yaw + Math.cos(t * 2.3) * 0.04);
+      chase.forEach((c, i) => { const cz = z - dir * (15 + i * 12), cx = x + Math.sin(t * 2.3 - 0.9 - i) * 0.35; for (const m of c.meshes) M.m4fromYaw(m.matrix, cx, 0, cz, yaw); flash(c.cop, dt); });
+      if ((t % 1.4) < dt && Math.abs(z) < 120) audio.rumble?.(0.05);
+      return Math.abs(z - dir * 40) < 220;
+    };
+  };
   const EVENTS = {
     coast: [() => birds('gull'), () => birds('gull'), speedboat, speedboat, plane],
     jungle: [() => birds('toucan'), () => birds('toucan'), () => birds('macaw'), mist, fireflies, butterflies],
-    city: [() => train('el'), heli, () => birds('pigeon'), fireworksOrLights, plane],
+    city: [() => train('el'), heli, () => birds('pigeon'), fireworksOrLights, plane, pursuit, pursuit],
     industrial: [() => train('freight'), () => train('freight'), sparks, steam, () => birds('crow')],
     tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
   }[theme.style] || [() => birds('pigeon')];
