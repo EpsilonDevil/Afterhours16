@@ -13,6 +13,7 @@ import { harborGround, harborPalms, waterlineZ } from './harbor.js';
 import { streetGround, cityStreets } from './street.js';
 import { industrialSprawl } from './industry.js';
 import { retroGround, retroSky, retroCity } from './retro.js';
+import { horrorGround, horrorTown } from './horror.js';
 
 const lin = hex => M.hexLinear(hex);
 
@@ -65,6 +66,7 @@ function buildPark(r, scene, theme, opts) {
   if (theme.style === 'coast') harborGround(ctx, scene, theme);
   else if (theme.style === 'city') streetGround(ctx, scene, theme);
   else if (theme.style === 'retro') retroGround(ctx, scene, theme); // (v0.4.8.5 quick patch: streets all round, the park's slab)
+  else if (theme.style === 'horror') horrorGround(ctx, scene, theme); // (v0.4.8.5 quick patch 2: the haunted town's hills, the park's slab)
   else {
     const conc = cachedTexture(ctx, 'concrete', () => T.concrete({ joints: true }).color, {});
     const concN = cachedTexture(ctx, 'concreteN', () => T.concrete({ joints: true }).normal, { srgb: false });
@@ -84,9 +86,10 @@ function buildPark(r, scene, theme, opts) {
     if (c.format === 1) spec.logo = { ...spec.logo, size: 0.9 };
     const built = buildCourt(ctx, spec, c.origin);
     built.meshes.forEach(m => scene.add(m));
-    const tut = theme.style === 'tut', jungle = theme.style === 'jungle', retro = theme.style === 'retro';
+    const tut = theme.style === 'tut', jungle = theme.style === 'jungle', retro = theme.style === 'retro', horror = theme.style === 'horror';
     // (v0.4.8.5 quick patch: the Beat Goes On's hoops: hot pink rims on purple poles, cream nets)
-    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: tut ? '#e8c15a' : jungle ? '#ff8a1f' : retro ? '#ff3fa4' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#3a2466' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: tut ? '#b8ffd8' : retro ? '#fff4e6' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
+    // (v0.4.8.5 quick patch 2: the Monster Mash's: pumpkin-orange rims on black iron poles, cobweb-pale nets)
+    const hs = (full ? [1, -1] : [1]).map(side => buildHoop(ctx, side, 'park', { origin: c.origin, rimColor: horror ? '#ff7a1a' : tut ? '#e8c15a' : jungle ? '#ff8a1f' : retro ? '#ff3fa4' : theme.id === 'foundry' ? '#d8a21c' : '#d8431c', poleColor: horror ? '#1c1820' : tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#3a2466' : theme.id === 'harbor' ? '#2f5f63' : '#3a4249', netColor: horror ? '#dcecd2' : tut ? '#b8ffd8' : retro ? '#fff4e6' : theme.id === 'brick' ? '#dcdcd6' : '#f4f4f0' }));
     // v0.4.5 King Tut Cup: the lines glow (an additive neon copy of the markings laid over the court)
     if (theme.court.neon) {
       const nz = theme.court.neon;
@@ -124,7 +127,7 @@ function buildPark(r, scene, theme, opts) {
     }
     // benches on the west sideline and by the Got Next line (east)
     const nb = full ? 3 : 1;
-    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : jungle ? '#6b4a2a' : retro ? '#ff8fc8' : '#8a5f3a', tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#2fb8c8' : undefined));
+    for (let k = 0; k < nb; k++) matte.push(...PR.bench(ox - W + 0.9, (full ? oz - 9 : oz + 4) + k * 6, Math.PI / 2, theme.id === 'harbor' ? '#b58a5c' : tut ? '#3a2a1a' : jungle ? '#6b4a2a' : retro ? '#ff8fc8' : horror ? '#4a3a30' : '#8a5f3a', tut ? '#1c1428' : jungle ? '#3a2d26' : retro ? '#2fb8c8' : horror ? '#1c1820' : undefined));
     if (tut) {
       // neon strips along the fence bottoms (laser-tag arena trim)
       for (const [x0, z0, x1, z1] of runs) {
@@ -212,10 +215,11 @@ function buildPark(r, scene, theme, opts) {
   else if (theme.style === 'tut') board = tutScenery(ctx, scene, rng, matte, metal, neon, foliage);
   else if (theme.style === 'jungle') board = jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps);
   else if (theme.style === 'retro') ({ board, scenery } = retroScenery(ctx, scene, rng, matte, metal, foliage, neon, theme));
+  else if (theme.style === 'horror') ({ board, scenery } = horrorScenery(ctx, scene, rng, matte, metal, foliage, lamps, neon, theme)); // (v0.4.8.5 quick patch 2)
   else scenery = industrialScenery(ctx, scene, rng, matte, metal, theme);
   // trees/palms scattered around plaza
   for (let i = 0; i < 14; i++) {
-    if (theme.style === 'coast' || theme.style === 'retro') break; // (v0.4.8.5: Harbor Point and the Beat Goes On place their own palms, clear of the game cameras: harbor.js, retro.js)
+    if (theme.style === 'coast' || theme.style === 'retro' || theme.style === 'horror') break; // (v0.4.8.5: Harbor Point and the Beat Goes On place their own palms, clear of the game cameras: harbor.js, retro.js; the Monster Mash its dead trees: horror.js)
     let x = rng.range(-50, 50), z = rng.next() < 0.5 ? rng.range(-34, -22) : rng.range(20, 30);
     if (theme.style === 'city' && z > 0) z = 31.3 + (z - 20) * 0.08; // (v0.4.8.5: street trees on Brick Row's sidewalk, not in the road)
     if (Math.abs(x) < 10 && z < -18) continue;
@@ -227,11 +231,12 @@ function buildPark(r, scene, theme, opts) {
     else if (theme.style === 'jungle') foliage.push(...PR.rainTree(x, z, 0.42 + rng.next() * 0.2, rng, { leaf: '#2f7a3a', leaf2: '#4a8a3c' }), ...PR.fern(x + rng.range(-2.5, 2.5), z + rng.range(-2.5, 2.5), 0.9 + rng.next() * 0.5, rng)); // (a younger giant: 8-13 m)
     else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
   }
-  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : theme.style === 'retro' ? '#3a2466' : undefined));
+  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : theme.style === 'retro' ? '#3a2466' : theme.style === 'horror' ? '#1a181e' : undefined));
+  if (theme.style === 'horror') for (let i = 0; i < 10; i++) lamps.push({ geo: G.cylinder(0.11, 0.16, 0.3, 8, { y0: true }), matrix: M.m4translation(M.m4(), -40 + i * 9 + 0.5, 5.4, -27), color: [1, 0.62, 0.3, 1] }); // (v0.4.8.5 quick patch 2: the lamps glow sodium orange)
   // murals on a wall behind the west court
   // (v0.4.8.5 quick patch: the Beat Goes On's wall is its boombox-and-cassette mural)
-  const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
-  const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1] }));
+  const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : theme.style === 'horror' ? cachedTexture(ctx, 'mural-monster', () => T.monsterMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
+  const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1], ...(theme.style === 'horror' ? { emissiveMap: muralTex, emissive: [0.42, 0.42, 0.42] } : {}) })); // (v0.4.8.5 quick patch 2: the monster poster glows a little, as if lit)
   // (v0.4.8.5: at the Old Brick Yard the west avenue runs where it stood: the mural is on the building line across it)
   M.m4mul(wall.matrix, M.m4translation(M.m4(), theme.style === 'city' ? -75.15 : -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
   scene.add(wall);
@@ -254,9 +259,16 @@ function buildPark(r, scene, theme, opts) {
     scene.lights.push({ pos: [-14, 5.5, -19], range: 20, color: [0.75, 0.82, 1], intensity: 9, dir: null });
   }
   if (scenery?.lights) scene.lights.push(...scenery.lights); // (v0.4.8.5 quick patch: the disco's pink light over its door)
+  if (theme.style === 'horror') {
+    // (v0.4.8.5 quick patch 2: only the first eight lights shine, so here every court gets one big spot from high over its
+    // middle instead of two from its corners, and the plaza people spawn on gets the last two: sodium orange, ghost green)
+    scene.lights.length = 0;
+    for (const c of courts) { const [ox, , oz] = c.origin; scene.lights.push(c.full ? { pos: [ox, 13.5, oz], range: 38, color: theme.lightColor, intensity: 46, dir: [0, -1, 0], cos: 0.5 } : { pos: [ox, 11, oz + 6], range: 30, color: theme.lightColor, intensity: 34, dir: [0, -1, 0], cos: 0.52 }); }
+    scene.lights.push({ pos: [9, 5.2, -21], range: 22, color: [1, 0.66, 0.36], intensity: 24, dir: null }, { pos: [-12, 5.5, -21], range: 22, color: [0.6, 1, 0.62], intensity: 18, dir: null });
+  }
   scene.shadowFocus = { center: [0, 0, 6], radius: 18 };
   // v0.4.3: people, traffic and random events in the background of every park
-  const life = createParkLife(r, scene, theme, new RNG(theme.id.length * 31 + 7), theme.style === 'retro' ? { city: scenery } : undefined);
+  const life = createParkLife(r, scene, theme, new RNG(theme.id.length * 31 + 7), theme.style === 'retro' ? { city: scenery } : theme.style === 'horror' ? { town: scenery } : undefined);
   let t = 0;
   return {
     theme, courts, hoops, practice: { origin: prOrigin, hoop: practiceHoop }, store: { x: storePos[0], z: storePos[1] + 2.4 }, gotNext, life,
@@ -624,6 +636,44 @@ function retroScenery(ctx, scene, rng, matte, metal, foliage, neon, theme) {
     },
   });
   return { board, scenery: city };
+}
+
+// ---------------- v0.4.8.5 quick patch 2: The Monster Mash ----------------
+// The haunted town round the park is horror.js: the sky dome with its moon, the cemetery, the church, the mansion on its
+// hill, the pumpkin patch and the corn, the carnival, the street of Halloween houses, the swamp. Here: the leaderboard, a
+// giant granite tombstone with slime-green neon round its arched top, a skull on it and jack-o'-lanterns at its foot.
+// Returns {board, scenery} (scenery: the town, its update, its hooks for the events)
+function horrorScenery(ctx, scene, rng, matte, metal, foliage, lamps, neon, theme) {
+  const c4 = h => [...lin(h), 1];
+  const town = horrorTown(ctx, scene, rng, theme, { matte, metal, foliage, lamps });
+  const edge = (a, b, hex, r = 0.07) => neon.push({ geo: G.tube([a, b], r, 6), color: c4(hex) });
+  const board = eventBoard(ctx, scene, {
+    title: 'THE MONSTER MASH', bg: '#0c0812', titleColor: '#7cff4f', subColor: '#ff7a1a', rowColor: '#e8e2d0', meColor: '#ffd23f', meBg: 'rgba(255,122,26,0.18)', barColor: '#7cff4f',
+    bgDraw(g, W, H) {
+      const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#0c0812'); gr.addColorStop(0.7, '#1a0e24'); gr.addColorStop(1, '#2a1030');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      g.fillStyle = 'rgba(240,236,210,0.12)'; g.beginPath(); g.arc(W * 0.86, 70, 54, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.5)'; for (const [x, y, s] of [[W * 0.8, 50, 40], [W * 0.9, 84, 28], [W * 0.12, 60, 34]]) T.batShape(g, x, y, s);
+      g.fillStyle = 'rgba(124,255,79,0.55)'; g.fillRect(0, 119, W, 3);
+      for (let k = 0; k < 24; k++) { const x = 20 + k * 43, l = 6 + (k * 37) % 22; g.fillRect(x, 122, 5, l); g.beginPath(); g.arc(x + 2.5, 122 + l, 4, 0, Math.PI * 2); g.fill(); }
+    },
+    frame(bx, bz, bw, bh) {
+      // the stone: a slab behind the screen, its top an elliptical arch; a plinth; the neon following its outline
+      const w = bw + 1.4, top = 3.2 + bh + 0.5, z = bz - 0.32, stone = '#3a3644';
+      matte.push({ geo: G.box(w + 1.2, 0.9, 1.6), matrix: M.m4translation(M.m4(), bx, 0.45, z), color: c4('#2a2632') });
+      matte.push({ geo: G.box(w, top - 0.9, 0.5), matrix: M.m4translation(M.m4(), bx, 0.9 + (top - 0.9) / 2, z), color: c4(stone) });
+      const arch = G.cylinder(w / 2, w / 2, 0.5, 24); matte.push({ geo: arch, matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx, top, z), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.42, 1]), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2)))), color: c4(stone) });
+      const pts = [[bx - w / 2 - 0.05, 1.0], [bx - w / 2 - 0.05, top]]; for (let k = 1; k < 24; k++) { const a = Math.PI - k / 24 * Math.PI; pts.push([bx + Math.cos(a) * (w / 2 + 0.05), top + Math.sin(a) * (w / 2 + 0.05) * 0.42]); } pts.push([bx + w / 2 + 0.05, top], [bx + w / 2 + 0.05, 1.0]);
+      for (let k = 0; k < pts.length - 1; k++) edge([pts[k][0], pts[k][1], z + 0.27], [pts[k + 1][0], pts[k + 1][1], z + 0.27], '#7cff4f');
+      // a skull on the top, jack-o'-lanterns and a cobweb at its foot (in the town's flicker batch: the faces are lit)
+      const sy = top + w / 2 * 0.42 - 0.1;
+      matte.push({ geo: G.sphere(0.55, 10, 8), matrix: M.m4translation(M.m4(), bx, sy + 0.45, z), color: c4('#e8e2d0') }, { geo: G.box(0.6, 0.32, 0.5), matrix: M.m4translation(M.m4(), bx, sy + 0.05, z + 0.08), color: c4('#e8e2d0') });
+      for (const sx of [-0.2, 0.2]) neon.push({ geo: G.sphere(0.13, 6, 5), matrix: M.m4translation(M.m4(), bx + sx, sy + 0.42, z + 0.46), color: c4('#7cff4f') });
+      for (const [dx, r] of [[-w / 2 - 0.2, 0.42], [-w / 2 + 0.7, 0.3], [w / 2 + 0.3, 0.38]]) { matte.push({ geo: G.sphere(r, 10, 7), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx + dx, r * 0.8, z + 1.0), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.82, 1])), color: c4('#e86a10') }); neon.push({ geo: G.box(r * 0.7, r * 0.22, 0.04), matrix: M.m4translation(M.m4(), bx + dx, r * 0.72, z + 1.0 + r * 0.98), color: c4('#ffb347') }); }
+    },
+  });
+  board.solids = [{ x0: -38 - 6.4, x1: -38 + 6.4, z0: -33.6 - 1.2, z1: -33.6 + 0.3, h: 12 }];
+  return { board, scenery: town };
 }
 
 // v0.4.8.5: the streets, the row buildings with their windows, shopfronts, signals and lights are street.js; the park

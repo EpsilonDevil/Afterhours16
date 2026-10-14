@@ -98,10 +98,11 @@ test('And The Beat Goes On is an event park like the others (and the Jungle and 
   assert.equal(parkInfo('beat'), EVENTS.beat);
   assert.ok(THEMES.beat.event && THEMES.beat.style === 'retro' && THEMES.beat.streakFx === 'disco');
   assert.ok(EVENT_PARKS.has('beat') && EVENT_PARKS.has('jungle') && EVENT_PARKS.has('kingtut'));
+  // (v0.4.8.5 quick patch 2: the Beat's own 48-hour window, then the Monster Mash takes over; the Beat is kept whole too)
   assert.equal(PARK_NAMES.beat, 'And The Beat Goes On');
   for (const id of ['jungle', 'kingtut']) assert.ok(THEMES[id] && EVENTS[id], `${id} is still all there`);
   const sched = json('server/events.json').schedule;
-  assert.deepEqual(sched.map(s => [s.event, s.from, s.until]), [['kingtut', null, 1791763200], ['jungle', 1791763200, 1791936000], ['beat', 1791936000, null]]);
+  assert.deepEqual(sched.map(s => [s.event, s.from, s.until]), [['kingtut', null, 1791763200], ['jungle', 1791763200, 1791936000], ['beat', 1791936000, 1792108800], ['monster', 1792108800, null]]);
   assert.ok(json('server/venues.json').some(v => v.id === 'beat' && v.event));
   // the store and the locker say where it comes from
   assert.ok(src('client/js/ui/store.js').includes("i.exclusive === 'beat' ? '★ BEAT GOES ON'"));

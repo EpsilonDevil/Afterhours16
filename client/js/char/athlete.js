@@ -88,7 +88,7 @@ class GB {
     }
     // round caps (small domes)
     const cap = (ring, center, dir, rad, flip) => {
-      const tip = this.v(addS(center, dir, rad * 0.8), [0, 0], opts.col ? opts.col(flip ? 1 : 0, 0) : null, opts.w ? opts.w(flip ? 1 : 0) : [[0, 1]]);
+      const tip = this.v(addS(center, dir, rad * 0.8), opts.capUv ? opts.capUv(flip ? 1 : 0) : [0, 0], opts.col ? opts.col(flip ? 1 : 0, 0) : null, opts.w ? opts.w(flip ? 1 : 0) : [[0, 1]]); // (v0.4.8.5 quick patch 2: capUv)
       for (let c = 0; c < cols; c++) flip ? this.tri(tip, ring[c], ring[c + 1]) : this.tri(tip, ring[c + 1], ring[c]);
     };
     if (opts.capEnd !== false) { const r = radii[n - 1]; cap(rings[n - 1], points[n - 1], T[n - 1], Array.isArray(r) ? Math.min(...r) : r, true); }
@@ -183,6 +183,9 @@ const TANK_STRAP = { aI: 0.31, aO: 0.7, yIn: 0.842, yOut: 0.824, round: 0.55, ex
 // top of the tongue between t0 and t1 (heel -> toe), down each side to v0, slanting back toward the heel by `slant` on the
 // way down; `thick` its thickness (H)
 export const SHOE_STRAP = { t0: 0.355, t1: 0.445, slant: 0.1, v0: 0.6, thick: 0.0026 };
+// v0.4.8.5 quick patch 2: the Coffin Hi's skull charm (buildShoe): where it sits on the laces (t heel -> toe), how far it
+// stands off them and slides down the tongue from the top lace (H), and its size (1: a skull 0.0084 H across)
+export const SHOE_CHARM = { t: 0.44, lift: 0.0055, down: 0.0045, size: 1.35 };
 
 // limb radius profiles: t, radius (H units)
 const UPPER = [[-0.07, 0.027], [0.0, 0.033], [0.22, 0.031], [0.45, 0.0275], [0.68, 0.0275], [0.88, 0.0245], [1.02, 0.0225], [1.08, 0.021]];
@@ -445,7 +448,9 @@ export class AthleteModel {
   }
 
   // ---------- hands: palm + four three-segment fingers + thumb, relaxed curl ----------
-  buildHand(gb, side) {
+  // v0.4.8.5 quick patch 2: o.off (H) builds the same hand that much bigger all over and o.glove gives it the glove's uv
+  // (the Bone Suit's gloves: looks.js paintBoneGlove; palm u 0-.5 v 0-.5, finger f u .5+f/8, thumb u 0-.25 v .5-.75)
+  buildHand(gb, side, o = {}) {
     const H = this.d.H, ha = B['hand' + side], fo = B['fore' + side];
     const W = this.bind[ha];
     const sg = side === 'L' ? 1 : -1;
@@ -453,7 +458,7 @@ export class AthleteModel {
     const a = norm([sg * s40, -c40, 0]);          // along the hand (fingers)
     const pn = norm([-sg * c40, -s40, 0]);        // palm normal (toward the body)
     const th = [0, 0, 1];                         // thumb side
-    const L = this.d.handLen;
+    const L = this.d.handLen, gOff = (o.off || 0) * H, glove = !!o.glove, gCol = o.col || null;
     const palmLen = L * 0.47, palmW = 0.044 * H * (0.92 + 0.08 * this.m), palmT = 0.0145 * H;
     const palmCol = this.look.palm || null;
     const tintPalm = (k) => [1 + 0.1 * k, 1 + 0.08 * k, 1 + 0.07 * k, 1];
@@ -461,18 +466,19 @@ export class AthleteModel {
     // palm: boxy loft from wrist to knuckles
     const rows = 7, cols = 14;
     const flip = dot(cross(a, th), pn) < 0;
+    const tEnd = glove ? 1.07 : 1.0; // (a glove's palm runs on past the knuckles, over the end of the hand's own)
     gb.grid(rows, cols, (r, c) => {
-      const t = lerp(-0.06, 1.0, r / (rows - 1));
+      const t = lerp(-0.06, tEnd, r / (rows - 1));
       const ph = c / cols * Math.PI * 2;
-      const ws = lerp(0.62, 1.0, smooth(-0.06, 0.45, t)) * palmW * 0.5;   // narrow at the wrist
-      const ts = lerp(0.9, 1.0, smooth(0, 0.5, t)) * palmT * 0.5 * (1 + 0.25 * bump(t, 0.35, 0.4));
+      const ws = lerp(0.62, 1.0, smooth(-0.06, 0.45, t)) * palmW * 0.5 + gOff;   // narrow at the wrist
+      const ts = lerp(0.9, 1.0, smooth(0, 0.5, t)) * palmT * 0.5 * (1 + 0.25 * bump(t, 0.35, 0.4)) + gOff;
       const cs = Math.cos(ph), sn = Math.sin(ph);
       const sx = sePow(cs, 3), sy = sePow(sn, 3);
       // thenar pad bulges the palm on the thumb side
       const thenar = 0.006 * H * bump(t, 0.25, 0.32) * Math.max(0, sx) * Math.max(0, sy);
       const p = addS(addS(addS(W, a, t * palmLen), th, sx * ws), pn, sy * ts + thenar * 0.6);
       const onPalm = sy > 0.3;
-      return { p, uv: [c / cols * 0.4, t * 0.15], col: onPalm ? tintPalm(0.9) : [1, 1, 1, 1], w: wHand(t) };
+      return { p, uv: glove ? [c / cols * 0.5, (t + 0.06) / 1.13 * 0.5] : [c / cols * 0.4, t * 0.15], col: gCol || (onPalm ? tintPalm(0.9) : [1, 1, 1, 1]), w: wHand(t) };
     }, { inward: flip });
     // fingers: index (thumb side) → pinky
     const lens = [0.395, 0.44, 0.41, 0.33], offs = [0.36, 0.12, -0.12, -0.35];
@@ -494,7 +500,7 @@ export class AthleteModel {
           radii.push(rad0 * (f === 3 ? 0.86 : 1) * lerp(1.0, 0.78, tt) * (st === steps && k < 2 ? 1.06 : 1));
         }
       }
-      gb.tube(pts, radii.map(r => [r * 0.92, r]), pn, { cols: 10, w: () => [[ha, 1]], col: (t, u) => (Math.cos(u * Math.PI * 2) > 0.35 ? tintPalm(0.8) : [1, 1, 1, t < 0.2 ? 0.85 : 1]) });
+      gb.tube(pts, radii.map(r => [r * 0.92 + gOff, r + gOff]), pn, { cols: 10, w: () => [[ha, 1]], col: gCol ? () => gCol : (t, u) => (Math.cos(u * Math.PI * 2) > 0.35 ? tintPalm(0.8) : [1, 1, 1, t < 0.2 ? 0.85 : 1]), uv: glove ? (s, u) => [0.5 + f * 0.125 + u * 0.125, s * 0.5] : null, capUv: glove ? () => [0.5625 + f * 0.125, 0.5] : null });
     }
     // thumb: from the base of the palm on the thumb side, angled forward and toward the palm
     const tb = addS(addS(addS(W, a, palmLen * 0.12), th, palmW * 0.42), pn, palmT * 0.25);
@@ -507,7 +513,21 @@ export class AthleteModel {
       tp = addS(tp, tdir, tsegs[k]); tpts.push(tp);
       trad.push(0.0066 * H * lerp(1, 0.78, (k + 1) / 3));
     }
-    gb.tube(tpts, trad, pn, { cols: 10, w: t => wHand(0.3 + t), col: (t, u) => (Math.cos(u * Math.PI * 2) > 0.3 ? tintPalm(0.7) : [1, 1, 1, 1]) });
+    gb.tube(tpts, trad.map(r => r + gOff), pn, { cols: 10, w: t => wHand(0.3 + t), col: gCol ? () => gCol : (t, u) => (Math.cos(u * Math.PI * 2) > 0.3 ? tintPalm(0.7) : [1, 1, 1, 1]), uv: glove ? (s, u) => [u * 0.25, 0.5 + s * 0.25] : null, capUv: glove ? () => [0.125, 0.75] : null });
+  }
+
+  // v0.4.8.5 quick patch 2: the Bone Suit's gloves (The Monster Mash): both hands again, a hair bigger all over on the
+  // same bones and weights (so every finger moves with his), and a cuff from the end of the sleeve over the wrist. uv: the
+  // glove texture (looks.js paintBoneGlove: the cuff u .25-1, v .78-.98, forearm t .84-1.07)
+  buildGloves() {
+    const gb = new GB(), col = [1, 1, 1, 1];
+    for (const side of ['L', 'R']) {
+      const up = B['upper' + side], fo = B['fore' + side];
+      this.loftLimb(gb, fo, B['hand' + side], (t, p, ls) => { const r = this.foreArmR(t, p, ls), o = 0.0039 + 0.0005 * smooth(0.9, 0.86, t); return [r[0] + o, r[1] + o]; }, this.jointBlend(up, fo, B['hand' + side], 0.12),
+        { t0: 0.84, t1: 1.07, rows: 7, uv: (u, t) => [0.25 + u * 0.75, 0.78 + t * 0.2], col: () => col }); // (on past the wrist joint, so a bent wrist opens no gap)
+      this.buildHand(gb, side, { off: 0.0008, glove: true, col });
+    }
+    return gb.finish();
   }
 
   // ---------- head ----------
@@ -890,6 +910,7 @@ export class AthleteModel {
       uv: (u, t, yf) => [u, (vTop - yf) / (vTop - vHem) * 0.75], col: () => null, cols: Math.round((tank ? 96 : 44) * this.detail) + (tank ? 16 : 8),
     });
     this.strapGeo = null;
+    this.gloveGeo = top.pattern === 'bones' ? this.buildGloves() : null; // (v0.4.8.5 quick patch 2: the Bone Suit's gloves)
     if (tank) {
       // v0.4.5: a rolled binding along the neckline and armholes gives the edge real thickness (it read as a paper
       // cut-out before) and keeps the edge off the skin. uv points at the trim color in the texture.
@@ -967,7 +988,10 @@ export class AthleteModel {
     const gb = new GB();
     const waist = 0.6;
     // v0.4.5: tights (the King Tut Cup mo-cap suit) hug the body: no drape over the hips, legs just over the skin
-    const tight = bot.pattern === 'mocap' || bot.pattern === 'gorilla' || fam === 'tights'; // (qp3: the gorilla's fur legs hug too)
+    // v0.4.8.5 quick patch 2: the Bone Suit tights hug too, and their thigh and shin get a share of the texture each (a
+    // jogger's both run to v 1): thigh v .5-.76 (the femur, the kneecap at its foot), shin .76-1 (tibia and fibula)
+    const bones = bot.pattern === 'bones';
+    const tight = bot.pattern === 'mocap' || bot.pattern === 'gorilla' || bones || fam === 'tights'; // (qp3: the gorilla's fur legs hug too)
     const baggy = tight ? 0.002 : fam === 'joggers' ? 0.011 : 0.0165; // v0.4.5: a trimmer short (the old one read as a tube on a bent knee)
     // v0.4.8.5 quick patch: the Beat Goes On track pants: crinkled nylon, the legs gathered into an elastic cuff that sits
     // just above a high-top's collar (the fabric bunching over it). The legs get their own share of the texture: thigh
@@ -995,7 +1019,7 @@ export class AthleteModel {
         const base = this.jointBlend(-1, th, sh, 0.12)(t);
         const wh = 0.5 * (1 - smooth(-0.15, 0.15, t));
         return [[B.hips, wh], ...base.map(([b, w]) => [b, b === th ? w - wh : w])];
-      }, { t0: -0.12, t1: Math.min(1.14, fam === 'joggers' ? 1.04 : len), uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.5 + t * (cuffed ? 0.28 : 0.5)], rows: 12 });
+      }, { t0: bones ? -0.16 : -0.12, t1: Math.min(1.14, fam === 'joggers' ? 1.04 : len), uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.5 + t * (cuffed ? 0.28 : bones ? 0.26 : 0.5)], rows: 12 }); // (v0.4.8.5 quick patch 2: the Bone Suit's starts above the body's own thigh, whose top would show at the hip)
       // v0.4.5: a rolled hem that folds back in to the leg, so a driven knee never shows the inside of the
       // shorts (or the thigh through the opening)
       const hemT = Math.min(1.14, fam === 'joggers' ? 1.04 : len);
@@ -1019,7 +1043,7 @@ export class AthleteModel {
         this.loftLimb(gb, sh, ft, (t, p, ls) => lerp(rc(t, p, ls), this.shinR(t, p, ls) + 0.0042, smooth(CUFF1, CUFF1 + 0.012, t)), this.jointBlend(th, sh, ft, 0.1),
           { t0: CUFF1, t1: CUFF1 + 0.012, rows: 3, uv: u => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.995] });
       } else if (fam === 'joggers') {
-        this.loftLimb(gb, sh, ft, (t, p, ls) => (tight ? this.shinR(t, p, ls) + 0.0045 : this.shinR(t, p, ls) * 0.85 + 0.012 - t * 0.004), this.jointBlend(th, sh, ft, 0.1), { t0: -0.02, t1: 0.95, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), 0.75 + t * 0.25] });
+        this.loftLimb(gb, sh, ft, (t, p, ls) => (tight ? this.shinR(t, p, ls) + 0.0045 : this.shinR(t, p, ls) * 0.85 + 0.012 - t * 0.004), this.jointBlend(th, sh, ft, 0.1), { t0: -0.02, t1: 0.95, uv: (u, t) => [u * 0.5 + (side === 'L' ? 0.5 : 0), bones ? 0.76 + t * 0.24 : 0.75 + t * 0.25] });
       }
     }
     return gb.finish();
@@ -1028,7 +1052,7 @@ export class AthleteModel {
   // Gear: socks, shoes, sleeves, bands, pads — colored by vertex color
   buildGear(gear) {
     const gb = new GB(), sgb = new GB(), H = this.d.H;
-    this.shoeGeo = null; this.terryGeo = null;
+    this.shoeGeo = null; this.terryGeo = null; this.lanternGeo = null;
     const sock = gear.socks ? [...hexLinear(gear.socks.color), 1] : [0.94, 0.94, 0.92, 1];
     // v0.4.4: an arm sleeve under a hoodie or a leg sleeve under joggers is left out (it could only poke through);
     // sleeves and pads worn over compression sleeves or joggers sit on top of the fabric so they stay fully visible
@@ -1071,7 +1095,8 @@ export class AthleteModel {
       // v0.4.5: a glow-in-the-dark band (King Tut Cup) is painted brighter than any dye can be, so it blooms
       const hc = [...hexLinear(gear.headband.color).map(v => v * (gear.headband.glow ? 2.6 : 1)), 1], R = this.d.headR, c = this.headCenter();
       const stripes = gear.headband.stripes;
-      if (stripes && stripes.length) {
+      if (gear.headband.pattern === 'jackolantern') this.lanternGeo = this.buildLantern(); // (v0.4.8.5 quick patch 2)
+      else if (stripes && stripes.length) {
         // v0.4.8.5 quick patch: a terry-cloth sweatband (the Neon Terry): twice as tall and plush (it bulges out between its
         // edges, so it reads as a thick towelling band, not a ribbon), in stripes round the head (top to bottom), each
         // stripe its own rows so the edges stay crisp; the towelling loops a fine nubbly grain over the colour
@@ -1178,6 +1203,47 @@ export class AthleteModel {
     return { chain, pendant: pg.finish(), iced };
   }
 
+  // v0.4.8.5 quick patch 2: the Jack-o'-Lantern headband (The Monster Mash). A pumpkin-orange band round the head (on top
+  // of any hairstyle, like every band), taller than a plain one and rounded out between its edges, and standing out of
+  // it on the forehead a little carved pumpkin: squat, eight lobes (darker down the grooves), its top dimpled round a
+  // curled green stem with a tendril. Its own mesh (this.lanternGeo) and texture (looks.js paintLantern: the band u 0-.5;
+  // the pumpkin u .5-1, mapped straight on from the front, so the carved face sits on its front; the stem a swatch at
+  // u .505 v .03), and the face lit from inside (view.js: the eyes and grin glow candle-yellow and flicker)
+  buildLantern() {
+    const gb = new GB(), R = this.d.headR, c = this.headCenter(), det = this.detail;
+    const at = (th, y, extra = 0) => {
+      const n = norm([Math.sin(th), y, Math.cos(th)]), s = this.headShape(n, { skullOnly: true }), len = Math.hypot(...s), o = Math.max(0.03, this.hairOffsetAt(n) + 0.02) + extra;
+      return [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R];
+    };
+    const cols = Math.round(64 * det) + 24, rows = 7, w = [[B.head, 1]];
+    gb.grid(rows, cols, (r, k) => {
+      const f = r / (rows - 1), th = k / cols * Math.PI * 2;
+      return { p: at(th, 0.56 - f * 0.22, 0.014 * Math.pow(Math.sin(Math.PI * f), 0.6)), uv: [k / cols * 0.5, f], col: [1, 1, 1, f < 0.1 || f > 0.9 ? 0.82 : 1], w };
+    }, { inward: true });
+    // the pumpkin: its frame (F out of the forehead, a little toward level; U up; Rt to his left) and its size
+    const B0 = at(0, 0.45, 0.014), F = norm(add(norm(sub(B0, c)), [0, 0, 1])), U = norm(sub([0, 1, 0], scale(F, F[1]))), Rt = cross(U, F);
+    const a = 0.275 * R, b = 0.225 * R, dz = 0.18 * R, C = addS(B0, F, 0.08 * R);
+    const lat = Math.round(12 * det) + 6, lon = Math.round(32 * det) + 16;
+    gb.grid(lat + 1, lon, (r, k) => {
+      const th = -Math.PI / 2 + r / lat * Math.PI, ph = k / lon * Math.PI * 2, rr = Math.cos(th), lobe = Math.pow(Math.abs(Math.cos(4 * ph)), 0.6);
+      const rib = 0.92 + 0.08 * lobe, top = Math.sin(th) > 0;
+      // squat, with the top sunk in round the stem (and a shallower dimple underneath)
+      const yy = Math.sin(th) * (top ? 1 : 0.93) - (top ? 0.34 : 0.06) * (1 - smooth(0, 0.42, rr));
+      const x = rr * Math.sin(ph) * a * rib, y = yy * b, z = rr * Math.cos(ph) * dz * rib;
+      const p = add(add(addS(C, Rt, x), scale(U, y)), scale(F, z));
+      const k2 = (0.74 + 0.26 * lobe) * (top && rr < 0.45 ? 0.75 + 0.25 * rr / 0.45 : 1);
+      return { p, uv: [0.75 + x / a * 0.25, 0.5 - y / b * 0.5], col: [k2, k2, k2, 1], w };
+    });
+    // the stem, curling back, and a tendril
+    const s0 = addS(C, U, 0.6 * b), stem = [], sr = [];
+    for (let i = 0; i <= 5; i++) { const t = i / 5; stem.push(add(add(addS(s0, U, 0.15 * R * t), scale(F, -0.05 * R * t * t)), scale(Rt, 0.03 * R * t * t))); sr.push(0.034 * R * (1 - 0.3 * t)); }
+    gb.tube(stem, sr, F, { cols: 8, uv: () => [0.505, 0.03], capUv: () => [0.505, 0.03], w: () => w });
+    const tend = [], tr = [];
+    for (let i = 0; i <= 16; i++) { const t = i / 16, ang = t * Math.PI * 2.6, rad = 0.07 * R * (1 - 0.5 * t); tend.push(add(add(addS(s0, U, 0.04 * R + 0.03 * R * t), scale(Rt, -0.05 * R + Math.cos(ang) * rad)), scale(F, Math.sin(ang) * rad * 0.8))); tr.push(0.009 * R); }
+    gb.tube(tend, tr, U, { cols: 5, uv: () => [0.505, 0.03], capUv: () => [0.505, 0.03], w: () => w });
+    return gb.finish();
+  }
+
   // Basketball shoe: rubber outsole, thick midsole and an upper with a rounded toe box and heel, built as two
   // half shells (lateral / medial) so it can carry a painted texture (v0.4.3: designs come from paintShoe
   // in looks.js; before this the details were vertex colours too fine for the mesh and in the wrong space).
@@ -1253,6 +1319,30 @@ export class AthleteModel {
         return { p: P, uv: [(lateral ? 0.008 : 0.508) + t * 0.484, 1 - v], col: [1, 1, 1, r === 0 || r === across.length - 1 ? 0.7 : 1], w: [[ft, 1 - wt], [toe, wt]] };
       }, { inward: sg < 0 });
     }
+    if (shoe.model === 'coffin') {
+      // v0.4.8.5 quick patch 2: the Coffin Hi's lace charm: a little bone-white skull clipped to the top of the laces, lying
+      // down the tongue (its crown toward the ankle, its face up out of the shoe), with dark eye sockets that glow green
+      // in the dark, a nose hole and a jaw. Bone and sockets read swatches paintShoe leaves between the halves (u .5:
+      // v .75 bone white, v .25 black with a green glow in the emissive map)
+      const S = SHOE_CHARM, e = 1e-3, P = surf(S.t, 0);
+      const dt = sub(surf(S.t + e, 0), surf(S.t - e, 0)), dp = sub(surf(S.t, e), surf(S.t, -e));
+      let F = norm(cross(dt, dp)); if (F[1] < 0) F = scale(F, -1);
+      const U = norm(sub(scale(norm(dt), -1), scale(F, dot(scale(norm(dt), -1), F)))), Rt = cross(U, F);
+      const C = addS(addS(P, F, (S.lift) * H), U, -S.down * H);
+      const wt = smooth(toeJ - 0.015 * H, toeJ + 0.02 * H, C[2]), wts = [[ft, 1 - wt], [toe, wt]];
+      const blob = (ctr, ax, ay, az, uv, col, n = 8) => gb.grid(n + 1, n * 2, (r, k) => {
+        const th = -Math.PI / 2 + r / n * Math.PI, ph = k / (n * 2) * Math.PI * 2, cr = Math.cos(th);
+        return { p: add(add(addS(ctr, Rt, cr * Math.sin(ph) * ax * H), scale(U, Math.sin(th) * ay * H)), scale(F, cr * Math.cos(ph) * az * H)), uv, col, w: wts };
+      });
+      const bone = [1, 1, 1, 1], dark = [1, 1, 1, 1], BU = [0.5, 0.75], DU = [0.5, 0.25];
+      const k = S.size, at = (x, y, z) => add(add(addS(C, Rt, x * k * H), scale(U, y * k * H)), scale(F, z * k * H));
+      const blob2 = (p, ax, ay, az, uv, col, n) => blob(p, ax * k, ay * k, az * k, uv, col, n);
+      blob2(at(0, 0.0012, 0), 0.0042, 0.0046, 0.0034, BU, bone, 10);           // the cranium
+      blob2(at(0, -0.0033, -0.0004), 0.0027, 0.0019, 0.0027, BU, bone);       // the jaw
+      for (const s of [-1, 1]) blob2(at(s * 0.0017, 0.0005, 0.0027), 0.0011, 0.0012, 0.0007, DU, dark); // the eye sockets
+      blob2(at(0, -0.0017, 0.0026), 0.00055, 0.0007, 0.0004, DU, dark);        // the nose
+      blob2(at(0, -0.003, 0.0021), 0.0019, 0.00028, 0.0005, DU, dark);         // between the teeth
+    }
   }
 
   // v0.4.5 stage 7: the same parts, one per step (see AthleteView.staged)
@@ -1262,9 +1352,10 @@ export class AthleteModel {
     out.head = this.buildHead(); out.eyes = this.buildEyes(); out.hair = this.buildHair(); yield;
     // (v0.4.7.5 quick patch: the straps come with the top. This staged build, which is how every player is built
     // in the game and the menus, never passed them on, so the strap mesh added in v0.4.7.5 was never drawn)
-    out.top = this.buildTop(look.top || { family: 'jersey' }); out.straps = this.strapGeo; yield;
+    out.top = this.buildTop(look.top || { family: 'jersey' }); out.straps = this.strapGeo; out.gloves = this.gloveGeo; yield; // (v0.4.8.5 quick patch 2: the Bone Suit's gloves)
     out.bottom = this.buildBottom(look.bottom || { family: 'shorts' }); yield;
     out.gear = this.buildGear(look.gear || {}); out.shoes = this.shoeGeo; out.chain = this.chainGeo; out.terry = this.terryGeo; // (v0.4.8.5 quick patch: the Neon Terry band)
+    out.lantern = this.lanternGeo; // (v0.4.8.5 quick patch 2: the Jack-o'-Lantern band)
     return out;
   }
   buildAll() {
@@ -1281,6 +1372,7 @@ export class AthleteModel {
       shoes: this.shoeGeo,
       chain: this.chainGeo,
       terry: this.terryGeo, // (v0.4.8.5 quick patch)
+      gloves: this.gloveGeo, lantern: this.lanternGeo, // (v0.4.8.5 quick patch 2)
     };
   }
 }

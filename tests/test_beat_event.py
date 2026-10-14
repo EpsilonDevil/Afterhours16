@@ -24,13 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 class ScheduleTests(unittest.TestCase):
     def test_the_beat_follows_the_jungle_tonight(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat"])
-        self.assertEqual((sched[1]["until"], sched[2]["from"], sched[2]["until"]), (HANDOVER, HANDOVER, None))
+        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat", "monster"])  # (then the Monster Mash: test_monster_event.py)
+        self.assertEqual((sched[1]["until"], sched[2]["from"], sched[2]["until"]), (HANDOVER, HANDOVER, HANDOVER + cup.WINDOW))
         self.assertEqual((HANDOVER - cup.EPOCH) % cup.WINDOW, 0)  # the end of a window, not the middle of one
         self.assertEqual(cup.window_bounds(cup.window_at(HANDOVER - 1))[1], HANDOVER)  # (the Jungle's window ends right there)
         self.assertEqual(cup.active_event(HANDOVER - 1, sched)["id"], "jungle")
         self.assertEqual(cup.active_event(HANDOVER, sched)["id"], "beat")
-        self.assertEqual(cup.active_event(HANDOVER + 365 * 86400, sched)["id"], "beat")
+        self.assertEqual(cup.active_event(HANDOVER + cup.WINDOW - 1, sched)["id"], "beat")  # one 48-hour window
         w = cup.window_at(HANDOVER)
         self.assertEqual(cup.event_for_window(w - 1, sched)["id"], "jungle")  # its last window pays the Jungle's prizes
         self.assertEqual(cup.event_for_window(w, sched)["id"], "beat")
@@ -39,9 +39,9 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("jungle", cup.EVENTS)
         self.assertIn("kingtut", cup.EVENTS)
         venues = {v["id"]: v for v in server_app.VENUES}
-        for v in ("jungle", "kingtut", "beat"):
+        for v in ("jungle", "kingtut", "beat", "monster"):
             self.assertTrue(venues[v].get("event"), v)
-        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat"})
+        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat", "monster"})
 
     def test_the_beat_prizes(self):
         beat, jungle, tut = cup.EVENTS["beat"], cup.EVENTS["jungle"], cup.EVENTS["kingtut"]
@@ -125,7 +125,7 @@ class ApiTests(unittest.TestCase):
             cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
             cfg = self.call("/api/config")
             self.assertEqual((cfg["event"]["id"], cfg["event"]["venue"], cfg["event"]["name"]), ("beat", "beat", "And The Beat Goes On"))
-            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut", "monster"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "beat")
             self.assertEqual(st["prizes"][0]["label"], "King of the Beat")

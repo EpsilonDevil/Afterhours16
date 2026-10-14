@@ -34,7 +34,7 @@ test('the Jungle Ballers theme: a park event with toucan courts, rain for a stre
   assert.equal(PARK_NAMES.jungle, 'The Jungle Ballers');
   // the King Tut Cup is all still here, just not on the schedule
   assert.ok(THEMES.kingtut && EVENTS.kingtut && EVENTS.kingtut.exclusive === 'cup');
-  assert.deepEqual([...EVENT_PARKS].sort(), ['beat', 'jungle', 'kingtut']); // (v0.4.8.5 quick patch: And The Beat Goes On)
+  assert.deepEqual([...EVENT_PARKS].sort(), ['beat', 'jungle', 'kingtut', 'monster']); // (v0.4.8.5 quick patches: And The Beat Goes On, the Monster Mash)
 });
 
 test('rainforest props: giants with buttress roots over the light poles, canopy clusters, lianas, ferns, the far forest', () => {
@@ -117,8 +117,8 @@ test('the seven prizes are the Jungle\'s own: gorilla fur, the Toucan kicks and 
 
 test('the server schedule: the Cup until the end of its last window, then the Jungle; the venues list has both', () => {
   const sched = JSON.parse(fs.readFileSync(new URL('../server/events.json', import.meta.url))).schedule;
-  assert.deepEqual(sched.map(s => s.event), ['kingtut', 'jungle', 'beat']); // (v0.4.8.5 quick patch: the Beat follows the Jungle)
-  assert.equal(sched[0].until, sched[1].from); assert.equal(sched[1].until, sched[2].from); assert.equal(sched[2].until, null);
+  assert.deepEqual(sched.map(s => s.event), ['kingtut', 'jungle', 'beat', 'monster']); // (v0.4.8.5 quick patches: the Beat follows the Jungle, the Monster Mash the Beat)
+  assert.equal(sched[0].until, sched[1].from); assert.equal(sched[1].until, sched[2].from); assert.equal(sched[2].until, sched[3].from); assert.equal(sched[3].until, null);
   assert.equal((sched[0].until - 1767225600) % (48 * 3600), 0, 'the handover is on a window boundary');
   const venues = JSON.parse(fs.readFileSync(new URL('../server/venues.json', import.meta.url)));
   assert.ok(venues.some(v => v.id === 'jungle' && v.event) && venues.some(v => v.id === 'kingtut' && v.event));

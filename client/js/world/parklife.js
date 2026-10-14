@@ -10,6 +10,8 @@ import { audio } from '../core/audio.js';
 import * as TX from '../gfx/textures.js';
 import { AVE, EL_Z, STEAM_VENTS } from './street.js';
 import * as RT from './retro.js';
+import * as HR from './horror.js';
+import * as SP from '../core/spooky.js';
 
 const lin = hex => M.hexLinear(hex);
 const col = hex => [...lin(hex), 1];
@@ -41,9 +43,11 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       // (v0.4.8.5 quick patch: the Beat Goes On's sidewalks: the Strip's, the plaza front, and along the shops as far as
       // the disco's crowd; jit: how far off the line they wander, y: the pavement's height)
       : theme.style === 'retro' ? [{ z: 34.4, x0: -62, x1: 62, jit: 0.4, y: 0.1 }, { z: -35.0, x0: -62, x1: 62, jit: 0.25, y: 0.02 }, { z: -37.4, x0: -60, x1: 12, jit: 0.3, y: 0.02 }]
-        : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
+        // (v0.4.8.5 quick patch 2: the Monster Mash's sidewalks, fewer people out: the monsters fill the rest)
+        : theme.style === 'horror' ? [{ z: 34.5, x0: -62, x1: 62, jit: 0.4 }, { z: -35.6, x0: -60, x1: 60, jit: 0.3 }]
+          : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
   const people = [];
-  for (let i = 0; i < 22; i++) {
+  for (let i = 0; i < (theme.style === 'horror' ? 12 : 22); i++) {
     const ln = lanes[i % lanes.length], jog = rng.next() < 0.18;
     const p = { ln, x: rng.range(ln.x0, ln.x1), dz: rng.range(-1, 1) * (ln.jit ?? 1), dir: rng.next() < 0.5 ? 1 : -1, v: jog ? rng.range(2.6, 3.4) : rng.range(1.1, 1.6), jog, ph: rng.range(0, 6), stop: 0, s: rng.range(0.92, 1.08) };
     p.mesh = add(personGeo, shirtMats[i % shirtMats.length]);
@@ -69,6 +73,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   // ---------- ambient traffic / boats / machinery (always running) ----------
   const movers = [], updExtra = [];
   let retro = null, lifeT = 0; // (v0.4.8.5 quick patch: the Beat Goes On's park life, and a clock for it)
+  let horror = null; // (v0.4.8.5 quick patch 2: the Monster Mash's monsters)
   const carParts = (body, cabin) => [
     { geo: G.box(1.8, 0.62, 4.3), matrix: T(0, 0.62, 0), color: col(body) },
     { geo: G.box(1.62, 0.55, 2.3), matrix: T(0, 1.2, -0.2), color: col(cabin) },
@@ -250,6 +255,9 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   } else if (theme.style === 'retro') {
     // v0.4.8.5 quick patch: And The Beat Goes On: lowriders, dancers, skaters (retroLife, below)
     retro = retroLife({ r, ctx, rng, add, geoOf, updExtra, city: opts.city, t: () => lifeT });
+  } else if (theme.style === 'horror') {
+    // v0.4.8.5 quick patch 2: The Monster Mash: monsters on the loose (horrorLife, below)
+    horror = horrorLife({ r, ctx, rng, add, geoOf, updExtra, scene, town: opts.town, t: () => lifeT });
   } else {
     // industrial: a forklift shuttling along the container yard, and the crane trolley working
     const fork = add(geoOf([
@@ -485,6 +493,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     industrial: [() => train('freight'), () => train('freight'), sparks, steam, () => birds('crow')],
     tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
     retro: retro ? retroEvents({ r, rng, add, geoOf, scene, city: opts.city, vmat }, retro) : null,
+    horror: horror ? horrorEvents({ r, ctx, rng, add, geoOf, scene, town: opts.town, vmat, theme }, horror) : null,
   }[theme.style] || [() => birds('pigeon')];
   let nextEvt = rng.range(6, 14);
   const start = make => {
@@ -509,6 +518,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     trigger(i) { start(EVENTS[i % EVENTS.length]); },
     get eventCount() { return events.length; },
     get retro() { return retro; }, // (v0.4.8.5 quick patch: the Beat Goes On's cars and dancers, for the tests and the dev views)
+    get horror() { return horror; }, // (v0.4.8.5 quick patch 2: the Monster Mash's monsters)
   };
 }
 
@@ -816,3 +826,343 @@ function retroEvents(env, R) {
 // a texture for the retro events, made once per GL context
 const evTex = new Map();
 function ctx2tex(env, key, make, opts = {}) { const ctx = env.r.ctx; let t = evTex.get(key); if (!t || t.ctx !== ctx) { t = { ctx, tex: ctx.texture(make(), opts) }; evTex.set(key, t); } return t.tex; }
+
+// ---------------- v0.4.8.5 quick patch 2: The Monster Mash ----------------
+// Monsters on the loose round the park, each a skinned figure (horror.js: one mesh moves two of them, its glowing bits a
+// second unlit mesh on the same bones): zombies shambling along the cemetery fence and among the graves, the vampire
+// gliding round the mausoleum, the werewolf prowling the pumpkin patch and stopping to howl at the moon, two mummies on
+// the swamp's shore, two skeletons dancing on the mausoleum's steps, ghosts drifting through the cemetery, black cats (on
+// the fence rail, a gate pillar, a porch), bats wheeling round the floodlights, trick-or-treaters going door to door, the
+// slasher stalking slowly round the block with his lantern, and the Lantern Man beckoning at the carnival's gate.
+// env: the createParkLife closures. Returns what the horror events need
+const HSK = new Map(); // skinned geometries, made once per GL context
+let poolTex = null; const poolTexOf = ctx => (poolTex && poolTex.ctx === ctx ? poolTex.t : (poolTex = { ctx, t: ctx.texture(TX.glowSpot(128, 1.6), { wrap: 'clamp' }) }).t);
+function horrorLife(env) {
+  const { r, ctx, rng, add, updExtra, town } = env;
+  // (a strong cold sheen: the moon rims them, so they read against the dark; a breath of emission so nobody vanishes)
+  const fmat = new Material({ color: [1, 1, 1], roughness: 0.78, shading: 'cloth', sheen: [0.5, 0.6, 0.78], emissive: [0.03, 0.036, 0.046] });
+  const gmat = new Material({ color: [2.8, 2.8, 2.8], shading: 'unlit', fog: false });
+  const ghostMat = new Material({ color: [0.8, 1.15, 1.0], shading: 'unlit', blend: 'alpha', depthWrite: false, fog: false });
+  const batMat = new Material({ color: [1, 1, 1], roughness: 0.85, doubleSided: true, emissive: [0.1, 0.085, 0.12] });
+  const sgeo = (key, make) => { let e = HSK.get(key); if (!e || e.ctx !== ctx) { const g = make(); e = { ctx, v: g.geo ? { geo: ctx.geometry(g.geo), glow: g.glow ? ctx.geometry(g.glow) : null } : { geo: ctx.geometry(g) } }; HSK.set(key, e); } return e.v; };
+  const bounds = (m, pts) => { let cx = 0, cz = 0, cy = 0; for (const q of pts) { cx += q[0]; cy += q[1]; cz += q[2]; } cx /= pts.length; cy /= pts.length; cz /= pts.length; let rr = 0; for (const q of pts) rr = Math.max(rr, Math.hypot(q[0] - cx, q[1] - cy, q[2] - cz)); m.boundsOverride = { center: [cx, cy + 1, cz], radius: rr + 3 }; };
+  // a mesh with one or two figures: pose(i, ...) poses figure i; done() updates the culling sphere
+  const group = specs => {
+    const key = 'fig:' + specs.map(s => s.kind + (s.v || '')).join('+'), g = sgeo(key, () => HR.figureGeo(specs)), bones = new Float32Array(16 * HR.FB * specs.length);
+    const mesh = add(g.geo, fmat, { bones }), glow = g.glow ? add(g.glow, gmat, { bones }) : null, at = specs.map(() => [0, -60, 0]);
+    return { mesh, glow, bones, kinds: specs.map(s => s.kind), at,
+      pose(i, x, y, z, yaw, P, k = 1) { HR.poseFigure(bones, i, x, y, z, yaw, P, k, this.kinds[i]); at[i][0] = x; at[i][1] = P.hidden ? -60 : y; at[i][2] = z; },
+      done() { bounds(mesh, at); if (glow) glow.boundsOverride = mesh.boundsOverride; } };
+  };
+  // walking a polyline (loop or back and forth): returns x, z and the heading at distance s
+  const path = (pts, loop = true) => {
+    const all = loop ? [...pts, pts[0]] : pts, segs = []; let L = 0;
+    for (let i = 0; i < all.length - 1; i++) { const [a, b] = [all[i], all[i + 1]], l = Math.hypot(b[0] - a[0], b[1] - a[1]); segs.push({ a, b, l, s: L }); L += l; }
+    return { L, at(s0) { let s = s0, back = false; if (loop) s = ((s % L) + L) % L; else { const m = ((s % (2 * L)) + 2 * L) % (2 * L); back = m > L; s = back ? 2 * L - m : m; }
+      for (const g of segs) if (s <= g.s + g.l) { const k = (s - g.s) / g.l; return [g.a[0] + (g.b[0] - g.a[0]) * k, g.a[1] + (g.b[1] - g.a[1]) * k, Math.atan2(g.b[0] - g.a[0], g.b[1] - g.a[1]) + (back ? Math.PI : 0)]; } const g = segs[segs.length - 1]; return [g.b[0], g.b[1], 0]; } };
+  };
+  const gy = HR.groundY, C = HR.CEMETERY;
+  // ---- the cast ----
+  const zA = group([{ kind: 'zombie', top: '#6a7aa8' }, { kind: 'zombie', top: '#9a6a4a', skin: '#a8bc96', v: 'b' }]);
+  const zB = group([{ kind: 'zombie', top: '#8a5a7a', skin: '#94a888', v: 'c' }, { kind: 'zombie', top: '#5a7a5a', v: 'd' }]);
+  const fenceWalk = path([[-42, 36.0], [22, 36.0]], false), graveWalk = path([[-36, 44], [-20, 47], [-14, 62], [-36, 63], [-40, 52]]);
+  const vamp = group([{ kind: 'vampire' }, { kind: 'lanternman' }]), vampPath = path([[-6, 50], [10, 49], [16, 61], [2, 66], [-12, 63], [-24, 56], [-20, 46]]);
+  const wolf = group([{ kind: 'werewolf' }, { kind: 'slasher' }]), wolfPath = path([[28, 57], [60, 57.5], [66, 50], [66, 38], [56, 36.6], [40, 36.6], [28, 40]]);
+  const mum = group([{ kind: 'mummy' }, { kind: 'mummy', v: 'b' }]), mumPath = path([[-83, -30], [-82, -6], [-84, 12], [-83, 30]], false);
+  const skel = group([{ kind: 'skeleton' }, { kind: 'skeleton', v: 'b' }]);
+  const kids = [group([{ kind: 'kidSheet' }, { kind: 'kidPumpkin', skin: '#8d5a36' }]), group([{ kind: 'kidWitch' }, { kind: 'kidSkelly' }])];
+  const slashPath = path([[-56, 36.2], [57, 36.2], [67, 30], [67, -30], [60, -47.6], [-60, -47.6], [-79, -34], [-80, 30]]);
+  const ghostG = sgeo('ghosts6', () => HR.ghostGeo(6)), ghostBones = new Float32Array(16 * 12), ghosts = add(ghostG.geo, ghostMat, { bones: ghostBones }); ghosts.order = 3;
+  const catG = sgeo('cats3', () => HR.catGeo(3)), catBones = new Float32Array(16 * 15), cats = add(catG.geo, fmat, { bones: catBones }), catEyes = add(catG.glow, gmat, { bones: catBones });
+  const batG = sgeo('bats8', () => HR.batGeo(8)), swarms = [[-36.1, 15.4], [36.1, 15.4], [10.1, -15.4]].map(([x, z], i) => ({ x, z, y: 10.9, bones: new Float32Array(16 * 24), ph: i * 2.1 }));
+  for (const sw of swarms) { sw.mesh = add(batG.geo, batMat, { bones: sw.bones }); sw.mesh.boundsOverride = { center: [sw.x, sw.y, sw.z], radius: 5 }; }
+  const doors = town?.doors?.filter(d => !d.funeral) || [];
+  const kidState = kids.map((g, i) => ({ g, i: i * 4 % Math.max(1, doors.length), mode: 'walk', t: 0, x: doors.length ? doors[i * 4 % doors.length].x - 10 * (i ? -1 : 1) : 0, dir: i ? -1 : 1, ph: rng.range(0, 6) }));
+  const st = { t: 0, slash: { s: rng.range(0, 300), stop: 0, next: rng.range(15, 30) }, wolf: { s: 0, howl: 0 }, zA: rng.range(0, 60), zB: rng.range(0, 60), vamp: rng.range(0, 40), mum: 0, cats: [0, 0, 0], arch: [0, 0, 0], owl: rng.range(20, 50), creak: rng.range(10, 30) };
+  // the ambient slasher and the zombies can be borrowed by an event (they hide while it has them)
+  const hold = { slasher: 0, zombies: 0 };
+  updExtra.push(dt => {
+    const t = (st.t += dt);
+    // zombies: two along the cemetery fence (back and forth), two among the graves
+    if (hold.zombies <= 0) {
+      st.zA += dt * 0.55; for (let i = 0; i < 2; i++) { const [x, z, yaw] = fenceWalk.at(st.zA - i * 2.2), ph = (st.zA - i * 2.2) * 2.6; zA.pose(i, x + (i ? 0.6 : 0), 0, z - i * 0.5, yaw, HR.MOVES.shamble(ph, t + i), 1.02); }
+      st.zB += dt * 0.45; for (let i = 0; i < 2; i++) { const [x, z, yaw] = graveWalk.at(st.zB + i * 31), ph = (st.zB + i * 31) * 2.6; zB.pose(i, x, gy(x, z), z, yaw, HR.MOVES.shamble(ph, t * 1.1 + i), 0.98); }
+    } else { hold.zombies -= dt; for (let i = 0; i < 2; i++) { zA.pose(i, 0, 0, 0, 0, { hidden: true }); zB.pose(i, 0, 0, 0, 0, { hidden: true }); } }
+    zA.done(); zB.done();
+    // the vampire glides (feet off the ground, the cape streaming); the Lantern Man beckons at the carnival gate
+    st.vamp += dt * 1.25; { const [x, z, yaw] = vampPath.at(st.vamp); vamp.pose(0, x, gy(x, z) + 0.18 + Math.sin(t * 1.4) * 0.06, z, yaw, HR.MOVES.glide(t), 1.03); }
+    { const A = HR.CARNIVAL.arch, P = (t % 14) < 9 ? HR.MOVES.beckon(t) : HR.MOVES.stand(t); vamp.pose(1, A.x - 1.3, 0, A.z + 4.8, -Math.PI / 2 - 0.3, P, 1.08); }
+    vamp.done();
+    // the werewolf prowls the patch; once a lap, at its far corner, it stands up and howls at the moon
+    const W = st.wolf;
+    if (W.howl > 0) { W.howl -= dt; const k = Math.min(1, (5.5 - W.howl) * 1.5, W.howl * 1.5); const [x, z] = wolfPath.at(W.s); wolf.pose(0, x, 0, z, Math.PI * 0.05, HR.MOVES.howl(Math.max(0, k)), 1.12); }
+    else { const s0 = W.s; W.s += dt * 1.7; if (Math.floor(s0 / wolfPath.L) !== Math.floor(W.s / wolfPath.L) || (W.s % wolfPath.L > 58 && s0 % wolfPath.L <= 58)) { W.howl = 5.5; SP.howl(1.5); } const [x, z, yaw] = wolfPath.at(W.s); wolf.pose(0, x, gy(x, z), z, yaw, HR.MOVES.prowl(W.s * 1.9, t), 1.12); }
+    // the slasher: slow and steady round the block, stopping now and then to look over at the courts
+    const S = st.slash;
+    if (hold.slasher > 0) { hold.slasher -= dt; wolf.pose(1, 0, 0, 0, 0, { hidden: true }); }
+    else {
+      if (S.stop > 0) S.stop -= dt; else { S.s += dt * 0.95; if ((S.next -= dt) <= 0) { S.stop = rng.range(3, 6); S.next = rng.range(18, 40); } }
+      const [x, z, yaw] = slashPath.at(S.s), look = Math.atan2(-x, -z);
+      const P = S.stop > 0 ? { ...HR.MOVES.stand(t), aL: [0.35, 0.2, 0.3], prop: [Math.sin(t * 2) * 0.08 - 0.35, 0, 0], head: [0.15, Math.max(-1.1, Math.min(1.1, Math.atan2(Math.sin(look - yaw), Math.cos(look - yaw)))), 0] } : HR.MOVES.creep(S.s * 2.2, t);
+      wolf.pose(1, x, gy(x, z), z, yaw, P, 1.15);
+    }
+    wolf.done();
+    // mummies on the shore
+    st.mum += dt * 0.42; for (let i = 0; i < 2; i++) { const [x, z, yaw] = mumPath.at(st.mum - i * 1.6); mum.pose(i, x + (i ? 1.0 : 0), gy(x, z), z, yaw, HR.MOVES.mummy((st.mum - i * 1.6) * 3.4, t), 1.0); } mum.done();
+    // the skeletons dance on the mausoleum's steps
+    { const b = t * 2, Mz = HR.MAUSOLEUM, y = gy(Mz.x, Mz.z) + 0.66; for (let i = 0; i < 2; i++) skel.pose(i, Mz.x + (i ? 1.1 : -1.1), y, Mz.z - Mz.d / 2 - 0.5, Math.PI + (i ? -0.3 : 0.3), HR.MOVES.skel(b + i * 2), 1.0); skel.done(); }
+    // ghosts drifting among the graves
+    for (let i = 0; i < 6; i++) { const a = t * (0.05 + i * 0.012) + i * 1.7, cx = -12 + Math.cos(i * 2.3) * 16, cz = 52 + Math.sin(i * 1.7) * 7, x = cx + Math.cos(a) * 9, z = cz + Math.sin(a * 1.3) * 5; HR.poseGhost(ghostBones, i, x, gy(x, z) + 1.1 + (i % 3) * 0.3, z, a + Math.PI / 2 + Math.sin(t * 0.3 + i) * 0.4, t, 1); }
+    ghosts.boundsOverride = { center: [-12, 3, 52], radius: 30 };
+    // cats: one walks the fence rail, one sits on a gate pillar, one on a porch rail; now and then one arches its back
+    { const c0 = path([[-40, 37.2], [20, 37.2]], false), [x, z, yaw] = c0.at(t * 0.45); HR.poseCat(catBones, 0, x, 1.62, z, yaw, t * 6, t, 0);
+      for (let i = 1; i < 3; i++) { st.arch[i] = M.damp(st.arch[i], (t + i * 7) % 23 < 2 ? 1 : 0, 4, dt); }
+      HR.poseCat(catBones, 1, C.gate - 2.3 + 0.28, 3.2, C.fence - 0.2, Math.PI, null, t, st.arch[1]);
+      const d = doors[2]; if (d) HR.poseCat(catBones, 2, d.rail[0], d.rail[1], d.rail[2], 0.2, null, t + 3, st.arch[2]); }
+    cats.boundsOverride = catEyes.boundsOverride = { center: [-10, 2, 0], radius: 70 };
+    // bats wheeling round three of the floodlights
+    for (const sw of swarms) for (let i = 0; i < 8; i++) { const a = t * (1.6 + (i % 3) * 0.3) * (i % 2 ? 1 : -1) + i * 0.8 + sw.ph, rr = 1.6 + (i % 4) * 0.5, y = sw.y + Math.sin(t * 1.3 + i) * 0.9; HR.poseBat(sw.bones, i, sw.x + Math.cos(a) * rr, y, sw.z + Math.sin(a) * rr, a + (i % 2 ? Math.PI : 0), t * 22 + i, 0, 1.6); }
+    // trick-or-treaters: along the far sidewalk, up each path to knock, a moment at the door, back out
+    for (const k of kidState) {
+      if (!doors.length) { k.g.pose(0, 0, 0, 0, 0, { hidden: true }); k.g.pose(1, 0, 0, 0, 0, { hidden: true }); k.g.done(); continue; }
+      const d = doors[k.i], walkZ = -47.6; k.t += dt;
+      let x = k.x, z = walkZ, yaw = k.dir > 0 ? Math.PI / 2 : -Math.PI / 2, P = null;
+      if (k.mode === 'walk') { k.x += k.dir * 1.0 * dt; x = k.x; k.ph += dt * 7; P = HR.MOVES.walk(k.ph, 0.9); if (Math.abs(k.x - d.x) < 0.2) { k.mode = 'up'; k.t = 0; } }
+      else if (k.mode === 'up' || k.mode === 'down') { const f = Math.min(1, k.t / 3.2), u = k.mode === 'up' ? f : 1 - f; x = d.x; z = walkZ + (d.z - walkZ) * u; yaw = k.mode === 'up' ? Math.PI : 0; k.ph += dt * 7; P = HR.MOVES.walk(k.ph, 0.9); if (f >= 1) { k.mode = k.mode === 'up' ? 'door' : 'walk'; k.t = 0; if (k.mode === 'walk') { k.i = (k.i + (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; if ((k.dir > 0 && doors[k.i].x < k.x) || (k.dir < 0 && doors[k.i].x > k.x)) { k.dir = -k.dir; k.i = (k.i + 2 * (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; } } } }
+      else { x = d.x; z = d.z; yaw = Math.PI; P = k.t < 1.5 ? HR.MOVES.knock(k.t) : HR.MOVES.treat(k.t); if (k.t > 4.5) { k.mode = 'down'; k.t = 0; } }
+      for (let j = 0; j < 2; j++) { const ox = (j ? 0.75 : -0.15) * (k.mode === 'walk' ? 1 : 0.9), oz = k.mode === 'walk' ? (j ? 0.5 : 0) : (j ? 0.55 : 0); k.g.pose(j, x + (k.mode === 'walk' ? -k.dir * j * 0.9 : ox), 0, z + oz, yaw, P, 0.6 + j * 0.04); }
+      k.g.done();
+    }
+    // the night's sounds, now and then: an owl, the gate
+    if ((st.owl -= dt) <= 0) { st.owl = rng.range(45, 100); SP.owl(rng.range(-0.6, 0.6)); }
+    if ((st.creak -= dt) <= 0) { st.creak = rng.range(30, 70); SP.creak(0, 0.4); }
+  });
+  return { zA, zB, vamp, wolf, mum, skel, kids: kidState, ghosts, cats, swarms, hold, group, sgeo, path, fmat, gmat, ghostMat, batMat, st };
+}
+
+// the Monster Mash's random events: a thunderstorm over the town, the dead rising from their graves, the zombie troupe's
+// dance on the sidewalk, the slasher chasing screaming teens past the fence, the witch flying across the moon, bats
+// bursting out of the bell tower, a ghost parade, the werewolf's transformation on the mausoleum's roof (against the
+// moon), the HAUNTED HOUSE ride bursting open, fireworks in pumpkin orange and slime green, the hearse rolling by
+function horrorEvents(env, H) {
+  const { r, ctx, rng, add, scene, town } = env;
+  const gy = HR.groundY, C = HR.CEMETERY;
+  const boltMat = new Material({ color: [6, 6.5, 8], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true });
+  // a lightning strike far over the hills: a jagged bolt, the town lit up, the thunder after it
+  const strike = m0 => {
+    const a = rng.range(-Math.PI, Math.PI), d = rng.range(110, 190), tx = Math.cos(a) * d, tz = Math.sin(a) * d, top = [tx + rng.range(-20, 20), 90, tz + rng.range(-20, 20)], path = [top];
+    for (let i = 1; i <= 10; i++) { const k = i / 10; path.push([top[0] + (tx - top[0]) * k + rng.range(-5, 5) * (1 - k), 90 * (1 - k) + gy(tx, tz), top[2] + (tz - top[2]) * k + rng.range(-5, 5) * (1 - k)]); }
+    const parts = [{ geo: G.tube(path, k => 0.9 - 0.6 * k, 5) }], f0 = path[4]; parts.push({ geo: G.tube([f0, [f0[0] + rng.range(-14, 14), f0[1] - 20, f0[2] + rng.range(-14, 14)], [f0[0] + rng.range(-20, 20), f0[1] - 38, f0[2] + rng.range(-20, 20)]], k => 0.4 - 0.25 * k, 4) });
+    m0.geo = ctx.geometry(G.merge(parts, false)); m0.order = 7;
+    town?.flash(1); SP.thunder(d / 340, d < 140 ? 0.7 : 0.3, Math.cos(a) * 0.5);
+    return m0;
+  };
+  const storm = () => {
+    const bolts = [0, 1, 2, 3, 4].map(() => { const m = add(ctx.geometry(G.box(0.1, 0.1, 0.1)), boltMat); m.visible = false; return m; });
+    let t = 0, next = 0.4, bolt = null, bt = 0, n = 0;
+    return dt => {
+      t += dt;
+      if ((next -= dt) <= 0 && t < 13 && n < bolts.length) { if (bolt) bolt.visible = false; bolt = strike(bolts[n++]); bt = 0.42; next = rng.range(2.2, 4.5); }
+      if (bolt) { bt -= dt; bolt.visible = bt > 0 && (bt % 0.14) > 0.05; if (bt > 0.2 && Math.random() < 0.2) town?.flash(0.6); }
+      if (Math.random() < dt * 30 && r.particles) for (let k = 0; k < 2; k++) r.particles.emit({ x: rng.range(-70, 70), y: 16, z: rng.range(-40, 40), vy: -18, vx: 1.5, life: 1, size: 0.03, color: [0.25, 0.3, 0.35], gravity: 0, drag: 0 });
+      return t < 16;
+    };
+  };
+  // the dead rise: six zombies claw their way out of the open graves, look about, shamble down toward the fence, and
+  // sink back into the earth
+  const rising = () => {
+    const gs = [0, 1, 2].map(i => H.group([{ kind: 'zombie', top: rng.pick(['#4a5a7a', '#6a4a3a', '#3a4a3a']), v: 'r' + i }, { kind: 'zombie', top: rng.pick(['#5a3a4a', '#4a4a5a']), skin: '#94a888', v: 'q' + i }]));
+    const z = HR.GRAVES.map(([x, zz], i) => ({ x, z: zz, y0: gy(x, zz), t0: i * 0.6, yaw: Math.PI + rng.range(-0.4, 0.4) }));
+    // an eerie green light welling up out of the graves (a real light for the while)
+    const glowL = { pos: [-12, 4, 50], range: 30, color: [0.4, 1, 0.45], intensity: 0, dir: null }; scene.lights.unshift(glowL);
+    let t = 0; SP.groan(0);
+    return dt => {
+      t += dt;
+      glowL.intensity = 14 * Math.min(1, t / 2) * (1 - M.smooth((t - 28) / 4)) * (0.85 + 0.15 * Math.sin(t * 7));
+      if (t >= 33) { const i = scene.lights.indexOf(glowL); if (i >= 0) scene.lights.splice(i, 1); }
+      z.forEach((q, i) => {
+        const g = gs[Math.floor(i / 2)], j = i % 2, lt = t - q.t0;
+        if (lt < 0) { g.pose(j, 0, 0, 0, 0, { hidden: true }); return; }
+        if (lt < 4) { const k = M.smooth(lt / 4); g.pose(j, q.x, q.y0 - 1.9 * (1 - k), q.z, q.yaw, HR.MOVES.rise(k), 1); if (Math.random() < dt * 10 && r.particles) r.particles.burst(q.x, q.y0 + 0.1, q.z, 3, { color: [0.22, 0.16, 0.1], speed: 1.6, life: 0.9, size: 0.09, gravity: -6 }); return; }
+        const w = lt - 4, zz = Math.max(C.z0 + 0.8, q.z - w * 0.45), xx = q.x + Math.sin(w * 0.3 + i) * 1.2;
+        if (lt < 26) g.pose(j, xx, gy(xx, zz), zz, Math.PI + Math.sin(w * 0.3 + i) * 0.3, HR.MOVES.shamble(w * 2.4, t + i), 1);
+        else { const k = Math.min(1, (lt - 26) / 3); g.pose(j, xx, gy(xx, zz) - k * 2, zz, Math.PI, HR.MOVES.rise(1 - k), 1); }
+      });
+      for (const g of gs) g.done();
+      return t < 33;
+    };
+  };
+  // the troupe: eight zombies file out of the cemetery gate onto the sidewalk, line up in two rows facing the courts, dance
+  // the routine (horror.js zombieRoutine) to their own little groove, and shamble back in
+  const troupe = () => {
+    const gs = [0, 1, 2, 3].map(i => H.group([{ kind: 'zombie', top: ['#5a2a6a', '#4a5a7a', '#6a4a3a', '#3a4a3a'][i], v: 't' + i }, { kind: i ? 'zombie' : 'mummy', top: ['#2a2a3a', '#5a3a4a', '#4a4a5a', '#6a5a3a'][i], skin: '#94a888', v: 'u' + i }]));
+    const spots = []; for (let row = 0; row < 2; row++) for (let k = 0; k < 4; k++) spots.push([C.gate - 4.5 + k * 3 + row * 1.5 - 0.75, 34.6 + row * 1.4]);
+    const BPM = 112, beatLen = 60 / BPM; let t = 0, played = false;
+    H.hold.zombies = 40;
+    // stage lights: a pink-and-green spot from over the courts' end (a real light while they dance), pools on the sidewalk
+    const spot = { pos: [C.gate, 9, 24], range: 30, color: [0.7, 1, 0.5], intensity: 0, dir: M.v3norm([0, 0, 0], [0, -8, 11]), cos: 0.84 }; scene.lights.unshift(spot);
+    const pm = new Material({ map: poolTexOf(ctx), color: [0, 0, 0], shading: 'unlit', blend: 'add', depthWrite: false, fog: false });
+    const pools = add(ctx.geometry(G.merge([[-3, 0], [3, 0], [0, 1.2]].map(([dx, dz], i) => ({ geo: G.plane(7, 7), matrix: T(C.gate + dx, 0.05, 35.2 + dz), color: i === 2 ? [0.3, 1, 0.3, 1] : [1, 0.45, 0.1, 1] })))), pm); pools.order = 2;
+    const off = () => { const i = scene.lights.indexOf(spot); if (i >= 0) scene.lights.splice(i, 1); };
+    return dt => {
+      t += dt;
+      { const on = Math.min(1, t / 3) * (1 - M.smooth((t - 34) / 4)), b = (t - 8.5) / beatLen, pulse = t > 8.5 && t < 31 ? 0.6 + 0.4 * (1 - (b % 1)) ** 2 : 0.6; spot.intensity = 30 * on * pulse; const k = on * pulse * 0.55; pm.color = [k, k, k]; if (t >= 40) off(); }
+      spots.forEach(([sx, sz], i) => {
+        const g = gs[i >> 1], j = i & 1, enter = Math.min(1, Math.max(0, (t - i * 0.5) / 6)), leave = Math.max(0, Math.min(1, (t - 30 - (7 - i) * 0.4) / 6));
+        const gx = C.gate + (i % 4 - 1.5) * 0.6, gz = 40;
+        if (t < 8.5 || leave > 0) { const u = leave > 0 ? 1 - leave : enter, x = gx + (sx - gx) * u, z = gz + (sz - gz) * u; g.pose(j, x, 0, z, leave > 0 ? 0 : Math.PI + (u < 1 ? 0 : 0), u > 0 && u < 1 ? HR.MOVES.shamble(t * 2.6 + i, t) : HR.MOVES.stand(t), 1); if (leave >= 1) g.pose(j, 0, 0, 0, 0, { hidden: true }); return; }
+        if (!played) { played = true; SP.groove(BPM, 20.5); }
+        const b = (t - 8.5) / beatLen, { P, dx } = HR.zombieRoutine(b);
+        g.pose(j, sx + dx, 0, sz, Math.PI, P, 1);
+      });
+      for (const g of gs) g.done();
+      if (t >= 40) off();
+      return t < 40;
+    };
+  };
+  // the chase: four teens pelting along the north sidewalk, one trips and scrambles up; the slasher lumbering after them
+  // with his lantern, who stops at the cemetery gate, turns to look at the courts, and walks off into the cemetery
+  const chase = () => {
+    const tg = [H.group([{ kind: 'teen', top: '#c83a2a', hair: 'long', hairCol: '#e8c060' }, { kind: 'teen', top: '#2a6a9a', skin: '#8d5a36', hair: 'short', hairCol: '#1a1210', v: 'b' }]), H.group([{ kind: 'teen', top: '#3a8a4a', hair: 'cap', hairCol: '#1a2a6a', v: 'c' }, { kind: 'teen', top: '#8a4aa0', skin: '#c68b62', hair: 'long', hairCol: '#2a1810', v: 'd' }])];
+    const sl = H.group([{ kind: 'slasher', v: 'e' }]);
+    H.hold.slasher = 46; // (as long as the chase: he's back on his rounds when it ends)
+    // his lantern throws real light round him as he comes
+    const lamp = { pos: [0, 1, 0], range: 9, color: [1, 0.62, 0.28], intensity: 0, dir: null }; scene.lights.unshift(lamp);
+    const z = 34.8, dir = 1; let t = 0;
+    return dt => {
+      t += dt;
+      { const m = sl.bones.subarray(11 * 16, 12 * 16); lamp.pos = [m[12], m[13] - 0.2, m[14]]; lamp.intensity = 7 * Math.min(1, t) * (0.85 + 0.15 * Math.sin(t * 11)) * (t < 44 ? 1 : 0); if (t >= 46) { const i = scene.lights.indexOf(lamp); if (i >= 0) scene.lights.splice(i, 1); } }
+      for (let i = 0; i < 4; i++) {
+        const g = tg[i >> 1], j = i & 1, x = -78 + (t - i * 0.35) * 5.2 * dir, trip = i === 2 && x > -12 && x < -4;
+        if (x > 85) { g.pose(j, 0, 0, 0, 0, { hidden: true }); continue; }
+        if (trip) { const k = (x + 12) / 8; g.pose(j, x - 3 * k, 0, z + 0.3, Math.PI / 2, k < 0.5 ? { ...HR.MOVES.hunch(1), pitch: 1.2 * Math.sin(k * Math.PI) } : HR.MOVES.scream(t * 9), 1); continue; }
+        g.pose(j, x, 0, z + (i % 2) * 0.6 - 0.3, Math.PI / 2, HR.MOVES.scream(t * 9 + i), 1);
+      }
+      if (t > 1 && t < 1.1) SP.screams(4, -0.5);
+      if (t > 12 && t < 12.1) SP.screams(3, 0.4);
+      // him: steady, the lantern swinging, to the gate; a look round; then in among the graves and gone in the fog
+      const sx = -84 + t * 2.0, gate = C.gate;
+      if (sx < gate) sl.pose(0, sx, 0, z, Math.PI / 2, HR.MOVES.creep(t * 2.6, t), 1.15);
+      else { const w = t - (gate + 84) / 2.0; if (w < 4) sl.pose(0, gate, 0, z, Math.PI / 2 - Math.min(1, w) * (Math.PI / 2 + 0.6), { ...HR.MOVES.stand(t), aL: [0.35, 0.2, 0.3], head: [0.1, -0.5, 0] }, 1.15); else { const zz = z + (w - 4) * 1.3; sl.pose(0, gate, gy(gate, zz), zz, 0, HR.MOVES.creep(t * 2.6, t), 1.15); } }
+      for (const g of tg) g.done(); sl.done();
+      return t < 46;
+    };
+  };
+  // the witch on her broomstick crossing the face of the moon, cackling, a trail of green sparks behind her
+  const witch = () => {
+    const g = H.group([{ kind: 'witch' }]), mdir = HR.moonDir(env.theme), az0 = Math.atan2(mdir[0], mdir[2]), el0 = Math.asin(mdir[1]), D = 95;
+    let t = 0; SP.cackle(0);
+    return dt => {
+      // (across the moon's upper half, over the mansion's roofline as you see it from the plaza)
+      t += dt; const k = t / 14, az = az0 + 0.55 - 1.1 * k, el = el0 + 0.075 + Math.sin(k * Math.PI) * 0.02 + Math.sin(t * 2) * 0.004;
+      const x = Math.sin(az) * D, z = Math.cos(az) * D - 20, y = 3.4 + Math.tan(el) * Math.hypot(x, z + 20) - 3.0;
+      const P = { ...HR.MOVES.sit(t), aR: (t % 4) < 1.2 ? [2.2, 0.4, 0.3] : [0.9, 0.15, 0.5], prop: [0, 0, 0] };
+      g.pose(0, x, y, z, az - Math.PI / 2, P, 3.2); g.done();
+      if (Math.random() < dt * 25 && r.particles) r.particles.emit({ x: x + Math.cos(az) * 2.5, y: y + 2.4, z: z - Math.sin(az) * 2.5, vy: -0.5, life: 1.4, size: 0.35, color: [0.6, 3, 0.5], gravity: 0.5, drag: 0.5, flick: 2 });
+      if (t > 6 && t < 6.05) SP.cackle(0.3);
+      return t < 14;
+    };
+  };
+  // bats: the bell tolls, and a swarm bursts out of the belfry, wheels over the park and streams off toward the moon
+  const batBurst = () => {
+    const ms = [0, 1, 2].map(() => { const bones = new Float32Array(16 * 24), m = add(H.sgeo('bats8', () => HR.batGeo(8)).geo, H.batMat, { bones }); return { m, bones }; });
+    const B = HR.BELFRY, mdir = HR.moonDir(env.theme), bats = Array.from({ length: 24 }, (_, i) => ({ d: [rng.range(-1, 1), rng.range(0.2, 1), rng.range(-1, 0.4)], ph: rng.range(0, 6), sp: rng.range(5, 9), a: rng.range(0, 6.3), r: rng.range(6, 16) }));
+    let t = 0; SP.bell(3, -0.4);
+    return dt => {
+      t += dt;
+      bats.forEach((b, i) => {
+        const g = ms[Math.floor(i / 8)], lt = Math.max(0, t - 0.8 - i * 0.05);
+        let x, y, z;
+        if (lt < 2) { x = B.x + b.d[0] * lt * b.sp; y = B.y + b.d[1] * lt * b.sp * 0.6; z = B.z + b.d[2] * lt * b.sp; }
+        else if (lt < 12) { const w = lt - 2, a = b.a + w * 0.7 * (i % 2 ? 1 : -1), cx = -20 + w * 2.2, cz = 30 - w * 1.5; x = cx + Math.cos(a) * b.r; y = 18 + Math.sin(w * 1.3 + i) * 3; z = cz + Math.sin(a) * b.r * 0.7; }
+        else { const w = lt - 12, cx = -20 + 22, cz = 15; x = cx + Math.cos(b.a) * b.r + mdir[0] * w * 14; y = 18 + mdir[1] * w * 14 + w * 2; z = cz + mdir[2] * w * 14; }
+        HR.poseBat(g.bones, i % 8, x, y, z, Math.atan2(x - B.x, z - B.z) + Math.sin(t + i), t * 24 + i, 0, 1.8);
+      });
+      for (const g of ms) g.m.boundsOverride = { center: [0, 30, 40], radius: 160 };
+      return t < 22;
+    };
+  };
+  // the ghost parade: eight ghosts in single file behind the Lantern Man, drifting along the sidewalk and up into the
+  // cemetery, fading as they go
+  const parade = () => {
+    const bones = new Float32Array(16 * 16), mat = new Material({ color: [0.8, 1.15, 1.0], opacity: 0, shading: 'unlit', blend: 'alpha', depthWrite: false, fog: false });
+    const gm = add(H.sgeo('ghosts8', () => HR.ghostGeo(8)).geo, mat, { bones }); gm.order = 3;
+    const lead = H.group([{ kind: 'lanternman', v: 'p' }]), route = H.path([[-66, 35.2], [C.gate - 0.5, 35.2], [C.gate, 40], [C.gate + 6, 56], [18, 64]], false);
+    let t = 0; SP.moan(-0.4, 0.4);
+    return dt => {
+      t += dt; const s = t * 1.5;
+      mat.opacity = Math.min(1, t / 2) * (1 - M.smooth((t - 36) / 4));
+      const [lx, lz, ly] = route.at(s); lead.pose(0, lx, gy(lx, lz), lz, ly, { ...HR.MOVES.walk(s * 2.2, 0.8), aR: [0.6, 0.2, 0.8] }, 1.08); lead.done();
+      for (let i = 0; i < 8; i++) { const [x, z, yaw] = route.at(s - 2.6 - i * 2.4); HR.poseGhost(bones, i, x, gy(x, z) + 1.0, z, yaw, t + i, 1); }
+      gm.boundsOverride = { center: [lx, 3, lz], radius: 30 };
+      if (t > 14 && t < 14.05) SP.moan(0.2, 0.35);
+      if (t > 40) lead.pose(0, 0, 0, 0, 0, { hidden: true });
+      return t < 41;
+    };
+  };
+  // the transformation: a man on top of the old folly (right under the moon, as you look from the plaza) doubles over,
+  // smoke bursts round him, the werewolf rears up out of it against the moon and howls, the moon's halo flaring; then it
+  // leaps down behind
+  const transform = () => {
+    const F = HR.FOLLY, x = F.x, y = gy(F.x, F.z) - 0.4 + F.h - 0.1, z = F.z;
+    const g = H.group([{ kind: 'wolfman', v: 'x' }]), wolfGeo = H.sgeo('fig:werewolfx', () => HR.figureGeo([{ kind: 'werewolf' }]));
+    const eyes = add(wolfGeo.glow, H.gmat, { bones: g.bones }); eyes.visible = false;
+    let t = 0, swapped = false;
+    return dt => {
+      t += dt;
+      if (t < 3) g.pose(0, x, y, z, 0, { ...HR.MOVES.hunch(Math.min(1, t / 1.5)), side: Math.sin(t * 30) * 0.05 * t }, 1.3);
+      else {
+        if (!swapped) { swapped = true; g.mesh.geo = wolfGeo.geo; eyes.visible = true; g.kinds[0] = 'werewolf'; if (r.particles) r.particles.burst(x, y + 1, z, 50, { color: [0.4, 0.45, 0.5], speed: 3, life: 1.6, size: 0.45, gravity: 0.5, drag: 1.2 }); }
+        const k = Math.min(1, (t - 3) / 1.2), sc = 1.4 + 1.0 * k; // (he grows as he turns: a giant against the moon)
+        if (t < 10) { g.pose(0, x, y, z, 0, t < 4.2 ? HR.MOVES.hunch(1 - k) : HR.MOVES.howl(Math.min(1, (t - 4.2) * 1.5)), sc); if (t > 4.4 && t < 4.45) SP.howl(1.2); }
+        else { const w = t - 10; g.pose(0, x, y + 3 * w - 9 * w * w, z + w * 4, 0, { ...HR.MOVES.run(w * 6), pitch: 0.6 }, sc); if (w > 1.5) g.pose(0, 0, 0, 0, 0, { hidden: true }); }
+      }
+      if (town?.sky && t > 4.2 && t < 10) { const h = town.sky.haloMat.color; h[0] = 0.32 * (1.6 + Math.sin(t * 6) * 0.2); h[1] = 0.38 * (1.6 + Math.sin(t * 6) * 0.2); h[2] = 0.5 * (1.6 + Math.sin(t * 6) * 0.2); }
+      g.done(); eyes.boundsOverride = g.mesh.boundsOverride;
+      return t < 11.6;
+    };
+  };
+  // the HAUNTED HOUSE bursts open: its lights strobe, the doors fly open, green fog rolls out, a ghost shrieks out over
+  // the carnival and away, the organ swells
+  const ride = () => {
+    const R = HR.CARNIVAL.ride, bones = new Float32Array(16 * 2), gm = add(H.sgeo('ghosts1', () => HR.ghostGeo(1, 2.2)).geo, H.ghostMat, { bones }); gm.order = 3;
+    town?.rideBurst(); SP.organ(0.5); SP.creak(0.5, 0.6);
+    let t = 0;
+    return dt => {
+      t += dt;
+      if (r.particles && t < 7 && Math.random() < dt * 14) r.particles.emit({ x: R.x - 0.6, y: 0.8 + Math.random() * 2, z: R.z + rng.range(-2.2, 2.2), vx: -rng.range(1.5, 3), vy: 0.2, vz: rng.range(-0.5, 0.5), life: 3, size: 0.8, color: [0.12, 0.5, 0.1], gravity: 0.05, drag: 0.5, grow: 2 });
+      const w = Math.max(0, t - 1.4), x = R.x - 1 - w * 7, y = 2 + w * w * 1.2, z = R.z + Math.sin(w * 2) * 2;
+      HR.poseGhost(bones, 0, x, y, z, -Math.PI / 2, t * 2, 1); gm.visible = t > 1.2 && t < 7.5; gm.boundsOverride = { center: [x, y, z], radius: 6 };
+      if (t > 1.5 && t < 1.55) SP.screams(1, 0.6);
+      return t < 9.2;
+    };
+  };
+  // fireworks over the cemetery and the hill in pumpkin orange and slime green, a few purple
+  const fireworks = () => {
+    let t = 0;
+    return dt => {
+      t += dt;
+      if (rng.next() < dt * 2.6 && r.particles) {
+        const x = rng.range(-70, 70), y = rng.range(32, 56), z = rng.range(70, 130), c = rng.pick([[4, 1.6, 0.3], [0.8, 4, 0.6], [4, 1.6, 0.3], [0.8, 4, 0.6], [2.6, 0.8, 4]]);
+        r.particles.burst(x, y, z, 40, { color: c, speed: 8.5, life: 1.6, size: 0.55, gravity: 2.4, drag: 0.6 });
+        if (rng.next() < 0.5) r.particles.burst(x, y, z, 16, { color: [4, 3.6, 2.6], speed: 4, life: 0.9, size: 0.3, gravity: 1, drag: 1 });
+        audio.rumble?.(0.05);
+      }
+      return t < 11;
+    };
+  };
+  // the hearse, rolling slowly along the street with its lamps lit and the curtains glowing
+  let hlMat = null;
+  const hearseBy = () => {
+    hlMat = hlMat || new Material({ color: [1.6, 1.6, 1.6], shading: 'unlit', fog: false });
+    const body = add(H.sgeo('hearse', () => G.merge(HR.hearse())).geo, env.vmat), lights = add(H.sgeo('hearselights', () => G.merge(HR.hearseLights())).geo, hlMat);
+    const z = HR.STREET.lanes[0].z; let x = -125, t = 0;
+    return dt => {
+      t += dt; x += 4.6 * dt;
+      for (const m of [body, lights]) M.m4fromYaw(m.matrix, x, Math.abs(Math.sin(t * 9)) * 0.01, z, Math.PI / 2);
+      if ((t % 2.2) < dt && Math.abs(x) < 70) audio.rumble?.(0.04);
+      return x < 125;
+    };
+  };
+  return [storm, rising, troupe, chase, witch, batBurst, parade, transform, ride, fireworks, hearseBy];
+}

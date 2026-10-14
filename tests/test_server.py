@@ -300,10 +300,11 @@ class CupTests(unittest.TestCase):
                 self.assertEqual(server_app.CATALOG[i].get("exclusive"), "cup")
 
     # v0.4.7.5 qp3: the event schedule (the King Tut Cup until the end of its last window, then The Jungle Ballers;
-    # v0.4.8.5 quick patch: And The Beat Goes On after the Jungle's window, see test_beat_event.py)
+    # v0.4.8.5 quick patch: And The Beat Goes On after the Jungle's window, see test_beat_event.py; then the Monster Mash,
+    # test_monster_event.py)
     def test_event_schedule_and_the_jungle_prizes(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat"])
+        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat", "monster"])
         cut = sched[0]["until"]
         self.assertEqual(sched[1]["from"], cut)
         self.assertEqual((cut - cup.EPOCH) % cup.WINDOW, 0)  # the handover is on a window boundary
@@ -831,7 +832,7 @@ class ApiTests(unittest.TestCase):
             cfg = self.call("/api/config")
             self.assertEqual(cfg["event"]["id"], "jungle")
             self.assertEqual(cfg["event"]["venue"], "jungle")
-            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut", "monster"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "jungle")
             self.assertEqual(st["prizes"][0]["label"], "King of the Jungle")

@@ -8,7 +8,8 @@ your account's AI world who entered this window. When a window closes, the final
 once: the top spot wins the event's grand-prize costume, plus exclusive gear and VC.
 
 Which event is on is a schedule (server/events.json): the King Tut Cup until the end of its last window, then
-The Jungle Ballers for one window, then (v0.4.8.5 quick patch) And The Beat Goes On. An event that is off the schedule is disabled in the game (its park can't be entered, its
+The Jungle Ballers for one window, then (v0.4.8.5 quick patch) And The Beat Goes On for one window, then (quick patch 2)
+The Monster Mash. An event that is off the schedule is disabled in the game (its park can't be entered, its
 venue refuses games) but nothing of it is deleted: put it back on the schedule and it runs again. The window
 numbers keep counting whatever event is on, so a window's standings and prizes belong to the event that was
 running when it started (event_for_window).
@@ -64,6 +65,16 @@ PRIZES_BEAT = (
     (10, "Top 10", 25000, ("bg_celly_runningman", "bg_band_terry", "bg_gsnd_808")),
     (25, "Top 25", 10000, ("bg_band_terry",)),
 )
+# v0.4.8.5 quick patch 2 The Monster Mash: the Bone Suit (a glow-in-the-dark skeleton bodysuit, top and tights) for the
+# winner, Coffin hi-tops, the Zombie Shuffle, the Jack-o'-Lantern headband, the Jack-o'-Lantern green release (bats burst
+# out of it on the make) and the Haunted Organ
+PRIZES_MONSTER = (
+    (1, "King of the Mash", 150000, ("mm_bones_top", "mm_bones_tights", "mm_shoes_coffin", "mm_celly_zombie", "mm_band_pumpkin",
+                                     "mm_gfx_lantern", "mm_gsnd_organ")),
+    (3, "Top 3", 60000, ("mm_shoes_coffin", "mm_celly_zombie", "mm_band_pumpkin", "mm_gfx_lantern", "mm_gsnd_organ")),
+    (10, "Top 10", 25000, ("mm_celly_zombie", "mm_band_pumpkin", "mm_gsnd_organ")),
+    (25, "Top 25", 10000, ("mm_band_pumpkin",)),
+)
 PRIZES = PRIZES_KINGTUT  # (the original table; kept for the tests and for anything that still reads it)
 EVENTS = {
     "kingtut": {"id": "kingtut", "venue": "kingtut", "name": "The King Tut Cup", "short": "King Tut Cup", "exclusive": "cup",
@@ -72,6 +83,8 @@ EVENTS = {
                "prizes": PRIZES_JUNGLE, "played": "Played the Jungle", "blurb": "Ante-ups under the rainforest canopy, rain on every streak."},
     "beat": {"id": "beat", "venue": "beat", "name": "And The Beat Goes On", "short": "Beat Goes On", "exclusive": "beat",
              "prizes": PRIZES_BEAT, "played": "Played the Beat", "blurb": "Ante-ups in an 80s city at sundown, with its own soundtrack."},
+    "monster": {"id": "monster", "venue": "monster", "name": "The Monster Mash", "short": "Monster Mash", "exclusive": "monster",
+                "prizes": PRIZES_MONSTER, "played": "Played the Mash", "blurb": "Ante-ups on Halloween night in a haunted town."},
 }
 EVENT_VENUES = {e["venue"] for e in EVENTS.values()}
 EVENT_BY_VENUE = {e["venue"]: e for e in EVENTS.values()}

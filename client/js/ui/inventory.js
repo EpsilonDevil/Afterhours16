@@ -43,7 +43,7 @@ export function render(app, root, params = {}) {
 function card(c, i, sel, lock) {
   const equipped = c.equipment[i.slot] === i.id;
   return `<button class="item ${sel === i.id ? 'on' : ''} ${equipped ? 'equipped' : ''} ${lock ? 'locked' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : lock ? '🔒 ' + esc(lock) : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : lock ? '🔒 ' + esc(lock) : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'monster' ? '★ MONSTER MASH' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
 }
 
 function detail(c, i, lock) {

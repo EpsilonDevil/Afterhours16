@@ -126,6 +126,7 @@ export function courtOverlay(spec) {
   if (!wood) {
     g.fillStyle = spec.apron; g.fillRect(-W / 2, -L / 2, W, L);
     if (spec.retro) retroApron(g, spec, W, L, margin); // (v0.4.8.5 quick patch: sunset stripes and Memphis confetti)
+    else if (spec.horror) horrorApron(g, spec, W, L, margin); // (v0.4.8.5 quick patch 2: iron spikes, cobwebs, tombstones, bats)
     g.fillStyle = spec.court; g.fillRect(-COURT.width / 2, -COURT.length / 2, COURT.width, COURT.length);
   } else if (spec.apron) {
     // stained border on wood courts
@@ -217,6 +218,7 @@ export function courtOverlay(spec) {
       g.lineWidth = 0.07; g.strokeStyle = spec.retro.outline || '#1a1230'; g.strokeText(spec.baselineText, 0, 0);
       g.fillStyle = spec.baselineColor || spec.lines; g.fillText(spec.baselineText, 0, 0); g.restore(); continue;
     }
+    if (spec.horror) { horrorLettering(g, spec.baselineText, spec.baselineColor || spec.lines, spec.horror, (spec.seed || 3) + s); g.restore(); continue; } // (v0.4.8.5 quick patch 2)
     g.fillText(spec.baselineText, 0, 0); g.restore();
   }
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -426,6 +428,7 @@ export function drawLogo(g, logo, x, y, size) {
   if (shape === 'sphinx') { if (logo.rotate) g.rotate(logo.rotate); drawSphinx(g, logo, size); g.restore(); return; }
   if (shape === 'toucan') { if (logo.rotate) g.rotate(logo.rotate); drawToucan(g, logo, size); g.restore(); return; }
   if (shape === 'sunset') { if (logo.rotate) g.rotate(logo.rotate); drawSunsetLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch)
+  if (shape === 'jack') { if (logo.rotate) g.rotate(logo.rotate); drawJackLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch 2)
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);
@@ -1390,5 +1393,366 @@ export function ledBoard(text, color = '#ff3fa4', color2 = '#ffe45c') {
   parts.forEach((p, i) => { g.fillStyle = i % 2 ? color2 : color; g.fillText(p, x + ws[i] / 2, 68); x += ws[i]; if (i < parts.length - 1) { g.fillStyle = '#2fe0ff'; g.fillText('★', x + star / 2, 66); x += star; } });
   g.restore();
   g.fillStyle = 'rgba(5,4,10,0.75)'; for (let y = 0; y < H; y += 6) g.fillRect(0, y, W, 2); for (let k = 0; k < W; k += 6) g.fillRect(k, 0, 2, H);
+  return c;
+}
+
+// ---------------- v0.4.8.5 quick patch 2: The Monster Mash ----------------
+// small silhouettes shared by the court apron, the logo, the mural and the leaderboard (canvas units: s = overall size)
+const BAT_R = [[0, -0.1], [0.06, -0.27], [0.11, -0.12], [0.3, -0.24], [0.55, -0.3], [0.8, -0.24], [1, -0.04], [0.88, 0.04], [0.8, 0.16], [0.7, 0.07], [0.56, 0.17], [0.44, 0.08], [0.3, 0.2], [0.18, 0.1], [0.08, 0.2], [0, 0.3]];
+export function batShape(g, x, y, s, rot = 0, flap = 1) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s / 2, s / 2 * flap);
+  g.beginPath(); BAT_R.forEach(([a, b], i) => (i ? g.lineTo(a, b) : g.moveTo(a, b))); for (let i = BAT_R.length - 2; i > 0; i--) g.lineTo(-BAT_R[i][0], BAT_R[i][1]);
+  g.closePath(); g.fill(); g.restore();
+}
+// a pumpkin (w wide): ribbed, a stem; face: carve a jack-o'-lantern (the cuts filled with candlelight)
+export function pumpkinShape(g, x, y, w, face = false, body = '#ff7a1a', glow = '#ffd23f') {
+  g.save(); g.translate(x, y); g.scale(w / 2, w / 2);
+  g.fillStyle = '#4a6a1a'; g.beginPath(); g.moveTo(-0.08, -0.62); g.quadraticCurveTo(0.02, -0.95, 0.22, -0.98); g.lineTo(0.24, -0.88); g.quadraticCurveTo(0.1, -0.84, 0.08, -0.6); g.closePath(); g.fill();
+  for (const [ox, rx, k] of [[-0.5, 0.52, 0.72], [0.5, 0.52, 0.72], [-0.22, 0.5, 0.86], [0.22, 0.5, 0.86], [0, 0.42, 1]]) {
+    g.fillStyle = body; g.beginPath(); g.ellipse(ox, 0, rx, 0.74, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = `rgba(0,0,0,${(1 - k) * 0.9})`; g.fill();
+  }
+  if (face) {
+    g.fillStyle = glow;
+    g.beginPath(); g.moveTo(-0.52, -0.1); g.lineTo(-0.16, -0.12); g.lineTo(-0.32, -0.4); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(0.52, -0.1); g.lineTo(0.16, -0.12); g.lineTo(0.32, -0.4); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(-0.08, 0.08); g.lineTo(0.08, 0.08); g.lineTo(0, -0.06); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(-0.62, 0.2); g.quadraticCurveTo(0, 0.7, 0.62, 0.2); g.lineTo(0.44, 0.26); g.lineTo(0.36, 0.38); g.lineTo(0.26, 0.28); g.lineTo(0.08, 0.32); g.lineTo(0, 0.46); g.lineTo(-0.1, 0.32); g.lineTo(-0.26, 0.28); g.lineTo(-0.36, 0.38); g.lineTo(-0.44, 0.26); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+function tombShape(g, x, y, w, h, stone = '#6a6478', ink = '#2a2430', crack = true) {
+  g.save(); g.translate(x, y);
+  g.fillStyle = stone; g.beginPath(); g.moveTo(-w / 2, h / 2); g.lineTo(-w / 2, -h / 2 + w / 2); g.arc(0, -h / 2 + w / 2, w / 2, Math.PI, 0); g.lineTo(w / 2, h / 2); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(w * 0.18, -h / 2 + w / 2, w * 0.32, h - w / 2);
+  g.fillStyle = ink; g.font = `900 ${w * 0.3}px Georgia, "Times New Roman", serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('RIP', 0, -h * 0.08);
+  if (crack) { g.strokeStyle = ink; g.lineWidth = w * 0.05; g.beginPath(); g.moveTo(w * 0.32, -h / 2 + w * 0.2); g.lineTo(w * 0.08, -h * 0.05); g.lineTo(w * 0.2, h * 0.08); g.lineTo(-w * 0.06, h * 0.3); g.stroke(); }
+  g.fillStyle = '#2f4a2a'; for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * w * 0.22 - w * 0.06, h / 2); g.lineTo(i * w * 0.22, h / 2 - w * 0.22); g.lineTo(i * w * 0.22 + w * 0.06, h / 2); g.fill(); }
+  g.restore();
+}
+function ghostShape(g, x, y, s, body = '#e8f4ee', eye = '#14081e') {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  g.fillStyle = body; g.beginPath(); g.moveTo(-0.4, 0.5); g.lineTo(-0.4, -0.1); g.arc(0, -0.1, 0.4, Math.PI, 0); g.lineTo(0.4, 0.5);
+  for (let i = 0; i < 4; i++) { const a = 0.4 - i * 0.2; g.quadraticCurveTo(a - 0.05, 0.36, a - 0.1, 0.5); g.quadraticCurveTo(a - 0.15, 0.62, a - 0.2, 0.5); }
+  g.closePath(); g.fill();
+  g.fillStyle = eye; for (const sx of [-0.14, 0.14]) { g.beginPath(); g.ellipse(sx, -0.12, 0.07, 0.11, 0, 0, Math.PI * 2); g.fill(); }
+  g.beginPath(); g.ellipse(0, 0.12, 0.08, 0.1, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+// a quarter cobweb in the corner (cx, cy), opening toward angle a0..a1, radius r
+function cobwebShape(g, cx, cy, r, a0, a1, color, lw) {
+  g.save(); g.strokeStyle = color; g.lineWidth = lw; g.lineCap = 'round';
+  const n = 6, rad = [];
+  for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; rad.push(a); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.stroke(); }
+  for (let k = 1; k <= 5; k++) {
+    const rr = r * k / 5.4; g.beginPath();
+    for (let i = 0; i < n; i++) { const p = [cx + Math.cos(rad[i]) * rr, cy + Math.sin(rad[i]) * rr], q = [cx + Math.cos(rad[i + 1]) * rr, cy + Math.sin(rad[i + 1]) * rr], m = (rad[i] + rad[i + 1]) / 2, sag = rr * 0.86;
+      if (!i) g.moveTo(p[0], p[1]); g.quadraticCurveTo(cx + Math.cos(m) * sag, cy + Math.sin(m) * sag, q[0], q[1]); }
+    g.stroke();
+  }
+  g.restore();
+}
+
+// the court logo: a jack-o'-lantern in front of a full moon on a graveyard hill, bats across the moon, inside a medallion
+// with a pumpkin-orange ring and a slime-green one inside it. Unit space (radius 1)
+export function drawJackLogo(g, logo, size) {
+  const bg = logo.color || '#1a1026', orange = logo.accent || '#ff7a1a', green = logo.green || '#7cff4f', moon = logo.moon || '#f4efd6';
+  g.save(); g.scale(size, size); g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fillStyle = bg; g.globalAlpha = logo.alpha ?? 0.97; g.fill(); g.globalAlpha = 1;
+  g.save(); g.beginPath(); g.arc(0, 0, 0.9, 0, Math.PI * 2); g.clip();
+  const sky = g.createLinearGradient(0, -0.9, 0, 0.6); sky.addColorStop(0, '#2e1a4e'); sky.addColorStop(1, bg); g.fillStyle = sky; g.fillRect(-1, -1, 2, 2);
+  // the moon and its glow
+  const mx = -0.16, my = -0.34, mr = 0.42;
+  const gl = g.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 1.9); gl.addColorStop(0, 'rgba(240,236,200,0.45)'); gl.addColorStop(1, 'rgba(240,236,200,0)');
+  g.fillStyle = gl; g.fillRect(-1, -1, 2, 2);
+  g.fillStyle = moon; g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(160,150,130,0.35)'; for (const [a, b, r] of [[-0.12, -0.08, 0.13], [0.14, 0.06, 0.09], [0.04, -0.2, 0.07], [-0.2, 0.16, 0.06]]) { g.beginPath(); g.arc(mx + a, my + b, r, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#0e0812'; for (const [x, y, s, r] of [[-0.42, -0.46, 0.22, -0.2], [0.02, -0.56, 0.16, 0.15], [0.3, -0.3, 0.13, 0.3]]) batShape(g, x, y, s, r);
+  // the hill with its graves
+  g.fillStyle = '#120a1a'; g.beginPath(); g.moveTo(-1, 0.2); g.quadraticCurveTo(-0.4, -0.06, 0.2, 0.1); g.quadraticCurveTo(0.6, 0.18, 1, 0.02); g.lineTo(1, 1); g.lineTo(-1, 1); g.closePath(); g.fill();
+  for (const [x, y, w, h] of [[-0.7, 0.08, 0.1, 0.16], [-0.52, 0.02, 0.08, 0.13], [0.62, 0.06, 0.09, 0.15]]) { g.beginPath(); g.moveTo(x - w / 2, y + h / 2); g.lineTo(x - w / 2, y - h / 2 + w / 2); g.arc(x, y - h / 2 + w / 2, w / 2, Math.PI, 0); g.lineTo(x + w / 2, y + h / 2); g.fill(); }
+  g.fillRect(0.76, -0.12, 0.025, 0.2); g.fillRect(0.72, -0.07, 0.1, 0.025); // a cross
+  // the jack-o'-lantern, glowing from inside
+  const glow = g.createRadialGradient(0, 0.1, 0.05, 0, 0.1, 0.8); glow.addColorStop(0, '#fff0a0'); glow.addColorStop(1, '#ff9a1a'); // (in the pumpkin's own frame)
+  pumpkinShape(g, 0.02, 0.36, 1.1, true, orange, glow);
+  g.restore();
+  g.beginPath(); g.arc(0, 0, 0.955, 0, Math.PI * 2); g.lineWidth = 0.07; g.strokeStyle = orange; g.stroke();
+  g.beginPath(); g.arc(0, 0, 0.9, 0, Math.PI * 2); g.lineWidth = 0.022; g.strokeStyle = green; g.stroke();
+  g.restore();
+}
+
+// the apron: an iron-spike fence round its outer edge, cobwebs in its corners, and tombstones, bats, pumpkins and little
+// ghosts scattered between the fence and the boundary line, standing "up" away from the court; clear of the baseline
+// lettering and of the Got Next spots on the east side. spec.horror: {spikes, web, stone, bat, pumpkin, count}
+function horrorApron(g, spec, W, L, margin) {
+  const H = spec.horror, rng = new RNG((spec.seed || 3) * 13 + 5), cw = COURT.width / 2, cl = COURT.length / 2;
+  // the fence: a rail and spikes pointing in, every 0.34 m
+  const d = 0.2; g.fillStyle = H.spikes || '#120a18'; g.strokeStyle = H.spikes || '#120a18';
+  for (const [x0, y0, x1, y1, nx, ny] of [[-W / 2, -L / 2 + d, W / 2, -L / 2 + d, 0, 1], [-W / 2, L / 2 - d, W / 2, L / 2 - d, 0, -1], [-W / 2 + d, -L / 2, -W / 2 + d, L / 2, 1, 0], [W / 2 - d, -L / 2, W / 2 - d, L / 2, -1, 0]]) {
+    g.lineWidth = 0.05; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.lineWidth = 0.025; g.beginPath(); g.moveTo(x0 - nx * 0.1, y0 - ny * 0.1); g.lineTo(x1 - nx * 0.1, y1 - ny * 0.1); g.stroke();
+    const len = Math.hypot(x1 - x0, y1 - y0), n = Math.floor(len / 0.34), tx = (x1 - x0) / len, ty = (y1 - y0) / len;
+    for (let i = 1; i < n; i++) {
+      const px = x0 + tx * i * 0.34, py = y0 + ty * i * 0.34;
+      g.beginPath(); g.moveTo(px - nx * 0.14, py - ny * 0.14); g.lineTo(px + nx * 0.12, py + ny * 0.12); g.stroke();
+      g.beginPath(); g.moveTo(px + nx * 0.22, py + ny * 0.22); g.lineTo(px + nx * 0.12 + tx * 0.05, py + ny * 0.12 + ty * 0.05); g.lineTo(px + nx * 0.12 - tx * 0.05, py + ny * 0.12 - ty * 0.05); g.closePath(); g.fill();
+    }
+  }
+  // cobwebs in the four outer corners
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const a0 = sx > 0 ? (sy > 0 ? Math.PI : Math.PI / 2) : (sy > 0 ? -Math.PI / 2 : 0); cobwebShape(g, sx * W / 2, sy * L / 2, 1.5, a0, a0 + Math.PI / 2, H.web || '#d8d4e8', 0.018); }
+  // the scatter
+  const inner = 0.3, outer = margin - 0.62, spots = [];
+  for (let tries = 0, n = 0; n < (H.count || 40) && tries < 3000; tries++) {
+    const side = rng.int(0, 3), dd = inner + rng.next() * (outer - inner);
+    let x, y, nx = 0, ny = 0;
+    if (side < 2) { x = (rng.next() * 2 - 1) * (cw + dd); y = (side ? 1 : -1) * (cl + dd); ny = side ? 1 : -1; } else { y = (rng.next() * 2 - 1) * (cl + dd); x = (side === 2 ? 1 : -1) * (cw + dd); nx = side === 2 ? 1 : -1; }
+    if (Math.abs(y) > cl && Math.abs(x) < 4.9) continue;            // the baseline lettering
+    if (x > cw && y > -10 && y < 12) continue;                       // the Got Next spots
+    if (Math.abs(x) > W / 2 - 1.2 && Math.abs(y) > L / 2 - 1.2) continue; // the cobwebs
+    if (spots.some(([a, b]) => Math.hypot(a - x, b - y) < 0.7)) continue;
+    spots.push([x, y]); n++;
+    g.save(); g.translate(x, y); g.rotate(Math.atan2(nx, -ny) + rng.range(-0.3, 0.3));
+    const k = rng.int(0, 5);
+    if (k < 2) tombShape(g, 0, 0, rng.range(0.24, 0.32), rng.range(0.34, 0.44), H.stone || '#6a6478', '#2a2430', rng.next() < 0.7);
+    else if (k === 2) { g.fillStyle = H.bat || '#0e0812'; batShape(g, 0, 0, rng.range(0.38, 0.52), rng.range(-0.3, 0.3)); }
+    else if (k === 3) pumpkinShape(g, 0, 0, rng.range(0.22, 0.3), rng.next() < 0.5, H.pumpkin || '#ff7a1a', '#ffd23f');
+    else if (k === 4) ghostShape(g, 0, 0, rng.range(0.3, 0.4));
+    else { g.fillStyle = H.web || '#d8d4e8'; g.beginPath(); g.arc(0, 0, 0.12, 0.6, Math.PI * 2 - 0.6); g.arc(0.08, 0, 0.1, Math.PI * 2 - 0.9, 0.9, true); g.fill(); } // a crescent moon
+    g.restore();
+  }
+}
+
+// baseline lettering for the Monster Mash: heavy letters in slime green with a dark outline and a pumpkin-orange drop
+// shadow, slime dripping off the bottom of each letter. Drawn in the baseline's own frame (text centred on 0, 0)
+function horrorLettering(g, text, color, H, seed) {
+  const rng = new RNG(seed * 97 + 11);
+  g.globalAlpha = 1; g.font = '900 0.52px Impact, "Arial Black", sans-serif'; g.lineJoin = 'round';
+  const tw = g.measureText(text).width, sc = tw > 8.6 ? 8.6 / tw : 1; g.scale(sc, 1);
+  g.fillStyle = H.shadow || '#ff7a1a'; g.fillText(text, 0.05, 0.05);
+  // the drips first (under the outline), then the letters
+  const drips = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === ' ' || rng.next() < 0.35) continue;
+    const x0 = -tw / 2 + g.measureText(text.slice(0, i)).width, w = g.measureText(text[i]).width;
+    drips.push([x0 + w * rng.range(0.25, 0.75), rng.range(0.08, 0.32), rng.range(0.035, 0.06)]);
+  }
+  for (const [x, len, w] of drips) { g.strokeStyle = H.outline || '#14081e'; g.lineWidth = w + 0.06; g.lineCap = 'round'; g.beginPath(); g.moveTo(x, 0.1); g.lineTo(x, 0.18 + len); g.stroke(); }
+  g.lineWidth = 0.08; g.strokeStyle = H.outline || '#14081e'; g.strokeText(text, 0, 0);
+  g.fillStyle = color; g.fillText(text, 0, 0);
+  for (const [x, len, w] of drips) { g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(x, 0.1); g.lineTo(x, 0.18 + len); g.stroke(); g.fillStyle = color; g.beginPath(); g.arc(x, 0.18 + len + w * 0.4, w * 0.85, 0, Math.PI * 2); g.fill(); }
+}
+
+// the full moon (512 x 512, transparent round it): a soft rim glow, the disc pale and creamy, darker seas, ringed craters
+export function moonDisc(seed = 13) {
+  const S = 512, c = canvas(S, S), g = ctx2d(c), rng = new RNG(seed), noise = makeNoise2D(seed), r = S * 0.4, cx = S / 2, cy = S / 2;
+  g.clearRect(0, 0, S, S);
+  const halo = g.createRadialGradient(cx, cy, r * 0.96, cx, cy, S / 2); halo.addColorStop(0, 'rgba(230,236,255,0.5)'); halo.addColorStop(1, 'rgba(200,215,255,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, S, S);
+  const img = g.getImageData(0, 0, S, S), d = img.data;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / r, q = dx * dx + dy * dy;
+    if (q > 1) continue;
+    const sea = noise.fbm(dx * 2.2 + 3, dy * 2.2, 4), fine = noise(dx * 18, dy * 18) * 0.05;
+    let v = 0.94 + fine - Math.max(0, sea + 0.05) * 0.55, limb = Math.sqrt(1 - q);
+    v *= 0.8 + 0.2 * limb;
+    const o = (y * S + x) * 4, a = Math.min(1, (1 - Math.sqrt(q)) * r * 0.9);
+    d[o] = 255 * Math.min(1, v * 1.0); d[o + 1] = 255 * Math.min(1, v * 0.985); d[o + 2] = 255 * Math.min(1, v * 0.92); d[o + 3] = Math.max(d[o + 3], 255 * a);
+  }
+  g.putImageData(img, 0, 0);
+  for (let i = 0; i < 26; i++) {
+    const a = rng.range(0, Math.PI * 2), rr = Math.sqrt(rng.next()) * r * 0.85, x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr, s = rng.range(4, i < 4 ? 26 : 12);
+    g.fillStyle = 'rgba(120,115,110,0.28)'; g.beginPath(); g.arc(x, y, s, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,250,0.35)'; g.lineWidth = Math.max(1, s * 0.18); g.beginPath(); g.arc(x, y, s, Math.PI * 0.1, Math.PI * 1.1); g.stroke();
+  }
+  return c;
+}
+
+// the haunted town's ground (one tile = 6 m): dark earth, dry grass in tufts, fallen leaves, a few stones. {color, normal}
+export function spookyGround(opts = {}) {
+  const S = opts.size || 512, seed = opts.seed || 31, rng = new RNG(seed), noise = makeNoise2D(seed);
+  const c = canvas(S, S), g = ctx2d(c), img = g.createImageData(S, S), d = img.data, Hh = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = y * S + x, n = noise.tile(x * 6 / S, y * 6 / S, 6, 4), m = noise.tile(x * 24 / S, y * 24 / S, 24, 2), gr = rng.next();
+    const grass = Math.max(0, Math.min(1, (n + 0.1) * 2.4));
+    const r = 0.25 + m * 0.05 + (gr - 0.5) * 0.06, v = [r * (1 - grass * 0.3) + grass * 0.27, r * 0.92 * (1 - grass * 0.2) + grass * 0.3, r * 0.78 * (1 - grass * 0.3) + grass * 0.16];
+    const o = i * 4; d[o] = v[0] * 255; d[o + 1] = v[1] * 255; d[o + 2] = v[2] * 255; d[o + 3] = 255; Hh[i] = m * 0.6 + (gr - 0.5) * 0.3;
+  }
+  g.putImageData(img, 0, 0);
+  // dry grass blades and fallen leaves (drawn over the base, wrapped at the edges)
+  const wrapDo = (x, y, fn) => { for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) if (x + ox > -40 && x + ox < S + 40 && y + oy > -40 && y + oy < S + 40) fn(x + ox, y + oy); };
+  g.lineCap = 'round';
+  for (let i = 0; i < 1600; i++) {
+    const x = rng.next() * S, y = rng.next() * S, a = -Math.PI / 2 + rng.range(-0.9, 0.9), l = rng.range(5, 14);
+    if (noise.tile(x * 6 / S, y * 6 / S, 6, 4) < -0.12) continue;
+    g.strokeStyle = rng.pick(['#5a5a32', '#6a6438', '#4a5228', '#7a6c40', '#3e4626']); g.lineWidth = rng.range(1, 2.2);
+    wrapDo(x, y, (px, py) => { g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); g.stroke(); });
+  }
+  for (let i = 0; i < 220; i++) {
+    const x = rng.next() * S, y = rng.next() * S, a = rng.range(0, Math.PI), s = rng.range(3, 7);
+    g.fillStyle = rng.pick(['#8a3a12', '#a85a1a', '#6a2a14', '#9a7a2a', '#5a3a1a', '#b8461a']);
+    wrapDo(x, y, (px, py) => { g.save(); g.translate(px, py); g.rotate(a); g.beginPath(); g.ellipse(0, 0, s, s * 0.5, 0, 0, Math.PI * 2); g.fill(); g.restore(); });
+  }
+  for (let i = 0; i < 40; i++) { const x = rng.next() * S, y = rng.next() * S, s = rng.range(2, 5); g.fillStyle = rng.pick(['#6a6660', '#58544e']); wrapDo(x, y, (px, py) => { g.beginPath(); g.arc(px, py, s, 0, Math.PI * 2); g.fill(); }); }
+  // (the normal: the base's lumps plus whatever got drawn on top, from its brightness)
+  const top = g.getImageData(0, 0, S, S).data;
+  for (let i = 0; i < S * S; i++) Hh[i] += (top[i * 4] + top[i * 4 + 1]) / 510 * 1.2;
+  return { color: c, normal: heightToNormal(Hh, S, S, 1.4) };
+}
+
+// the town's walls, drawn to scale (one tile: 3 bays of 2.8 m by 2 floors of 3.4 m; map it in metres). kind 'siding':
+// clapboard (white: tint it by vertex colour) with tall shuttered windows, some lit amber and orange behind; 'stone':
+// coursed stone with pointed lancet windows, stained glass glowing in some. Returns {color, emissive}
+export const HFACADE = { bays: 3, floors: 2, bayW: 2.8, floorH: 3.4 };
+export function horrorFacade(opts = {}) {
+  const ppm = opts.ppm || 44, { bays, floors, bayW, floorH } = HFACADE;
+  const W = Math.round(bays * bayW * ppm), H = Math.round(floors * floorH * ppm), bw = W / bays, fh = H / floors;
+  const c = canvas(W, H), e = canvas(W, H), g = ctx2d(c), ge = ctx2d(e), rng = new RNG(opts.seed || 66), noise = makeNoise2D((opts.seed || 66) + 1);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, H);
+  const lit = opts.lit ?? 0.4;
+  const stone = opts.kind === 'stone';
+  if (stone) {
+    g.fillStyle = '#8a8892'; g.fillRect(0, 0, W, H);
+    const course = 0.42 * ppm;
+    for (let y = 0, row = 0; y < H; y += course, row++) {
+      let x = -(row % 2) * 0.4 * ppm;
+      while (x < W) { const w = rng.range(0.6, 1.25) * ppm, k = 0.78 + rng.next() * 0.3; g.fillStyle = `rgb(${138 * k},${136 * k},${146 * k})`; g.fillRect(x + 1.5, y + 1.5, w - 3, course - 3); x += w; }
+    }
+    // moss and damp streaks running down
+    for (let i = 0; i < 60; i++) { const x = rng.next() * W, l = rng.range(0.4, 2.2) * ppm; g.fillStyle = rng.next() < 0.5 ? 'rgba(40,60,30,0.22)' : 'rgba(20,20,26,0.18)'; g.fillRect(x, H - l, rng.range(3, 12), l); }
+  } else {
+    g.fillStyle = '#ece6da'; g.fillRect(0, 0, W, H);
+    const board = 0.2 * ppm;
+    for (let y = 0; y < H; y += board) { g.fillStyle = 'rgba(0,0,0,0.26)'; g.fillRect(0, y, W, 2); g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(0, y + 2, W, 1.5); }
+    const im = g.getImageData(0, 0, W, H), dd = im.data;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = 0.9 + noise.tile(x * 6 / W, y * 6 / H, 6, 3) * 0.12 + (rng.next() - 0.5) * 0.04; const o = (y * W + x) * 4; dd[o] *= k; dd[o + 1] *= k; dd[o + 2] *= k; }
+    g.putImageData(im, 0, 0);
+  }
+  const glows = ['#ffb050', '#ffb050', '#ff8a2a', '#ffd890', '#ffc070', '#9aff7a'], glass = ['#5a2a8a', '#2a8a4a', '#c87a1a', '#2a4a9a', '#8a1a3a'];
+  for (let r = 0; r < (stone ? 1 : floors); r++) {
+    const y0 = stone ? 0 : H - (r + 1) * fh, fh2 = stone ? H : fh; // (stone: one tall lancet per bay, the whole tile high)
+    if (!stone) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, y0, W, 0.16 * ppm); g.fillStyle = 'rgba(255,255,255,0.18)'; for (let x = 0; x < W; x += 0.22 * ppm) { g.beginPath(); g.arc(x + 0.11 * ppm, y0 + 0.16 * ppm, 0.08 * ppm, 0, Math.PI); g.fill(); } } // the frieze
+    for (let b = 0; b < bays; b++) {
+      const cx = b * bw + bw / 2, ww = (stone ? 1.1 : 1.0) * ppm, wh = (stone ? 4.0 : 1.8) * ppm, wy = y0 + fh2 - (stone ? 1.4 : 0.95) * ppm - wh, on = rng.next() < lit;
+      const shape = gg => { gg.beginPath(); if (stone) { gg.moveTo(cx - ww / 2, wy + wh); gg.lineTo(cx - ww / 2, wy + ww * 0.6); gg.quadraticCurveTo(cx - ww / 2, wy, cx, wy - ww * 0.15); gg.quadraticCurveTo(cx + ww / 2, wy, cx + ww / 2, wy + ww * 0.6); gg.lineTo(cx + ww / 2, wy + wh); gg.closePath(); } else gg.rect(cx - ww / 2, wy, ww, wh); };
+      // frame (and shutters on the clapboard)
+      g.fillStyle = stone ? '#5a5862' : '#f4f0e8'; g.save(); g.translate(cx, wy + wh / 2); g.scale(1.16, 1.06); g.translate(-cx, -wy - wh / 2); shape(g); g.fill(); g.restore();
+      if (!stone) for (const s of [-1, 1]) { g.fillStyle = '#2a2430'; g.fillRect(cx + s * (ww / 2 + 0.08 * ppm) - (s < 0 ? 0.36 * ppm : 0), wy, 0.36 * ppm, wh); g.fillStyle = 'rgba(255,255,255,0.08)'; for (let k = 1; k < 9; k++) g.fillRect(cx + s * (ww / 2 + 0.08 * ppm) - (s < 0 ? 0.36 * ppm : 0) + 3, wy + k * wh / 9, 0.36 * ppm - 6, 2); }
+      const gr = g.createLinearGradient(0, wy, 0, wy + wh); gr.addColorStop(0, on ? '#5a3a20' : '#141824'); gr.addColorStop(1, on ? '#a0602a' : '#283040');
+      g.fillStyle = gr; shape(g); g.fill();
+      if (on) {
+        ge.fillStyle = stone ? glass[rng.int(0, glass.length - 1)] : rng.pick(glows); ge.globalAlpha = 0.65 + rng.next() * 0.35; shape(ge); ge.fill(); ge.globalAlpha = 1;
+        if (stone) { ge.strokeStyle = '#000'; ge.lineWidth = 3; for (let k = 1; k < 4; k++) { ge.beginPath(); ge.moveTo(cx - ww / 2, wy + k * wh / 4); ge.lineTo(cx + ww / 2, wy + k * wh / 4 - 8); ge.stroke(); } ge.beginPath(); ge.moveTo(cx, wy); ge.lineTo(cx, wy + wh); ge.stroke(); }
+        else if (rng.next() < 0.45) { ge.fillStyle = 'rgba(0,0,0,0.75)'; ge.fillRect(cx - ww / 2, wy, ww * rng.range(0.3, 0.5), wh); } // a drawn curtain
+        else if (rng.next() < 0.5) { ge.fillStyle = '#000'; ge.beginPath(); ge.ellipse(cx, wy + wh * 0.82, ww * 0.24, ww * 0.18, 0, 0, Math.PI * 2); ge.fill(); ge.fillStyle = '#ffb000'; ge.beginPath(); ge.moveTo(cx - ww * 0.12, wy + wh * 0.8); ge.lineTo(cx - ww * 0.04, wy + wh * 0.8); ge.lineTo(cx - ww * 0.08, wy + wh * 0.74); ge.fill(); ge.beginPath(); ge.moveTo(cx + ww * 0.12, wy + wh * 0.8); ge.lineTo(cx + ww * 0.04, wy + wh * 0.8); ge.lineTo(cx + ww * 0.08, wy + wh * 0.74); ge.fill(); } // a jack-o'-lantern on the sill
+      }
+      // the glazing bars
+      g.fillStyle = stone ? '#3a3840' : '#e8e4dc'; g.fillRect(cx - 2, wy, 4, wh); g.fillRect(cx - ww / 2, wy + wh * 0.5 - 2, ww, 4);
+      ge.fillStyle = '#000'; ge.fillRect(cx - 2.5, wy, 5, wh); ge.fillRect(cx - ww / 2, wy + wh * 0.5 - 2.5, ww, 5);
+      g.fillStyle = stone ? '#6a6872' : '#f4f0e8'; g.fillRect(cx - ww / 2 - 0.12 * ppm, wy + wh, ww + 0.24 * ppm, 0.1 * ppm); // the sill
+    }
+  }
+  return { color: c, emissive: e };
+}
+
+// the signs round the town (1024 x 1024 atlas, eight 1024 x 128 rows; horrorSignUV(key) → [u0, v0, uw, vh]). Each is a
+// whole board: draw it on a quad (vertex colour sets how bright; the HAUNTED HOUSE one glows)
+export const HORROR_SIGNS = ['HAUNTED HOUSE', 'FUNERAL HOME', 'PUMPKIN PATCH', 'CORN MAZE', 'HOLLOW HILL CEMETERY', 'TICKETS', 'TRICK OR TREAT', 'MONSTER MASH'];
+export function horrorSignUV(key) { const i = Math.max(0, HORROR_SIGNS.indexOf(key)); return [0, i / 8, 1, 1 / 8]; }
+export function horrorSigns() {
+  const W = 1024, R = 128, c = canvas(W, R * 8), g = ctx2d(c), rng = new RNG(404);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const row = (i, fn) => { g.save(); g.translate(0, i * R); g.beginPath(); g.rect(0, 0, W, R); g.clip(); fn(); g.restore(); };
+  const drip = (text, y, px, fill, out, dripCol, font = 'Impact, "Arial Black", sans-serif') => {
+    g.font = `900 ${px}px ${font}`; const tw = Math.min(W - 60, g.measureText(text).width); g.save(); g.translate(W / 2, y); g.scale(Math.min(1, (W - 60) / g.measureText(text).width), 1);
+    g.lineWidth = px * 0.14; g.strokeStyle = out; g.strokeText(text, 0, 0); g.fillStyle = fill; g.fillText(text, 0, 0);
+    g.fillStyle = dripCol; for (let k = 0; k < 14; k++) { const x = rng.range(-tw / 2 + 10, tw / 2 - 10), l = rng.range(8, 26), w = rng.range(4, 8); g.fillRect(x - w / 2, px * 0.3, w, l); g.beginPath(); g.arc(x, px * 0.3 + l, w * 0.75, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  };
+  row(0, () => { g.fillStyle = '#120818'; g.fillRect(0, 0, W, R); g.fillStyle = '#ffe9a0'; for (let x = 14; x < W; x += 28) for (const y of [8, R - 8]) { g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill(); } drip('HAUNTED HOUSE', 62, 86, '#ff7a1a', '#3a0a0a', '#7cff4f'); });
+  row(1, () => { g.fillStyle = '#10140f'; g.fillRect(0, 0, W, R); g.strokeStyle = '#c8b88a'; g.lineWidth = 4; g.strokeRect(10, 10, W - 20, R - 20); g.fillStyle = '#e8dcb8'; g.font = '700 70px Georgia, "Times New Roman", serif'; g.fillText('FUNERAL HOME', W / 2, R / 2 + 4); });
+  row(2, () => { for (let k = 0; k < 4; k++) { g.fillStyle = k % 2 ? '#5a3a22' : '#644228'; g.fillRect(0, k * 32, W, 31); } g.fillStyle = '#ff8a1a'; g.font = '900 78px "Comic Sans MS", "Trebuchet MS", Arial, sans-serif'; g.lineWidth = 8; g.strokeStyle = '#2a1408'; g.strokeText('PUMPKIN PATCH', W / 2, R / 2 + 4); g.fillText('PUMPKIN PATCH', W / 2, R / 2 + 4); });
+  row(3, () => { for (let k = 0; k < 4; k++) { g.fillStyle = k % 2 ? '#4a3a22' : '#54402a'; g.fillRect(0, k * 32, W, 31); } g.fillStyle = '#f0e0a0'; g.font = '900 64px "Comic Sans MS", "Trebuchet MS", Arial, sans-serif'; g.fillText('CORN MAZE', W * 0.3, R / 2 + 4); g.fillStyle = '#ff4a2a'; g.font = '900 40px "Comic Sans MS", "Trebuchet MS", Arial, sans-serif'; g.fillText('ENTER IF YOU DARE', W * 0.72, R / 2 + 4); });
+  row(4, () => { g.fillStyle = '#0e0c12'; g.fillRect(0, 0, W, R); g.fillStyle = '#d8d0c0'; g.font = '700 64px Georgia, "Times New Roman", serif'; g.fillText('HOLLOW HILL CEMETERY', W / 2, R / 2 + 2); });
+  row(5, () => { g.fillStyle = '#2a0a1a'; g.fillRect(0, 0, W, R); for (let x = 0; x < W; x += 64) { g.fillStyle = (x / 64) % 2 ? '#ff7a1a' : '#f4efd6'; g.fillRect(x, 0, 64, 18); } drip('TICKETS', 74, 76, '#f4efd6', '#14081e', '#ff7a1a'); });
+  row(6, () => { g.fillStyle = '#1a0e24'; g.fillRect(0, 0, W, R); drip('TRICK OR TREAT', 62, 84, '#ff7a1a', '#14081e', '#ff7a1a'); });
+  row(7, () => { g.fillStyle = '#0c0610'; g.fillRect(0, 0, W, R); drip('THE MONSTER MASH', 60, 86, '#7cff4f', '#14081e', '#7cff4f'); });
+  return c;
+}
+
+// a quarter cobweb (256 x 256, white threads on transparent; its corner at the texture's top-left): draw it additive
+export function cobweb() {
+  const S = 256, c = canvas(S, S), g = ctx2d(c);
+  g.clearRect(0, 0, S, S);
+  cobwebShape(g, 0, 0, S * 0.98, 0, Math.PI / 2, 'rgba(255,255,255,0.95)', 2.2);
+  return c;
+}
+
+// dry corn (256 x 512, transparent): three stalks with their long leaves, the tassels and an ear or two. Alpha-tested
+export function cornStalks(seed = 8) {
+  const W = 256, H = 512, c = canvas(W, H), g = ctx2d(c), rng = new RNG(seed);
+  g.clearRect(0, 0, W, H); g.lineCap = 'round';
+  for (const x0 of [52, 128, 204]) {
+    const top = rng.range(20, 60), lean = rng.range(-14, 14), col = rng.pick(['#a8985a', '#9a8a4a', '#b8a868']);
+    g.strokeStyle = col; g.lineWidth = 7; g.beginPath(); g.moveTo(x0, H); g.quadraticCurveTo(x0 + lean * 0.3, H * 0.5, x0 + lean, top); g.stroke();
+    for (let k = 0; k < 7; k++) {
+      const t = 0.15 + k * 0.11, y = H - (H - top) * t, x = x0 + lean * t * t, s = k % 2 ? 1 : -1, len = rng.range(50, 90);
+      g.strokeStyle = rng.pick(['#8a7a40', '#a0904e', '#7a6a38', '#b4a462']); g.lineWidth = rng.range(5, 8);
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + s * len * 0.6, y - rng.range(20, 50), x + s * len, y + rng.range(10, 50)); g.stroke();
+    }
+    g.strokeStyle = '#c8b070'; g.lineWidth = 3; for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(x0 + lean, top); g.lineTo(x0 + lean + k * 9, top - 22 + Math.abs(k) * 6); g.stroke(); }
+    g.fillStyle = '#c8a850'; g.beginPath(); g.ellipse(x0 + lean * 0.5 + 8, H * 0.55, 7, 20, 0.3, 0, Math.PI * 2); g.fill();
+  }
+  return c;
+}
+
+// the mural on the west wall (1536 x 512): a monster-movie poster. A purple night, a huge moon, the haunted house on its
+// hill, bats; a line of monster silhouettes dancing across the moon (a zombie, a mummy, a caped vampire, a sheet ghost, a
+// skeleton, a werewolf howling); pumpkins along the bottom; THE MONSTER MASH dripping slime across the top
+export function monsterMural() {
+  const W = 1536, H = 512, c = canvas(W, H), g = ctx2d(c), rng = new RNG(1031);
+  const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#0c0618'); sky.addColorStop(0.6, '#3a1658'); sky.addColorStop(1, '#5a2a4a');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 120; i++) { g.fillStyle = `rgba(255,255,240,${rng.range(0.3, 0.9)})`; g.fillRect(rng.next() * W, rng.next() * H * 0.6, 2, 2); }
+  const mx = W * 0.5, my = H * 0.6, mr = 210;
+  const halo = g.createRadialGradient(mx, my, mr * 0.9, mx, my, mr * 1.6); halo.addColorStop(0, 'rgba(255,240,190,0.5)'); halo.addColorStop(1, 'rgba(255,240,190,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#f6eec8'; g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(170,160,120,0.35)'; for (let i = 0; i < 9; i++) { g.beginPath(); g.arc(mx + rng.range(-150, 150), my + rng.range(-150, 100), rng.range(14, 50), 0, Math.PI * 2); g.fill(); }
+  // the hills and the house on the left, a dead tree on the right
+  g.fillStyle = '#12081a';
+  g.beginPath(); g.moveTo(0, H * 0.72); g.quadraticCurveTo(W * 0.15, H * 0.45, W * 0.32, H * 0.7); g.quadraticCurveTo(W * 0.6, H * 0.86, W, H * 0.68); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+  const hx = W * 0.15, hy = H * 0.5;
+  g.fillRect(hx - 70, hy - 60, 140, 70); g.beginPath(); g.moveTo(hx - 84, hy - 58); g.lineTo(hx, hy - 120); g.lineTo(hx + 84, hy - 58); g.fill();
+  g.fillRect(hx + 40, hy - 150, 34, 100); g.beginPath(); g.moveTo(hx + 34, hy - 148); g.lineTo(hx + 57, hy - 200); g.lineTo(hx + 80, hy - 148); g.fill();
+  g.fillStyle = '#ffb040'; for (const [x, y] of [[-40, -40], [-10, -40], [20, -40], [-40, -15], [20, -15], [50, -110]]) g.fillRect(hx + x, hy + y, 14, 18);
+  g.strokeStyle = '#12081a'; g.lineCap = 'round';
+  const branch = (x, y, a, l, w, d) => { const x2 = x + Math.cos(a) * l, y2 = y + Math.sin(a) * l; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke(); if (d > 0) { branch(x2, y2, a - rng.range(0.3, 0.7), l * 0.7, w * 0.65, d - 1); branch(x2, y2, a + rng.range(0.3, 0.7), l * 0.68, w * 0.65, d - 1); } };
+  branch(W * 0.86, H * 0.74, -Math.PI / 2 - 0.1, 90, 18, 4);
+  g.fillStyle = '#0e0812'; for (let i = 0; i < 9; i++) batShape(g, rng.range(W * 0.3, W * 0.75), rng.range(60, H * 0.45), rng.range(30, 60), rng.range(-0.4, 0.4));
+  // the dancers: limbs are thick round strokes from joint to joint
+  const fig = (x, y, s, P, extra) => {
+    g.save(); g.translate(x, y); g.scale(s, s); g.strokeStyle = '#0a0610'; g.fillStyle = '#0a0610'; g.lineCap = 'round'; g.lineJoin = 'round';
+    const L = (pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach(([a, b], i) => (i ? g.lineTo(a, b) : g.moveTo(a, b))); g.stroke(); };
+    L([[0, -60], [P.hip || 0, 0]], 22); // body
+    for (const leg of P.legs) L(leg, 13);
+    for (const arm of P.arms) L(arm, 10);
+    g.beginPath(); g.arc(P.head?.[0] || 0, P.head?.[1] || -80, 16, 0, Math.PI * 2); g.fill();
+    if (extra) extra(g);
+    g.restore();
+  };
+  const base = H * 0.86;
+  fig(W * 0.3, base, 1.15, { arms: [[[-4, -55], [26, -66], [52, -64]], [[4, -55], [30, -58], [56, -52]]], legs: [[[0, 0], [-14, 34], [-18, 66]], [[0, 0], [18, 30], [12, 66]]], head: [8, -80] }); // zombie
+  fig(W * 0.39, base, 1.1, { arms: [[[-4, -55], [26, -55], [56, -56]], [[4, -50], [30, -46], [58, -46]]], legs: [[[0, 0], [-6, 34], [-8, 66]], [[0, 0], [10, 34], [12, 66]]] }, gg => { gg.strokeStyle = '#2a2030'; gg.lineWidth = 3; for (let k = 0; k < 8; k++) { gg.beginPath(); gg.moveTo(-12, -70 + k * 9); gg.lineTo(12, -64 + k * 9); gg.stroke(); } }); // mummy
+  fig(W * 0.48, base, 1.2, { arms: [[[-4, -55], [-40, -70], [-70, -60]], [[4, -55], [40, -72], [70, -62]]], legs: [[[0, 0], [-10, 34], [-14, 66]], [[0, 0], [10, 34], [14, 66]]] }, gg => { gg.beginPath(); gg.moveTo(-70, -60); gg.lineTo(-20, -70); gg.lineTo(0, 40); gg.lineTo(-56, 20); gg.closePath(); gg.fill(); gg.beginPath(); gg.moveTo(70, -62); gg.lineTo(20, -70); gg.lineTo(0, 40); gg.lineTo(56, 20); gg.closePath(); gg.fill(); gg.beginPath(); gg.moveTo(-22, -74); gg.lineTo(-30, -104); gg.lineTo(-8, -80); gg.fill(); gg.beginPath(); gg.moveTo(22, -74); gg.lineTo(30, -104); gg.lineTo(8, -80); gg.fill(); }); // vampire
+  g.fillStyle = '#e8f4ee'; ghostShape(g, W * 0.58, base - 70, 120, '#e8f4ee', '#0a0610'); // ghost
+  fig(W * 0.67, base, 1.1, { arms: [[[-4, -55], [-24, -80], [-14, -108]], [[4, -55], [30, -40], [44, -64]]], legs: [[[0, 0], [-22, 26], [-14, 66]], [[0, 0], [26, 22], [30, 60]]] }, gg => { gg.strokeStyle = '#f0ece0'; gg.lineWidth = 3; for (let k = 0; k < 5; k++) { gg.beginPath(); gg.moveTo(-10, -52 + k * 9); gg.lineTo(10, -52 + k * 9); gg.stroke(); } gg.fillStyle = '#f0ece0'; for (const sx of [-6, 6]) { gg.beginPath(); gg.arc(sx, -82, 4, 0, Math.PI * 2); gg.fill(); } }); // skeleton
+  fig(W * 0.77, base, 1.25, { arms: [[[-4, -55], [-26, -40], [-36, -20]], [[4, -55], [28, -42], [38, -24]]], legs: [[[0, 0], [-16, 30], [-6, 66]], [[0, 0], [16, 30], [22, 66]]], head: [8, -86] }, gg => { gg.beginPath(); gg.moveTo(0, -96); gg.lineTo(6, -126); gg.lineTo(16, -98); gg.fill(); gg.beginPath(); gg.moveTo(14, -86); gg.lineTo(40, -100); gg.lineTo(22, -76); gg.fill(); }); // werewolf, howling
+  for (let i = 0; i < 9; i++) pumpkinShape(g, 60 + i * (W - 120) / 8 + rng.range(-20, 20), H - 30, rng.range(46, 70), i % 2 === 0, '#ff7a1a', '#ffd23f');
+  // the title
+  g.save(); g.translate(W / 2, 78); g.rotate(-0.02); g.font = '900 96px Impact, "Arial Black", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  g.fillStyle = '#ff7a1a'; g.fillText('THE MONSTER MASH', 6, 6); g.lineWidth = 14; g.strokeStyle = '#14081e'; g.strokeText('THE MONSTER MASH', 0, 0); g.fillStyle = '#7cff4f'; g.fillText('THE MONSTER MASH', 0, 0);
+  const tw = g.measureText('THE MONSTER MASH').width; g.fillStyle = '#7cff4f';
+  for (let k = 0; k < 16; k++) { const x = rng.range(-tw / 2 + 20, tw / 2 - 20), l = rng.range(14, 50), w = rng.range(6, 11); g.fillRect(x - w / 2, 30, w, l); g.beginPath(); g.arc(x, 30 + l, w * 0.8, 0, Math.PI * 2); g.fill(); }
+  g.restore();
   return c;
 }

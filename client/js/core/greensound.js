@@ -28,6 +28,7 @@ export const GREEN_SOUNDS = {
   cup_gsnd_pharaoh: "Pharaoh's Horn",
   jb_gsnd_bongos: 'Jungle Bongos',
   bg_gsnd_808: 'Eight-O-Eight', // (v0.4.8.5 quick patch: And The Beat Goes On)
+  mm_gsnd_organ: 'Haunted Organ', // (v0.4.8.5 quick patch 2: The Monster Mash)
   // v0.4.7.5 quick patch
   gsnd_owl: 'Night Owl',
   gsnd_wolf: 'Wolf Howl',
@@ -515,6 +516,71 @@ const RECIPES = {
     [60, 64, 67, 72, 76, 79].forEach((n, i) => arp(0.5 + i * 0.048, NOTE(n), 0.045, 0.32));
     arp(0.5 + 6 * 0.048, NOTE(84), 0.42, 0.34, true);
     D.room = { decay: 0.9, damp: 0.35, wet: 0.6 };
+  },
+
+  // v0.4.8.5 quick patch 2 The Monster Mash exclusive: a haunted pipe organ. A quick mordent on the top note (A-G-A, the
+  // old toccata's shiver) into one big D minor chord with the leading tone on top (D F A C#: the horror chord), the pedal
+  // a low D on a 16' stop under it all; every pipe speaks with a breathy chiff, the ranks a hair apart, the tremulant
+  // wobbling it, swelling into a cathedral. A thunder crack tears under the chord and rolls away. A chain rattles, a
+  // rusty graveyard gate creaks open (stick-slip squeals through the iron), and out of the end of it a theremin rises,
+  // sliding up with a wide, ghostly vibrato.
+  mm_gsnd_organ(D) {
+    const T0 = 0.15, END = 0.8, trem = t => 1 + 0.07 * Math.sin(TAU * 5.6 * t); // (the chord's start and end; the tremulant)
+    // one note on the organ: a principal (8'), its octave (4'), a mixture (the bright upper ranks), a 16' bourdon under the
+    // low notes; each rank detuned a touch; the chiff on the attack; a swell; the release
+    const pipe = (t0, t1, n, g, { sub = false, mix = 1 } = {}) => {
+      const f = NOTE(n), ranks = [[f, [1, 0.42, 0.3, 0.18, 0.12, 0.08, 0.05, 0.035], 1, 0], [f * 2, [0.55, 0.2, 0.08], 0.5, 3], [f * 3, [0.3, 0.12], 0.32 * mix, -4], [f * 4, [0.22, 0.08], 0.25 * mix, 5]];
+      if (sub) ranks.push([f / 2, [1, 0.04, 0.3, 0.02, 0.1], 0.9, -2]);
+      const len = t1 - t0;
+      for (const [rf, amps, rg, cents] of ranks) {
+        const o = D.osc(), F = rf * Math.pow(2, (cents + D.rnd(-2, 2)) / 1200), w = D.drift(3);
+        D.play(t0, len + 0.16, t => {
+          const a = (t < 0.035 ? t / 0.035 : 1) * (t > len ? Math.max(0, 1 - (t - len) / 0.14) : 1) * (1 + 0.15 * Math.min(1, t / 0.7));
+          return o.harm(F * (1 + 0.0012 * w.next()), amps) * a * trem(t0 + t);
+        }, g * rg, 0.55);
+      }
+      // the chiff: a breath of noise at the pipe's mouth, round its second harmonic, as it starts to speak
+      const ch = D.svf(Math.min(9000, f * 2.2), 2.2);
+      D.play(t0, 0.06, t => ch.bp(D.white()) * Math.exp(-t / 0.014) * Math.min(1, t * 900), g * 0.35, 0.3);
+    };
+    // the mordent on A (and its octave), then the chord: the pedal D (with the 16'), the left hand D F A, the right D F A C# D
+    pipe(0, 0.055, 81, 0.24); pipe(0, 0.055, 69, 0.2); pipe(0.055, 0.105, 79, 0.24); pipe(0.055, 0.105, 67, 0.2); pipe(0.105, T0 + 0.02, 81, 0.24); pipe(0.105, T0 + 0.02, 69, 0.2);
+    pipe(T0, END, 38, 0.75, { sub: true, mix: 0.4 });
+    for (const n of [50, 53, 57]) pipe(T0, END, n, 0.24, { mix: 0.7 });
+    for (const n of [62, 65, 69, 73, 74]) pipe(T0, END, n, 0.17);
+    // the thunder: the crack (a tearing rip of sharp cracks) under the chord, the boom, the roll with its swells
+    const cr = [];
+    for (let i = 0; i < 60; i++) { const t = 0.2 * Math.pow(D.rand(), 2.2); cr.push([t, D.rnd(0.25, 1) * Math.exp(-t / 0.08), D.rnd(0.0003, 0.002)]); }
+    cr.push([0.004, 1.5, 0.004]);
+    const thp = D.bq('hp', 90, 0.7), tlp = D.bq('lp', 7000, 0.7);
+    D.play(T0, 0.28, t => { let x = 0; for (const [c0, a, w] of cr) { const u = t - c0; if (u >= 0 && u < w) x += a * Math.sin(TAU * u / w); } return tlp.run(thp.run(x)); }, 1.0, 0.45);
+    const tear = D.svf(2400, 0.6);
+    D.play(T0, 0.3, t => tear.bp(D.white()) * Math.exp(-t / 0.06), 0.3, 0.4);
+    const sw = D.drift(2.4), low = D.svf(140, 0.9), mid = D.svf(380, 0.7);
+    const E = D.env([[0, 0], [0.03, 1], [0.22, 0.7], [0.55, 0.45], [0.8, 0.55], [1.2, 0.3], [1.9, 0.12], [2.4, 0]]);
+    D.play(T0 + 0.01, 2.4, t => (low.lp(D.noise.brown()) * 1.5 + mid.bp(D.white()) * 0.22) * E.at(t) * (0.75 + 0.25 * sw.next()), 0.55, 0.3);
+    // the chain: links clinking as it's dragged through the gate (bright little rings, thinning out)
+    for (let i = 0; i < 26; i++) {
+      const t = 0.52 + Math.pow(D.rand(), 1.3) * 0.4, x = D.rnd(2600, 5200), a = D.rnd(0.11, 0.24) * (1.25 - (t - 0.52));
+      D.modes(t, [[x, a, D.rnd(0.012, 0.03)], [x * D.rnd(1.38, 1.62), a * 0.6, 0.012], [x * D.rnd(2.3, 2.8), a * 0.3, 0.007]], 1, 0.3);
+      burst(D, t, { f: 6000, q: 0.8, tau: 0.0008, gain: a * 0.6 });
+    }
+    // the gate: a rusty hinge creaking open, a stick-slip squeal (the iron catching and letting go faster and slower)
+    // through the gate's ringing bars, and the wooden groan of the post under it
+    {
+      const rate = D.env([[0, 70], [0.12, 210], [0.26, 340], [0.36, 260], [0.48, 420], [0.62, 300]], true), amp = D.env([[0, 0], [0.05, 0.8], [0.3, 1], [0.5, 0.85], [0.62, 0]]);
+      const o = D.osc(), j = D.drift(70), b1 = D.bq('peak', 1250, 3, 12), b2 = D.bq('peak', 2350, 4, 9), b3 = D.bq('peak', 640, 2, 6), hp = D.bq('hp', 300, 0.7), lp = D.bq('lp', 6500, 0.7);
+      D.play(0.68, 0.64, t => lp.run(hp.run(b3.run(b2.run(b1.run(o.pulse(rate.at(t) * (1 + 0.06 * j.next()), 0.08)))))) * amp.at(t), 0.3, 0.35);
+      const g2 = D.osc(), wood = D.svf(420, 3), r2 = D.env([[0, 34], [0.3, 52], [0.55, 40]], true);
+      D.play(0.72, 0.56, t => wood.bp(g2.pulse(r2.at(t), 0.05)) * Math.sin(Math.PI * Math.min(1, t / 0.56)), 0.3, 0.3);
+    }
+    // the theremin: rising out of it, a pure voice gliding up an eerie line with a wide, slow vibrato
+    {
+      const f = D.env([[0, NOTE(69)], [0.12, NOTE(69)], [0.42, NOTE(77)], [0.5, NOTE(76)], [0.86, NOTE(86)]], true);
+      const amp = D.env([[0, 0], [0.16, 0.85], [0.6, 1], [0.8, 0.8], [0.92, 0]]), o = D.osc(), lp = D.svf(2400, 0.7);
+      D.play(0.95, 0.92, t => lp.lp(o.harm(f.at(t) * (1 + 0.016 * Math.min(1, t / 0.3) * Math.sin(TAU * 6.2 * t)), [1, 0.16, 0.07, 0.025])) * amp.at(t), 0.62, 0.6);
+    }
+    D.room = { decay: 2.9, damp: 0.35, wet: 0.85, pre: 0.03, size: 1.2, hp: 150 };
   },
 
   // ---- v0.4.7.5 quick patch: sixteen more ----

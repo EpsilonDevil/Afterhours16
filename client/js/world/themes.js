@@ -13,6 +13,8 @@ export const EVENTS = {
   jungle: { id: 'jungle', name: 'Jungle Ballers', park: 'The Jungle Ballers', color: '#ff8a1f', accent: '#2ec4ff', blurb: 'Ante-ups under the rainforest canopy, rain on every streak. 48-hour leaderboard.', event: true, exclusive: 'jungle', prize: 'the gorilla costume', enter: 'Enter the Jungle', eyebrow: 'JUNGLE BALLERS' },
   // v0.4.8.5 quick patch: And The Beat Goes On, an 80s city at sundown (it follows the Jungle Ballers on the schedule)
   beat: { id: 'beat', name: 'Beat Goes On', park: 'And The Beat Goes On', color: '#ff3fa4', accent: '#2fe0ff', blurb: 'Ante-ups in an 80s city at sundown: neon, lowriders, a disco bar and its own soundtrack. 48-hour leaderboard.', event: true, exclusive: 'beat', prize: 'the Beat Goes On tracksuit', enter: 'Enter the Beat', eyebrow: 'AND THE BEAT GOES ON' },
+  // v0.4.8.5 quick patch 2: The Monster Mash, a Halloween night of horror (it follows And The Beat Goes On on the schedule)
+  monster: { id: 'monster', name: 'Monster Mash', park: 'The Monster Mash', color: '#7cff4f', accent: '#ff7a1a', blurb: 'Ante-ups on Halloween night: a haunted town under a full moon, a graveyard, a slasher on the loose. 48-hour leaderboard.', event: true, exclusive: 'monster', prize: 'the Bone Suit', enter: 'Enter the Mash', eyebrow: 'THE MONSTER MASH' },
 };
 // name/colors for any park id, affiliation or event
 export const parkInfo = id => AFFILIATIONS[id] || EVENTS[id] || null;
@@ -115,6 +117,28 @@ export const THEMES = {
     env: { top: '#2a1450', horizon: '#ff8a4c', horizonLow: '#ffa860', ground: '#4a2a34', lights: [{ u: 0.19, v: 0.44, r: 0.07, color: 'rgba(255,196,120,1)' }, { u: 0.55, v: 0.47, r: 0.03, color: 'rgba(255,80,180,1)' }, { u: 0.82, v: 0.47, r: 0.03, color: 'rgba(60,230,255,1)' }] },
     exposure: 1.06, bloom: { strength: 0.2, threshold: 1.0, radius: 1.15 }, grade: { saturation: 1.12, contrast: 1.06, vignette: 0.5 },
     floodlights: false, envIntensity: 0.9,
+  },
+  // v0.4.8.5 quick patch 2 The Monster Mash: the same park layout on Halloween night: a haunted town under a full moon,
+  // fog on the ground, graveyard, haunted mansion, pumpkin patch, monsters on the loose; haunted courts on a streak
+  monster: {
+    id: 'monster', kind: 'park', name: 'The Monster Mash', style: 'horror', event: true, streakFx: 'haunt',
+    // v0.4.8.5 quick patch 2: haunted courts: a dark mossy floor, a deep purple apron with an iron-spike border, cobwebs in
+    // the corners, cracked tombstones, bats and pumpkins (textures.js horrorApron), a pumpkin-orange key, bone-white lines,
+    // the jack-o'-lantern-and-moon crest in the middle and the name in slime-dripping letters on the baselines
+    court: { surface: 'asphalt', court: '#24372b', apron: '#2c1a3c', paint: '#ff7a1a', lines: '#efe9d6', arcTint: 'rgba(124,255,79,0.06)', centerFill: '#1a1026', wear: 0.32, logo: { shape: 'jack', color: '#1a1026', accent: '#ff7a1a', green: '#7cff4f', moon: '#f4efd6', size: 1.55, inHalf: true, rotate: Math.PI }, baselineText: 'THE MONSTER MASH', baselineColor: '#7cff4f', asphaltTint: '#9aa898',
+      horror: { drip: '#7cff4f', outline: '#14081e', shadow: '#ff7a1a', stone: '#6a6478', web: '#d8d4e8', bat: '#0e0812', pumpkin: '#ff7a1a', spikes: '#120a18', count: 44 } },
+    ground: '#8a8e84',
+    // the sky is a dome of its own (horror.js horrorSky: blue-black overhead, the stars, a glow round the moon); the full
+    // moon sits low over the mansion's hill to the north (az: from north toward the west, degrees; size: its diameter). The
+    // moonlight comes from the same bearing, higher up, so the courts keep short shadows
+    moon: { az: -9, el: 8.5, size: 13, dist: 240 },
+    sky: { top: [0.004, 0.006, 0.016], horizon: [0.04, 0.05, 0.08], ground: [0.015, 0.016, 0.02], stars: 1 },
+    sun: { dir: [0.096, 0.788, 0.608], color: [0.62, 0.74, 1.0], intensity: 2.4 },
+    ambient: { sky: [0.27, 0.31, 0.46], ground: [0.09, 0.09, 0.11] },
+    fog: { color: [0.05, 0.065, 0.085], density: 0.0078 },
+    env: { top: '#04060c', horizon: '#1a2236', horizonLow: '#141a22', ground: '#0c0e10', skyline: '#06070c', lights: [{ u: 0.52, v: 0.44, r: 0.07, color: 'rgba(225,235,255,1)' }] },
+    exposure: 1.18, bloom: { strength: 0.2, threshold: 0.95, radius: 1.2 }, grade: { saturation: 1.05, contrast: 1.08, vignette: 0.68 },
+    floodlights: true, lightColor: [0.9, 1.0, 0.86], envIntensity: 0.55,
   },
   arena: {
     id: 'arena', kind: 'arena', name: 'Afterhours Arena', style: 'arena',

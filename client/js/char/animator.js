@@ -1799,6 +1799,46 @@ const CELEB2 = {
     T[P.clavL + 2] = 0.12 * dip * k; T[P.clavR + 2] = -0.12 * dip * k;
     T[P.spine] = 0.08 * k; T[P.chest] = 0.04 * k; T[P.chest + 1] = 0.12 * sw * k; T[P.head] = (0.04 + 0.08 * dip) * k;
   },
+  // v0.4.8.5 quick patch 2 The Monster Mash: the Zombie Shuffle. He comes up into it stiff: both arms straight out in
+  // front, wrists limp (palms down), shoulders slumped, the head lolled over on one side. A dragging shuffle: the right
+  // foot slides out in front, barely off the floor, and he lurches onto it, rocking, then drags it back and rocks back.
+  // He twitches: three jerks of the head and the shoulders, an arm jumping. Then the lunge: the left foot stamps out
+  // in front, he drops and throws himself forward, arms thrust out, hands clawed up at you, the head jutting up in a
+  // snarl, and holds it, shaking. (t: seconds; a celebration runs 1.5-1.6 s, the store's preview 2.4: the snarl holds)
+  zombie: (T, t, k, an) => {
+    const S = (a, b) => sm(a, b, t), step = S(0.2, 0.44) * (1 - S(0.5, 0.74)), lunge = S(0.99, 1.14);
+    // the twitch: three snaps between held positions (a jerk, not a sway; each held long enough to land through the pose
+    // spring): the head flops over to the other side, back past where it was, then half up
+    const j1 = S(0.74, 0.765), j2 = S(0.86, 0.885), j3 = S(0.95, 0.97);
+    // the shuffle: the right foot slides out and back, toe down and dragging; the hips ride over onto it and back
+    const plant = Math.exp(-Math.pow((t - 0.45) / 0.05, 2)) + 0.6 * Math.exp(-Math.pow((t - 0.76) / 0.05, 2));
+    mix3(T, 'footR', -0.13, 0.085 + 0.025 * Math.sin(Math.PI * S(0.2, 0.44)) * (1 - S(0.44, 0.5)), 0.3 * step - 0.06 * lunge, k);
+    mix3(T, 'footL', 0.13 + 0.02 * lunge, 0.08, 0.38 * lunge, k);
+    T[P.pitchR] = (0.28 * step * (1 - S(0.42, 0.48)) + 0.2 * (S(0.5, 0.56) - S(0.7, 0.76)) + 0.32 * lunge) * k;
+    T[P.pitchL] = 0.12 * S(0.5, 0.6) * (1 - lunge) * k;
+    T[P.root + 2] = (0.13 * step + 0.17 * lunge) * k;
+    T[P.root + 1] = (-0.03 - 0.035 * plant - 0.11 * lunge) * k;
+    T[P.root] = (-0.035 * step) * k;
+    // the body: slumped, rocking with the steps, jerking on the twitch, thrown forward on the lunge
+    T[P.spine] = (0.1 + 0.05 * step + 0.22 * lunge) * k;
+    T[P.spine + 2] = (-0.08 * step + 0.05 * Math.sin(t * 5.2)) * k * (1 - lunge);
+    T[P.chest] = (0.1 + 0.06 * lunge) * k;
+    T[P.chest + 1] = (0.16 * j1 - 0.3 * j2 + 0.14 * j3 - 0.06 * step) * k * (1 - lunge);
+    T[P.clavL + 2] = (0.24 * j1 * (1 - j2) + 0.06 * lunge) * k; T[P.clavR + 2] = (-0.28 * j2 * (1 - j3) - 0.06 * lunge) * k;
+    // the head lolls over (and flops about in the twitch), then juts up and forward in the snarl
+    T[P.head + 2] = (0.42 - 1.25 * j1 + 1.2 * j2 - 0.3 * j3 + 0.06 * Math.sin(t * 3.1) * (1 - j1)) * (1 - lunge) * k;
+    T[P.head] = (0.16 + 0.05 * Math.sin(t * 2.3) + 0.12 * j1 * (1 - j3) - 0.46 * lunge) * k;
+    T[P.head + 1] = (0.14 * j1 - 0.2 * j2 + 0.06 * j3) * (1 - lunge) * k + 0.04 * Math.sin(t * 41) * lunge * k;
+    // the arms: straight out in front (reaching for something past arm's length, so they stay locked straight whatever
+    // the body does), bobbing with the steps, the right one jumping in the twitch; thrust out on the lunge, the hands
+    // clawed up (palms out) and shaking
+    const bob = 0.05 * Math.sin(Math.PI * 2 * S(0.2, 0.76)) - 0.045 * plant, shake = 0.015 * Math.sin(t * 47) * lunge, jump = 0.2 * j2 * (1 - j3);
+    mix3(T, 'handL', 0.15, 1.5 + bob + 0.12 * lunge + shake, 1.0 + 0.1 * lunge, k);
+    mix3(T, 'handR', -0.15, 1.5 + bob + jump + 0.12 * lunge - shake, 1.0 + 0.1 * lunge, k);
+    set3(T, 'elbowL', 0.6, -0.6, 0.2); set3(T, 'elbowR', -0.6, -0.6, 0.2);
+    const claw = lunge, nrm = [0, -1 + claw, claw * 0.9], fin = [0, claw * 0.8, 1 - claw * 0.55];
+    an.palm.L = { normal: nrm, fingers: fin, w: k }; an.palm.R = { normal: nrm, fingers: fin, w: k };
+  },
   // swings a big hammer down overhead, twice
   hammer: (T, t, k) => { const ph = (t * 1.6) % 1, sw = ph < 0.6 ? ph / 0.6 : 1 - (ph - 0.6) / 0.4, y = 2.3 - 1.3 * sw * sw; mix3(T, 'handR', -0.1, y, 0.2 + 0.4 * sw, k); mix3(T, 'handL', -0.02, y - 0.12, 0.2 + 0.4 * sw, k); T[P.spine] = (0.35 * sw - 0.15) * k; T[P.root + 1] = -0.08 * sw * k; },
   // holds up three fingers, shaking them at the crowd

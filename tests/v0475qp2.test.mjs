@@ -50,11 +50,12 @@ const R = {};
 const sound = id => (R[id] || (R[id] = { x: renderGreen(id), st: renderGreen.stats }));
 
 test('twice the green releases: 32 sounds and 28 effects, in the code and in the store (+ the Jungle Ballers pair)', () => {
-  // (v0.4.8.5 quick patch: + the Beat Goes On pair, the Eight-O-Eight and the Disco Ball)
-  assert.equal(GREEN_SOUND_IDS.length, 34);
-  assert.equal(GREEN_FX_IDS.length, 30);
+  // (v0.4.8.5 quick patch: + the Beat Goes On pair, the Eight-O-Eight and the Disco Ball; quick patch 2: + the Monster
+  // Mash pair, the Haunted Organ and the Jack-o'-Lantern)
+  assert.equal(GREEN_SOUND_IDS.length, 35);
+  assert.equal(GREEN_FX_IDS.length, 31);
   const snd = greens.filter(i => i.slot === 'greensound'), fx = greens.filter(i => i.slot === 'greenfx');
-  assert.equal(snd.length, 34); assert.equal(fx.length, 30);
+  assert.equal(snd.length, 35); assert.equal(fx.length, 31);
   for (const i of snd) { assert.equal(GREEN_SOUNDS[i.id], i.name, i.id); assert.ok(greenRecipe(i.id), i.id); }
   for (const i of fx) assert.equal(GREEN_FX[i.id], i.name, i.id);
   const fresh = greens.filter(i => i.v0475qp);

@@ -219,7 +219,7 @@ export function resolveLook(build, catalog, override = {}) {
   const shoes = item(eq.shoes) || { color: '#f2f2f2', accent: '#3fb6a8', sole: '#f5f5f0', cut: 'mid' };
   const g = { shoes: { color: shoes.color, accent: shoes.accent, sole: shoes.sole, cut: shoes.cut || 'mid', lace: shoes.lace, trim: shoes.trim, model: shoes.model || shoeModel(shoes.id || eq.shoes) } };
   if (item(eq.socks)) g.socks = { color: item(eq.socks).color, style: item(eq.socks).style };
-  if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null, feather: item(eq.headband).feather || null, stripes: item(eq.headband).stripes || null }; // (v0.4.8.5 quick patch: the Neon Terry's stripes)
+  if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null, feather: item(eq.headband).feather || null, stripes: item(eq.headband).stripes || null, pattern: item(eq.headband).pattern || null }; // (v0.4.8.5 quick patch: the Neon Terry's stripes; quick patch 2: the Jack-o'-Lantern's pattern)
   if (item(eq.sleeve)) g.sleeve = { color: item(eq.sleeve).color, side: build.hand === 'L' ? 'L' : 'R' };
   if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color };
   if (item(eq.leg_sleeve)) g.legSleeve = { color: item(eq.leg_sleeve).color, side: 'L' };

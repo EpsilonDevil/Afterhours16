@@ -197,4 +197,61 @@ The same tiers and prizes per place as the King Tut Cup and the Jungle Ballers, 
 
 ---
 
-*(Tests: 110 Python and 294 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patch: the event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sound measured against the other green sounds; and the schedule handover, the event soundtrack and the store labels.)*
+## Quick patch 2 (Oct 13): The Monster Mash
+
+The park event after the Beat, **The Monster Mash**, takes over from And The Beat Goes On the moment the Beat's leaderboard closes: **October 16 at 00:00 UTC** (8 pm Eastern, 5 pm Pacific on October 15). Until then the Beat runs its full 48 hours and pays its prizes as normal. After that its park closes, just as the Jungle's and the King Tut Cup's did. Nothing of it is deleted (the park, its rewards and its soundtrack are all kept), so it can come back for a future event.
+
+### The park: a haunted town on Halloween night
+- **Night under a full moon.** A huge moon with a halo hangs low in the north, right behind a haunted mansion on a hill. The sky is full of stars, thin clouds drift across it, and every so often lightning lights up the whole town. Ground fog lies over the town and the swamp, and only thinly over the courts. Each court has its own high spotlight, so the players and the ball stay easy to read.
+- **Graveyard courts:** dark mossy-green floors, purple aprons covered with tombstones, cobwebs, bats and pumpkins, orange keys and bone-white lines. At center court there's a jack-o'-lantern under the moon, and "THE MONSTER MASH" runs along the baselines in dripping slime letters. The rims are orange, and the nets are pale as old bones.
+- **The town:**
+  - **Hollow Hill Cemetery:** an iron fence and an arched gate, rows of headstones, open graves, candles, and a mausoleum with a green light glowing in its door.
+  - **On the hills:** the haunted mansion against the moon, its windows lit, with shadows passing behind them. There's also an old church with a bell tower (bats live in the belfry) and a broken stone tower.
+  - **The carnival:** a turning Ferris wheel, a carousel, and a HAUNTED HOUSE ride with glowing eyes over the doors.
+  - **Around the edges:** a pumpkin patch with scarecrows and the edge of a corn maze. A street of houses decorated for Halloween, with string lights, a funeral home and a hearse parked out front. A foggy swamp with cypress trees, will-o'-wisps, a dock and a rowboat, and a witch's cottage with a bubbling cauldron.
+  - Dead trees everywhere, green fire braziers, and piles of jack-o'-lanterns round the park, all kept clear of the courts and the cameras. The park's mural is a new monster mural.
+- **Who's out tonight:** zombies shambling about, a vampire, a werewolf who howls at the moon, mummies, dancing skeletons, ghosts, black cats, bats circling the floodlights, and two groups of trick-or-treaters going door to door. The Lantern Man (a pumpkin head in a top hat) walks the town, and a slasher in a yellow raincoat and a sack mask stalks the block. Everything is spooky fun: no gore.
+- **Random events** (one every half minute or so):
+  - a thunderstorm, with lightning and thunder;
+  - the dead rising from their graves;
+  - a zombie dance troupe doing a routine under a stage light;
+  - the slasher chasing a group of screaming teenagers (one of them trips);
+  - a witch flying across the moon;
+  - bats bursting out of the church belfry;
+  - a ghost parade;
+  - the werewolf transforming on top of the broken tower;
+  - the HAUNTED HOUSE ride's doors bursting open;
+  - orange and green fireworks;
+  - the hearse driving by.
+- **Its own sounds:** thunder, a wolf's howl, an owl, the cemetery gate creaking, the church bell, a ghost's moan, distant screams, an organ chord, a witch's cackle and the zombie troupe's groove. They are quiet and rare so they never get in the way of the game, and they follow your sound-effects volume.
+- **On a win streak the court gets haunted:**
+  - **3 wins:** green ghost-fire flickers up all round the court.
+  - **6 wins:** skeleton hands reach up out of the apron, fog creeps over the floor, and the court's floodlights flicker green.
+  - **9 wins:** a ring of ghosts circles the court.
+  - **12 wins:** the full haunting, with will-o'-wisps spiralling up into the sky, a giant skull whose jaw opens and shuts, and lightning striking round the court.
+  - The Got Next spots stay clear, the court stays readable even at 12, and the floodlights go back to normal when the streak ends.
+- The event's leaderboard stands in the park on a tombstone with a green neon outline, a skull with glowing eyes on top and jack-o'-lanterns at its feet.
+- **Music:** the main soundtrack plays at the Monster Mash. No mix came with this event, so unlike the Beat it has no soundtrack of its own. Send one and it can get one the same way.
+
+### Rewards
+The same tiers and prizes per place as every park event before it, with all-new items. None of them can be bought.
+
+| Place | VC | Items |
+|---|---|---|
+| 1st | 150,000 | the Bone Suit (top and tights), Coffin Hi / Graveyard, Zombie Shuffle, Jack-o'-Lantern Headband, Jack-o'-Lantern, Haunted Organ |
+| Top 3 | 60,000 | Coffin Hi / Graveyard, Zombie Shuffle, Jack-o'-Lantern Headband, Jack-o'-Lantern, Haunted Organ |
+| Top 10 | 25,000 | Zombie Shuffle, Jack-o'-Lantern Headband, Haunted Organ |
+| Top 25 | 10,000 | Jack-o'-Lantern Headband |
+| Top half / played | 3,000 / 1,000 | |
+
+- **The Bone Suit** (grand prize, unique to this event): a skin-tight black bodysuit with a skeleton on it that glows in the dark. The front has the collarbones, the sternum and the ribcage, the back has the spine and the shoulder blades, and the bones of the arms run down the sleeves. It comes with gloves that show every finger bone. The matching tights have the pelvis, the thigh bones, the kneecaps and the shin bones. The bones are bone-white in the light and glow ghost-green at night.
+- **Coffin Hi / Graveyard** (top 3): a black high-top with a deep purple coffin on each side, a skull and crossbones on the coffin, bone-white laces and stitching, and slime-green drips glowing round the sole. A little skull charm with glowing eyes hangs on the laces.
+- **Jack-o'-Lantern Headband** (top 25): a pumpkin-orange band with a small carved pumpkin on the forehead, lit from inside by a flickering candle.
+- **Celebration: Zombie Shuffle** (top 10): arms locked straight out in front and the head lolling to one side. You drag one foot forward and back, twitch twice, then lunge forward with a snarl.
+- **Jack-o'-Lantern** (green FX, top 3): a dark pumpkin rises over your head on the release and swells as its candle catches and its face lights up. The moment the shot drops it bursts open, and a swarm of bats flies out in every direction in a puff of ghost-green smoke.
+- **Haunted Organ** (green sound, top 10): a haunted pipe organ hits a big minor chord over a crack of thunder. Then a graveyard gate creaks open, a chain rattles, and a ghostly theremin rises out of it all.
+- The store lists them with ★ MONSTER MASH, like the other event items.
+
+---
+
+*(Tests: 115 Python and 315 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; and each schedule handover, the event soundtrack and the store labels.)*

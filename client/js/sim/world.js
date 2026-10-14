@@ -301,10 +301,10 @@ export class AIWorld {
 export const BOUNTY_MIN = 7;
 export const bountyFor = streak => (streak >= BOUNTY_MIN ? Math.min(15000, 2500 + 750 * (streak - BOUNTY_MIN)) : 0);
 
-export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup', jungle: 'The Jungle Ballers', beat: 'And The Beat Goes On' };
+export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', foundry: 'Foundry Works', kingtut: 'The King Tut Cup', jungle: 'The Jungle Ballers', beat: 'And The Beat Goes On', monster: 'The Monster Mash' };
 // v0.4.7.5 qp3: the park events, and which one is on (the server's schedule, set from /api/config `event` by main.js;
 // the AI world sends the event's entrants there). null between events: entrants stay in their home parks.
-export const EVENT_PARKS = new Set(['kingtut', 'jungle', 'beat']);
+export const EVENT_PARKS = new Set(['kingtut', 'jungle', 'beat', 'monster']);
 export let EVENT_VENUE = 'kingtut';
 export const setEventVenue = v => { EVENT_VENUE = v && EVENT_PARKS.has(v) ? v : null; };
 

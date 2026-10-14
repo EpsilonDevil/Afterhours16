@@ -27,6 +27,7 @@ export const GREEN_FX = {
   cup_gfx_ankh: 'Golden Ankh',
   jb_gfx_banana: 'Banana Peel',
   bg_gfx_discoball: 'Disco Ball', // (v0.4.8.5 quick patch: And The Beat Goes On)
+  mm_gfx_lantern: "Jack-o'-Lantern", // (v0.4.8.5 quick patch 2: The Monster Mash)
   // v0.4.7.5 quick patch
   gfx_phoenix: 'Phoenix',
   gfx_cash: 'Make It Rain',
@@ -47,6 +48,17 @@ export const GREEN_FX_IDS = Object.keys(GREEN_FX);
 
 // (v0.4.8.5 quick patch: the Disco Ball's lights and its mirror)
 const DISCO = { pink: [2.7, 0.45, 1.5], cyan: [0.35, 2.2, 2.8], purple: [1.5, 0.55, 2.9], yellow: [2.7, 2.25, 0.35], silver: [1.3, 1.37, 1.6] };
+// (v0.4.8.5 quick patch 2: the Jack-o'-Lantern's pumpkin, its candle, its bats and its ghost smoke; the carved face in the
+// pumpkin's own front view, x right and y up, -1..1 across it: two slanted triangle eyes, a nose, a jagged grin)
+// (the shell's points overlap about three deep, so its colours are a third of what they add up to; and pumpkin orange
+// stays orange through the tone curve only with very little green in it: more and it goes yellow, then white)
+const LANTERN = { skin: [0.38, 0.047, 0.003], groove: [0.1, 0.01, 0.0008], chunk: [1.5, 0.26, 0.02], stem: [0.16, 0.3, 0.03], candle: [1.0, 0.36, 0.035], core: [1.15, 0.62, 0.12], halo: [0.07, 0.01, 0.001], bat: [0.42, 0.06, 0.7], batBody: [0.62, 0.14, 0.95], batEye: [3.0, 0.45, 0.1], ghost: [0.04, 0.3, 0.12], smoke: [0.13, 0.13, 0.15] };
+const LANTERN_FACE = [
+  [[-0.66, 0.1], [-0.14, -0.01], [-0.42, 0.46]], [[0.66, 0.1], [0.14, -0.01], [0.42, 0.46]], [[-0.11, -0.16], [0.11, -0.16], [0, 0.03]],
+  [[-0.74, -0.24], [-0.5, -0.3], [-0.38, -0.25], [-0.26, -0.33], [-0.16, -0.33], [-0.16, -0.24], [0.02, -0.29], [0.24, -0.34], [0.38, -0.27], [0.52, -0.31], [0.75, -0.23],
+    [0.6, -0.48], [0.36, -0.6], [0.16, -0.64], [0.16, -0.54], [0.04, -0.54], [0.04, -0.65], [-0.2, -0.64], [-0.46, -0.56], [-0.64, -0.44]],
+];
+const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i][1] > y) !== (P[j][1] > y) && x < (P[j][0] - P[i][0]) * (y - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) c = !c; return c; };
 const G = [0.35, 2.6, 0.9], GW = [1.4, 3.0, 1.5], GD = [0.12, 1.1, 0.35], GOLD = [2.6, 1.9, 0.45], WHITE = [2.2, 2.4, 2.2], ICE = [1.1, 2.6, 2.5], EMBER = [2.2, 2.6, 0.5];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -404,6 +416,118 @@ const EFFECTS = {
       const n = Math.round(150 * fx.power);
       for (let i = 0; i < n; i++) { const d = sphereDir(), s = rnd(0.8, 2.8); fx.emit({ x: c[0] + d[0] * 0.15, y: c[1] + d[1] * 0.15, z: c[2] + d[2] * 0.15, vx: d[0] * s, vy: d[1] * s + 1.4, vz: d[2] * s, life: rnd(1.0, 1.45), size: rnd(0.022, 0.034), color: pick(COLS), flick: rnd(8, 14), gravity: -5.5, drag: 0.9 }); }
       for (let i = 0; i < NL; i += 2) fx.emit({ x: c[0], y: c[1] + R + (TOP - R) * i / (NL - 1), z: c[2], vy: 7, life: 0.22, size: 0.011, color: [0.55, 0.55, 0.62], gravity: 0, drag: 0 });
+    });
+  },
+  // v0.4.8.5 quick patch 2 The Monster Mash exclusive: a jack-o'-lantern. On the release a carved pumpkin rises off his
+  // head and swells over it (ribbed, rocking a little on the way up), dark at first; then the candle catches and its face
+  // lights up, eyes and grin flickering orange-yellow with the flame, a warm glow round it and a wisp of smoke curling up
+  // out of the lid by the stem. It swells tighter as the ball flies. The moment the shot drops (fx.flight) it bursts: a
+  // flash, the shell blown out in chunks, the stem popping up, a puff of ghost-green smoke, and a swarm of bats pouring out
+  // of it in every direction, flapping, zig-zagging away into the night.
+  mm_gfx_lantern(fx) {
+    const burstAt = Math.max(0.45, Math.min(1.8, fx.flight || 1.0)), R = 0.24, RV = 0.195, HOLD = burstAt * 1.25 + 0.05, power = fx.power || 1;
+    const lightAt = Math.min(0.3, burstAt * 0.45), L = LANTERN;
+    // where it is and how big: up off his head (easing out, a bob), swelling to full with a little overshoot, then
+    // straining bigger as the ball flies; it rocks side to side (a turn about its stem) as it comes up
+    const centre = t => { const h = fx.head(), q = Math.min(1, t / 0.42), up = 1 - Math.pow(1 - q, 3); return [h[0], h[1] + 0.1 + 0.3 * up + 0.022 * Math.sin(t * 5.5) * q, h[2]]; };
+    const size = t => { const q = Math.min(1, t / 0.4); return (0.3 + 0.7 * (1 - Math.pow(1 - q, 3)) + 0.1 * Math.sin(Math.PI * q)) * (1 + 0.12 * Math.pow(Math.min(1, t / burstAt), 3) + 0.03 * Math.sin(t * 13) * Math.min(1, t / burstAt)); };
+    const rock = t => 0.32 * Math.sin(t * 4.2) * Math.exp(-t * 1.6);
+    const frame = () => { const [r, u] = fx.basis(); return [r, u, [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2], r[0] * u[1] - r[1] * u[0]]]; };
+    // a point on the pumpkin (x right, y up, z toward the camera, in its own size) turned by `a` about its stem, in the world
+    const place = (c, F, s, x, y, z, a) => { const ca = Math.cos(a), sa = Math.sin(a), X = (x * ca + z * sa) * s, Z = (-x * sa + z * ca) * s, Y = y * s; return [c[0] + F[0][0] * X + F[1][0] * Y + F[2][0] * Z, c[1] + F[0][1] * X + F[1][1] * Y + F[2][1] * Z, c[2] + F[0][2] * X + F[1][2] * Y + F[2][2] * Z]; };
+    // the flame's flicker: three wobbling sines and the odd gutter
+    const flick = t => 0.78 + 0.1 * Math.sin(t * 17.3) + 0.07 * Math.sin(t * 29.1 + 1.1) + 0.05 * Math.sin(t * 46.7 + 2.3) - 0.18 * Math.max(0, Math.sin(t * 3.7)) * Math.max(0, Math.sin(t * 31));
+    const lit = t => Math.min(1, Math.max(0, (t - lightAt) / 0.14)) * flick(t);
+    // the shell: points over its front (a squat ribbed sphere seen from the front), each skin or a hole in the face; and
+    // the rim round its outline, for its shape
+    const shell = [], holes = [];
+    for (let gy = -1; gy <= 1.001; gy += 0.093) for (let gx = -1; gx <= 1.001; gx += 0.093) {
+      const d = gx * gx + gy * gy; if (d > 1) continue;
+      const z = Math.sqrt(1 - d), lon = Math.asin(Math.max(-1, Math.min(1, gx / Math.max(0.05, Math.sqrt(1 - gy * gy))))), rib = Math.pow(Math.abs(Math.cos(4 * lon)), 0.5);
+      const pt = { x: gx * R * (0.94 + 0.06 * rib), y: gy * RV, z: z * R * (0.94 + 0.06 * rib), rib, hole: LANTERN_FACE.some(P => inPoly(gx, gy, P)) };
+      (pt.hole ? holes : shell).push(pt);
+    }
+    for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; shell.push({ x: Math.cos(a) * R * 0.98, y: Math.sin(a) * RV * 0.98, z: 0, rib: 0.5, rim: true }); }
+    // (the holes are filled with candlelight a little inside the shell, so a rocking pumpkin shows it through its face)
+    const parts = [];
+    parts.push(...fx.hold(shell.length, HOLD, i => ({ size: 0.034, color: L.skin.slice() }), (i, k, p) => {
+      const t = k * HOLD, q = shell[i], c = centre(t), F = frame(), s = size(t), a = rock(t), P = place(c, F, s, q.x, q.y + (q.y > 0.13 ? -0.02 : 0), q.z, a);
+      setP(p, P);
+      // (dark before the candle catches; lit, the skin warms a little with it)
+      const on = lit(t), facing = q.rim ? 0.3 : Math.max(0, -q.x * Math.sin(a) + q.z * Math.cos(a)) / R, glow = 0.05 * on * (q.rim ? 0 : 1);
+      for (let j = 0; j < 3; j++) p.color[j] = (L.groove[j] + (L.skin[j] - L.groove[j]) * q.rib) * (0.45 + 0.55 * facing) * (0.68 + 0.32 * Math.min(1, on)) + L.candle[j] * glow;
+      p.size = t >= burstAt || (facing <= 0 && !q.rim) ? 0 : (q.rim ? 0.026 : 0.031) * s;
+    }));
+    parts.push(...fx.hold(holes.length, HOLD, i => ({ size: 0, color: L.candle.slice() }), (i, k, p) => {
+      const t = k * HOLD, q = holes[i], c = centre(t), F = frame(), s = size(t), a = rock(t), P = place(c, F, s, q.x, q.y, q.z * 0.86, a), on = lit(t);
+      setP(p, P);
+      const mid = 1 - Math.min(1, Math.hypot(q.x / R, (q.y / RV + 0.15) * 0.8));
+      for (let j = 0; j < 3; j++) p.color[j] = (L.candle[j] + (L.core[j] - L.candle[j]) * mid * 0.6) * on;
+      p.size = t >= burstAt ? 0 : 0.032 * s * Math.min(1, on * 1.6);
+    }));
+    // its stem (curling over), and a warm glow round it once it's lit
+    parts.push(...fx.hold(7, HOLD, i => ({ size: 0.03, color: L.stem }), (i, k, p) => {
+      const t = k * HOLD, c = centre(t), F = frame(), s = size(t), a = rock(t), u = i / 6;
+      setP(p, place(c, F, s, -0.02 * u * u, RV * 0.86 + 0.09 * u, -0.01 - 0.03 * u * u, a)); p.size = t >= burstAt ? 0 : (0.034 - 0.012 * u) * s;
+    }));
+    parts.push(...fx.hold(3, HOLD, i => ({ size: 0, color: L.halo }), (i, k, p) => {
+      const t = k * HOLD; setP(p, centre(t)); p.size = t >= burstAt ? 0 : [0.55, 0.42, 0.3][i] * size(t) * lit(t);
+    }));
+    // the wisp of smoke out of the lid, curling as it rises
+    fx.every(1 / 30, burstAt, k => {
+      const t = k * burstAt; if (t < lightAt + 0.05) return;
+      const c = centre(t), s = size(t), F = frame(), P = place(c, F, s, 0.035, RV * 0.75, -0.02, rock(t));
+      fx.emit({ x: P[0], y: P[1], z: P[2], vx: 0.22 * Math.sin(t * 6.3), vy: 0.36, vz: 0.22 * Math.cos(t * 4.1), life: 0.8, size: 0.026, grow: 2.6, color: L.smoke, gravity: 0.25, drag: 0.5 });
+    });
+    // the burst
+    fx.at(burstAt, () => {
+      const t = burstAt, c = centre(t), F = frame(), s = size(t), a = rock(t);
+      for (const q of parts) q.life = 0; // (the pumpkin itself is gone: its particles go now, not when their hold runs out)
+      fx.burst(c, 22, { color: L.core, speed: 0.9, life: 0.22, size: 0.1, gravity: 0 });
+      // the shell blown out in chunks (out from the middle, up a little, falling)
+      for (const q of shell) {
+        if (Math.random() < 0.45) continue;
+        const P = place(c, F, s, q.x, q.y, q.z, a), d = [P[0] - c[0], P[1] - c[1], P[2] - c[2]], l = Math.hypot(...d) || 1, sp = rnd(2.2, 4.2);
+        fx.emit({ x: P[0], y: P[1], z: P[2], vx: d[0] / l * sp, vy: d[1] / l * sp + 1.6, vz: d[2] / l * sp, life: rnd(0.55, 0.95), size: rnd(0.028, 0.045), color: Math.random() < 0.3 ? L.chunk.map(v => v * 0.45) : L.chunk, gravity: -7, drag: 0.6 });
+      }
+      for (let i = 0; i < 30; i++) { const d = sphereDir(), sp = rnd(1, 3); fx.emit({ x: c[0], y: c[1], z: c[2], vx: d[0] * sp, vy: d[1] * sp + 1, vz: d[2] * sp, life: rnd(0.3, 0.6), size: 0.022, color: L.candle, flick: 20, gravity: -2, drag: 1 }); }
+      const st = place(c, F, s, 0, RV, 0, a);
+      for (let i = 0; i < 4; i++) fx.emit({ x: st[0], y: st[1] + i * 0.02, z: st[2], vx: 0.3, vy: 3.2 - i * 0.1, vz: 0, life: 0.7, size: 0.03, color: L.stem, gravity: -8, drag: 0.3 });
+      // the ghost-green puff
+      for (let i = 0; i < Math.round(26 * power); i++) { const d = sphereDir(), sp = rnd(0.5, 1.6); fx.emit({ x: c[0] + d[0] * 0.1, y: c[1] + d[1] * 0.1, z: c[2] + d[2] * 0.1, vx: d[0] * sp, vy: d[1] * sp + 0.3, vz: d[2] * sp, life: rnd(0.7, 1.1), size: rnd(0.06, 0.1), grow: 1.8, color: L.ghost, gravity: 0.35, drag: 1.7 }); }
+      // the bats: each a little flat bat (body, ears, red eyes, two wings of a leading edge and a scalloped trailing one),
+      // flapping fast, pouring out every way (round the compass, low to high), slowing, zig-zagging, shrinking off
+      const nb = Math.min(15, Math.round(12 * power)), bats = [];
+      for (let b = 0; b < nb; b++) {
+        const az = b / nb * Math.PI * 2 + rnd(-0.2, 0.2), el = rnd(-0.25, 0.85), ce = Math.cos(el);
+        bats.push({ d: [Math.cos(az) * ce, Math.sin(el), Math.sin(az) * ce], sp: rnd(2.4, 3.6), rate: rnd(36, 46), ph: rnd(0, 6.3), zz: rnd(5, 8), zp: rnd(0, 6.3), sc: rnd(1.35, 1.7), life: rnd(1.15, 1.5) });
+      }
+      // a bat (wings level, x out along the wing 0 .. 1, y up): the body and head, two ears, the eyes; each wing's leading
+      // edge (arm and finger) out to its tip, its trailing edge scalloped between the finger tips (three scallops), and
+      // the membrane between
+      const pts = [[0, 0, 'b', 0.03], [0, -0.028, 'b', 0.026], [0, 0.03, 'b', 0.024], [-0.011, 0.052, 'b', 0.011], [0.011, 0.052, 'b', 0.011], [-0.008, 0.033, 'e', 0.008], [0.008, 0.033, 'e', 0.008]];
+      for (const sd of [-1, 1]) {
+        for (const f of [0.2, 0.4, 0.6, 0.8, 1]) pts.push([sd, f, 'L', f === 1 ? 0.016 : 0.022]);
+        for (const f of [0.26, 0.42, 0.56, 0.7, 0.84, 0.97]) pts.push([sd, f, 'T', 0.017]);
+        for (const f of [0.3, 0.55, 0.78]) pts.push([sd, f, 'M', 0.02]);
+      }
+      const wing = (f, flap) => 0.012 + 0.035 * f + 0.11 * flap * Math.pow(f, 1.3);
+      // (the trailing edge comes up to each finger tip, at .42, .7, .97, and sags between them)
+      const trail = f => 0.06 * (1 - 0.6 * f) * (0.35 + 0.65 * Math.abs(Math.sin(Math.PI * (f - 0.14) / 0.28)));
+      const BL = 1.6, n = pts.length;
+      fx.hold(nb * n, BL, i => { const q = pts[i % n]; return { size: 0, color: q[2] === 'e' ? L.batEye : q[2] === 'b' ? L.batBody : L.bat }; }, (i, k, p) => {
+        const bt = bats[Math.floor(i / n)], q = pts[i % n], tt = k * BL, [r, u] = fx.basis();
+        if (tt > bt.life) { p.size = 0; return; }
+        // flight: out fast and slowing, climbing, zig-zagging across its path
+        const out = bt.sp * (1 - Math.exp(-tt * 1.4)) / 1.4, zig = 0.14 * Math.sin(tt * bt.zz + bt.zp) * Math.min(1, tt * 4);
+        const cx = c[0] + bt.d[0] * out - bt.d[2] * zig, cy = c[1] + bt.d[1] * out + 0.35 * tt * tt, cz = c[2] + bt.d[2] * out + bt.d[0] * zig;
+        const sc = bt.sc * Math.min(1, 0.3 + tt * 4.5) * (1 - 0.3 * tt / bt.life), flap = Math.sin(tt * bt.rate + bt.ph);
+        let gx, gy;
+        if (q[2] === 'b' || q[2] === 'e') { gx = q[0]; gy = q[1] + 0.008 * flap; }
+        else { gx = q[0] * (0.02 + 0.16 * q[1]); gy = wing(q[1], flap) - (q[2] === 'T' ? trail(q[1]) : q[2] === 'M' ? trail(q[1]) * 0.5 : 0); }
+        setP(p, [cx + (r[0] * gx + u[0] * gy) * sc, cy + (r[1] * gx + u[1] * gy) * sc, cz + (r[2] * gx + u[2] * gy) * sc]);
+        p.size = q[3] * sc * Math.min(1, (bt.life - tt) / 0.25);
+      });
     });
   },
   // ---- v0.4.7.5 quick patch: fourteen more ----
