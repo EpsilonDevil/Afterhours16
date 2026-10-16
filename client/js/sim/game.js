@@ -4,6 +4,7 @@
 import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
+import { pickSnag, snagAction, snagTick, snagCuttable, snagBall, SNAG, SNAG_FROM, OA_ICON } from './snags.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
 import { POST, POST_MOVES, POST_SHOTS, postPower, postResist, backdownSpeed, beatChance, postShotK, postPackageOf } from './post.js';
 import { DRIBBLE_SPEED_K } from './player.js';
@@ -65,13 +66,14 @@ export function repeatMoveK(run) {
 export const REACH_FOUL = { len: 0.68, touch: 0.07, body: 0.8 };
 // v0.4.7.5 qp3: the rule book. Every mode: offensive three seconds in the lane (`three`; a man driving, shooting or
 // in the air is exempt, and the count resets when a shot goes up), reach-in and shooting fouls (the park plays them
-// streetball style: no free throws, the offense keeps the ball — `parkFoulK` scales how often they're called there).
+// streetball style: no free throws, the offense keeps the ball — `parkFoulK` scales how often they're called there;
+// v0.4.8.5 quick patch 3: halved, 0.75 → 0.375).
 // Full court (park full court, Pro-Am, the Pro Run): backcourt (over and back) and the 8-second count. Pro-Am / the
 // Pro Run (NBA rules): defensive three seconds (a defender in the lane not within `def3Guard` of an attacker for
 // `def3` s: a technical, one free throw and the ball), the 5-second inbound, charges (a driver into a set, square
 // defender outside the restricted area) and goaltending (a block on the way down above the rim near the basket counts).
 export const RULES = {
-  three: 3.0, laneMargin: 0.05, driveSpeed: 2.0, def3: 3.0, def3Guard: 1.1, backcourt: 8.0, frontDepth: 0.3, inbound5: 5.0, parkFoulK: 0.75,
+  three: 3.0, laneMargin: 0.05, driveSpeed: 2.0, def3: 3.0, def3Guard: 1.1, backcourt: 8.0, frontDepth: 0.3, inbound5: 5.0, parkFoulK: 0.375,
   charge: { p: 0.3, setSpeed: 0.7, driveSpeed: 3.0, face: 0.6 },
 };
 // v0.4.7.5 quick patch: passing 10% more accurate across the board (aim error x0.9, in-flight accuracy x1.1)
@@ -907,6 +909,9 @@ export class Game {
     if (p.screening > 0) p.screening -= dt; // (v0.4.7.5 qp3: a called screen is "set" for a moment, see screenHit)
     // (qp3) the gesture after a block is for show: the moment he wants to move or jump, it's over
     { const a = p.action; if (a && a.type === 'block' && a.hit && !p.airborne && a.t > (a.jumpAt || 0) + (a.air || 0.6) && (it.jump || it.steal || Math.hypot(it.mx || 0, it.mz || 0) > 0.6)) p.action = null; }
+    // (v0.4.8.5 Open Arms) so is a rebound snag's, once he's down with the ball secured: moving, dribbling, passing,
+    // shooting, posting up or jumping ends it there and then (sim/snags.js)
+    { const a = p.action; if (a && a.type === 'snag' && !p.airborne && snagCuttable(a) && (it.jump || it.pass || it.shoot === 'press' || it.move || it.post || Math.hypot(it.mx || 0, it.mz || 0) > 0.6)) p.action = null; }
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
     if (p.human && !this.assist && !has) this.humanScreen(p, it); // (v0.4.8.5: hold B off the ball to set a screen)
     // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
@@ -994,6 +999,7 @@ export class Game {
         case 'move': lock = 1; break;
         case 'post': lock = 1; break; // (qp3: a post move drives him)
         case 'catch': lock = 0.12; break;
+        case 'snag': lock = p.airborne ? 1 : 0.6; break; // (v0.4.8.5 Open Arms: planted through the rip and the gesture)
         case 'celebrate': lock = 0.0; break;
         case 'flip': lock = 1; break;
       }
@@ -1223,14 +1229,13 @@ export class Game {
     // less from deep, and the ball leaves the hand just before the apex. So the jump height is a fraction of
     // max vertical and the takeoff is timed back from the release instead of being a fixed share of it.
     const dRim = Math.hypot(rim.x - p.x, rim.z - p.z);
-    const jumpH = p.phys.vertical * (close ? 0.4 : pkg.jumpK * 0.52) * (dRim > 7 ? 0.9 : 1) * (0.85 + 0.15 * p.stamina);
-    const tUp = Math.sqrt(2 * jumpH / GRAVITY);
     // v0.4.8.5: the Sharp Eye base hops twice as high (jump 2.0). The extra height is for the eye: the defense is measured
     // as if he'd risen as high as before (showK, the share of his height that's show), and the hop gets off the floor
-    // quicker so the ball still goes at the top
-    const showK = !close && pkg.jumpK > 1 ? 1 - 1 / pkg.jumpK : 0;
+    // quicker so the ball still goes at the top. (qp: the hop is shots.js jumperHop, shared with the store preview, so
+    // the release is placed at the top of the doubled hop there too)
+    const { jumpH, takeoff, showK } = S.jumperHop(pkg, p.phys.vertical, tRel, { close, dRim, stamina: p.stamina });
     const a = p.startAction('shoot', tRel + 0.55, {
-      tRel, takeoff: Math.max(close ? 0.1 : showK ? 0.12 : 0.2, tRel - tUp * (close ? 0.9 : pkg.apexK ?? 0.9)), jumpH, dRim, showK, // (v0.4.8: Sharp Eye lets go right at the top)
+      tRel, takeoff, jumpH, dRim, showK, // (v0.4.8: Sharp Eye lets go right at the top)
       kind: close ? 'close' : 'jumper', fade: !!st.fade || stepback || hustle === 'runfade', stepback, startX: p.x, startZ: p.z, moving: p.speed, hustle,
       catchShoot: this.lastPass && this.lastPass.to === p.id && this.time - this.lastPass.time < 1.2 && !p.dribble.used && this.ball.mode === 'held',
     });
@@ -1814,6 +1819,8 @@ export class Game {
         if (a.t >= a.dur && !p.airborne) p.action = null;
         break;
       }
+      // v0.4.8.5 Open Arms: a rebound snag (sim/snags.js) runs its grab, rip and gesture; the touchdown starts the gesture
+      case 'snag': if (snagTick(p, a)) p.action = null; break;
       case 'stumble': case 'pumpfake': case 'catch': case 'celebrate': case 'bump': case 'ftwait':
         if (a.t >= a.dur) p.action = null;
         break;
@@ -2562,6 +2569,10 @@ export class Game {
         }
       }
       lx = side;
+    } else if (b.holder === p.id && b.mode === 'held' && a && a.type === 'snag') {
+      // v0.4.8.5 Open Arms: a rebound snag carries the ball from where his hands met it, along its own rip, through the
+      // landing gesture and back to an ordinary hold (sim/snags.js; the animator's hands follow it)
+      [lx, ly, lz] = snagBall(a, H, [hs * 0.14, 0.56 * H, 0.3]);
     } else if (b.holder === p.id && b.mode === 'held') {
       if (this.phase === 'check' || this.phase === 'inbound') { lx = 0; ly = 0.64 * H; lz = 0.32; }
       else { lx = hs * 0.14; ly = 0.56 * H; lz = 0.3; }
@@ -2880,7 +2891,10 @@ export class Game {
         const offensive = b.info && b.info.team === w.team;
         const change = w.team !== this.possession;
         if (change) this.changePossessionTo(w, wasShot ? 'rebound' : 'recover');
+        // (v0.4.8.5 Open Arms: a board off a shot is snagged, wherever and however he came down with it)
+        const ball0 = { x: b.x, y: b.y, z: b.z };
         this.catchBall(w);
+        if (wasShot) this.startSnag(w, ball0);
         if (wasShot && !(b.info && b.info.ft)) {
           w.stats.reb++; if (offensive) w.stats.oreb++;
           this.emit({ type: 'rebound', player: w.id, offensive });
@@ -2913,6 +2927,21 @@ export class Game {
     if (this.practice && p.team === 1) this.practiceReturn(0.9);
     if (this.isAI(p)) { const m = this.ai.m(p); m.next = Math.max(m.next, 0.35 + this.rng.range(0, 0.45)); m.plan = null; }
     this.emit({ type: 'catch', player: p.id });
+  }
+
+  // v0.4.8.5 Open Arms (the Stretch Big Icon badge): "unlocks exclusive ultra-flashy rebound snags". Every board a
+  // holder secures off a shot (offensive or defensive; up in the air, on the floor, out of a jump that began as a block;
+  // the user, the AI or anyone online) is snagged (sim/snags.js): one of his Rebound Package's six, never the same twice
+  // running, or the Open Arms Rip without it. The pick is the game's RNG, so online every screen plays the same one, and
+  // the ball rides the snag's own path in his hands (holdPoint). Anyone else catches it as before.
+  startSnag(p, ball) {
+    if (p.icon !== OA_ICON) return;
+    if (p.action && !SNAG_FROM.has(p.action.type)) return;
+    const style = pickSnag(p, this.rng);
+    if (!style) return;
+    p.action = null;
+    p.startAction('snag', SNAG.max, snagAction(p, style, ball || this.ball));
+    this.emit({ type: 'snag', player: p.id, style });
   }
 
   catchOop(p) {

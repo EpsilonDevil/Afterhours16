@@ -1,7 +1,7 @@
 // v0.4.4 lifetime stats: a Stats tab in the menus and a pause-menu modal in game. Standard box-score
 // averages and shooting splits per build, split by mode, plus a side-by-side table of all your builds and the
 // auto-play profile those numbers produce.
-import { $$, esc, modal } from './common.js';
+import { $$, esc, modal, archHTML } from './common.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import { careerSplit, careerLine, fmtPct, statProfile, STAT_LABELS } from '../sim/profile.js';
 
@@ -35,7 +35,7 @@ function profileBox(char, mode) {
 function compare(app, mode, selId) {
   const chars = app.profile?.characters || [];
   return `<table class="st-compare"><thead><tr><th>Build</th><th>OVR</th><th>GP</th><th>PPG</th><th>RPG</th><th>APG</th><th>SPG</th><th>BPG</th><th>FG%</th><th>3P%</th><th>FT%</th></tr></thead><tbody>
-    ${chars.map(c => { const L = careerLine(careerSplit(c, mode)); return `<tr class="${c.id === selId ? 'on' : ''}" data-char="${esc(c.id)}"><td><b>${esc(c.name)}</b><small>${esc(c.position)} · ${esc(ARCHETYPES[c.archetype]?.label || c.archetype || '')}</small></td><td>${c.overall}</td><td>${L.gp}</td><td>${f1(L.ppg)}</td><td>${f1(L.rpg)}</td><td>${f1(L.apg)}</td><td>${f1(L.spg)}</td><td>${f1(L.bpg)}</td><td>${fmtPct(L.fg)}</td><td>${fmtPct(L.tp)}</td><td>${fmtPct(L.ft)}</td></tr>`; }).join('')}
+    ${chars.map(c => { const L = careerLine(careerSplit(c, mode)); return `<tr class="${c.id === selId ? 'on' : ''}" data-char="${esc(c.id)}"><td><b>${esc(c.name)}</b><small>${esc(c.position)} · ${archHTML(c)}</small></td><td>${c.overall}</td><td>${L.gp}</td><td>${f1(L.ppg)}</td><td>${f1(L.rpg)}</td><td>${f1(L.apg)}</td><td>${f1(L.spg)}</td><td>${f1(L.bpg)}</td><td>${fmtPct(L.fg)}</td><td>${fmtPct(L.tp)}</td><td>${fmtPct(L.ft)}</td></tr>`; }).join('')}
     </tbody></table>`;
 }
 
@@ -44,7 +44,7 @@ function body(app, mode, selId) {
   if (!c) return '<p class="muted">Create a player first.</p>';
   return `
     <div class="chips st-modes">${MODES.map(([m, l]) => `<button class="chip ${m === mode ? 'on' : ''}" data-mode="${m}">${l}</button>`).join('')}</div>
-    <div class="st-head"><b>${esc(c.name)}</b><span class="muted">${esc(c.position)} · ${esc(ARCHETYPES[c.archetype]?.label || '')} · ${c.overall} OVR · ${esc(c.rep?.label || '')}</span></div>
+    <div class="st-head"><b>${esc(c.name)}</b><span class="muted">${esc(c.position)} · ${archHTML(c)} · ${c.overall} OVR · ${esc(c.rep?.label || '')}</span></div>
     ${detail(c, mode)}
     ${profileBox(c, mode)}
     <h4>All your builds</h4>${compare(app, mode, c.id)}`;

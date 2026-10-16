@@ -2,7 +2,7 @@
 // The intro lines each team up on the floor in turn, facing a sideline camera, while a lower-third card
 // shows every player's overall and build plus their badges (park: top 3; Pro-Am 5v5: the #1 most-used one).
 // The simulation doesn't run during the intro; positions are restored exactly when it ends.
-import { ARCHETYPES, badgeCaps } from '../sim/builds.js';
+import { ARCHETYPES, badgeCaps, iconStatus } from '../sim/builds.js';
 import { badgeChip } from '../ui/badgeart.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,7 +40,7 @@ export function introCards(session) {
       return {
         name: p.name, human: p.human, pos: b.position || p.position, ovr: b.overall ?? '', height: ftIn(b.height), rep: b.rep?.label || '',
         tag: e.aiId && w ? (w.inSquad(e.aiId) ? 'SQUAD' : w.isFriend(e.aiId) ? 'FRIEND' : '') : '',
-        arch: ARCHETYPES[b.archetype]?.label || '', badges: badges.map(x => ({ ...x, name: cfg[x.key]?.name || x.key.replace(/_/g, ' ') })),
+        arch: ARCHETYPES[b.archetype]?.label || '', icon: iconStatus(b), badges: badges.map(x => ({ ...x, name: cfg[x.key]?.name || x.key.replace(/_/g, ' ') })),
       };
     });
     return { team, players, fiveV5 };
@@ -55,7 +55,7 @@ export function introHTML(card, idx, total) {
     <div class="intro-players">${players.map((p, i) => `
       <div class="intro-p ${p.human ? 'me' : ''}" style="--d:${i * 0.12}s">
         <div class="intro-ovr"><b>${esc(p.ovr)}</b><small>OVR</small></div>
-        <div class="intro-who"><b>${esc(p.name)}${p.human ? ' <em>YOU</em>' : p.tag ? ` <em class="${p.tag === 'SQUAD' ? 'sq' : 'fr'}">${p.tag}</em>` : ''}</b><small>${esc(p.pos)} · ${esc(p.height)} · ${esc(p.arch)}${p.rep ? ' · ' + esc(p.rep) : ''}</small>
+        <div class="intro-who"><b>${esc(p.name)}${p.human ? ' <em>YOU</em>' : p.tag ? ` <em class="${p.tag === 'SQUAD' ? 'sq' : 'fr'}">${p.tag}</em>` : ''}</b><small>${esc(p.pos)} · ${esc(p.height)} · ${p.icon ? '<span class="icon-status">ICON</span> ' : ''}${esc(p.arch)}${p.rep ? ' · ' + esc(p.rep) : ''}</small>
           <div class="intro-badges" title="${sub}">${p.badges.length ? p.badges.map(b => badgeChip(b.key, b.tier, b.name)).join('') : '<span class="ib none">No badges yet</span>'}</div>
         </div>
       </div>`).join('')}</div>

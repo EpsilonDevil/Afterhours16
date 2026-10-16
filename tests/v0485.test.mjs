@@ -161,7 +161,10 @@ test('the Sharp Eye base hops twice as high as before; the defense is measured a
   me.y = 0.6;
   const y = 2.6;
   assert.equal(g.shotRaw(me, { showK: 0.5 }, y), g.shotRaw(me, {}, y - 0.3), 'half of his height is show');
-  assert.ok(src('client/js/sim/game.js').includes('const showK = !close && pkg.jumpK > 1 ? 1 - 1 / pkg.jumpK : 0;'));
+  // (qp: the hop lives in shots.js jumperHop now, shared by the game and the store preview)
+  assert.ok(src('client/js/sim/shots.js').includes('export const showKOf = (pkg, close = false) => (!close && (pkg?.jumpK ?? 0) > 1 ? 1 - 1 / pkg.jumpK : 0);'));
+  assert.equal(S.showKOf(pkg), 0.5); assert.equal(S.showKOf(pkg, true), 0, 'not on a close shot');
+  assert.ok(src('client/js/sim/game.js').includes('const { jumpH, takeoff, showK } = S.jumperHop(pkg, p.phys.vertical, tRel, { close, dRim, stamina: p.stamina });'));
 });
 
 test('the Sharp Eye pop-up is the Icon badge pop-up Hash-Slinging gets (same size, same time on screen), and its art moves like it', () => {

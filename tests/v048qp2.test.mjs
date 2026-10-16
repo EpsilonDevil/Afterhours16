@@ -205,7 +205,7 @@ test('the Sharp Eye package: its own base and release, for the holder only (neve
   const gA = new Game({ mode: 'park', seed: 3, rosters: [[{ ...ai, icon: 'sharp_eye' }], makeTeam(new RNG(4), 1, { catalog })], catalog, target: 11 });
   assert.equal(gA.players[0].shotPkg.style, 'sharpeye');
   const anim = src('client/js/char/animator.js');
-  for (const f of ['sharpeye: (T, u) =>', 'sharpeye: (T, t, k, relY, sh, sg, gh, H2, G2, F, an) =>', "sharpeye: { k: 0.24"]) assert.ok(anim.includes(f), f);
+  for (const f of ['sharpeye: (T, u, sh, sg, rise = 0.27) =>', 'sharpeye: (T, t, k, relY, sh, sg, gh, H2, G2, F, an) =>', "sharpeye: { k: 0.24"]) assert.ok(anim.includes(f), f); // (v0.4.8.5 qp: the heels float on the rise)
   assert.doesNotMatch(anim, /a\.icon === 'sharpeye'/, 'the old overlay is gone: the package is the look');
 });
 

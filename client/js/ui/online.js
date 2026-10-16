@@ -17,8 +17,12 @@ import { badgeTiers } from '../game/park.js';
 import { boostedBuild } from '../sim/ratings.js';
 import { rankOf, rpOf, entryRP, rankSpan, spanMessage } from '../sim/ranks.js';
 import { rankEmblemSVG } from './badgeart.js';
+import { iconStatus, iconAuraLevel, winStreak } from '../sim/builds.js';
 
 export const MAX_SQUAD = 5;
+// v0.4.8.5 quick patch 3: what the people where you are see of your ICON status (the Icon badge under you, the aura from a
+// 3-game streak): your entry goes out again when it changes (it isn't sent again for every win: only a new aura level)
+export const iconKey = c => (c && iconStatus(c) ? `I${c.icon_badge || ''}:${iconAuraLevel(winStreak(c))}` : '');
 export const parkName = id => !id ? 'somewhere' : String(id).startsWith('hq:') ? 'a Crew HQ' : PARK_NAMES[id] || THEMES[id]?.name || 'a park';
 const hubOf = app => (app.world && app.world.parkList && app.world.themeId ? app.world : null);
 // the park or Crew HQ you're in, when it shows the people there (game/park.js, game/crewhq.js)
@@ -82,7 +86,7 @@ export async function initOnline(app) {
     if (!net.connected) { lastChar = null; lastAI = null; return; }
     net.where(whereNow(app));
     // (another player picked, or a new look: the people where you are see you with it)
-    const c = app.char(), key = c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}` : null;
+    const c = app.char(), key = c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null;
     if (key !== lastChar) { lastChar = key; net.sendEntry(); }
     // (your AI squad mates: they walk with you on everyone's screen and run in your online squad)
     const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}`).join(',');

@@ -167,9 +167,10 @@ select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 @keyframes hofGlow { 0%, 100% { box-shadow: 0 0 8px rgba(255,47,179,.55), 0 0 1px rgba(255,255,255,.4) inset; } 50% { box-shadow: 0 0 14px rgba(0,229,255,.55), 0 0 1px rgba(255,255,255,.4) inset; } }
 @keyframes hofArt { 0%, 100% { filter: drop-shadow(0 0 3px rgba(255,47,179,.75)) drop-shadow(0 0 6px rgba(166,59,255,.35)); } 50% { filter: drop-shadow(0 0 4px rgba(0,229,255,.8)) drop-shadow(0 0 8px rgba(56,255,156,.3)); } }
 svg.bart.hof-vibe { animation: hofArt 2.4s ease-in-out infinite; overflow: visible; }
+.icon-status { display: inline-block; font-weight: 800; letter-spacing: .08em; background: var(--hof-grad); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: hofShift 5s linear infinite; filter: drop-shadow(0 0 3px rgba(166,59,255,.45)); } /* v0.4.8.5 qp3: ICON builds */
 svg.icon-art { overflow: visible; filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
 svg.icon-art.locked { filter: grayscale(.85) brightness(.75); opacity: .8; }
-@media (prefers-reduced-motion: reduce) { .ib.hof, .tag.hof, .badge-pop.tier4, .badge-pop.icon, .badge-pop.icon .bp-text small, svg.bart.hof-vibe { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ib.hof, .tag.hof, .badge-pop.tier4, .badge-pop.icon, .badge-pop.icon .bp-text small, svg.bart.hof-vibe, .icon-status { animation: none; } }
 .ib.none { background: rgba(255,255,255,.06); color: var(--muted); }
 @keyframes introIn { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
 @keyframes introP { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }

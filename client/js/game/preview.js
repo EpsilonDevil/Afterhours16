@@ -5,9 +5,10 @@ import { Player } from '../sim/player.js';
 import { isHS } from '../sim/hashsling.js';
 import { Game, MOVE_SNAP, posMoveK } from '../sim/game.js';
 import { GRAVITY, BALL_R } from '../sim/constants.js';
-import { advanceDribble, LAYUP_FEEL, LAYUP_COVER } from '../sim/shots.js';
+import { advanceDribble, LAYUP_FEEL, LAYUP_COVER, jumperHop } from '../sim/shots.js';
 import { MOVES, MOVE_STYLE, switchesHand } from '../sim/moves.js';
 import { POST_MOVES, POST_SHOTS, POST_PACKAGES, POST_PKG_BY_ID } from '../sim/post.js';
+import { snagAction, snagTick, OA_BASIC, SNAG } from '../sim/snags.js';
 
 const holdPoint = Game.prototype.holdPoint;
 
@@ -19,7 +20,9 @@ export class PreviewSim {
     this.ballFree = null;
   }
   setPlayer(build, catalog) {
-    this.player = new Player(0, 0, { build: { ...build, attributes: build.attributes || {} }, name: build.name || 'Player' }, catalog);
+    // (v0.4.8.5 qp: he's a person's build, as in his games: what's shown is what he wears, the base or release the store is
+    // previewing included. As an AI entry a Sharp Eye holder was always shown on the Icon's own package: sim/player.js)
+    this.player = new Player(0, 0, { build: { ...build, attributes: build.attributes || {} }, name: build.name || 'Player', human: true }, catalog);
     this.fake = { ball: { mode: 'dribble', holder: 0 }, phase: 'live', players: [this.player], reachTop: Game.prototype.reachTop };
     this.pt = 0;
   }
@@ -99,10 +102,12 @@ export class PreviewSim {
     }
     if (kind === 'jumpshot') {
       const pkg = p.shotPkg;
-      const tRel = pkg.tRel, jumpH = p.phys.vertical * pkg.jumpK * 0.52, tk = Math.max(0.2, tRel - Math.sqrt(2 * jumpH / 9.81) * 0.9), total = tRel + 1.9;
+      // (v0.4.8.5 qp: the game's own hop, shots.js jumperHop, from 5 m: the base's apex and takeoff included, so the Sharp
+      // Eye's ball goes at the top of its doubled hop here too; it used to come 50-105 ms early, on the way up)
+      const tRel = pkg.tRel, { jumpH, takeoff: tk, showK } = jumperHop(pkg, p.phys.vertical, tRel, { dRim: 5 }), total = tRel + 1.9;
       if (this.loop(total, dt) && (!p.action || p.action.type !== 'shoot')) {
         fb.holder = 0; fb.mode = 'held'; this.ballFree = null; p.action = null;
-        p.startAction('shoot', tRel + 0.6, { tRel, takeoff: tk, releaseAt: tRel, jumpH, dRim: 5, kind: 'jumper', icon: this.previewOpts?.icon || null });
+        p.startAction('shoot', tRel + 0.6, { tRel, takeoff: tk, releaseAt: tRel, jumpH, showK, dRim: 5, kind: 'jumper', icon: this.previewOpts?.icon || null });
       }
       const a = p.action;
       if (a && !a.jumped && a.t >= tk) { a.jumped = true; p.jump(a.jumpH); }
@@ -223,6 +228,37 @@ export class PreviewSim {
         if (!a) yaw = 0;
       }
       p.facing += yaw;
+      return;
+    }
+    if (kind === 'rebound') {
+      // v0.4.8.5 Open Arms: the Rebound Package's snags in turn (sim/snags.js). A miss comes off the rim at him; he rises
+      // with his arms thrown open, snags it near the top of his jump (the same snag action the game plays) and comes down
+      // with its gesture, the ball in his hands the whole way. opts.ground: the board taken on the floor instead
+      const o = this.previewOpts || {}, list = o.styles?.length ? o.styles : [o.style || OA_BASIC];
+      this.rbT = (this.rbT || 0) + dt;
+      if (this.loop(o.ground ? 2.1 : 2.7, dt)) {
+        const n = this.loopN || 0; this.loopN = n + 1; this.rbT = 0;
+        this.snagStyle = list[n % list.length];
+        p.action = null; p.y = 0; p.vy = 0; p.airborne = false; fb.holder = -1; fb.mode = 'dead';
+        const side = n % 2 ? -1 : 1, f = p.facing, fx = Math.sin(f), fz = Math.cos(f), lx = Math.cos(f), lz = -Math.sin(f);
+        const jumpH = o.ground ? 0 : p.phys.vertical * 0.9, air = o.ground ? 0 : 2 * Math.sqrt(2 * jumpH / GRAVITY), jumpAt = 0.2;
+        const tc = o.ground ? 0.5 : jumpAt + air * 0.42, cy = (o.ground ? 0.5 * p.phys.H : p.phys.reach + 0.97 * jumpH - 0.16) + 0.12;
+        const P1 = { x: lx * side * 0.14 + fx * 0.42, y: cy, z: lz * side * 0.14 + fz * 0.42 };
+        const P0 = o.ground ? { x: fx * 1.5 + lx * side * 0.3, y: 1.1, z: fz * 1.5 + lz * side * 0.3 } : { x: fx * 2.3 + lx * side * 0.35, y: 3.35, z: fz * 2.3 + lz * side * 0.35 };
+        this.ballFree = { x: P0.x, y: P0.y, z: P0.z, vx: (P1.x - P0.x) / tc, vy: (P1.y - P0.y) / tc + 0.5 * GRAVITY * tc, vz: (P1.z - P0.z) / tc, snagAt: tc };
+        if (!o.ground) p.startAction('rebound', air + 0.2, { jumpAt, jumpH, jumped: false, air, icon: 'openarms' });
+      }
+      const a = p.action, b = this.ballFree;
+      if (a && a.type === 'rebound' && !a.jumped && a.t >= a.jumpAt) { a.jumped = true; p.jump(a.jumpH); }
+      if (b && b.snagAt != null && this.rbT >= b.snagAt) {
+        // (the ball's free flight is on the podium, its top 0.12 up; the player's frame starts on the podium)
+        p.action = null;
+        p.startAction('snag', SNAG.max, snagAction(p, this.snagStyle, { x: b.x, y: b.y - 0.12, z: b.z }));
+        this.ballFree = null; fb.holder = 0; fb.mode = 'held';
+      }
+      if (p.action && p.action.type === 'snag' && snagTick(p, p.action)) p.action = null;
+      if (p.action && p.action.type === 'rebound' && p.action.t > p.action.dur && !p.airborne) p.action = null;
+      p.stance = 'normal';
       return;
     }
     if (kind === 'celebrate') {

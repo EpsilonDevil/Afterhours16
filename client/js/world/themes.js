@@ -121,7 +121,7 @@ export const THEMES = {
   // v0.4.8.5 quick patch 2 The Monster Mash: the same park layout on Halloween night: a haunted town under a full moon,
   // fog on the ground, graveyard, haunted mansion, pumpkin patch, monsters on the loose; haunted courts on a streak
   monster: {
-    id: 'monster', kind: 'park', name: 'The Monster Mash', style: 'horror', event: true, streakFx: 'haunt',
+    id: 'monster', kind: 'park', name: 'The Monster Mash', style: 'horror', event: true, streakFx: 'haunt', music: 'monster',
     // v0.4.8.5 quick patch 2: haunted courts: a dark mossy floor, a deep purple apron with an iron-spike border, cobwebs in
     // the corners, cracked tombstones, bats and pumpkins (textures.js horrorApron), a pumpkin-orange key, bone-white lines,
     // the jack-o'-lantern-and-moon crest in the middle and the name in slime-dripping letters on the baselines

@@ -711,7 +711,7 @@ test('store and inventory: jumpshot bases and releases are their own categories;
   assert.match(screens, /case 'inventory': return Inventory\.render/);
   assert.match(screens, /\['inventory', 'Inventory'\]/);
   // every equippable item in the catalog has a home in both screens
-  const cats = [...store.matchAll(/\['(\w+)', '[^']+', '\w+', '[^']+'\]/g)].map(m => m[1]);
+  const cats = [...store.matchAll(/\['(\w+)', '[^']+', '\w+', '[^']+'(?:, '\w+')?\]/g)].map(m => m[1]); // (v0.4.8.5: an Icon's own category names its badge fifth)
   const acc = new Set(['socks', 'headband', 'sleeve', 'leg_sleeve', 'wristband', 'knee_pad', 'chain']);
   for (const i of Object.values(catG)) assert.ok(cats.includes(acc.has(i.slot) ? 'accessory' : i.slot), `${i.id} (${i.slot}) has a category`);
 });

@@ -7,6 +7,7 @@ import { MOVE_STYLE } from '../sim/moves.js';
 import { BLOCK_BY_ID } from '../sim/blocks.js';
 import { isHS, hsHand, hsK } from '../sim/hashsling.js';
 import { postPackageOf } from '../sim/post.js';
+import { snagFrame, snagSpin, trunkPoint } from '../sim/snags.js';
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 // v0.4.8 the Sharp Eye backflip (sim game.js FLIP): its time in the air, and how far over he is (radians, backwards
@@ -199,8 +200,9 @@ const AIR2 = {
   // Leaner: falling forward into the shot, both legs trailing out behind
   leaner: (T, u) => { const k = sm(0, 0.22, u); set3(T, 'footL', 0.12, 0.16 + 0.12 * k, -0.22 - 0.16 * k); set3(T, 'footR', -0.12, 0.18 + 0.12 * k, -0.24 - 0.16 * k); set3(T, 'kneeL', 0.12, -0.3, 1); set3(T, 'kneeR', -0.12, -0.3, 1); T[P.pitchL] = 0.9; T[P.pitchR] = 0.9; T[P.spine] = 0.2 * k; T[P.chest] = 0.08 * k; T[P.head] = -0.3; },
   // v0.4.8 Sharp Eye (the Sharpshooter Icon's own): an effortless pencil hop: legs locked together and long, toes
-  // pointed hard, chest up and still, and right at the top the heels float up a touch behind him
-  sharpeye: (T, u) => { const k = sm(0, 0.1, u), fl = sm(0.16, 0.34, u); set3(T, 'footL', 0.055, 0.085 + 0.07 * fl, 0.01 - 0.07 * fl); set3(T, 'footR', -0.055, 0.09 + 0.07 * fl, 0.0 - 0.07 * fl); set3(T, 'kneeL', 0.06, -0.15 * fl, 1); set3(T, 'kneeR', -0.06, -0.15 * fl, 1); T[P.pitchL] = 0.98; T[P.pitchR] = 0.98; T[P.toeL] = 0; T[P.toeR] = 0; T[P.spine] = -0.05 * k; T[P.chest] = -0.04 * k; },
+  // pointed hard, chest up and still, and right at the top the heels float up a touch behind him (v0.4.8.5 qp: timed on
+  // the rise, takeoff to release, so they float at the top of the doubled hop: in seconds they'd be done well before it)
+  sharpeye: (T, u, sh, sg, rise = 0.27) => { const k = sm(0, 0.1, u), fl = sm(0.6 * rise, 1.25 * rise, u); set3(T, 'footL', 0.055, 0.085 + 0.07 * fl, 0.01 - 0.07 * fl); set3(T, 'footR', -0.055, 0.09 + 0.07 * fl, 0.0 - 0.07 * fl); set3(T, 'kneeL', 0.06, -0.15 * fl, 1); set3(T, 'kneeR', -0.06, -0.15 * fl, 1); T[P.pitchL] = 0.98; T[P.pitchR] = 0.98; T[P.toeL] = 0; T[P.toeR] = 0; T[P.spine] = -0.05 * k; T[P.chest] = -0.04 * k; },
   // Bicycle: the legs keep pedalling through the jump
   bicycle: (T, u) => { const ph = u * 11; set3(T, 'footL', 0.12, 0.2 + 0.14 * Math.sin(ph), 0.02 + 0.22 * Math.cos(ph)); set3(T, 'footR', -0.12, 0.2 - 0.14 * Math.sin(ph), 0.02 - 0.22 * Math.cos(ph)); set3(T, 'kneeL', 0.15, 0.3, 1); set3(T, 'kneeR', -0.15, 0.3, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; },
 };
@@ -332,7 +334,7 @@ export class Animator {
   // st: {x,y,z,facing} render-interpolated; p: sim player; g: game (or null); ball: render ball {x,y,z}
   update(dt, st, p, g, ball, extra = {}) {
     this.time += dt;
-    this.x = st.x; this.y = st.y; this.z = st.z; this.f = st.facing + dunkSpin(p.action); // v0.4.3: 360 dunks spin the body
+    this.x = st.x; this.y = st.y; this.z = st.z; this.f = st.facing + dunkSpin(p.action) + snagSpin(p.action); // v0.4.3: 360 dunks spin the body (v0.4.8.5: and the Open Arms 360 snag)
     const s = this.s, H = this.H;
     const T = this.target;
     neutral(T);
@@ -614,12 +616,13 @@ export class Animator {
     else if (defense && g) { const h = g.holder(); if (h) { this.toLocal(h.x, 1.4, h.z, tmp); look = tmp.slice(); lookW = 0.8; } }
     else if (has && g && rim && bmode === 'dribble') { this.toLocal(rim.x, 1.8, rim.z, tmp); look = tmp.slice(); lookW = 0.5; }
     if (extra.look) { this.toLocal(extra.look[0], extra.look[1], extra.look[2], tmp); look = tmp.slice(); lookW = 0.8; }
+    if (a && a.type === 'snag') lookW = Math.min(lookW, 0.2); // (v0.4.8.5: a snag's head is its own: the scream, the bark, the nod)
     // ---- smoothing ----
     const out = this.pose;
     const kFast = 1 - Math.exp(-dt * 26), kSlow = 1 - Math.exp(-dt * 12);
     const rawGroups = this.rawGroups(has, a, airborne);
     // explosive actions track their key poses tightly (a lagging hip makes takeoffs look floaty)
-    const athletic = a && (a.type === 'shoot' || a.type === 'ftshot' || a.type === 'layup' || a.type === 'dunk' || a.type === 'block' || a.type === 'rebound' || a.type === 'tipjump' || a.type === 'flip');
+    const athletic = a && (a.type === 'shoot' || a.type === 'ftshot' || a.type === 'layup' || a.type === 'dunk' || a.type === 'block' || a.type === 'rebound' || a.type === 'tipjump' || a.type === 'flip' || a.type === 'snag');
     // v0.4.7.5: everything that isn't pinned (hands on the ball, planted feet) or driving an explosive action eases
     // in and out on a critically damped spring instead of a plain lag: no sudden starts or stops between poses, the
     // head and arms settle a beat after the body (secondary motion), and nothing overshoots
@@ -631,7 +634,7 @@ export class Animator {
       const n = GROUP_SIZE[g2];
       // (qp3: a styled block's arms track their path tightly too: the swat is a snap, and the crossing hands are routed
       // up and round the body on purpose, which a lagging arm would cut straight through)
-      const styledBlock = a && a.type === 'block' && a.bstyle && (g2.startsWith('hand') || g2.startsWith('elbow'));
+      const styledBlock = a && (((a.type === 'block' && a.bstyle) || a.type === 'snag') && (g2.startsWith('hand') || g2.startsWith('elbow')) || (a.type === 'snag' && (g2 === 'head' || g2 === 'neck'))); // (v0.4.8.5: and a rebound snag's arms and head: the scream, the bark, the nod are quick)
       const k = rawGroups.has(g2) ? 1 : (g2.startsWith('foot') || g2.startsWith('pitch') || g2.startsWith('toe') || g2.startsWith('yaw')) ? (wGait > 0.5 ? 1 : kFast) : (athletic && (g2 === 'root' || g2 === 'spine' || g2 === 'chest' || g2.startsWith('knee'))) || styledBlock ? kFast : kSlow;
       if (k === kSlow && !athletic) { // (shots and finishes keep their exact timing: the release is measured off them)
         const w = g2 === 'head' || g2 === 'neck' ? wS * 0.85 : wS;
@@ -648,7 +651,8 @@ export class Animator {
     this.clearBody(fin);
     if (g && !has) this.clearOthers(fin, p, g);
     // (qp3: a hand on the ball is pinned: the rig's limb clearance may swing its elbow but never moves the hand itself)
-    this.view.update(fin, st.x, st.y, st.z, st.facing, { look, lookW, palmL: palm.L, palmR: palm.R, pinL: rawGroups.has('handL'), pinR: rawGroups.has('handR'), flip: a?.type === 'flip' ? flipAngle(a) : 0, flipY: 0.52 });
+    // (v0.4.8.5: the 360 snag turns the whole body, the ball going round with it)
+    this.view.update(fin, st.x, st.y, st.z, a?.type === 'snag' ? this.f : st.facing, { look, lookW, palmL: palm.L, palmR: palm.R, pinL: rawGroups.has('handL'), pinR: rawGroups.has('handR'), flip: a?.type === 'flip' ? flipAngle(a) : 0, flipY: 0.52 });
   }
 
   // v0.4.2 anti-clipping: keep hand targets outside an elliptic torso/hip column (sized by girth and moved
@@ -829,8 +833,137 @@ export class Animator {
     }
   }
 
+  // v0.4.8.5 Open Arms: a rebound snag's body. sim/snags.js snagFrame has the ball and the trunk (hips, spine, chest,
+  // the chest's turn), the same numbers the sim carries the ball with, so the ball stays in his hands; the legs, the
+  // free arm, the elbows and the head are the style's own here. snagHands then puts the hand(s) on the ball.
+  snagPose(T, a, p) {
+    const F = this.snag = snagFrame(a, this.H), B = F.body, air = !!p.airborne;
+    const hs = F.hs, fs = -hs, H1 = F.hand, H2 = H1 === 'L' ? 'R' : 'L', on = 1 - F.fin, k = F.k, gg = Math.max(0, F.g);
+    T[P.root + 1] = B.c; T[P.spine] = B.sp; T[P.chest] = B.cp; T[P.chest + 1] = B.tw;
+    const pole = (side, x, y, z) => { const v = [x, y, z], c = Math.cos(B.tw), s2 = Math.sin(B.tw); set3(T, 'elbow' + side, v[0] * c + v[2] * s2, v[1], -v[0] * s2 + v[2] * c); };
+    const legs = (fl, fr, kl, kr, pt = 0.6) => { set3(T, 'footL', ...fl); set3(T, 'footR', ...fr); set3(T, 'kneeL', ...kl); set3(T, 'kneeR', ...kr); T[P.pitchL] = pt; T[P.pitchR] = pt; };
+    const stance = (w, kx, st = 0) => legs([w, 0.08, st], [-w, 0.08, -st], [kx, 0, 1], [-kx, 0, 1], 0);
+    switch (F.style) {
+      case 'chin_check': {
+        // ripped to the chin, crunched over it, knees tucked wide; down: a wide base, the elbows swung hard both ways at
+        // head height, then the head thrown back and the chest out: the scream
+        const e = F.e ?? 1, sc = F.scream || 0, sw = F.swing || 0;
+        if (air) legs([0.2, 0.25 + 0.35 * e, 0.22 * e], [-0.2, 0.27 + 0.33 * e, 0.2 * e], [0.5, 0.4, 1], [-0.5, 0.4, 1], 0.7);
+        else stance(0.36 * on + 0.125 * (1 - on), 0.7 * on + 0.15, 0.03);
+        pole('L', 1, 0.55 * on + 0.1 * sw, 0.15); pole('R', -1, 0.55 * on + 0.1 * sw, 0.15);
+        T[P.head] = (0.18 - 0.78 * sc) * on; T[P.neck] = -0.25 * sc * on; T[P.head + 1] = -B.tw * 0.4;
+        break;
+      }
+      case 'cuff_holster': {
+        // one hand cuffs it up top and swings it straight-armed down to the hip, the other arm flung up and out; one
+        // leg kicked back, the other knee up. Down: a staggered stance and two hard points at the floor, with a nod
+        const jab = F.jab || 0, sw = F.swingK ?? 1;
+        if (air) {
+          set3(T, 'foot' + H1, hs * 0.13, 0.42, -0.34 * sm(0, 0.6, sw)); set3(T, 'knee' + H1, hs * 0.15, -0.35, 1);
+          set3(T, 'foot' + H2, fs * 0.13, 0.4, 0.18); set3(T, 'knee' + H2, fs * 0.2, 0.4, 1); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7;
+          set3(T, 'hand' + H2, fs * lerp(0.85, 0.95, sw), lerp(2.0, 1.55, sw), lerp(-0.05, 0.1, sw)); pole(H2, fs * 1, 0.2, -0.4);
+          this.palm[H2] = { normal: [fs, 0.2, 0], fingers: [0, 1, 0.2], w: 0.8 };
+        } else {
+          set3(T, 'foot' + H1, hs * 0.2, 0.08, -0.16 * on); set3(T, 'foot' + H2, fs * 0.2, 0.08, 0.14 * on); set3(T, 'kneeL', 0.35, 0, 1); set3(T, 'kneeR', -0.35, 0, 1);
+          const pt = gg > 0 ? on : 0;
+          set3(T, 'hand' + H2, lerp(fs * 0.95, fs * 0.16, sm(0, 0.08, gg)), lerp(1.55, lerp(1.3, 0.85, jab), sm(0, 0.08, gg)), lerp(0.1, lerp(0.5, 0.78, jab), sm(0, 0.08, gg)));
+          pole(H2, fs * 0.5, -0.5, -1);
+          this.palm[H2] = { normal: [0, -1, 0.3], fingers: [0, -0.5, 1], w: 0.9 * pt };
+          T[P.head] = (0.22 + 0.28 * jab) * on;
+        }
+        pole(H1, hs * 0.9, -0.3, -0.5);
+        break;
+      }
+      case 'pterodactyl': {
+        // legs split wide like a spread eagle; the ball ripped in and swung out to arm's length as both arms spread like
+        // wings. Down: the wingspan out, chest up, a slow flap
+        const spr = F.spread || 0, flap = F.flap || 0, lg = sm(0, 0.5, k);
+        if (air) legs([lerp(0.2, 0.52, lg), 0.3 + 0.12 * lg, 0.04], [-lerp(0.2, 0.52, lg), 0.3 + 0.12 * lg, 0.04], [1, 0.25, 0.3], [-1, 0.25, 0.3], 0.55);
+        else stance(0.34 * on + 0.125 * (1 - on), 0.6 * on + 0.15);
+        set3(T, 'hand' + H2, fs * lerp(0.42, 1.0, spr), lerp(1.3, 1.66, spr) - 0.1 * flap, lerp(0.25, 0.08, spr));
+        pole(H2, fs * 0.6, 0.6, -0.4); pole(H1, hs * 0.6, 0.6, -0.4);
+        this.palm[H2] = { normal: [0, -1, 0], fingers: [fs, 0, 0.2], w: 0.8 * spr };
+        T[P.head] = -0.12 * on;
+        break;
+      }
+      case 'rip_360': {
+        // a full turn in the air (the view turns him: snagSpin), knees tucked tight, the ball low through the hips;
+        // down in a crouch, swinging it knee to knee
+        const tk = F.tuck ?? 1;
+        if (air) legs([0.12, 0.3 + 0.32 * tk, 0.1 + 0.12 * tk], [-0.12, 0.3 + 0.32 * tk, 0.1 + 0.12 * tk], [0.25, 0.6 * tk, 1], [-0.25, 0.6 * tk, 1], 0.75);
+        else stance(0.32 * on + 0.125 * (1 - on), 0.6 * on + 0.15);
+        pole('L', 0.9, -0.3, -0.3); pole('R', -0.9, -0.3, -0.3);
+        T[P.head] = (air ? 0.1 : 0.25) * on;
+        break;
+      }
+      case 'tomahawk_yank': {
+        // one hand yanks it back behind the head, the free side's knee driven up, then the whip over the top; down,
+        // bent over the ball at his belly and barking at the man (the chest and the chin driven at him, twice)
+        const kn = F.knee ?? 1, ck = F.cock || 0, bark = F.bark || 0;
+        if (air) {
+          set3(T, 'foot' + H2, fs * 0.12, 0.3 + 0.48 * kn, 0.12 + 0.18 * kn); set3(T, 'knee' + H2, fs * 0.15, 0.6 * kn, 1);
+          set3(T, 'foot' + H1, hs * 0.12, 0.18, -0.12); set3(T, 'knee' + H1, hs * 0.15, -0.2, 1); T[P.pitchL] = 0.7; T[P.pitchR] = 0.7;
+        } else stance(0.27 * on + 0.125 * (1 - on), 0.5 * on + 0.15, 0.04);
+        set3(T, 'hand' + H2, fs * 0.42, 1.48 + 0.22 * ck, 0.36);
+        pole(H2, fs * 0.9, -0.3, -0.3); pole(H1, hs * lerp(0.9, 0.6, ck), lerp(-0.3, 1, ck), lerp(-0.3, 0.3, ck));
+        if (F.g >= 0) { pole('L', 1, -0.1, -0.2); pole('R', -1, -0.1, -0.2); }
+        T[P.head] = (F.g >= 0 ? -0.3 - 0.22 * bark : -0.1 * ck) * on;
+        break;
+      }
+      case 'hammer_down': {
+        // up with it overhead, legs cocked back; hammered to the floor on the landing (a deep crouch) and pounded
+        // twice, then up with the ball on his hip and the other arm flexed, head back
+        const ov = F.over ?? 1, fx = F.flex || 0, pd = F.pound || 0;
+        if (air) legs([0.13, 0.3 + 0.08 * ov, -0.25 * ov], [-0.13, 0.32 + 0.08 * ov, -0.22 * ov], [0.2, -0.2, 1], [-0.2, -0.2, 1], 0.75);
+        else stance(lerp(0.3, 0.2, fx) * on + 0.125 * (1 - on), 0.65 * on + 0.15, 0.03);
+        pole('L', 0.8, 0.2, -0.5); pole('R', -0.8, 0.2, -0.5);
+        if (fx > 0) {
+          // (a bicep flex: the upper arm out level with the shoulder, the fist up by the ear)
+          set3(T, 'hand' + H2, fs * lerp(0.3, 0.44, fx), lerp(1.2, 1.84, fx), lerp(0.2, 0.0, fx)); pole(H2, fs * 1, -0.12, -0.1);
+          this.palm[H2] = { normal: [-fs * 0.7, 0, -0.7], fingers: [0, 1, 0], w: 0.7 * fx };
+          pole(H1, hs * 0.9, -0.4, -0.4);
+        }
+        T[P.head] = (air ? -0.28 * ov : F.g < 0.24 ? 0.32 * Math.max(sm(0, 0.1, gg), pd) : -0.32 * fx) * on;
+        break;
+      }
+      default: {
+        // the Open Arms Rip: knees up, both arms ripping it to the chest with the elbows out; a beat on the floor with
+        // the elbows flared (a quick chin and a check to one side)
+        const e = F.e ?? 1, fl = F.flare || 0;
+        if (air) legs([0.15, 0.3 + 0.15 * e, 0.12], [-0.15, 0.32 + 0.12 * e, 0.08], [0.35, 0.3, 1], [-0.35, 0.3, 1], 0.6);
+        else stance(0.22 * on + 0.125 * (1 - on), 0.4 * on + 0.15, 0.02);
+        pole('L', 1, 0.1 + 0.4 * fl, -0.1); pole('R', -1, 0.1 + 0.4 * fl, -0.1);
+        T[P.head] = 0.12 * on;
+        break;
+      }
+    }
+  }
+  // the hand(s) on the snagged ball: both (an ordinary two-hand hold, a palm either side) or the snag hand alone with
+  // the palm on the shoulder's side of the ball (cupped over it at the hip, under it behind the head, along it out at
+  // arm's length), blending as the style hands it from one to the other; the free hand comes onto it the same way
+  snagHands(T, p, a, b) {
+    const F = this.snag && this.snag.style === a.style ? this.snag : snagFrame(a, this.H);
+    const r = BALL_R / this.s, s = this.s, palm = this.palm, d = this.view?.model?.d;
+    const H1 = F.hand, H2 = H1 === 'L' ? 'R' : 'L', hs = F.hs, w = F.grip;
+    // (a palm either side of it, turned with the chest when he swings his elbows)
+    const ct = Math.cos(F.body.tw), st = Math.sin(F.body.tw), side = (x, z) => [b[0] + x * ct + z * st, b[1] - 0.03, b[2] - x * st + z * ct];
+    const two = { L: side(r + 0.075, -0.07), R: side(-r - 0.075, -0.07) };
+    const sh = trunkPoint(this.H, F.body, [hs * (d ? d.shoulderX : 0.094 * this.H), 0.099 * this.H, -0.008 * this.H]);
+    // (the shoulder in the trunk's frame; a spin turns the whole view, so it's already in the ball's frame)
+    let nx = b[0] - sh[0] / s, ny = b[1] - sh[1] / s, nz = b[2] - sh[2] / s;
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    const g1 = r + 0.05, one = [b[0] - nx * g1, b[1] - ny * g1, b[2] - nz * g1];
+    set3(T, 'hand' + H1, lerp(one[0], two[H1][0], w), lerp(one[1], two[H1][1], w), lerp(one[2], two[H1][2], w));
+    mix3(T, 'hand' + H2, two[H2][0], two[H2][1], two[H2][2], w);
+    const vd = 0.3 * ny + nz, fg = [-vd * nx, 0.3 - vd * ny, 1 - vd * nz];
+    const sg = side => (side === 'L' ? -1 : 1);
+    palm[H1] = { normal: [lerp(nx, sg(H1), w), lerp(ny, 0.05, w), lerp(nz, 0.2, w)], fingers: [lerp(fg[0], 0, w), lerp(fg[1], 0.75, w), lerp(fg[2], 0.65, w)], w: 0.88 };
+    if (w > 0.3) palm[H2] = { normal: [sg(H2), 0.05, 0.2], fingers: [0, 0.75, 0.65], w: 0.85 * w };
+  }
+
   // Hand targets for whoever is holding/dribbling the ball (positions in reference units)
   ballHands(T, p, g, a, b, mode) {
+    if (a && a.type === 'snag') { this.snagHands(T, p, a, b); return; } // (v0.4.8.5 Open Arms)
     const r = BALL_R / this.s;
     const palm = this.palm;
     const shootHand = (p.shotPkg?.hand || 'R') === 'L' ? 'L' : 'R';
@@ -1084,7 +1217,7 @@ export class Animator {
           // Silk: feet together, drifting forward under him through the whole jump, shoulders level
           else if (style === 'silk') { const dr = sm(0, 0.32, t - tk); set3(T, 'footL', 0.075, 0.1 + dr * 0.05, 0.05 + dr * 0.16); set3(T, 'footR', -0.075, 0.1 + dr * 0.08, 0.03 + dr * 0.15); set3(T, 'kneeL', 0.1, 0.15, 1); set3(T, 'kneeR', -0.1, 0.15, 1); T[P.pitchL] = 0.6; T[P.pitchR] = 0.6; T[P.spine] = 0.02; T[P.chest] = -0.02; T[P.head] = -0.13; }
           else if (style === 'sway') { const off = sh === 'L' ? 'R' : 'L', sy = sm(0, 0.2, t - tk); set3(T, 'foot' + off, -sg * (0.14 + sy * 0.3), 0.1 + sy * 0.12, 0.02); set3(T, 'knee' + off, -sg * (0.3 + sy * 0.5), 0.1, 1); set3(T, 'foot' + sh, sg * 0.1, 0.09, 0.03); T[P.spine + 2] = sg * 0.12 * sy; T[P.chest + 2] = sg * 0.08 * sy; T[P.spine] = -0.06; }
-          else if (AIR2[style]) AIR2[style](T, t - tk, sh, sg);
+          else if (AIR2[style]) AIR2[style](T, t - tk, sh, sg, Math.max(0.1, tR - tk)); // (rise: takeoff to the ideal release)
           if (a.fade) { T[P.spine] = -0.16; T[P.chest] = -0.08; set3(T, 'footL', 0.12, 0.11, 0.12); set3(T, 'footR', -0.12, 0.12, 0.1); }
           // v0.4.7.5 hustle shots: the run carries into the air
           if (a.hustle === 'pullup') { const o2 = sh === 'L' ? 'R' : 'L'; set3(T, 'foot' + sh, sg * 0.12, 0.2, 0.26); set3(T, 'knee' + sh, sg * 0.12, 0.3, 1); set3(T, 'foot' + o2, -sg * 0.12, 0.22, -0.28); set3(T, 'knee' + o2, -sg * 0.14, -0.2, 1); T[P.spine] = 0.06; T[P.chest] = 0.02; T[sh === 'L' ? P.pitchL : P.pitchR] = 0.4; T[o2 === 'L' ? P.pitchL : P.pitchR] = 0.85; }
@@ -1421,15 +1554,19 @@ export class Animator {
             this.palm.R = { normal: [0, 0.2, 1], fingers: [0, 1, -0.2], w: 0.9 };
             T[P.chest + 1] = -0.3 * sw; T[P.spine] = -0.14; T[P.pitchL] = 0.75; T[P.pitchR] = 0.75;
             set3(T, 'footL', 0.1, 0.3, -0.12); set3(T, 'footR', -0.1, 0.3, -0.12);
-          } else if (a.icon === 'openarms') {
-            const rip = sm(0.1, 0.42, t - (a.jumpAt || 0));
-            set3(T, 'handL', 0.28 - rip * 0.1, 2.62 - rip * 1.1, 0.24 - rip * 0.02);
-            set3(T, 'handR', -0.28 + rip * 0.1, 2.62 - rip * 1.1, 0.24 - rip * 0.02);
-            set3(T, 'elbowL', 1, 0.2 - rip, -0.3); set3(T, 'elbowR', -1, 0.2 - rip, -0.3);
-            this.palm.L = { normal: [-1, 0, 0.2], fingers: [0, 0.9, 0.2], w: 0.85 };
-            this.palm.R = { normal: [1, 0, 0.2], fingers: [0, 0.9, 0.2], w: 0.85 };
-            T[P.spine] = -0.1 + rip * 0.28; T[P.head] = -0.2 + rip * 0.2;
-            set3(T, 'kneeL', 0.34, 0, 1); set3(T, 'kneeR', -0.34, 0, 1);
+          } else if (a.icon === 'openarms' && !own) {
+            // v0.4.8.5 Open Arms, the badge's name: both arms thrown wide open as he rises, chest up, closing on the ball
+            // as it comes to him. (It used to be a fixed rip down on a clock, ball or no ball; the board itself is now
+            // the snag's, whenever and however he gets it: sim/snags.js)
+            const near = b ? sm(1.25, 0.45, Math.hypot(b[0], b[1] - 2.3, b[2] - 0.3)) : 0, open = up * (1 - near);
+            set3(T, 'handL', lerp(lerp(0.42, 0.92, open), tx + 0.19, near), lerp(1.05, lerp(2.2, ty, near), up), lerp(0.12, lerp(0.08, tz, near), up));
+            set3(T, 'handR', lerp(lerp(-0.42, -0.92, open), tx - 0.19, near), lerp(1.05, lerp(2.2, ty, near), up), lerp(0.12, lerp(0.08, tz, near), up));
+            this.clampReach(T, 'L'); this.clampReach(T, 'R');
+            set3(T, 'elbowL', 1, 0.3, -0.3); set3(T, 'elbowR', -1, 0.3, -0.3);
+            this.palm.L = { normal: [-near, 0.2 * (1 - near), 1 - 0.8 * near], fingers: [0.2, 0.95, 0], w: 0.85 };
+            this.palm.R = { normal: [near, 0.2 * (1 - near), 1 - 0.8 * near], fingers: [-0.2, 0.95, 0], w: 0.85 };
+            T[P.spine] = -0.12 * open; T[P.chest] = -0.08 * open; T[P.head] = -0.24 - 0.1 * up; T[P.chest + 1] = 0; T[P.spine + 2] = 0; T[P.chest + 2] = 0;
+            set3(T, 'kneeL', 0.34, 0.2, 1); set3(T, 'kneeR', -0.34, 0.2, 1);
           }
         } else if (a.jumped || t > (a.jumpAt || 0.06) + 0.1) {
           // back on the floor: absorbing the landing, the arms coming down at his sides
@@ -1590,6 +1727,7 @@ export class Animator {
       }
       case 'celebrate': this.celebrate(T, a, p); break;
       case 'flip': this.flipPose(T, a, p); break;
+      case 'snag': this.snagPose(T, a, p); break; // (v0.4.8.5 Open Arms: a rebound snag)
     }
   }
 

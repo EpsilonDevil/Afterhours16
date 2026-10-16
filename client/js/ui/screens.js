@@ -1,5 +1,5 @@
 // Screen router, top bar, auth, home, settings and FPS overlay.
-import { $, $$, esc, money, toast, modal, closeModal, heightStr, title } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, heightStr, title, archHTML } from './common.js';
 import { padGlyph, promptGlyph, KEYMAP, PADMAP, REMAP_KEYS, REMAP_PAD, PAD, PAD_BINDABLE } from '../core/input.js';
 import { lockin } from '../core/lockin.js';
 import { settings, saveSettings, volumeGain } from '../core/settings.js';
@@ -149,7 +149,7 @@ function home(app, root) {
   const games = pr.games || 0;
   root.innerHTML = `
     <section class="panel home-left home-hub">
-      <div class="eyebrow">${esc(c.position)} · ${esc(ARCHETYPES[c.archetype]?.label || title(c.archetype))} · ${heightStr(c.height)} · ${c.weight} lb</div>
+      <div class="eyebrow">${esc(c.position)} · ${archHTML(c)} · ${heightStr(c.height)} · ${c.weight} lb</div>
       <h1 class="player-name">${esc(c.name)}</h1>
       <div class="ovr-row"><div class="ovr"><b>${c.overall}</b><small>OVR</small></div>
         <div class="ovr-side"><div class="muted small">MAX POTENTIAL ${c.max_overall}</div>

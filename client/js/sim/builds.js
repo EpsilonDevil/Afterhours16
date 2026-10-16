@@ -131,3 +131,26 @@ export const iconNeed = b => Math.max(1, Math.min(HOF_LIMIT, hofCapacity(b)));
 // the Inventory only for the build that holds that Icon badge (the server only lets that build put it on: app.eligible)
 export const inStore = i => !i.secret;
 export const forBuild = (i, c) => !i.secret || (!!c && c.icon_badge === i.icon);
+
+// v0.4.8.5 quick patch 3: ICON status, the endgame (mirrors server/builds.py icon_status_info). Every cap breaker the
+// build can earn unlocked (they open at 90 max OVR, 5 a Hall of Fame badge for the first 5), every badge as high as it
+// can go on this build (its cap; the Hall of Fame slots full, the rest at Gold) and 99 OVR. The server's word wins
+// when the character came from it (c.icon_status).
+export const ICON_STATUS_OVR = 99, CAP_BREAKERS_PER_HOF = 5, CAP_BREAKER_HOF_LIMIT = 5;
+export function iconStatusInfo(c = {}) {
+  if (c.icon_status_info) return c.icon_status_info;
+  const caps = badgeCaps(c), have = c.badges || {};
+  const tierOf = k => Math.min(Number(have[k]?.tier ?? have[k] ?? 0) || 0, caps[k]);
+  const capacity = hofCapacity(c), hofs = BADGE_IDS.filter(k => tierOf(k) >= 4).length;
+  const badgesLeft = BADGE_IDS.filter(k => tierOf(k) < Math.min(caps[k], 3)).length + Math.max(0, Math.min(HOF_LIMIT, capacity) - hofs);
+  const cbMax = Math.min(CAP_BREAKER_HOF_LIMIT, capacity) * CAP_BREAKERS_PER_HOF, cbEarned = c.cap_breakers_earned ?? c.cap_breakers?.earned ?? 0;
+  const cbDone = maxOvr(c) >= OVR_CAP && cbEarned >= cbMax;
+  const ovr = c.overall ?? (c.attributes ? overall(c.attributes, c.position || 'SF') : 0);
+  return { active: cbDone && badgesLeft === 0 && ovr >= ICON_STATUS_OVR, cap_breakers: cbDone, cap_breakers_earned: cbEarned, cap_breakers_max: cbMax, badges: badgesLeft === 0, badges_left: badgesLeft, ovr, ovr_need: ICON_STATUS_OVR };
+}
+export const iconStatus = c => !!c && (c.icon_status != null ? !!c.icon_status : iconStatusInfo(c).active);
+// the build's own win streak, every mode together (the server keeps it: progression.win_streak)
+export const winStreak = c => Math.max(0, (c?.win_streak ?? c?.progression?.win_streak ?? 0) | 0);
+// the ICON aura: hidden until a 3-game streak, one step stronger every 3 wins after that, all the way at 12+
+export const ICON_AURA_STEP = 3, ICON_AURA_MAX = 4;
+export const iconAuraLevel = streak => (streak >= ICON_AURA_STEP ? Math.min(ICON_AURA_MAX, Math.floor(streak / ICON_AURA_STEP)) : 0);

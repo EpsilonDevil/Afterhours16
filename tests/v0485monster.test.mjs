@@ -25,10 +25,11 @@ test('the Monster Mash is an event park like the others, with its own card, colo
   const events = Object.values(THEMES).filter(t => t.event);
   assert.equal(new Set(events.map(t => t.style)).size, events.length);
   assert.equal(new Set(events.map(t => t.streakFx)).size, events.length);
-  // no mix was supplied for it: the main soundtrack plays there (only the Beat brings its own, and only at its park)
-  assert.equal(THEMES.monster.music, undefined);
-  assert.ok(!PLAYLISTS.monster);
-  assert.deepEqual(Object.values(THEMES).filter(t => t.music).map(t => t.id), ['beat']);
+  // (v0.4.8.5 quick patch 3: it brings its own soundtrack now, like the Beat, played only at its park:
+  // v0485monstermusic.test.mjs)
+  assert.equal(THEMES.monster.music, 'monster');
+  assert.equal(PLAYLISTS.monster.dir, 'audio/monster/');
+  assert.deepEqual(Object.values(THEMES).filter(t => t.music).map(t => t.id), ['beat', 'monster']);
 });
 
 test('the schedule: the Beat runs its full 48 hours, then the Mash; nothing of the Beat is deleted', () => {

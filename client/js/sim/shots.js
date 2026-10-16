@@ -67,6 +67,26 @@ export function jumpshotPackage(build, catalog, icon = build?.icon_badge) {
     hand: build.hand || 'R',
   };
 }
+// v0.4.8.5 quick patch: a jumper's hop in one place, for the game (Game.startShot) and the store / My Player preview
+// (game/preview.js), so the ball leaves where the base puts it in both. jumpH: how high he rises (m); tUp: the rise (s);
+// takeoff: when he leaves the floor (s into the shot), timed back from the release so the ball goes apexK of the way up
+// (1: right at the top: the Sharp Eye's, whose hop is twice the old one, so the release is twice as high over his
+// standing release too); showK: the share of his rise the defense doesn't count (anything over a 1.0 hop is for the eye:
+// Game.shotRaw / contestIfReleased, and the AI's estimate). o: {close, dRim (m), stamina (0..1)}
+// SHOW_HOP_FLOOR: the soonest the doubled hop leaves the floor. It was 0.12 s, which a quick shot (a pull-up or a moving
+// mid-range jumper, the quickest release 0.468 s) with a good vertical (the rise up to 0.425 s at 99) ran into: the ball
+// went up to 77 ms before the top, on the way up. At 0.04 s it never binds, so the ball always goes at the top; the release
+// time (tRel, the green window) is the base's own either way
+export const SHOW_HOP_FLOOR = 0.04;
+export const showKOf = (pkg, close = false) => (!close && (pkg?.jumpK ?? 0) > 1 ? 1 - 1 / pkg.jumpK : 0);
+export function jumperHop(pkg, vertical, tRel, o = {}) {
+  const close = !!o.close;
+  const jumpH = vertical * (close ? 0.4 : pkg.jumpK * 0.52) * ((o.dRim ?? 0) > 7 ? 0.9 : 1) * (0.85 + 0.15 * (o.stamina ?? 1));
+  const tUp = Math.sqrt(2 * jumpH / GRAVITY);
+  const showK = showKOf(pkg, close);
+  const takeoff = Math.max(close ? 0.1 : showK ? SHOW_HOP_FLOOR : 0.2, tRel - tUp * (close ? 0.9 : pkg.apexK ?? 0.9));
+  return { jumpH, tUp, takeoff, showK };
+}
 
 // v0.4.4: the timing window follows the rating curve, so a weak shooter's green window is tiny (about 22 ms
 // at 50 and 32 ms at 60), the 70-95 range climbs steadily, and a 99 gets a huge window (about 100 ms)

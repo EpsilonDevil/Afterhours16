@@ -4,12 +4,13 @@ import { $, $$, esc, money } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
 import { playGreenSound } from '../core/greensound.js';
-import { CATS, catTabs, inCat, swatch, tryOn, equip, itemExtra, optionalSlot, catOf, forBuild, lockReason } from './store.js';
+import { CATS, catTabs, catShown, inCat, swatch, tryOn, equip, itemExtra, optionalSlot, catOf, forBuild, lockReason } from './store.js';
 
 export function render(app, root, params = {}) {
   const c = app.char();
   if (!c) return Screens.go(app, 'create');
   let cat = params.cat || (params.sel && app.catalog[params.sel] ? catOf(app.catalog[params.sel]) : 'top'), sel = params.sel || null;
+  if (!catShown(cat, c)) cat = 'top'; // (v0.4.8.5: the Rebounds are there only for the build that holds Open Arms)
   const draw = () => {
     const inv = new Set(app.profile.inventory);
     const owned = Object.values(app.catalog).filter(i => inv.has(i.id) && forBuild(i, c));
@@ -22,8 +23,8 @@ export function render(app, root, params = {}) {
     const total = owned.length, worth = owned.reduce((s, i) => s + (i.price || 0), 0);
     root.innerHTML = `<section class="panel store inventory">
       <div class="row between"><div><div class="eyebrow">INVENTORY · ${total} ITEMS · ${money(worth)} VC OF GEAR</div><h1>Your locker</h1></div><div class="row gap"><button class="btn ghost" data-store>VC Store</button>${params.returnPark ? '<button class="btn primary" data-back-park>Back to the park</button>' : ''}</div></div>
-      ${catTabs(cat, count)}
-      <div class="item-grid">${items.map(i => card(c, i, sel, lock.get(i.id))).join('') || `<div class="inv-empty muted">Nothing in ${esc((CATS.find(x => x[0] === cat) || [])[1] || 'here')} yet. <button class="btn small" data-store>Shop for some</button></div>`}</div>
+      ${catTabs(cat, count, c)}
+      <div class="item-grid">${items.map(i => card(c, i, sel, lock.get(i.id))).join('') || `<div class="inv-empty muted">Nothing in ${esc((CATS.find(x => x[0] === cat) || [])[1] || 'here')} yet. ${(CATS.find(x => x[0] === cat) || [])[4] ? 'It comes with your Icon badge.' : '<button class="btn small" data-store>Shop for some</button>'}</div>`}</div>
     </section>
     ${item ? detail(c, item, lock.get(item.id)) : ''}`;
     $$('[data-cat]', root).forEach(b => b.onclick = () => { cat = b.dataset.cat; sel = null; draw(); });

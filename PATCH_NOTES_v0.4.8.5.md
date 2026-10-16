@@ -231,7 +231,7 @@ The park event after the Beat, **The Monster Mash**, takes over from And The Bea
   - **12 wins:** the full haunting, with will-o'-wisps spiralling up into the sky, a giant skull whose jaw opens and shuts, and lightning striking round the court.
   - The Got Next spots stay clear, the court stays readable even at 12, and the floodlights go back to normal when the streak ends.
 - The event's leaderboard stands in the park on a tombstone with a green neon outline, a skull with glowing eyes on top and jack-o'-lanterns at its feet.
-- **Music:** the main soundtrack plays at the Monster Mash. No mix came with this event, so unlike the Beat it has no soundtrack of its own. Send one and it can get one the same way.
+- **Music:** it has its own soundtrack since quick patch 3 (below), from the Halloween party mix you sent.
 
 ### Rewards
 The same tiers and prizes per place as every park event before it, with all-new items. None of them can be bought.
@@ -254,4 +254,71 @@ The same tiers and prizes per place as every park event before it, with all-new 
 
 ---
 
-*(Tests: 115 Python and 315 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; and each schedule handover, the event soundtrack and the store labels.)*
+## Quick patch 3 (Oct 16): ICON status, Open Arms, the Mash's soundtrack
+
+### ICON status: the endgame
+A build becomes an **ICON** once it has done everything a build can do:
+- **Every cap breaker unlocked.** Cap breakers open at 90 max OVR, and the first 5 Hall of Fame badges bring 5 each, so 25 on most builds (fewer on a build that can't reach 5 Hall of Fames).
+- **Every badge maxed** as far as this build can take it: each badge at its cap, all 7 Hall of Fame slots filled (or as many as the build can reach), and the rest at Gold.
+- **99 overall.**
+
+What it brings:
+- **ICON goes in front of the archetype everywhere** the archetype shows: MyPlayer, the player list, the home screen, Stats, the social phone, rosters and the team intros. It's written in the same moving spectrum colours as the Icon badges ("ICON Stretch Big").
+- **The Icon badge replaces the ring under you in every mode:** the park, event parks, Pro-Am, the Pro Run, the Crew HQ and online games, for every ICON player (you, teammates, opponents). It's your build's own Icon badge, with a spectrum rim that turns and a glow that pulses, plus a thin ring in your team colour (gold for you, blue for teammates, red for opponents online). Being hot or cold still takes its place while it lasts.
+- **A dark aura.** It's a black and deep-violet flame aura that wraps the player and licks upward, with a faint purple edge so it reads on bright courts and at night. It follows him as he moves, crouches and jumps. It grows with the build's win streak, which counts wins in every mode together. A loss, a forfeit or leaving a game ends the streak.
+
+| Win streak | Aura |
+|---|---|
+| 0–2 | Hidden |
+| 3–5 | Level 1: low dark wisps |
+| 6–8 | Level 2: fuller, with embers rising |
+| 9–11 | Level 3: bigger, a wide dark haze behind him and black crackles |
+| 12+ | Level 4 (ultimate): about 2 m of roaring flame over his head, constant crackles and a dark shockwave rolling across the floor |
+
+- In a game the aura uses the streak you brought into it. In the park it updates as soon as a game ends, and other people see your new level too.
+- **MyPlayer → Badges** has a new ICON status card. It shows what's left before you get there (cap breakers, badges, overall). Once you're an ICON, it shows your aura level and how many wins it takes to reach the next one.
+
+### Open Arms, fixed
+**Open Arms** (the Stretch Big Icon badge) now does exactly what it says: "+3% to every shooting and defense attribute (can pass 99). Unlocks exclusive ultra-flashy rebound snags."
+- **The +3%** was already applied in every mode, to all eight shooting and defense attributes. One spot capped it: post defense held Interior D at 99. That's fixed, so it now passes 99 everywhere. The Attributes screen shows a small "+3%" next to each boosted rating (for every Icon badge's boosts).
+- **The rebound snags almost never showed.** Before, the snag only played when the jump had started as a rebound jump while the ball was in the air: in a test, 30 of 68 boards. Floor grabs and boards out of a block jump got the plain catch. Even then the ball jumped to his chest in one frame, so the rip was never seen.
+- **Now every board an Open Arms holder secures off a shot is a snag:** offensive or defensive, on the floor or in the air, user or AI, online too (every screen plays the same snag). The ball stays in his hands through the whole move.
+- **The landing gesture lasts at most half a second,** and moving, dribbling, passing, shooting or jumping cuts it short.
+
+### Rebound Package: Open Arms
+A new animation category, **Rebounds**, for Stretch Bigs who have unlocked Open Arms, and for nobody else. It's never in the store, it doesn't show in anyone else's Inventory, and the game refuses to equip it on anyone else ("Requires the Open Arms Icon badge"). It comes with the badge and is put on for you, including builds that already held Open Arms. It shows in the Inventory's Rebounds tab and as "Rebound package" under MyPlayer → Animations, where you can preview it.
+
+Six all-new streetball snags, a different one on each board:
+- **Chin Check:** ripped down to the chin, elbows swung hard both ways, then he throws his head back and screams.
+- **Cuff & Holster:** cuffed one-handed at the top and swung straight-armed down to the hip, the other arm flung out; he lands pointing at the floor twice.
+- **Pterodactyl:** legs split wide, the ball swung out to arm's length as both arms spread like wings; he lands holding the wings and gives them a flap.
+- **360 Rip-Through:** a full turn in the air with the ball low through the hips, knees tucked; he lands in a crouch swinging it knee to knee.
+- **Tomahawk Yank:** yanked behind the head with the opposite knee up, then whipped down; he lands bent over it, barking.
+- **Hammer Down:** lifted overhead, hammered down on the landing and pounded twice, then a bicep flex with the ball on the hip.
+
+With the package off, an Open Arms holder still gets a basic snag, the Open Arms Rip.
+
+### Sharp Eye: the release matches the hop
+The Sharp Eye base hops twice as high since v0.4.8.5. Now **the ball leaves at the top of that doubled hop, twice as high above his standing release point as on the old hop.** Before:
+- **Quick shots let go early.** Pull-ups and moving shots let go up to 67 ms before the top. They now go at the top.
+- **The store and MyPlayer preview** used its own timing and released up to 105 ms early. It now matches the game exactly. A Sharp Eye holder trying on another base in the store now sees that base, not his Sharp Eye jumper.
+- **The heels floated** on the old hop's timing. They now peak at the top of the doubled hop.
+- **AI Sharp Eye holders** now judge contests the way the defense measures them.
+
+The green window, the release timing and the rule that the defense measures you as if from the old hop height are unchanged. Taking off a little sooner shortens the pump-fake window on quick Sharp Eye shots.
+
+### Gameplay
+- **Y / Triangle jumps for a rebound off the ball on offense.** It's the block / rebound button, so it now jumps for the board on offense too. It's only ever a jump: with a pass on its way to you, it won't turn into a catch-and-shoot the way the shoot button does. With the ball, Y is still the lob pass; on defense, still the block.
+- **Half as many fouls in the park.** Shooting fouls and reach-ins are called half as often as before (0.375 of the Pro-Am rate, was 0.75). Pro-Am and the Pro Run are unchanged.
+
+### The Monster Mash gets its own soundtrack
+The Monster Mash went live on schedule on October 16 at 00:00 UTC. It now has its own soundtrack, like the Beat:
+- **27 tracks** cut from the Halloween party mix you sent (horror movie themes and Halloween remixes, 77½ minutes).
+- **They play only at the Monster Mash park,** park games included, in a new shuffle every time you arrive. The main soundtrack picks up where it left off when you leave, and the Beat's tracks and the Mash's never mix.
+- **How the split was made:** the mix is almost continuous and beat-matched at about 129 bpm. The cuts are at its one real silence, at four near-silent breaks, and elsewhere where one song hands over to the next. A song's own verse and chorus changes don't count as a cut. Some cuts may still land in the middle of a blend.
+- **The ticker** shows the tracks as "Halloween Party Mix · Cut 1 of 27" and so on, since the mix doesn't name its songs. To put song names on them, edit `client/audio/monster/tracks.json`.
+- The last 41 seconds of the file are pure silence, so they were left off.
+
+---
+
+*(Tests: 128 Python and 346 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; and the Sharp Eye release frame by frame against the old hop.)*

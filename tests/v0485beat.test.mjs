@@ -44,8 +44,9 @@ test('the event soundtrack: 28 cuts of the mix in their own folder, none of them
   }
   assert.ok(!src('client/audio/music/tracks.json').includes('beat-'), 'the main list never names them');
   // only the Beat's park asks for it; menus, the Crew HQ, Pro-Am and the Pro Run ask for the main soundtrack
+  // (v0.4.8.5 quick patch 3: the Monster Mash's park asks for its own: v0485monstermusic.test.mjs)
   assert.equal(THEMES.beat.music, 'beat');
-  assert.deepEqual(Object.values(THEMES).filter(t => t.music).map(t => t.id), ['beat']);
+  assert.deepEqual(Object.values(THEMES).filter(t => t.music).map(t => t.id), ['beat', 'monster']);
   assert.ok(src('client/js/game/park.js').includes("music.setPlaylist(this.theme?.music || 'main');"));
   assert.ok(src('client/js/ui/screens.js').includes("music.setPlaylist('main');"));
   assert.ok(src('client/js/game/crewhq.js').includes("music.setPlaylist('main');"));

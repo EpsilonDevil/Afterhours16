@@ -1,0 +1,221 @@
+{
+ "_": "v0.4.8.5 quick patch 3: the exclusive soundtrack of The Monster Mash (event park only). One continuous 78-minute Halloween party DJ mix (horror movie themes and Halloween remixes, beat-matched at about 129 bpm), split into 27 cuts where one song gives way to the next: where harmony, sound and rhythm change together (chroma, MFCC and tempogram novelty) and where the music stops repeating itself (a song comes back to its own chorus, the next one does not). The mix's one real silence (26:13) and its near-silent breaks (17:34, 23:44, 29:07, 57:09) are cuts; in the beat-matched blends each cut sits on the change itself. 0.6 s fade in, 1.2 s fade out. The last 41 s of the mix are digital silence and are left off. \"from\" is where each cut starts in the original mix (seconds).",
+ "tracks": [
+  {
+   "file": "monster-01.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 1 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 162,
+   "from": 0.0
+  },
+  {
+   "file": "monster-02.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 2 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 209,
+   "from": 162.38
+  },
+  {
+   "file": "monster-03.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 3 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 260,
+   "from": 371.38
+  },
+  {
+   "file": "monster-04.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 4 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 164,
+   "from": 631.62
+  },
+  {
+   "file": "monster-05.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 5 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 162,
+   "from": 795.62
+  },
+  {
+   "file": "monster-06.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 6 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 97,
+   "from": 957.12
+  },
+  {
+   "file": "monster-07.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 7 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 163,
+   "from": 1053.88
+  },
+  {
+   "file": "monster-08.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 8 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 208,
+   "from": 1216.62
+  },
+  {
+   "file": "monster-09.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 9 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 149,
+   "from": 1424.38
+  },
+  {
+   "file": "monster-10.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 10 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 52,
+   "from": 1573.62
+  },
+  {
+   "file": "monster-11.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 11 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 122,
+   "from": 1625.12
+  },
+  {
+   "file": "monster-12.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 12 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 167,
+   "from": 1747.38
+  },
+  {
+   "file": "monster-13.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 13 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 239,
+   "from": 1914.12
+  },
+  {
+   "file": "monster-14.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 14 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 162,
+   "from": 2153.38
+  },
+  {
+   "file": "monster-15.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 15 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 234,
+   "from": 2315.62
+  },
+  {
+   "file": "monster-16.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 16 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 240,
+   "from": 2549.88
+  },
+  {
+   "file": "monster-17.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 17 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 127,
+   "from": 2789.88
+  },
+  {
+   "file": "monster-18.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 18 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 254,
+   "from": 2917.12
+  },
+  {
+   "file": "monster-19.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 19 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 160,
+   "from": 3171.12
+  },
+  {
+   "file": "monster-20.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 20 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 98,
+   "from": 3331.12
+  },
+  {
+   "file": "monster-21.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 21 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 161,
+   "from": 3428.62
+  },
+  {
+   "file": "monster-22.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 22 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 131,
+   "from": 3589.88
+  },
+  {
+   "file": "monster-23.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 23 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 233,
+   "from": 3721.12
+  },
+  {
+   "file": "monster-24.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 24 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 146,
+   "from": 3953.88
+  },
+  {
+   "file": "monster-25.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 25 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 226,
+   "from": 4099.38
+  },
+  {
+   "file": "monster-26.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 26 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 172,
+   "from": 4324.88
+  },
+  {
+   "file": "monster-27.mp3",
+   "title": "Halloween Party Mix \u00b7 Cut 27 of 27",
+   "artist": "",
+   "album": "The Monster Mash \u00b7 Event Soundtrack",
+   "duration": 153,
+   "from": 4496.38
+  }
+ ]
+}

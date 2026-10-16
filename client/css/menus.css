@@ -431,6 +431,18 @@ table.controls tr.sec td { color: var(--accent); font-size: 11px; letter-spacing
 .icon-badge.on { opacity: 1; border: 1px solid #f2c14e; background: linear-gradient(90deg, rgba(255,255,255,.1), rgba(242,193,78,.14) 40%, rgba(255,120,60,.06)); box-shadow: 0 0 22px rgba(242,193,78,.25); }
 .icon-badge .badge-icon { background: linear-gradient(135deg, #f2c14e, #ff7a3d); color: #111; }
 .icon-badge small { display: block; opacity: .85; }
+/* v0.4.8.5 quick patch 3: ICON status */
+.icon-status-card { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 1px dashed rgba(255,255,255,.18); opacity: .85; }
+.icon-status-card.on { opacity: 1; border: 1.5px solid transparent; background: linear-gradient(180deg, rgba(22,10,38,.92), rgba(10,6,20,.92)) padding-box, var(--hof-grad) border-box; background-size: 100% 100%, 300% 100%; animation: hofShift 5s linear infinite; }
+.icon-status-card b { font-size: 15px; letter-spacing: .04em; }
+.icon-status-card small { display: block; opacity: .85; margin-top: 3px; }
+.icon-status-card small.aura { color: #c9a8ff; opacity: 1; }
+.icon-status-card ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.icon-status-card li { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: center; font-size: 13px; opacity: .8; }
+.icon-status-card li.done { opacity: 1; color: #9be15d; }
+.icon-status-card li i { font-style: normal; text-align: center; }
+.icon-status-card li em { font-style: normal; opacity: .75; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .icon-status-card.on { animation: none; } }
 .hof-note { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: linear-gradient(90deg, rgba(242,193,78,.22), rgba(255,120,60,.1)); border: 1px solid rgba(242,193,78,.6); display: flex; flex-direction: column; gap: 4px; }
 
 /* v0.4.5 main menu hub: everything fits on screen (no scrolling) from 1280x720 up */

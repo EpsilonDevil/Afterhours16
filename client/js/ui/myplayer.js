@@ -1,8 +1,10 @@
 // MyPlayer: attribute upgrades (VC), badges, appearance, animations, player management.
-import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor, archHTML } from './common.js';
 import { ATTR_GROUPS, ATTR_LABEL, ATTRS, overall } from '../sim/ratings.js';
-import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild } from '../sim/builds.js';
+import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild, iconStatusInfo, winStreak, iconAuraLevel, ICON_AURA_STEP } from '../sim/builds.js';
 import { badgeSVG, iconBadgeSVG } from './badgeart.js';
+import { ICON_BADGES } from '../sim/badges.js';
+import { OA_BASIC } from '../sim/snags.js';
 import { appearanceEditor } from './builder.js';
 import { settings, saveSettings } from '../core/settings.js';
 import * as Screens from './screens.js';
@@ -14,7 +16,7 @@ export function render(app, root, params = {}) {
   if (!c) return Screens.go(app, 'create');
   const tab = params.tab || 'attributes';
   root.innerHTML = `<section class="panel mp">
-    <div class="mp-head"><div><div class="eyebrow">${esc(c.position)} · ${title(c.archetype)} · ${heightStr(c.height)}</div><h1>${esc(c.name)}</h1></div>
+    <div class="mp-head"><div><div class="eyebrow">${esc(c.position)} · ${archHTML(c)} · ${heightStr(c.height)}</div><h1>${esc(c.name)}</h1></div>
       <div class="ovr"><b>${c.overall}</b><small>OVR</small></div></div>
     <div class="subtabs">${TABS.map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     <div id="mp-body"></div></section>`;
@@ -47,6 +49,19 @@ function legendLine(app, c) {
     <div class="ll-text">${L.maxed ? `<b>Fully grinded: ${cap} OVR</b><small>${L.upgrades || 0} Legend upgrades placed</small>` : `<b>${left} Pro Run game${left === 1 ? '' : 's'} to +1 OVR</b><small>${Array.from({ length: per }, (_, k) => `<i class="dot ${k < done ? 'on' : ''}"></i>`).join('')} Placed for you, on the attributes your build leans on · simmed games don't count</small>`}</div></div>`;
 }
 
+// v0.4.8.5: the attributes an Icon badge boosts carry its share next to the rating (Open Arms: +3% on every shooting and
+// defense attribute). The rating shown is the build's; in games it plays that much higher, and can pass 99 there
+export function iconBoostPct(c, k) {
+  const ic = c?.icon_badge && ICON_BADGES[c.icon_badge];
+  return ic ? (ic.all || 0) + (ic.stats?.[k] || 0) : 0;
+}
+function iconBoostTag(c, k, v) {
+  const pct = iconBoostPct(c, k);
+  if (!pct) return '';
+  const name = ICON_BADGES[c.icon_badge].name, p = +(pct * 100).toFixed(1);
+  return ` <em class="cb-used" title="${esc(`${name} Icon badge: +${p}% in games, and it can pass 99 (${v} plays as ${+(v * (1 + pct)).toFixed(1)} before badge effects)`)}">+${p}%</em>`;
+}
+
 function attributes(app, root, c, view = 'upgrades') {
   const cbN = c.cap_breakers_available || 0;
   root.innerHTML = `<div class="seg attr-seg"><button class="${view === 'upgrades' ? 'on' : ''}" data-view="upgrades">Upgrades</button><button class="${view === 'capbreakers' ? 'on' : ''}" data-view="capbreakers">Cap Breakers${cbN ? ` <span class="seg-n">${cbN}</span>` : ''}</button></div>
@@ -70,7 +85,7 @@ function upgrades(app, root, c) {
         <div class="row gap"><button class="btn ghost" data-max>Max all · ${money(c.max_upgrade_cost)} VC</button></div></div>
       <div class="attr-cols">${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => {
         const cur = c.attributes[k], nv = pending[k] ?? cur, cap = c.caps[k];
-        return `<div class="attr-row up"><span>${ATTR_LABEL[k]}</span>${bar(nv, 99, cap, nv > cur ? 'pending' : '')}<b style="color:${ratingColor(nv)}">${nv}</b>
+        return `<div class="attr-row up"><span>${ATTR_LABEL[k]}${iconBoostTag(c, k, nv)}</span>${bar(nv, 99, cap, nv > cur ? 'pending' : '')}<b style="color:${ratingColor(nv)}">${nv}</b>
           <span class="steppers"><button data-dec="${k}" ${nv <= cur ? 'disabled' : ''}>−</button><button data-inc="${k}" ${nv >= cap ? 'disabled' : ''}>+</button><button data-inc5="${k}" ${nv >= cap ? 'disabled' : ''}>+5</button></span></div>`;
       }).join('')}</div>`).join('')}</div>
       <div class="row between sticky-actions"><div>Projected OVR <b class="big">${ovr}</b> · Cost <b class="big">${money(cost)}</b> VC</div>
@@ -158,9 +173,10 @@ function badges(app, root, c) {
   const hof = c.hof_count || 0, iconId = c.icon_badge || mineIcon?.[0];
   const pips = (tier, cap) => [1, 2, 3, 4].map(t => `<i class="pip p${t} ${t <= tier ? 'on' : ''} ${t > cap ? 'locked' : ''}" title="${TIER[t]}${t > cap ? ' (locked on this build)' : ''}"></i>`).join('');
   root.innerHTML = `<div class="muted">Badges level up from what you do in games: Bronze → Silver → Gold → Hall of Fame. Every earned badge is active, and each tier is a big step up from the last. A stat with none of its badges plays 10% weaker. Your archetype and height decide how far each badge can go. A build holds up to ${rules.hof_limit} Hall of Fame badges: the first 5 bring 5 cap breakers each, and the ${need === rules.hof_limit ? `${rules.hof_limit}th` : `${need}th (every one your build can reach)`} unlocks your archetype's Icon badge.</div>
-    <div class="badge-build"><span>${esc(ARCHETYPES[c.archetype]?.label || title(c.archetype || ''))} · ${esc(BAND_LABEL[heightBand(c.height)] || '')}</span><b>${capacity}</b><small>badges can reach Hall of Fame on this build</small><b>${hof}/${Math.min(rules.hof_limit, capacity)}</b><small>Hall of Fame now</small></div>
+    <div class="badge-build"><span>${archHTML(c)} · ${esc(BAND_LABEL[heightBand(c.height)] || '')}</span><b>${capacity}</b><small>badges can reach Hall of Fame on this build</small><b>${hof}/${Math.min(rules.hof_limit, capacity)}</b><small>Hall of Fame now</small></div>
     <div class="icon-badge ${icon ? 'on' : ''}"><div class="icon-art-wrap">${iconBadgeSVG(iconId, 76, { locked: !icon })}</div><div><b>${esc(icon ? icon.name : mineIcon ? mineIcon[1].name : 'Icon badge')}</b>
       <small>${icon ? 'UNLOCKED · ' : `Locked · ${hof}/${need} Hall of Fame · `}${esc((icon || mineIcon?.[1])?.desc || '')}</small></div></div>
+    ${iconStatusCard(c)}
     ${Object.entries(groups).map(([g, list]) => `<h5 class="group-h">${g}</h5><div class="badge-grid">${list.map(([id, b]) => {
       const st = c.badges?.[id] || { progress: 0, tier: 0 };
       const cap = caps[id] ?? 4, tier = Math.min(st.tier, cap);
@@ -174,18 +190,31 @@ function badges(app, root, c) {
     }).join('')}</div>`).join('')}`;
 }
 
-const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
+// [slot, label, preview, icon]. icon (v0.4.8.5): a row only the build holding that Icon badge has (the Open Arms Rebound
+// Package; its "Basic Rip" chip takes the package off and leaves the badge's basic snag, the Open Arms Rip)
+// v0.4.8.5 quick patch 3: the ICON status, the endgame, and how far this build is from it
+function iconStatusCard(c) {
+  const st = iconStatusInfo(c), streak = winStreak(c), lvl = iconAuraLevel(streak);
+  const row = (done, label, note) => `<li class="${done ? 'done' : ''}"><i>${done ? '✓' : '·'}</i><span>${label}</span><em>${note}</em></li>`;
+  const aura = !st.active ? '' : lvl ? `Aura level ${lvl} of 4 · ${streak}-game win streak${lvl < 4 ? ` · ${ICON_AURA_STEP * (lvl + 1) - streak} more win${ICON_AURA_STEP * (lvl + 1) - streak === 1 ? '' : 's'} to level ${lvl + 1}` : ' · ultimate'}` : `Aura shows at a 3-game win streak · ${streak} now`;
+  return `<div class="icon-status-card ${st.active ? 'on' : ''}"><div><b>${st.active ? '<span class="icon-status">ICON</span> status' : 'ICON status'}</b>
+    <small>${st.active ? 'This build is an ICON: ICON before its archetype everywhere, its Icon badge under it in every mode, and a dark aura that grows with every 3 straight wins.' : 'The endgame: unlock every cap breaker, max every badge as far as this build can take it, and reach 99 OVR.'}</small>
+    ${st.active ? `<small class="aura">${aura}</small>` : `<ul>${row(st.cap_breakers, 'All cap breakers unlocked', `${Math.min(st.cap_breakers_earned, st.cap_breakers_max)}/${st.cap_breakers_max}${maxOvr(c) < OVR_CAP ? ` · open at ${OVR_CAP} max OVR` : ''}`)}${row(st.badges, 'Every badge maxed', st.badges ? 'done' : `${st.badges_left} to go`)}${row(st.ovr >= st.ovr_need, '99 overall', `${st.ovr}/${st.ovr_need}`)}</ul>`}</div></div>`;
+}
+
+const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['rebound', 'Rebound package', 'rebound', 'open_arms'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
 function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
-    ${ANIM_SLOTS.map(([slot, label, preview]) => {
+    ${ANIM_SLOTS.filter(([, , , icon]) => !icon || c.icon_badge === icon).map(([slot, label, preview, icon]) => {
       const owned = Object.values(app.catalog).filter(i => i.slot === slot && inv.has(i.id) && forBuild(i, c));
       const cur = c.equipment[slot];
-      return `<div class="anim-slot"><h5>${label}</h5><div class="chips">${owned.map(i => `<button class="chip ${cur === i.id ? 'on' : ''}" data-equip="${slot}" data-id="${i.id}">${esc(i.name.split(': ').pop())}</button>`).join('') || '<span class="muted small">None owned</span>'}
+      const basic = icon === 'open_arms' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: the Open Arms badge's own basic snag">Basic Rip</button>` : '';
+      return `<div class="anim-slot"><h5>${label}</h5><div class="chips">${basic}${owned.map(i => `<button class="chip ${cur === i.id ? 'on' : ''}" data-equip="${slot}" data-id="${i.id}">${esc(i.name.split(': ').pop())}</button>`).join('') || (basic ? '' : '<span class="muted small">None owned</span>')}
         <button class="chip ghost" data-preview="${preview}" data-slot="${slot}">Preview ▶</button></div></div>`;
     }).join('')}`;
   $$('[data-equip]', root).forEach(b => b.onclick = async () => {
-    try { const res = await app.api.mutate(`/api/characters/${c.id}/equip`, { slot: b.dataset.equip, item_id: b.dataset.id }); app.replaceChar(res.character); render(app, root.parentElement.parentElement, { tab: 'animations' }); }
+    try { const res = await app.api.mutate(`/api/characters/${c.id}/equip`, { slot: b.dataset.equip, item_id: b.dataset.id || null }); app.replaceChar(res.character); render(app, root.parentElement.parentElement, { tab: 'animations' }); }
     catch (e) { toast(e.message, 'error'); }
   });
   $$('[data-preview]', root).forEach(b => b.onclick = () => {
@@ -197,15 +226,15 @@ function animations(app, root, c) {
     // v0.4.5: preview the equipped layup and size-up packages with their own style too
     const lay = app.catalog[ch.equipment.layup], su = app.catalog[ch.equipment.sizeup], bk = app.catalog[ch.equipment.block]; // (qp3: and the Block Package)
     const style = kind === 'layup' ? (lay?.style || 'basic') : kind === 'moves' ? (su?.style || 'basic') : dk?.styles?.[0];
-    const po = app.catalog[ch.equipment.post];
-    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : kind === 'block' ? bk?.styles : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex', pkg: po?.id, sig: po?.sig });
+    const po = app.catalog[ch.equipment.post], rb = app.catalog[ch.equipment.rebound]; // (v0.4.8.5: the Rebound Package's snags, or the basic Open Arms Rip)
+    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : kind === 'block' ? bk?.styles : kind === 'rebound' ? (rb?.styles || [OA_BASIC]) : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex', pkg: po?.id, sig: po?.sig });
     app.showroom.setFocus(kind === 'celebrate' ? 'upper' : 'wide');
   });
 }
 
 function players(app, root) {
   const chars = app.profile.characters;
-  root.innerHTML = `<div class="player-list">${chars.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${title(ch.archetype)} · ${esc(ch.rep.label)}</small></span></button>`).join('')}
+  root.innerHTML = `<div class="player-list">${chars.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${archHTML(ch)} · ${esc(ch.rep.label)}</small></span></button>`).join('')}
     ${chars.length < 4 ? '<button class="player-card new" data-new>+ Create new player</button>' : ''}</div>
     <p class="muted small">Up to four players share your VC wallet and locker.</p>`;
   $$('[data-pick]', root).forEach(b => b.onclick = () => { app.selectedId = b.dataset.pick; settings.character = app.selectedId; saveSettings(); Screens.go(app, 'myplayer', { tab: 'players' }); });
@@ -213,6 +242,6 @@ function players(app, root) {
 }
 
 export function switcher(app) {
-  const card = modal(`<h2>Your players</h2><div class="player-list">${app.profile.characters.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${title(ch.archetype)}</small></span></button>`).join('')}</div>`);
+  const card = modal(`<h2>Your players</h2><div class="player-list">${app.profile.characters.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${archHTML(ch)}</small></span></button>`).join('')}</div>`);
   card.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { app.selectedId = b.dataset.pick; settings.character = app.selectedId; saveSettings(); closeModal(); Screens.go(app, app.screen === 'create' ? 'home' : app.screen); });
 }

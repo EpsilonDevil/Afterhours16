@@ -265,6 +265,7 @@ export class CrewHQ {
   roam(dt) {
     const app = this.app, inp = app.input, me = this.me;
     inp.ctx = 'roam';
+    this.meVisual.syncIcon?.(app.char()); // (v0.4.8.5 qp3: your ICON badge and aura follow your build)
     const place = () => { this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); };
     if (app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt * GAME_SPEED, false, 0); place(); this.rig.updateRoam(dt, me, null, HQ.bounds, this.camSolids); return; }
     if (inp.wasPressed('pause')) { this.ui.pause(this); return; }
@@ -307,7 +308,7 @@ export class CrewHQ {
     if (me.action) { me.action.t += dt; if (me.action.t > me.action.dur) me.action = null; }
   }
 
-  hideMe(hide) { this.meVisual.view.setVisible(!hide); this.meVisual.blob.visible = !hide; if (this.meVisual.ring) this.meVisual.ring.visible = !hide; }
+  hideMe(hide) { this.meVisual.view.setVisible(!hide); this.meVisual.blob.visible = !hide; if (this.meVisual.ring) this.meVisual.ring.visible = !hide; this.meVisual.setHidden?.(hide); }
 
   // ---------- shootaround on the side court ----------
   startPractice() {

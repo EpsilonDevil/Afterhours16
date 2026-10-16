@@ -23,6 +23,7 @@ import { audio } from '../core/audio.js';
 import * as M from '../core/math.js';
 import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
 import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP, squadAIPlayers } from '../ui/online.js';
+import { endWinStreak } from './iconfx.js';
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
@@ -140,6 +141,8 @@ export class FriendWalker extends Walker {
   constructor(hub, entry, x, z, id) {
     super(hub, entry, x, z);
     this.id = id; this.username = entry.username || ''; this.target = { x, z, f: 0, m: 0 }; this.seen = performance.now();
+    // v0.4.8.5 quick patch 3: an ICON build walks with his Icon badge under him (a white ring round it) and his aura
+    this.visual.addIcon?.(hub.r, '#f4f2ec');
   }
   update(dt) {
     const p = this.p, it = p.intent, T = this.target;
@@ -722,6 +725,7 @@ export class ParkHub {
   roam(dt) {
     const app = this.app, inp = app.input, me = this.me;
     inp.ctx = 'roam';
+    this.meVisual?.syncIcon?.(app.char()); // (v0.4.8.5 qp3: your ICON badge and aura follow your build: a new streak, ICON made)
     if (this.app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt * GAME_SPEED, false, 0); this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); this.rig.updateRoam(dt, me, null, this.venue.bounds, this.venue.solids); return; }
     if (inp.wasPressed('pause')) { this.ui.pause(this); return; }
     // v0.4.7.5 court overview: hold View / Share (V on the keyboard) for a live bird's-eye view of the whole park,
@@ -1228,7 +1232,8 @@ export class ParkHub {
     const s = this.mySession;
     if (!s) return;
     if (this.onlineGame) this.app.net?.send({ t: 'quit' }); // (online: you leave the game; the AI plays your player for the rest)
-    if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
+    // (v0.4.8.5 qp3: the server ends the build's win streak with it; so does your copy of it, for the ICON aura)
+    if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); endWinStreak(this.app); } catch { /* ignore */ } }
     this.ui.toast('You left the game. Your win streak resets.');
     if (this.onlineGame) this.leaveOnlineCourt(s); else this.leaveCourt(s, false);
   }
@@ -1580,7 +1585,7 @@ export class ParkHub {
   // the connection dropped mid-game: the others play on with the AI in your place; for you it's a forfeit
   async onlineLost(session) {
     if (this.mySession !== session) return;
-    if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); } catch { /* ignore */ } }
+    if (this.ticket) { try { await this.app.api.post(`/api/matches/${this.ticket.id}/cancel`, {}); endWinStreak(this.app); } catch { /* ignore */ } }
     this.ui.toast('Lost the connection to the game service: you left the game.', 'error');
     this.leaveOnlineCourt(session, { release: false });
   }

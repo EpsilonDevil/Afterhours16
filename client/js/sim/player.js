@@ -1,5 +1,6 @@
 // Player state + movement physics (momentum, braking, plant cuts, jumps, stamina).
 import { HS_PKG } from './hashsling.js';
+import { reboundPackageOf } from './snags.js';
 import { physical } from './ratings.js';
 import { bodyDims } from '../char/skeleton.js';
 import { DT, GRAVITY, COURT } from './constants.js';
@@ -61,6 +62,9 @@ export class Player {
     this.dunkPkg = entry.build.equipment?.dunk || (this.icon === 'hash_slinging' && catalog?.[HS_PKG] ? HS_PKG : 'dunk_basic');
     // qp3: the Block Package he wears (sim/blocks.js: none → his tier's, by Block rating and height)
     this.blockPkg = entry.build.equipment?.block || null;
+    // v0.4.8.5 Open Arms: the Rebound Package he wears (sim/snags.js), only ever his Icon's own (null: an Open Arms
+    // holder snags with the basic Open Arms Rip; nobody else snags at all). lastSnag: so the next board is another one
+    this.reboundPkg = reboundPackageOf(entry.build, this.icon); this.lastSnag = null;
     // qp3: the Post Move Package he wears (sim/post.js; none → Fundamentals). postUp: the trigger is held with the ball
     this.postPkg = entry.build.equipment?.post || 'post_basic';
     this.postUp = false; this.backing = 0; this.postDef = -1; this.heightIn = entry.build.height || 78;

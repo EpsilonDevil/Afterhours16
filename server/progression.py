@@ -402,6 +402,8 @@ def apply_progress(char, summary, rw):
     after = rep_info(prog["rep"])
     mode = summary["mode"]
     if mode in ("park", "proam", "prorun"):
+        # v0.4.8.5 quick patch 3: the build's own win streak, every mode together (the ICON aura grows with it)
+        prog["win_streak"] = int(prog.get("win_streak", 0) or 0) + 1 if rw["won"] else 0
         # v0.4.5: King Tut Cup games keep their own record and streak (the park streak is untouched)
         key = "cup" if rw.get("cup") is not None else mode
         m = prog.setdefault(key, {"games": 0, "wins": 0})

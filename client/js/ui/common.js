@@ -1,5 +1,6 @@
 // UI helpers: escaping, formatting, toasts, modals, small widgets.
 import { audio } from '../core/audio.js';
+import { ARCHETYPES, iconStatus } from '../sim/builds.js';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -50,3 +51,9 @@ export const TIER_CLS = ['none', 'bronze', 'silver', 'gold', 'hof'];
 export function busy(btn, on) { if (!btn) return; btn.disabled = on; btn.classList.toggle('busy', on); }
 
 export function ratingColor(v) { return v >= 90 ? '#36e07a' : v >= 80 ? '#9be15d' : v >= 70 ? '#f7c948' : v >= 60 ? '#ff9f43' : '#ff6b57'; }
+
+// v0.4.8.5 quick patch 3: a build's archetype as shown anywhere in the game. An ICON build (sim/builds.js iconStatus)
+// carries ICON in front of it, in the Icon badges' animated spectrum (.icon-status).
+export const archLabel = b => ARCHETYPES[b?.archetype]?.label || title(b?.archetype || '');
+export const ICON_TAG = '<span class="icon-status">ICON</span>';
+export const archHTML = b => (iconStatus(b) ? ICON_TAG + ' ' : '') + esc(archLabel(b));

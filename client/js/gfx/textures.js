@@ -1756,3 +1756,91 @@ export function monsterMural() {
   g.restore();
   return c;
 }
+
+// ---------------- v0.4.8.5 quick patch 3: ICON status (game/iconfx.js) ----------------
+// Plain pixel data ({width, height, data}), not canvases, so they build anywhere (the tests run without a DOM).
+// The Icon badges' spectrum, round the colour wheel: the Hall of Fame pink, violet, blue, cyan and green, then a gold
+// on the way back to pink (straight from green to pink the blend goes grey)
+const ICON_SPECTRUM = [[255, 47, 179], [166, 59, 255], [61, 123, 255], [0, 229, 255], [56, 255, 156], [255, 214, 64], [255, 47, 179]];
+export function iconSpectrum(t) {
+  t = ((t % 1) + 1) % 1;
+  const n = ICON_SPECTRUM.length - 1, f = t * n, i = Math.min(n - 1, Math.floor(f)), k = f - i, a = ICON_SPECTRUM[i], b = ICON_SPECTRUM[i + 1];
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+// value noise that wraps every px cells across and py cells down (so a strip of it scrolls without a seam)
+function wrapNoise(x, y, px, py, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  const h = (i, j) => { i = ((i % px) + px) % px; j = ((j % py) + py) % py; let n = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(seed, 1442695041); n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+function wrapFbm(x, y, px, py, seed, oct) {
+  let v = 0, a = 0.5, n = 0;
+  for (let k = 0; k < oct; k++) { v += a * wrapNoise(x, y, px, py, seed + k * 17); n += a; x *= 2; y *= 2; px *= 2; py *= 2; a *= 0.5; }
+  return v / n;
+}
+const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// The ICON aura's atlas (u ranges): a solid white strip (the crackles and the floor pulse take their shape from their
+// vertex colours), a strip of embers (violet glints in dark halos) and the flames: tongues of value noise three times
+// taller than wide, warped, near-black in the heart, deep violet, a bright violet edge where a tongue meets the air.
+// Everything repeats down the texture, so the aura scrolls it upward without a seam.
+export const AURA_UV = { solid: 1 / 32, embers: [0.125, 0.25], flames: [0.3, 0.97] };
+export function auraTexture(S = 256) {
+  const W = S, H = S, d = new Uint8Array(W * H * 4), rng = new RNG(1616);
+  const set = (x, y, r, g, b, a) => { const i = (y * W + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W / 16; x++) set(x, y, 255, 255, 255, 255);
+  const e0 = Math.round(W * 0.125), e1 = Math.round(W * 0.25), dots = [];
+  for (let i = 0; i < 14; i++) dots.push({ x: rng.range(e0 + 5, e1 - 5), y: rng.range(0, H), r: rng.range(1.4, 2.6) * W / 256, dark: i % 4 === 3 });
+  for (let y = 0; y < H; y++) for (let x = e0; x < e1; x++) {
+    let a = 0, r = 0, g = 0, b = 0;
+    for (const p of dots) {
+      let dy = Math.abs(y + 0.5 - p.y); dy = Math.min(dy, H - dy);
+      const dd = Math.hypot(x + 0.5 - p.x, dy * 0.7) / p.r;
+      if (dd > 2.2) continue;
+      if (p.dark) { const k = 1 - sstep(0.6, 1.6, dd); if (k * 0.9 > a) { a = k * 0.9; r = 18; g = 2; b = 34; } continue; }
+      const core = 1 - sstep(0.2, 1.0, dd), ka = Math.max(core, (1 - sstep(0.9, 2.2, dd)) * 0.55);
+      if (ka > a) { a = ka; const m = core / Math.max(ka, 1e-3); r = 30 + 200 * m; g = 6 + 150 * m; b = 60 + 195 * m; }
+    }
+    set(x, y, r, g, b, Math.round(a * 255));
+  }
+  const f0 = Math.round(W * 0.28), D = new Float32Array(W * H), colMean = new Float32Array(W);
+  for (let y = 0; y < H; y++) for (let x = f0; x < W; x++) {
+    const u = (x - f0) / (W - f0), v = y / H;
+    const w = wrapFbm(u * 3, v * 2, 1e4, 2, 71, 3);
+    const n = wrapFbm(u * 7 + (w - 0.5) * 3.2, v * 3 + (w - 0.5) * 0.8, 1e4, 3, 29, 4);
+    D[y * W + x] = n * 0.82 + wrapFbm(u * 18 + w * 2, v * 8, 1e4, 8, 53, 2) * 0.18;
+    colMean[x] += D[y * W + x] / H;
+  }
+  // (every column as dense as the next, on the whole: the texture only scrolls up, so a denser column would keep one
+  // side of the aura heavier than the other for good)
+  const mean = colMean.slice(f0).reduce((s, m) => s + m, 0) / (W - f0);
+  for (let y = 0; y < H; y++) for (let x = f0; x < W; x++) {
+    const u = (x - f0) / (W - f0), dens = D[y * W + x] - colMean[x] + mean;
+    const a = sstep(0.43, 0.5, dens) * sstep(0, 0.05, u) * sstep(1, 0.95, u);
+    const rim = 1 - sstep(0.46, 0.56, dens), core = sstep(0.52, 0.7, dens);
+    set(x, y, Math.max(0, 12 + 150 * rim ** 1.6 - 8 * core), Math.max(0, 2 + 70 * rim ** 2.2), Math.max(0, 26 + 225 * rim ** 1.4 - 16 * core), Math.round(a * 255));
+  }
+  return { width: W, height: H, data: d };
+}
+
+// The ICON floor cursor's atlas, in quarters: top left the badge face (a stand-in medallion until the build's own Icon
+// badge art is drawn in over it: game/iconfx.js), top right the spectrum rim (eight notches, so its turning shows),
+// bottom left a soft glow (the cursor's vertex colours tint it), bottom right a thin ring (the team colour)
+export function iconDecalAtlas(S = 512) {
+  const Q = S / 2, d = new Uint8Array(S * S * 4);
+  const set = (x, y, c, a) => { const i = (y * S + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = Math.max(0, Math.min(255, Math.round(a * 255))); };
+  const GOLD = [233, 182, 56], WHITE = [246, 248, 252], INK = [12, 4, 26], W1 = [255, 255, 255];
+  for (let y = 0; y < Q; y++) for (let x = 0; x < Q; x++) {
+    const dx = (x + 0.5 - Q / 2) / (Q / 2), dy = (y + 0.5 - Q / 2) / (Q / 2), r = Math.hypot(dx, dy), ang = Math.atan2(dy, dx) / (Math.PI * 2) + 0.5;
+    const spec = iconSpectrum(ang);
+    if (r < 0.9) set(x, y, r > 0.8 ? GOLD : r > 0.42 ? WHITE : r > 0.36 ? GOLD : spec, sstep(0.9, 0.88, r));
+    else set(x, y, INK, 0.55 * sstep(1.0, 0.9, r));
+    const notch = Math.abs(((ang * 8) % 1) - 0.5) < 0.06 ? 0.25 : 1;
+    const band = sstep(0.74, 0.8, r) * sstep(0.97, 0.91, r), line = sstep(0.7, 0.72, r) * sstep(0.745, 0.725, r);
+    set(x + Q, y, line > band ? W1 : spec, Math.max(band * notch, line * 0.9));
+    set(x, y + Q, W1, Math.max(0, 1 - r) ** 1.8);
+    set(x + Q, y + Q, W1, sstep(0.86, 0.9, r) * sstep(0.98, 0.94, r));
+  }
+  return { width: S, height: S, data: d };
+}

@@ -26,8 +26,9 @@ BEARDS = ("none", "stubble", "goatee", "full")
 EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
                      "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic", "post": "post_basic", "block": "block_basic"}
+# (v0.4.8.5: "rebound", the Open Arms Icon's Rebound Package: optional, empty by default, only its holder can fill it)
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "post", "block")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "post", "block")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller
@@ -407,6 +408,33 @@ def hof_init(char):
     return char
 
 
+# v0.4.8.5 quick patch 3: ICON status, the endgame. A build is an ICON once it has unlocked every cap breaker it can earn
+# (cap breakers open at 90 max OVR; they come 5 a Hall of Fame badge for the first 5, fewer on a build that can't
+# reach 5 HOFs), every badge is as high as it can go on this build (its cap, with the 7 Hall of Fame slots full, or as
+# many as the build can reach, and the rest at Gold) and its overall is 99. Computed, never stored: nothing a build
+# has done can be taken away, so it stays an ICON.
+ICON_STATUS_OVR = 99
+
+
+def icon_status_info(char):
+    caps_ = badge_caps(char)
+    have = char.get("badges") or {}
+    tiers = {k: min(int((have.get(k) or {}).get("tier", 0) or 0), caps_[k]) for k in BADGE_IDS}
+    hof_target = min(HOF_LIMIT, hof_capacity(char))
+    badges_left = sum(1 for k, t in tiers.items() if t < min(caps_[k], 3)) + max(0, hof_target - hof_count(char))
+    cb = char.get("cap_breakers") or {}
+    cb_max = min(CAP_BREAKER_HOF_LIMIT, hof_capacity(char)) * CAP_BREAKERS_PER_HOF
+    cb_done = cap_breakers_unlocked(char) and int(cb.get("earned", 0) or 0) >= cb_max
+    ovr = overall(char.get("attributes") or {}, char.get("position", "SF")) if char.get("attributes") else 0
+    return {"active": bool(cb_done and badges_left == 0 and ovr >= ICON_STATUS_OVR),
+            "cap_breakers": bool(cb_done), "cap_breakers_earned": int(cb.get("earned", 0) or 0), "cap_breakers_max": cb_max,
+            "badges": badges_left == 0, "badges_left": badges_left, "ovr": ovr, "ovr_need": ICON_STATUS_OVR}
+
+
+def icon_status(char):
+    return icon_status_info(char)["active"]
+
+
 def apply_cap_breakers(char, attribute, count):
     """Spend cap breakers: +1 to a maxed-out attribute (at its cap, below 99) per breaker."""
     if attribute not in ATTRIBUTES:
@@ -440,5 +468,7 @@ def describe(char):
             "prorun_to_next": 0 if max_ovr(char) >= OVR_CAP else PRORUN_GAMES_PER_OVR - prorun_completed(char) % PRORUN_GAMES_PER_OVR,
             "cap_breakers_unlocked": cap_breakers_unlocked(char), "cap_breakers_earned": cb.get("earned", 0),
             "legend_info": legend_info(char),
+            "icon_status": icon_status(char), "icon_status_info": icon_status_info(char),
+            "win_streak": int(((char.get("progression") or {}).get("win_streak", 0)) or 0),
             "max_overall": overall(cap, char["position"]),
             "max_upgrade_cost": quote(char, max_targets(char))[0]}

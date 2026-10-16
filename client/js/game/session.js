@@ -27,6 +27,7 @@ import { hsName, hsCallout } from '../sim/hashsling.js';
 import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 import { normIntent, intentDelta, takeInputs } from '../sim/wire.js';
+import { IconFX, iconFxState } from './iconfx.js';
 
 const esc2 = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
@@ -54,6 +55,7 @@ export class PlayerVisual {
   constructor(r, scene, build, look, opts = {}) {
     this.scene = scene;
     this.ring = null;
+    this.r = r; this.build = build; this.icon = null; // (v0.4.8.5 qp3: an ICON build's cursor and aura: iconfx.js)
     this.pending = false;
     const vopts = { detail: opts.detail ?? 1, faceRes: opts.faceRes, lod: opts.lod };
     this.pool = opts.pool || null;
@@ -93,8 +95,13 @@ export class PlayerVisual {
     this.culled = c;
     this.view?.setCulled?.(c);
     for (const m of [this.blob, this.ring, this.fire, this.ice]) if (m) m.culled = c;
+    this.icon?.setCulled(c);
   }
   addRing(r, color) {
+    // v0.4.8.5 quick patch 3: an ICON build's cursor is his own Icon badge, animated, in every mode (and his aura
+    // comes with it): game/iconfx.js
+    this.ringColor = color;
+    if (this.addIcon(r, color)) return;
     const ctx = r.ctx;
     const tex = cachedTexture(ctx, 'ring', () => T.ringTexture(256), { wrap: 'clamp' });
     // (the shared unit plane: these used to make, and leak, a new plane every game)
@@ -102,6 +109,26 @@ export class PlayerVisual {
     this.ring.order = 4;
     this.scene.add(this.ring);
   }
+  // v0.4.8.5 quick patch 3: the ICON cursor (his Icon badge on the floor, color: the team ring round it) and the aura
+  // (shown from a 3-game win streak). Nothing for a build without ICON status: false
+  addIcon(r, color = null) {
+    if (this.icon) return true;
+    if (!iconFxState(this.build).icon) return false;
+    this.icon = new IconFX(r, this.scene, this.build, { color });
+    this.icon.setCulled(!!this.culled);
+    return true;
+  }
+  // the build again, when it may have changed under him (the park roam: a game played, an upgrade bought): his streak
+  // moves the aura, and a build that has just made ICON swaps its ring for the badge
+  syncIcon(build) {
+    if (!build || build === this.build) return;
+    this.build = build;
+    const on = iconFxState(build).icon;
+    if (this.icon && !on) { this.icon.dispose(); this.icon = null; if (this.ringColor != null && !this.ring) this.addRing(this.r, this.ringColor); }
+    else if (this.icon) this.icon.setBuild(build);
+    else if (on && (this.ring || this.ringColor != null)) { if (this.ring) { this.scene.remove(this.ring); this.ring = null; } this.addIcon(this.r, this.ringColor ?? null); }
+  }
+  setHidden(h) { this.icon?.setHidden(h); }
   // v0.4.5 Hot / Cold: a flame or ice icon on the floor under the player (replaces the user's ring)
   addStatus(r) {
     const ctx = r.ctx;
@@ -112,6 +139,7 @@ export class PlayerVisual {
   }
   setStatus(hot, cold, dt) {
     if (!this.fire) return;
+    if (this.icon) this.icon.statusOn = !!(hot || cold); // (hot / cold takes the Icon badge's place too, while it lasts)
     this.fire.visible = !!hot; this.ice.visible = !hot && !!cold;
     if (this.ring) this.ring.visible = !hot && !cold;
     this.statusT += dt;
@@ -122,6 +150,8 @@ export class PlayerVisual {
     if (this.ring) M.m4fromYaw(this.ring.matrix, x, 0.016, z, 0, 1.25);
     if (this.fire && this.fire.visible) M.m4fromYaw(this.fire.matrix, x, 0.018, z, this.statusT * 0.6, 1.45 + 0.08 * Math.sin(this.statusT * 9));
     if (this.ice && this.ice.visible) M.m4fromYaw(this.ice.matrix, x, 0.018, z, this.statusT * 0.15, 1.35 + 0.03 * Math.sin(this.statusT * 2));
+    // (ICON: the badge and the aura follow him; hidden with him: not there yet, a team intro, the Crew HQ's games)
+    if (this.icon) this.icon.place(x, y, z, this.view, this.pending || this.view?.visible === false);
   }
   // pooled: the athlete goes back to the pool for the next person who looks like this (or a build in progress is
   // cancelled); otherwise its meshes and textures are freed. Safe to call twice.
@@ -131,6 +161,7 @@ export class PlayerVisual {
     if (this.pool) { if (this.pending) this.pool.cancel(this.job); else this.pool.release(this.key, this.view); }
     else this.view.dispose();
     this.scene.remove(this.blob); if (this.ring) this.scene.remove(this.ring); if (this.fire) { this.scene.remove(this.fire); this.scene.remove(this.ice); }
+    if (this.icon) { this.icon.dispose(); this.icon = null; }
   }
 }
 
@@ -250,6 +281,9 @@ export class MatchSession {
     const wx = basis.rx * mv.x + basis.fx * mv.y, wz = basis.rz * mv.x + basis.fz * mv.y;
     const dir = Math.hypot(wx, wz) > 0.3 ? { x: wx, z: wz } : null;
     if (inp.wasPressed('shoot') || (inp.ctx === 'defense' && inp.wasPressed('block'))) P.shoot = { ttl: 0.26 };
+    // v0.4.8.5 quick patch 3: off the ball on offense, Y / Triangle (the block / rebound button) jumps for the board too
+    // (just a jump: it never turns into a catch-and-shoot the way the shoot button does with a pass on its way)
+    else if (inp.ctx === 'offball' && inp.wasPressed('block')) P.shoot = { ttl: 0.26, jump: true };
     // v0.4.1: attack-the-rim bind (keyboard dunk key, or right stick down while sprinting). Held, it keeps
     // asking until you're in range, so you can press it early on a drive.
     const attackHeld = inp.isDown('dunk') || (inp.gp.dunkHeld && inp.ctx === 'offense');
@@ -373,7 +407,7 @@ export class MatchSession {
       const b = g.ball;
       const incoming = b.mode === 'flight' && b.kind === 'pass' && b.info && b.info.to === me.id;
       if (has || g.phase === 'ft' || g.phase === 'tip') { it.shoot = 'press'; if (P.shoot.attack) it.attack = true; }
-      else if (incoming) P.shoot.ttl = Math.max(P.shoot.ttl, 0.05); // catch-and-shoot: hold the press until the catch
+      else if (incoming && !P.shoot.jump) P.shoot.ttl = Math.max(P.shoot.ttl, 0.05); // catch-and-shoot: hold the press until the catch
       else it.jump = true;
     }
     if (P.pass && has) it.pass = { ...P.pass };

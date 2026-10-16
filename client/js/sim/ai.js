@@ -284,7 +284,8 @@ export class AI {
   estimateContest(p, defs, rim, look = 0.3) {
     const cs = [];
     const fx = rim.x - p.x, fz = rim.z - p.z, fl = hyp(fx, fz) || 1;
-    const relH = p.phys.reach * 0.93 + p.phys.vertical * p.shotPkg.jumpK * 0.5;
+    // (v0.4.8.5 qp: the rise the defense counts: a Sharp Eye hop's extra height is for the eye, shots.js showKOf)
+    const relH = p.phys.reach * 0.93 + p.phys.vertical * p.shotPkg.jumpK * (1 - S.showKOf(p.shotPkg)) * 0.5;
     for (const d of defs) {
       const dx = d.x - p.x, dz = d.z - p.z, d0 = hyp(dx, dz);
       // closeouts arrive while the shooter gathers: shrink distance by the relative closing speed

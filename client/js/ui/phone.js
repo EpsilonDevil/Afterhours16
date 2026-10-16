@@ -1,7 +1,7 @@
 // v0.4.4 social phone (LB + RB / L1 + R1 on a controller, O on the keyboard). Everyone at your park with
 // their overall and position, your friends and when they're on, your squad, and the people you've run with
 // lately. Add the ones you liked playing with and invite them to your squad whenever they're online.
-import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS, money } from './common.js';
+import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS, money, archHTML } from './common.js';
 import { ARCHETYPES, capBadges } from '../sim/builds.js';
 import { badgeChip } from './badgeart.js';
 import { PARK_NAMES } from '../sim/world.js';
@@ -43,7 +43,7 @@ export function openPhone(app, opts = {}) {
   };
   const busy = id => { const s = statusOf(id); return s.playing || (hub && where.has(id) && hub.isPlaying(id)); };
   const circle = (e, big = false) => `<span class="ph-ovr ${big ? 'big' : ''} t-${e.tier || 'regular'}" title="${esc(e.tierLabel || '')}"><b>${e.build.overall}</b><small>${esc(e.build.position)}</small></span>`;
-  const sub = e => `${esc(ARCHETYPES[e.build.archetype]?.label || title(e.build.archetype))} · ${heightStr(e.build.height)} · ${esc(e.rep?.label || '')}`;
+  const sub = e => `${archHTML(e.build)} · ${heightStr(e.build.height)} · ${esc(e.rep?.label || '')}`;
   const action = id => {
     if (w.inSquad(id)) return `<button class="ph-act sq" data-kick="${id}" title="Remove from squad">In squad</button>`;
     if (w.isFriend(id)) return statusOf(id).online && w.squad.length < 4 && !busy(id) ? `<button class="ph-act inv" data-invite="${id}">Invite</button>` : `<button class="ph-act fr" data-who="${id}">${busy(id) ? 'In a game' : 'Friend'}</button>`;
@@ -126,7 +126,7 @@ export function openPhone(app, opts = {}) {
     return `<button class="ph-back" data-back>‹ Back</button>
       <div class="ph-prof">${circle(e, true)}<h3>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}</h3><div class="ph-tier t-${e.tier}">${esc(e.tierLabel)} · ${esc(e.rep.label)}</div>
         <div class="ph-facts">
-          <div><span>Build</span><b>${esc(ARCHETYPES[e.build.archetype]?.label || '')} ${esc(e.build.position)} · ${heightStr(e.build.height)} · ${e.build.weight} lbs</b></div>
+          <div><span>Build</span><b>${archHTML(e.build)} ${esc(e.build.position)} · ${heightStr(e.build.height)} · ${e.build.weight} lbs</b></div>
           <div><span>Status</span><b class="${s.online ? 'ok' : ''}">${esc(s.text)}</b></div>
           <div><span>Plays</span><b>${esc(w.habitText(id))}</b></div>
           <div><span>Home park</span><b>${esc(a.home ? PARK_NAMES[a.home] : 'Gets around')}</b></div>

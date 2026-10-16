@@ -222,6 +222,17 @@ class Service:
                         conn.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (account_id, i["id"], time.time()))
                         char.setdefault("equipment", {})[i["slot"]] = i["id"]
                     conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                # v0.4.8.5: the same for Open Arms: a build that already held it gets the Icon's new Rebound Package put on
+                # once (into the new, empty "rebound" slot; it can take it off in its Inventory and keeps the basic snag)
+                if char.get("icon_badge") and not char.get("icon_pkg_v0485"):
+                    pkg = [i for i in CATALOG.values() if i.get("icon") == char["icon_badge"] and i.get("v0485") and i.get("slot") in builds.EQUIP_SLOTS]
+                    if pkg:
+                        char["icon_pkg_v0485"] = True
+                        for i in pkg:
+                            conn.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (account_id, i["id"], time.time()))
+                            if not char.setdefault("equipment", {}).get(i["slot"]):
+                                char["equipment"][i["slot"]] = i["id"]
+                        conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
                 chars.append(self.describe(char))
             # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
             # that earned the Icon before this patch pick theirs up here
@@ -285,6 +296,16 @@ class Service:
                     "rules": {"share": crew.CREW_SHARE, "weights": crew.MODE_WEIGHT, "mates_bonus": crew.MATES_BONUS}}
 
     # ---------- v0.4.5 The King Tut Cup ----------
+    # v0.4.8.5 quick patch 3: a game left unfinished (abandoned or quit) ends the build's win streak too
+    @staticmethod
+    def reset_win_streak(c, char_id):
+        crow = c.execute("SELECT data FROM characters WHERE id=?", (char_id,)).fetchone()
+        if crow:
+            char = builds.normalize(json.loads(crow[0]))
+            if char["progression"].get("win_streak"):
+                char["progression"]["win_streak"] = 0
+                c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char_id))
+
     @staticmethod
     def reset_cup_streak(c, char_id):
         crow = c.execute("SELECT data FROM characters WHERE id=?", (char_id,)).fetchone()
@@ -380,7 +401,10 @@ class Service:
     def eligible(self, char, item):
         # v0.4.7.5 qp3: an Icon badge's own package (the Hash-Slinging dunks) fits only the build that holds that badge
         if item.get("icon") and char.get("icon_badge") != item["icon"]:
-            return f"Requires the {progression.ICON_BADGES.get(item['icon'], {}).get('name', item['icon'])} Icon badge."
+            # (v0.4.8.5: and says whose it is: "... Icon badge: only a Stretch Big who has unlocked it can equip this.")
+            ic = progression.ICON_BADGES.get(item["icon"], {})
+            arch = {"two_way": "Two-Way"}.get(ic.get("archetype"), str(ic.get("archetype") or "").replace("_", " ").title())
+            return f"Requires the {ic.get('name', item['icon'])} Icon badge" + (f": only a {arch} who has unlocked it can equip this." if arch else ".")
         if builds.overall(char["attributes"], char["position"]) < item.get("min_overall", 0):
             return f"Requires {item['min_overall']} overall."
         rep_lvl = progression.rep_level(char.get("progression", {}).get("rep", 0))
@@ -1018,6 +1042,9 @@ class Handler(BaseHTTPRequestHandler):
                     item = CATALOG.get(item_id) if isinstance(item_id, str) else None
                     if not item or item["slot"] != slot:
                         raise builds.Invalid("Item does not fit that slot.")
+                    # (v0.4.8.5: an Icon badge's own item says so first, owned or not: it's that Icon's holder's alone)
+                    if item.get("icon") and char.get("icon_badge") != item["icon"]:
+                        raise builds.Invalid(s.eligible(char, item))
                     if not c.execute("SELECT 1 FROM inventory WHERE account_id=? AND item_id=?", (aid, item_id)).fetchone():
                         raise builds.Invalid("You do not own that item.")
                     why = s.eligible(char, item)
@@ -1264,6 +1291,8 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "abandoned", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), old["id"]))
                 if old["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, old["character_id"])
+                if old["mode"] in ("park", "proam", "prorun"):
+                    s.reset_win_streak(c, old["character_id"])
             # v0.4.5: the Cup stake comes out of the wallet now; it's only paid back on a win
             if meta.get("ante"):
                 db.change_wallet(c, aid, -meta["ante"], "cup_ante", "ante:" + data["key"])
@@ -1341,6 +1370,10 @@ class Handler(BaseHTTPRequestHandler):
                         char = builds.normalize(json.loads(crow[0]))
                         char["progression"].setdefault("park", {})["streak"] = 0
                         c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), row["character_id"]))
+                if row["mode"] in ("park", "proam", "prorun"):
+                    s.reset_win_streak(c, row["character_id"])
+                    if char_out:
+                        char_out = s.describe(s.character(aid, row["character_id"], c))
             return self.respond(200, {"status": "cancelled", "reward": 0, **({"proam_rank": rank, "character": char_out} if rank else {})})
         builds.strict_keys(data, ("key", "summary", "mates", "crew_mates"))
         mates = data.get("mates") or []

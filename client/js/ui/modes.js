@@ -1,5 +1,5 @@
 // Mode screens: Park entry + hub overlay, Pro-Am team & games, Practice gym, results.
-import { $, $$, esc, money, toast, modal, closeModal, title, TIER, confirmBox } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, title, TIER, confirmBox, archHTML } from './common.js';
 import { AFFILIATIONS, THEMES, EVENTS, travelLock } from '../world/themes.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
@@ -24,6 +24,7 @@ import { reportBug } from './bugreport.js';
 import * as Crew from './crew.js';
 import { CrewHQ, RUN_MIN } from '../game/crewhq.js';
 import * as Online from './online.js';
+import { endWinStreak } from '../game/iconfx.js';
 
 // Tear down whatever 3D world is running (park hub / standalone match)
 export function leaveWorld(app) {
@@ -560,7 +561,7 @@ export function proam(app, root) {
           <span class="muted small">Home floor</span><div class="chips">${app.config.woods.map(w => `<button class="chip ${t.wood === w ? 'on' : ''}" data-wood="${w}">${title(w)}</button>`).join('')}</div>
           <div class="row gap"><button class="btn" data-save>Save team</button><span class="muted small">Record ${t.wins || 0}-${t.losses || 0}</span></div>
         </div>
-        <div><h4>Roster</h4><div class="roster">${roster.map((e, i) => `<div class="roster-row ${i === 0 ? 'me' : ''}"><b>${e.build.overall ?? c.overall}</b><span>${esc(e.name)}${e.aiId && app.ai.inSquad(e.aiId) ? ' <em class="tag sq">SQUAD</em>' : e.aiId && app.ai.isFriend(e.aiId) ? ' <em class="tag fr">FRIEND</em>' : ''}<small>${e.build.position} · ${title(e.build.archetype)}${e.tierLabel ? ' · ' + esc(e.tierLabel) : ''}</small></span></div>`).join('')}</div>
+        <div><h4>Roster</h4><div class="roster">${roster.map((e, i) => `<div class="roster-row ${i === 0 ? 'me' : ''}"><b>${e.build.overall ?? c.overall}</b><span>${esc(e.name)}${e.aiId && app.ai.inSquad(e.aiId) ? ' <em class="tag sq">SQUAD</em>' : e.aiId && app.ai.isFriend(e.aiId) ? ' <em class="tag fr">FRIEND</em>' : ''}<small>${e.build.position} · ${archHTML(e.build)}${e.tierLabel ? ' · ' + esc(e.tierLabel) : ''}</small></span></div>`).join('')}</div>
           <p class="muted small">Your squad suits up with you; open spots go to regulars who fit the position.</p>
           ${onlineSquadNote(app)}
           <div class="row gap"><button class="btn ghost" data-resign>Sign new teammates</button><button class="btn ghost" data-phone>Squad & friends</button></div>
@@ -801,7 +802,7 @@ export async function playProAmOnline(app, setup, local) {
   const aids = Object.fromEntries(Object.entries(setup.slots).map(([a, s]) => [s, a]));
   const session = new MatchSession(app, {
     mode: 'proam', scene, venue, court: venue.courts[0], rosters, teams: setup.teams, seed: setup.seed, quarterLen: setup.quarterLen, quarters: 4, difficulty: setup.difficulty,
-    online: { net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, aids, onLost: async () => { if (ticket) { try { await app.api.post(`/api/matches/${ticket.id}/cancel`, {}); } catch { /* ignore */ } } toast('Lost the connection to the game service: you left the game.', 'error'); backHome(); } },
+    online: { net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, aids, onLost: async () => { if (ticket) { try { await app.api.post(`/api/matches/${ticket.id}/cancel`, {}); endWinStreak(app); } catch { /* ignore */ } } toast('Lost the connection to the game service: you left the game.', 'error'); backHome(); } },
     onEnd: async (summary, sess) => {
       const teamAids = Object.entries(setup.slots).filter(([, s]) => sess.game.players[s]?.team === summary.me.team).map(([a]) => a);
       const crewMates = Online.crewMatesIn(app, teamAids);
@@ -851,7 +852,7 @@ export function pauseMatch(app, world) {
     if (world.ticket) {
       try {
         const res = await app.api.post(`/api/matches/${world.ticket.id}/cancel`, pa ? { forfeit: true } : {});
-        if (res?.character) app.replaceChar(res.character);
+        if (res?.character) app.replaceChar(res.character); else endWinStreak(app); // (qp3: leaving a game ends the win streak)
         if (res?.proam_rank) toast(`Forfeit: ${res.proam_rank.delta ? `−${-res.proam_rank.delta} RP` : 'no RP left to lose'} · ${res.proam_rank.rank_after.name}${res.proam_rank.demoted ? ' (demoted)' : ''}.`, 'error');
       } catch { /* ignore */ }
     }

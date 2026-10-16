@@ -6,9 +6,15 @@
 // Beat Goes On plays the tracks in client/audio/beat and nothing else while you're at its park (park games included),
 // and those tracks never play anywhere else. Every arrival at the event park starts a new shuffle of its list; going
 // back to anywhere else picks the main soundtrack up where it left off. Without an event's files its park is quiet.
+// v0.4.8.5 quick patch 3: The Monster Mash brings its own the same way: the tracks in client/audio/monster (a Halloween
+// party mix split into cuts), only at its park, never mixed with the Beat's list or the main one.
 import { settings, volumeGain } from './settings.js';
 
-export const PLAYLISTS = { main: { dir: 'audio/music/', album: 'Afterhours 16 Soundtrack', recent: 'ah16.music.recent' }, beat: { dir: 'audio/beat/', album: 'And The Beat Goes On · Event Soundtrack', recent: 'ah16.music.recent.beat' } };
+export const PLAYLISTS = {
+  main: { dir: 'audio/music/', album: 'Afterhours 16 Soundtrack', recent: 'ah16.music.recent' },
+  beat: { dir: 'audio/beat/', album: 'And The Beat Goes On · Event Soundtrack', recent: 'ah16.music.recent.beat' },
+  monster: { dir: 'audio/monster/', album: 'The Monster Mash · Event Soundtrack', recent: 'ah16.music.recent.monster' },
+};
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

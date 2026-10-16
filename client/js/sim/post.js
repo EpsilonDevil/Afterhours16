@@ -81,9 +81,11 @@ export function postPower(p) {
   const hK = Math.max(0.75, Math.min(1.1, 0.78 + (h - 69) * 0.017));
   return pkg.emph * (0.35 + 0.65 * n(p.ratings?.post_control)) * arch * hK;
 }
-// how well a defender holds his ground against it
+// how well a defender holds his ground against it. (v0.4.8.5: Interior D keeps paying off past 99, where an Icon badge
+// takes it (Open Arms' +3%, Big Brother's +5%): it used to stop at 99 here, the one place in the sim it did)
+const nUp = v => Math.max(0, ((v ?? 50) - 25) / 74);
 export function postResist(d) {
-  return (0.55 + 0.45 * n(d.ratings?.interior_d)) * (0.88 + 0.24 * (d.phys?.strength ?? 0.5)) * (d.badges?.brick_wall ? 1 + 0.06 * d.badges.brick_wall : 1);
+  return (0.55 + 0.45 * nUp(d.ratings?.interior_d)) * (0.88 + 0.24 * (d.phys?.strength ?? 0.5)) * (d.badges?.brick_wall ? 1 + 0.06 * d.badges.brick_wall : 1);
 }
 // the back-down: m/s he moves the man toward the rim
 export function backdownSpeed(p, d) {
