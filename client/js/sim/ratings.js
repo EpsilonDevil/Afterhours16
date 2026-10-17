@@ -52,11 +52,20 @@ export function rkRaw(v) {
   if (v > 99) x += (v - 99) * 0.025;
   return Math.max(0, x);
 }
+// v0.4.8.5 qp5: past 99 (an Icon badge's boost) a stat keeps paying off where the sim used to cap what it does at 99
+// (the handle's chaining, snap and move speed, the pass's accuracy and speed): over99 is how far the rating curve has
+// risen above 99 (0 at 99 and below, so nothing changes there), the rating counted at most to RATING_MAX so nothing
+// runs away (an Icon tops out at 99 × 1.05 ≈ 104)
+export const RATING_MAX = 105;
+export const over99 = v => ((v ?? 0) > 99 ? rk(Math.min(RATING_MAX, v)) - rk(99) : 0);
 // physical attributes (speed, bounce, strength, stamina) get a gentler top end so movement stays sane
 const n = v => { v = v ?? 60; return ((v - 25) / 74 + (v > 95 ? (v - 95) * 0.012 : 0) + (v >= 99 ? 0.03 : 0)) * (v < 70 ? SUB70_K : 1); };
 
 export function physical(build) {
-  const a = build.attributes || {};
+  // (qp5: an Icon holder's phys is built with his Icon's % on these (Player), so a rating can be past 99 here; nothing
+  // in here stops at 99 (both curves keep rising), and RATING_MAX bounds it, so the stamina drain can't go negative)
+  const a0 = build.attributes || {}, a = {};
+  for (const k in a0) a[k] = a0[k] != null && a0[k] > RATING_MAX ? RATING_MAX : a0[k];
   const H = (build.height || 78) * INCH;
   const W = (build.weight || 210) * 0.4536;
   const WS = (build.wingspan || build.height + 3) * INCH;

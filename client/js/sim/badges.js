@@ -77,3 +77,16 @@ export function effectiveRatings(raw, badges = {}, icon = null, takeover = null)
   if (t) for (const k of t.stats) if (out[k] != null) out[k] += t.boost;
   return out;
 }
+// v0.4.8.5 qp5: the build's attributes with the Icon badge's own % and nothing else (no no-badge penalty, no takeover):
+// what Player.phys is built from, so an Icon's boost reaches the physics its stats name (The General's Speed,
+// Acceleration, Vertical, Strength and Stamina, Oprah's Speed With Ball). No Icon: the same object back.
+export function iconAttributes(raw, icon = null) {
+  const ic = icon && ICON_BADGES[icon];
+  if (!ic) return raw;
+  const out = { ...raw };
+  for (const k in out) {
+    const pct = (ic.all || 0) + (ic.stats[k] || 0);
+    if (pct && out[k] != null) out[k] = out[k] * (1 + pct);
+  }
+  return out;
+}

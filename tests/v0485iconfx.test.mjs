@@ -124,7 +124,7 @@ test('geometry, bones and uniforms are all finite and inside the renderer\'s lim
   assert.equal(c.mesh.order, ICON_CURSOR.order);
 });
 
-test('the badge faces whoever is looking, turns its rim, pulses; hot / cold takes its place; it hides with him', () => {
+test('the badge faces whoever is looking, turns its rim, pulses; cold takes its place, hot sets it on fire; it hides with him', () => {
   const R = rig(), v = visual(R, icon(12)); v.addRing(R.r, '#ffd84a'); v.addStatus(R.r);
   v.pending = false; v.view = { visible: true, joint: null };
   v.place(0, 0, 0); run(v.icon, 1);
@@ -136,9 +136,15 @@ test('the badge faces whoever is looking, turns its rim, pulses; hot / cold take
   const rim0 = Math.atan2(cur.mesh.bones[16 + 8], cur.mesh.bones[16 + 10]); run(v.icon, 0.5);
   assert.notEqual(Math.atan2(cur.mesh.bones[16 + 8], cur.mesh.bones[16 + 10]), rim0, 'the spectrum rim turns');
   assert.equal(cur.mesh.visible, true);
+  // (v0.4.8.5 qp5: hot no longer takes the badge's place for an ICON build: it stays and burns purple, see
+  // v0485iconfire.test.mjs; cold still does)
   v.setStatus(true, false, 1 / 60); v.place(0, 0, 0);
-  assert.equal(cur.mesh.visible, false, 'hot: the flame takes the badge\'s place');
+  assert.equal(cur.mesh.visible, true, 'hot: the badge stays (and burns)');
+  assert.equal(v.fire.visible, false, 'no flame icon for an ICON build');
   assert.equal(v.icon.aura.visible, true, 'the aura stays');
+  v.setStatus(false, true, 1 / 60); v.place(0, 0, 0);
+  assert.equal(cur.mesh.visible, false, 'cold: the ice takes the badge\'s place');
+  assert.equal(v.ice.visible, true);
   v.setStatus(false, false, 1 / 60); v.place(0, 0, 0);
   assert.equal(cur.mesh.visible, true);
   // a team intro hides him (view.visible), the Crew HQ hides you in its games (setHidden), a culled player is left out

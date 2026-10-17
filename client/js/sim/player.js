@@ -7,7 +7,7 @@ import { DT, GRAVITY, COURT } from './constants.js';
 import { jumpshotPackage, SHARP_EYE_PKG } from './shots.js';
 
 import { rk as pd } from './ratings.js';
-import { effectiveRatings, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
+import { effectiveRatings, iconAttributes, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
 import { capBadges } from './builds.js';
 import { greenVoice } from '../core/greensound.js';
 // v0.4.5 final: sprinting drains stamina twice as fast
@@ -50,7 +50,10 @@ export class Player {
     // going hot / cold, and the Lock-In grade
     this.stam = { lastMove: null, moveRun: 0, moveK: 1, lastNeg: null, negK: 1, goodRun: 0, recBoost: false, grade: null };
     this.hotStreak = 0; this.coldMisses = 0; this.cold = false;
-    this.phys = physical(entry.build);
+    // (v0.4.8.5 qp5: an Icon holder's physics carry his Icon's % on the attributes it names, past 99 if it takes them
+    // there: The General's +2.5% reaches his speed, burst, bounce, strength and stamina, Oprah's +5% Speed With Ball his
+    // top speed with the ball. Only the Icon: the no-badge penalty and takeovers stay out of the physics, as before)
+    this.phys = physical(this.icon ? { ...entry.build, attributes: iconAttributes(this.raw, this.icon) } : entry.build);
     // v0.4.5 quick patch: the body model's real shoulder and arm (char/skeleton.js), so a ball held at the top of a
     // shot is somewhere the hands can actually be (see Game.reachTop)
     { const d = bodyDims(entry.build); this.arm = { H: d.H, shoulderY: 0.806 * d.H, shoulderX: d.shoulderX, z: -0.012 * d.H, len: d.upperLen + d.foreLen, armScale: d.armScale }; }

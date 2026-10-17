@@ -181,7 +181,9 @@ export class PreviewSim {
       const o = this.previewOpts || {}, pkg = POST_PKG_BY_ID[o.pkg] || POST_PACKAGES[0];
       const movesList = [...new Set([...pkg.sig.filter(m => POST_MOVES[m]), 'dropstep', 'postspin', 'upunder'])];
       const shotsList = [...new Set([...pkg.sig.filter(k => POST_SHOTS[k]), 'hook', 'turn', 'fade'])];
-      const total = 6.4;
+      // (v0.4.8.5 qp5: Sexy Red's package backs down longer, so its own back-downs show: three or so a loop, all five
+      // in two; sim/redpost.js)
+      const back = pkg.body === 'red' ? 4.6 : 2.2, total = 6.4 + back - 2.2;
       if (this.loop(total, dt)) { const n = this.loopN || 0; this.loopN = n + 1; p.action = null; p.y = 0; p.vy = 0; p.airborne = false; this.ballFree = null; fb.holder = 0; fb.mode = 'dribble'; this.postStage = 0; this.postT = 0; }
       this.postT = (this.postT || 0) + dt;
       const n = (this.loopN || 1) - 1, mv = movesList[n % movesList.length], sk = shotsList[n % shotsList.length];
@@ -191,7 +193,7 @@ export class PreviewSim {
       let yaw = Math.PI; // back to the rim
       if (!a && this.postStage === 0) {
         p.posting = 0.3; p.backing = 1;
-        if (st > 2.2) {
+        if (st > back) {
           const M = POST_MOVES[mv], side = n % 2 ? -1 : 1;
           p.startAction('post', M.dur / (0.9 + 0.2 * pkg.emph), { move: mv, side, beat: true, dirX: 0, dirZ: 1, step: M.step, f0: p.facing + Math.PI, faceRim: p.facing, body: pkg.body, emph: pkg.emph, fakeAt: M.fakeAt || 0, def: -1, pkg: pkg.id });
           this.postStage = 1;

@@ -4,10 +4,15 @@ import { P, GROUP_SIZE, neutral, newPose } from './pose.js';
 import { COURT, BALL_R, GRAVITY } from '../sim/constants.js';
 import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
-import { BLOCK_BY_ID } from '../sim/blocks.js';
+import { BLOCK_BY_ID, blockSpin } from '../sim/blocks.js';
+import { bigBroBlockPose, bigBroLanding } from './bigbro.js';
+import { clampStealPose, clampOverlay } from './clamp.js';
+import { clampSpin } from '../sim/clamp.js';
 import { isHS, hsHand, hsK } from '../sim/hashsling.js';
 import { postPackageOf } from '../sim/post.js';
+import { redBackdown, redArms, redShot, generalSalute } from './redpose.js'; // (v0.4.8.5 qp5: Sexy Red's back-downs, The General's Salute)
 import { snagFrame, snagSpin, trunkPoint } from '../sim/snags.js';
+import { opFacing, oprahPose, oprahHold, oprahHands, oprahLook } from './oprahpose.js'; // (v0.4.8.5 qp5: Oprah's passes)
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 // v0.4.8 the Sharp Eye backflip (sim game.js FLIP): its time in the air, and how far over he is (radians, backwards
@@ -334,7 +339,8 @@ export class Animator {
   // st: {x,y,z,facing} render-interpolated; p: sim player; g: game (or null); ball: render ball {x,y,z}
   update(dt, st, p, g, ball, extra = {}) {
     this.time += dt;
-    this.x = st.x; this.y = st.y; this.z = st.z; this.f = st.facing + dunkSpin(p.action) + snagSpin(p.action); // v0.4.3: 360 dunks spin the body (v0.4.8.5: and the Open Arms 360 snag)
+    this.x = st.x; this.y = st.y; this.z = st.z; this.f = st.facing + dunkSpin(p.action) + snagSpin(p.action) + (this.xSpin = blockSpin(p.action) + clampSpin(p.action)); // v0.4.3: 360 dunks spin the body (v0.4.8.5: and the Open Arms 360 snag, the Big Brother Spin Swat, the Clamp's Swipe & Spin)
+    { const of = opFacing(this, p.action, st.facing); if (of != null) this.f = of; } // (v0.4.8.5 qp5: an Oprah pass turns his body its own way, sim/oprah.js)
     const s = this.s, H = this.H;
     const T = this.target;
     neutral(T);
@@ -564,19 +570,22 @@ export class Animator {
       else if (su === 'blur') { const bl = Math.sin(w * 2.4); T[P.root + 1] -= 0.08; T[P.chest + 1] += bl * 0.1; T[P.root] += bl * 0.03; set3(T, 'footL', 0.2, 0.08 + Math.max(0, bl) * 0.04, 0.05); set3(T, 'footR', -0.2, 0.08 + Math.max(0, -bl) * 0.04, -0.03); }
       else if (su === 'pendulum') { const pd2 = Math.sin(w * 0.7); T[P.root + 1] -= 0.08; T[P.root] += pd2 * 0.06; set3(T, 'footL', 0.36, 0.08, 0.14); set3(T, 'footR', -0.36, 0.08, -0.1); set3(T, 'kneeL', 0.6, 0, 1); set3(T, 'kneeR', -0.6, 0, 1); T[P.spine] += 0.12; }
     }
-    // v0.4.5: backing a defender down. Sexy Red (Icon badge) has its own low, wide back-down with shoulder bumps.
-    if (p.posting > 0 && has && !a) {
+    // v0.4.5: backing a defender down. (v0.4.8.5 qp5: Sexy Red's back-downs are the Icon's own Post Move Package now,
+    // body 'red', char/redpose.js; the badge alone no longer swaps whatever package he wears for the Bully Ball body)
+    const postBody = p.posting > 0 && has && !a ? postPackageOf(p).body : null;
+    this.redOn = redBackdown(this, T, p, g, dt, postBody === 'red', speed);
+    if (postBody && postBody !== 'red') {
       // v0.4.7.5 qp3: the package's back-down body. bully: low and wide, the shoulder leaning on the man; quick: short
       // steps, the head turning to read the help; smooth: upright and patient. Backing (the stick toward the rim)
       // rocks him into the man; the dribble stays on the far side
-      const body = postPackageOf(p).body, bully = body === 'bully' || p.icon === 'sexy_red', quick = body === 'quick', backing = p.backing > 0;
-      const sexy = p.icon === 'sexy_red', w2 = this.time * (bully ? 4.2 : quick ? 4.8 : 3) + p.id;
+      const body = postBody, bully = body === 'bully', quick = body === 'quick', backing = p.backing > 0;
+      const w2 = this.time * (bully ? 4.2 : quick ? 4.8 : 3) + p.id;
       T[P.root + 1] -= bully ? 0.11 : quick ? 0.08 : 0.07;
       T[P.spine] = (bully ? -0.2 : -0.12) - (backing ? 0.08 : 0.05) * Math.sin(w2);
       T[P.chest] = bully ? -0.1 : -0.05;
       set3(T, 'footL', bully ? 0.3 : 0.24, 0.08, -0.08 + (backing ? 0.04 * Math.sin(w2) : 0)); set3(T, 'footR', bully ? -0.3 : -0.24, 0.08, -0.14 - (backing ? 0.04 * Math.sin(w2) : 0));
       set3(T, 'kneeL', 0.4, 0, 1); set3(T, 'kneeR', -0.4, 0, 1);
-      if (bully || backing) { T[P.chest + 1] = Math.sin(w2) * (bully ? 0.26 : 0.14); T[P.pelvis + 2] = Math.sin(w2 * 0.5) * 0.1; T[P.head + 1] = -Math.sin(w2) * (sexy ? 0.3 : 0.2); }
+      if (bully || backing) { T[P.chest + 1] = Math.sin(w2) * (bully ? 0.26 : 0.14); T[P.pelvis + 2] = Math.sin(w2 * 0.5) * 0.1; T[P.head + 1] = -Math.sin(w2) * 0.2; }
       if (quick) { T[P.head + 1] = Math.sin(w2 * 0.6) * 0.5; }
     }
     // ---- actions ----
@@ -588,6 +597,7 @@ export class Animator {
     if (ball) look = [lb[0], lb[1], lb[2]];
     const rim = g ? g.rimFor(p.team) : null;
     if (a) this.actionPose(T, a, p, g, lbs, lb, rim);
+    if (this._op && !(a && a.type === 'pass' && a.op)) oprahHold(this, T, p, g, a, has); // (v0.4.8.5 qp5: an Oprah pass's finish runs on)
     // v0.4.5 stage 7: a released jumper's follow-through is held for the release's own time, even after the shot
     // action is over (until he does something else or gets the ball back)
     if (a && a.type === 'shoot' && a.released) { this.lastShot = a; this.lastShotT = a.t; }
@@ -598,12 +608,14 @@ export class Animator {
       if (this.followThrough(T, ls, p, this.lastShotT, st2, false)) this.lastShot = null;
     }
     // ---- ball hands ----
-    if (has && ball && !(a && (a.type === 'hang'))) this.ballHands(T, p, g, a, lbs, bmode);
+    if (has && ball && !(a && (a.type === 'hang'))) { this.ballHands(T, p, g, a, lbs, bmode); if (this.redOn) redArms(this, T, this.redOn); } // (qp5: Sexy Red's back-downs: the off arm's bar)
     else if (ball && !has && g && g.ball.mode === 'flight') {
       // reach for an incoming pass / loose ball near the hands
       const dist = Math.hypot(lb[0], lb[1] - 1.3 * s, lb[2]);
       const coming = g.ball.kind === 'pass' && g.ball.info?.to === p.id;
-      if ((coming && dist < 2.4) || (dist < 0.9 && (a?.type === 'rebound' || a?.type === 'block' || a?.type === 'catch'))) {
+      // (v0.4.8.5: not the ball a Big Brother block just swatted away: his swat follows through)
+      const swatted = a?.type === 'block' && a.hit && BLOCK_BY_ID[a.bstyle]?.icon;
+      if ((coming && dist < 2.4) || (dist < 0.9 && !swatted && (a?.type === 'rebound' || a?.type === 'block' || a?.type === 'catch'))) {
         const w = coming ? sm(2.4, 0.8, dist) : 1;
         mix3(T, 'handL', lbs[0] + 0.14, lbs[1] - 0.02, lbs[2] - 0.05, w);
         mix3(T, 'handR', lbs[0] - 0.14, lbs[1] - 0.02, lbs[2] - 0.05, w);
@@ -611,18 +623,22 @@ export class Animator {
         palm.R = { normal: [1, 0, 0.2], fingers: [0, 0.8, 0.6], w: w * 0.8 };
       }
     }
+    // v0.4.8.5 The Clamp: a pass he picked off, a ball he stripped (char/clamp.js, from Player.clampFx)
+    if (p.clampFx || a?.clamp) clampOverlay(this, T, p, a, lbs, airborne, has);
     // look target
     if (rim && a && (a.type === 'shoot' || a.type === 'layup' || a.type === 'dunk' || a.type === 'ftshot')) { this.toLocal(rim.x, rim.y, rim.z, tmp); look = tmp.slice(); lookW = 0.9; }
     else if (defense && g) { const h = g.holder(); if (h) { this.toLocal(h.x, 1.4, h.z, tmp); look = tmp.slice(); lookW = 0.8; } }
     else if (has && g && rim && bmode === 'dribble') { this.toLocal(rim.x, 1.8, rim.z, tmp); look = tmp.slice(); lookW = 0.5; }
     if (extra.look) { this.toLocal(extra.look[0], extra.look[1], extra.look[2], tmp); look = tmp.slice(); lookW = 0.8; }
     if (a && a.type === 'snag') lookW = Math.min(lookW, 0.2); // (v0.4.8.5: a snag's head is its own: the scream, the bark, the nod)
+    if (this.redOn) lookW = Math.min(lookW, 0.1); // (qp5: so is a Sexy Red back-down's: the peeks, the checks, the head fakes)
+    { const ol = oprahLook(this, a, p, g); if (ol) { look = ol.look; lookW = ol.w; } } // (qp5: an Oprah pass's eyes: on the man, the no-look's lie, ahead on the blind flip)
     // ---- smoothing ----
     const out = this.pose;
     const kFast = 1 - Math.exp(-dt * 26), kSlow = 1 - Math.exp(-dt * 12);
     const rawGroups = this.rawGroups(has, a, airborne);
     // explosive actions track their key poses tightly (a lagging hip makes takeoffs look floaty)
-    const athletic = a && (a.type === 'shoot' || a.type === 'ftshot' || a.type === 'layup' || a.type === 'dunk' || a.type === 'block' || a.type === 'rebound' || a.type === 'tipjump' || a.type === 'flip' || a.type === 'snag');
+    const athletic = a && (a.type === 'shoot' || a.type === 'ftshot' || a.type === 'layup' || a.type === 'dunk' || a.type === 'block' || a.type === 'rebound' || a.type === 'tipjump' || a.type === 'flip' || a.type === 'snag' || (a.type === 'pass' && !!a.op) || (a.type === 'steal' && !!a.clamp)) || !!p.clampFx; // (qp5: and an Oprah pass: its windup is a few frames; the Clamp's reaches and pick-offs: the trunk is where the ball in his hands is put)
     // v0.4.7.5: everything that isn't pinned (hands on the ball, planted feet) or driving an explosive action eases
     // in and out on a critically damped spring instead of a plain lag: no sudden starts or stops between poses, the
     // head and arms settle a beat after the body (secondary motion), and nothing overshoots
@@ -634,7 +650,7 @@ export class Animator {
       const n = GROUP_SIZE[g2];
       // (qp3: a styled block's arms track their path tightly too: the swat is a snap, and the crossing hands are routed
       // up and round the body on purpose, which a lagging arm would cut straight through)
-      const styledBlock = a && (((a.type === 'block' && a.bstyle) || a.type === 'snag') && (g2.startsWith('hand') || g2.startsWith('elbow')) || (a.type === 'snag' && (g2 === 'head' || g2 === 'neck'))); // (v0.4.8.5: and a rebound snag's arms and head: the scream, the bark, the nod are quick)
+      const styledBlock = a && (((a.type === 'block' && a.bstyle) || a.type === 'snag' || (a.type === 'steal' && a.clamp)) && (g2.startsWith('hand') || g2.startsWith('elbow')) || (a.type === 'snag' && (g2 === 'head' || g2 === 'neck'))); // (v0.4.8.5: and a rebound snag's arms and head: the scream, the bark, the nod are quick)
       const k = rawGroups.has(g2) ? 1 : (g2.startsWith('foot') || g2.startsWith('pitch') || g2.startsWith('toe') || g2.startsWith('yaw')) ? (wGait > 0.5 ? 1 : kFast) : (athletic && (g2 === 'root' || g2 === 'spine' || g2 === 'chest' || g2.startsWith('knee'))) || styledBlock ? kFast : kSlow;
       if (k === kSlow && !athletic) { // (shots and finishes keep their exact timing: the release is measured off them)
         const w = g2 === 'head' || g2 === 'neck' ? wS * 0.85 : wS;
@@ -652,7 +668,7 @@ export class Animator {
     if (g && !has) this.clearOthers(fin, p, g);
     // (qp3: a hand on the ball is pinned: the rig's limb clearance may swing its elbow but never moves the hand itself)
     // (v0.4.8.5: the 360 snag turns the whole body, the ball going round with it)
-    this.view.update(fin, st.x, st.y, st.z, a?.type === 'snag' ? this.f : st.facing, { look, lookW, palmL: palm.L, palmR: palm.R, pinL: rawGroups.has('handL'), pinR: rawGroups.has('handR'), flip: a?.type === 'flip' ? flipAngle(a) : 0, flipY: 0.52 });
+    this.view.update(fin, st.x, st.y, st.z, a?.type === 'snag' || this._opF != null || this.xSpin ? this.f : st.facing, { look, lookW, palmL: palm.L, palmR: palm.R, pinL: rawGroups.has('handL'), pinR: rawGroups.has('handR'), flip: a?.type === 'flip' ? flipAngle(a) : 0, flipY: 0.52 });
   }
 
   // v0.4.2 anti-clipping: keep hand targets outside an elliptic torso/hip column (sized by girth and moved
@@ -702,6 +718,7 @@ export class Animator {
     const set = new Set();
     if (has) { set.add('handL'); set.add('handR'); }
     if (a && (a.type === 'hang')) { set.add('handL'); set.add('handR'); }
+    if (a && a.type === 'pass' && a.op) { set.add('handL'); set.add('handR'); } // (qp5: an Oprah pass's arms are on their paths, before and after the ball goes)
     return set;
   }
 
@@ -718,6 +735,7 @@ export class Animator {
   // half-size, if he never got it), then the landing gesture (blockLanding).
   blockPose(T, a, c) {
     const S = BLOCK_BY_ID[a.bstyle];
+    if (S.icon) { bigBroBlockPose(this, T, a, c); return; } // (v0.4.8.5: the Big Brother package's seven, char/bigbro.js)
     const { air, up, up2, tx, ty, tz, ld, tr, ls, t } = c;
     a.ldUsed = ld; // (the landing gesture uses the same hand)
     const E = S.emph, pre = Math.min(1, up);
@@ -820,6 +838,7 @@ export class Animator {
   blockLanding(T, a, q2) {
     const S = BLOCK_BY_ID[a.bstyle];
     if (!S || S.land === 'none' || q2 < 0) return;
+    if (S.icon) { bigBroLanding(this, T, a, q2); return; } // (v0.4.8.5: the Big Brother gestures, char/bigbro.js)
     const ld = a.ldUsed || (a.lead === 'R' ? 'R' : 'L'), ls = ld === 'L' ? 1 : -1, tr = ld === 'L' ? 'R' : 'L';
     const k = sm(0.05, 0.3, q2) * (1 - sm(0.75, 1.0, q2)); // up, hold, down
     switch (S.land) {
@@ -1005,6 +1024,7 @@ export class Animator {
       }
       return;
     }
+    if (a && a.type === 'pass' && a.op && !a.released) { oprahHands(this, T, p, a, b); return; } // (v0.4.8.5 qp5: Oprah, one hand on its path)
     if (a && a.type === 'pass' && !a.released) {
       set3(T, 'handL', b[0] + r + 0.07, b[1] - 0.03, b[2] - 0.08);
       set3(T, 'handR', b[0] - r - 0.07, b[1] - 0.03, b[2] - 0.08);
@@ -1235,6 +1255,7 @@ export class Animator {
           T[P.spine + 2] = sg * (shape === 'sky' ? 0.22 : 0.12) * k; T[P.spine] = shape === 'sky' ? -0.08 : 0.02; T[P.chest + 1] = sg * 0.25 * k; T[P.head + 1] = sg * 0.5;
         } else if (a.post === 'fade' && p.airborne) { T[P.spine] = (a.fadeShape === 'high' ? -0.2 : -0.26); T[P.chest] = -0.1; set3(T, 'footL', 0.13, 0.12, 0.16); set3(T, 'footR', -0.13, 0.13, 0.14); T[P.pitchL] = 0.5; T[P.pitchR] = 0.5; }
         else if (a.post === 'turn' && !a.released) { const k = Math.min(1, t / (a.tRel || 0.5)); T[P.chest + 1] = sg * 0.2 * (1 - k); T[P.spine + 2] = sg * 0.06 * Math.sin(k * Math.PI); }
+        if (a.post) redShot(T, a, p, t, sg); // (qp5: Sexy Red's package: the Shimmy Turnaround, the Leaning Hook)
         // (v0.4.8: the Sharp Eye Icon's look is its own package now: the 'sharpeye' base and release)
         if (a.released) this.followThrough(T, a, p, t, style, true);
         break;
@@ -1473,6 +1494,8 @@ export class Animator {
       }
       case 'land': T[P.root + 1] = -0.05 * Math.sin(Math.min(1, t / a.dur) * Math.PI); T[P.spine] = 0.12; break;
       case 'pass': {
+        // v0.4.8.5 qp5 Oprah (Icon badge): his own streetball passes, nine of them (char/oprahpose.js, sim/oprah.js)
+        if (a.op) { oprahPose(this, T, a, p, g, b); break; }
         const q = Math.min(1, t / a.dur);
         const step = Math.sin(q * Math.PI);
         set3(T, 'footL', 0.13, 0.08, 0.05 + step * 0.22);
@@ -1485,13 +1508,7 @@ export class Animator {
           const y = a.ptype === 'bounce' ? 0.9 : a.ptype === 'lob' || a.ptype === 'alley' ? 1.9 : 1.32;
           set3(T, 'handL', 0.14 + dx * 0.55, y, 0.2 + dz * 0.5); set3(T, 'handR', -0.14 + dx * 0.55, y, 0.2 + dz * 0.5);
           this.palm.L = { normal: [0, -0.3, 1], fingers: [0.2, 0.3, 0.9], w: 0.7 }; this.palm.R = { normal: [0, -0.3, 1], fingers: [-0.2, 0.3, 0.9], w: 0.7 };
-          // v0.4.5 Oprah (Icon badge): a one-handed flick with the whole body behind it and the off arm swept wide
-          if (a.icon === 'oprah') {
-            set3(T, 'handR', -0.1 + dx * 0.95, y + 0.14, 0.2 + dz * 0.85); set3(T, 'elbowR', -0.3, -0.5, 0.6);
-            set3(T, 'handL', 0.8 - dx * 0.2, y - 0.2, -0.1); set3(T, 'elbowL', 1, -0.2, -0.5);
-            this.palm.R = { normal: [0, -0.2, 1], fingers: [-0.5, 0.2, 0.85], w: 0.9 }; this.palm.L = null;
-            T[P.chest + 1] = -0.34; T[P.spine] += 0.1; T[P.head + 1] = 0.18;
-          }
+          // (v0.4.5's one Oprah flick is gone: qp5 gave the Icon its own passes, above)
         }
         break;
       }
@@ -1506,15 +1523,10 @@ export class Animator {
         set3(T, 'hand' + hd, lerp(sg * 0.25, reach[0], k), lerp(1.0, reach[1], k), lerp(0.2, reach[2], k));
         set3(T, 'elbow' + hd, sg * 0.5, -1, 0);
         this.palm[hd] = { normal: [-sg * 0.3, -0.6, 0.6], fingers: [0, -0.2, 1], w: 0.6 * k };
-        // v0.4.5 The Clamp (Icon badge): a two-hand clamp on the ball, body low and square
-        if (a.icon === 'clamp') {
-          const off = hd === 'L' ? 'R' : 'L';
-          T[P.root + 1] = -0.2 - k * 0.14; T[P.spine] = 0.34 + k * 0.3; T[P.chest + 1] = 0;
-          set3(T, 'hand' + off, lerp(-sg * 0.25, reach[0] - sg * 0.2, k), lerp(1.0, reach[1] + 0.06, k), lerp(0.2, reach[2] - 0.04, k));
-          set3(T, 'elbow' + off, -sg * 0.5, -1, 0);
-          this.palm[off] = { normal: [sg * 0.6, -0.4, 0.6], fingers: [0, -0.2, 1], w: 0.7 * k };
-          set3(T, 'footL', 0.3, 0.08, 0.06); set3(T, 'footR', -0.3, 0.08, 0.02);
-        }
+        // v0.4.5 The Clamp (Icon badge). v0.4.8.5: six reaches of the Icon's own, picked for the moment (sim/clamp.js;
+        // the bodies are char/clamp.js): the vise (the old two-hand clamp, low and square), the hip rip, the dig, the
+        // slap-down, the swipe & spin and the double tap
+        if (a.icon === 'clamp') clampStealPose(this, T, a, p, b);
         break;
       }
       case 'block': case 'rebound': case 'tipjump': {
@@ -1533,8 +1545,9 @@ export class Animator {
             const r = sm(0, 0.18, u - (a.gotAt ?? u)); set3(T, 'handL', 0.17, 1.48 + 0.2 * (1 - r), 0.38); set3(T, 'handR', -0.17, 1.48 + 0.2 * (1 - r), 0.38);
             set3(T, 'elbowL', 1, -0.3, -0.2); set3(T, 'elbowR', -1, -0.3, -0.2); T[P.spine] = 0.12; T[P.head] = -0.05;
           } else if (a.type === 'block' && a.bstyle && !a.icon && BLOCK_BY_ID[a.bstyle]) {
-            // v0.4.7.5 qp3: thirty block styles by tier (sim/blocks.js)
-            this.blockPose(T, a, { u, air, up, up2, tx, ty, tz, ld, tr, ls, t });
+            // v0.4.7.5 qp3: thirty block styles by tier (sim/blocks.js). (v0.4.8.5: b, the ball as it is, for the Big
+            // Brother package's longer reach: char/bigbro.js)
+            this.blockPose(T, a, { u, air, up, up2, tx, ty, tz, ld, tr, ls, t, b });
           } else {
             // (both hands stay out in front of the chest when they cross toward the ball's side)
             const lz2 = Math.max(tz, 0.18), tz2 = Math.max(tz - 0.06, Math.abs(tx - ls * 0.3) < 0.3 ? 0.34 : 0.12);
@@ -1545,16 +1558,9 @@ export class Animator {
             T[P.spine + 2] = ls * 0.1 * up; T[P.chest + 2] = ls * 0.06 * up; T[P.chest + 1] = -ls * 0.12 * up;
             T[P.spine] = -0.05; T[P.head] = -0.22 - 0.1 * up;
           }
-          // v0.4.5 Icon badges: Big Brother swats with one arm cocked all the way back; Open Arms snatches the
-          // board in with both arms and rips it down to the chest
-          if (a.icon === 'bigbro') {
-            const sw = sm(0, 0.18, t - (a.jumpAt || 0));
-            set3(T, 'handR', -0.1 - sw * 0.3, 2.74, 0.26 + sw * 0.2); set3(T, 'elbowR', -1, 0.4, -0.2);
-            set3(T, 'handL', 0.5, 1.9, -0.05); set3(T, 'elbowL', 1, -0.1, -0.4);
-            this.palm.R = { normal: [0, 0.2, 1], fingers: [0, 1, -0.2], w: 0.9 };
-            T[P.chest + 1] = -0.3 * sw; T[P.spine] = -0.14; T[P.pitchL] = 0.75; T[P.pitchR] = 0.75;
-            set3(T, 'footL', 0.1, 0.3, -0.12); set3(T, 'footR', -0.1, 0.3, -0.12);
-          } else if (a.icon === 'openarms' && !own) {
+          // v0.4.5 Icon badges: Open Arms snatches the board in with both arms and rips it down to the chest. (v0.4.8.5:
+          // Big Brother's one fixed pose is gone; his blocks are his Icon's Block Package, through blockPose above)
+          if (a.icon === 'openarms' && !own) {
             // v0.4.8.5 Open Arms, the badge's name: both arms thrown wide open as he rises, chest up, closing on the ball
             // as it comes to him. (It used to be a fixed rip down on a clock, ball or no ball; the board itself is now
             // the snag's, whenever and however he gets it: sim/snags.js)
@@ -1805,13 +1811,8 @@ export class Animator {
         set3(T, 'elbowL', 1, -0.5, -0.2); set3(T, 'elbowR', -1, -0.5, -0.2);
         T[P.spine] = -0.15 * k; T[P.head] = -0.12 * k; T[P.chest] = -0.06 * k;
       }
-    } else if (kind === 'general') { // The General (Icon badge): a full stand-to-attention salute with a stomp
-      const st2 = Math.sin(Math.min(1, t / 0.3) * Math.PI);
-      mix3(T, 'handR', -0.04, 1.86, 0.16, k); set3(T, 'elbowR', -1.1, 0.3, 0.3);
-      this.palm.R = { normal: [0, -0.3, -1], fingers: [0.75, 0.5, 0], w: k };
-      mix3(T, 'handL', 0.3, 0.92, -0.06, k); set3(T, 'elbowL', 0.4, -1, -0.6);
-      set3(T, 'footL', 0.1, 0.08 + st2 * 0.16, 0.0); set3(T, 'footR', -0.1, 0.08, 0.0);
-      T[P.spine] = -0.1 * k; T[P.chest] = -0.05 * k; T[P.head] = -0.06 * k;
+    } else if (kind === 'general') { // The General's Salute (the Icon's own item, cel_general_salute): char/redpose.js
+      generalSalute(T, a, this);
     } else if (kind === 'salute') {
       mix3(T, 'handR', -0.06, 1.8, 0.2, k); set3(T, 'elbowR', -1, 0.15, 0.2);
       this.palm.R = { normal: [0, -0.4, -1], fingers: [0.6, 0.6, 0], w: k }; T[P.spine] = -0.06 * k; T[P.head] = -0.06 * k;

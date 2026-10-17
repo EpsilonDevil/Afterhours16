@@ -1844,3 +1844,39 @@ export function iconDecalAtlas(S = 512) {
   }
   return { width: S, height: S, data: d };
 }
+
+// v0.4.8.5 quick patch 5: an ICON build on fire (game/iconfx.js IconFire): the purple flame round his badge. u ranges:
+// a solid white strip (the floor glow and the embers take their shape from their vertex colours) and the flames, which
+// repeat across their strip (the ring goes round and closes on itself without a seam: a strip's two ends sample the
+// same texels) and down the texture (they scroll up it). Tongues of warped value noise, taller than wide: white-hot
+// lilac in the heart, violet-magenta, a deep purple edge where a tongue meets the air.
+export const FIRE_UV = { solid: 1 / 32, flames: [24.5 / 256, 232.5 / 256] };
+export function iconFireTexture(S = 256) {
+  const W = S, H = S, d = new Uint8Array(W * H * 4);
+  const set = (x, y, r, g, b, a) => { const i = (y * W + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W / 16; x++) set(x, y, 255, 255, 255, 255);
+  const [u0, u1] = FIRE_UV.flames, per = u1 - u0, x0 = Math.round(W * 3 / 32), CX = 12, CY = 2; // (noise cells across the strip, down the texture: whole numbers, so it wraps)
+  const D = new Float32Array(W * H), colMean = new Float32Array(W);
+  for (let y = 0; y < H; y++) for (let x = x0; x < W; x++) {
+    const s = ((x + 0.5) / W - u0) / per, v = (y + 0.5) / H; // (s: 0..1 along the strip, past 1 into its repeat)
+    const w = wrapFbm(s * CX * 0.5, v * CY, CX * 0.5, CY, 113, 3);
+    const n = wrapFbm(s * CX + (w - 0.5) * 3, v * CY * 1.5 + (w - 0.5) * 0.9, CX, CY * 1.5, 47, 4);
+    D[y * W + x] = n * 0.8 + wrapFbm(s * CX * 3 + w * 2, v * CY * 4, CX * 3, CY * 4, 211, 2) * 0.2;
+    colMean[x] += D[y * W + x] / H;
+  }
+  // (every column as dense as the next, on the whole: the texture only scrolls up, so a denser column would keep one
+  // side of the ring heavier than the rest for good)
+  let mean = 0; for (let x = x0; x < W; x++) mean += colMean[x] / (W - x0);
+  for (let y = 0; y < H; y++) for (let x = x0; x < W; x++) D[y * W + x] += mean - colMean[x];
+  // (the cut-offs by share of the strip: about half of it flame, the heart the densest sixth)
+  const sorted = D.slice(0).filter((_, i) => i % W >= x0).sort(), q = f => sorted[Math.floor(f * (sorted.length - 1))];
+  const [a0, a1, r0, r1, c0, c1] = [0.44, 0.54, 0.5, 0.7, 0.8, 0.97].map(q);
+  for (let y = 0; y < H; y++) for (let x = x0; x < W; x++) {
+    const dens = D[y * W + x];
+    const a = sstep(a0, a1, dens), rim = 1 - sstep(r0, r1, dens), core = sstep(c0, c1, dens);
+    // deep purple at the edge, violet-magenta inside, lilac-white in the heart
+    const r = 200 - 90 * rim + 55 * core, g = 96 - 70 * rim + 130 * core, b = 255 - 25 * rim;
+    set(x, y, Math.round(Math.min(255, r)), Math.round(Math.max(0, Math.min(255, g))), Math.round(b), Math.round(a * 255));
+  }
+  return { width: W, height: H, data: d };
+}

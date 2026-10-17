@@ -334,4 +334,73 @@ The Monster Mash went live on schedule on October 16 at 00:00 UTC. It now has it
 
 ---
 
-*(Tests: 130 Python and 351 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; and a live event handover with the game left running.)*
+## Quick patch 5 (Oct 17): every Icon badge does what it says, and ICONs burn purple
+
+The Icon badge audit found five badges that didn't live up to their descriptions. All five are fixed. Hash-Slinging, Sharp Eye and Open Arms were already right and are untouched.
+
+### Big Brother: a real Block Package
+Before, Big Brother's "ultra-flashy block animations" were one fixed pose that didn't follow the ball. It also switched off his own block styles and any Block Package he owned, so the badge made his blocks worse. Now:
+- **Block Package: Big Brother** comes with the badge and is put on for you, including builds that already have it. It's never in the store, and only a Glass Cleaner who has unlocked Big Brother can wear it.
+- **Seven new blocks**, each with its own swat, landing gesture and callout:
+  - **Tomahawk Swat** ("NOT IN MY HOUSE!"): arm cocked behind the head, knee up, whipped over the top and down; lands thumping his chest, then roars.
+  - **Volley Spike** ("GET THAT OUTTA HERE!"): a two-hand spike from behind the head, heels kicked up; lands with a two-palm shove-away.
+  - **Glass Eater** ("BIG BROTHER IS WATCHING!"): full extension, the ball pinned and held; lands pointing two fingers at his eyes, then at the shooter.
+  - **Spin Swat** ("SHHH!"): swatted across his body with a half turn in the air; lands with a finger to his lips.
+  - **Chase-Down Cannon** ("RETURN TO SENDER!"): body flattened, arm fired forward, legs split; lands standing over the spot, staring down.
+  - **Sledgehammer** ("SMASHED!"): clasped fists swung down from behind the head; lands in a crab flex.
+  - **Backhand Swat** ("BLOCK PARTY!"): back of the hand whipped away, legs split wide; lands raising the roof.
+- **His hand meets the ball:** at contact his hand is now nearer the ball than the same build without the badge, about 31 cm against 48 cm (it was 76 cm with the old pose).
+- **In any other Block Package,** or none, he blocks exactly as anyone else would.
+
+### The Clamp: steal animations for every kind of steal
+Before, he had one pose, and 41% of his steals (picked-off passes and bump strips) didn't use it. Now every steal he makes has a Clamp animation, and nobody else ever gets them:
+- **Six reaches,** picked by the situation: the **Slap-Down** (across the body), the **Dig** and **Swipe & Spin** (low), the **Hip Rip** and **Double Tap** (ball held or high), and **The Vise** (the old two-hand clamp, now ripped into the chest).
+- **Three pick-offs** for intercepted passes: the **Lane Dive**, **Tip to Himself** and **Pick & Go**.
+- **One strip** for bump steals: the **Chest-Up Strip**.
+
+His steal chances are exactly what they were.
+
+### Oprah: nine flashy passes
+Before, it was one modest follow-through on every pass. Now Oprah throws nine passes of his own, each used where it fits:
+- **Behind the Back** and **Elbow Pass:** when the man is off to his off-hand side.
+- **No-Look:** on any pass, head and chest turned away.
+- **Wraparound:** around the defender's hip and bounced in.
+- **Between the Legs** and **Over the Shoulder:** to a man behind him.
+- **Spin Dish:** slung out on the move, with a full spin after.
+- **Dribble Bullet:** straight off the bounce.
+- **Behind the Head:** mostly for lobs and alley-oops.
+
+The ball really leaves from behind his back, between his legs, over his shoulder and so on. Every screen online sees the same pass, and the pass itself (timing, speed, accuracy) is exactly what the game decides.
+
+Oprah's numbers now count too:
+- **Speed with Ball** now raises his top speed with the ball: 8.20 → 8.41 m/s at 99.
+- **Ball Handle and Pass Accuracy above 99 keep helping:** quicker dribble moves that chain sooner, and faster, more accurate passes.
+
+### The General: his own salute and the full +2.5%
+- **The General's Salute** is now its own celebration, clearly different from the store Salute. He snaps to attention with a stamp, salutes wide and then to the brow, and holds it while turning to the crowd. Then he cuts it and gives a "forward, march" upcourt.
+- **The salute is now an item:** it comes with the badge and is put on for you. It shows in your Celebration slot with a preview.
+- **His celebration is his choice:** the badge no longer overrides whatever celebration he equips.
+- **The +2.5% now reaches his body,** not just his ratings: speed, acceleration, vertical, strength and stamina. All 99: sprint 8.64 → 8.83 m/s, vertical 0.851 → 0.877 m. This now works for every Icon badge's boosts.
+
+### Sexy Red: a real post package
+Before, the "exclusive back-downs" were the store's Bully Ball with a little more head sway, and Post Control above 99 didn't count in the post. Now:
+- **Post Move Package: Sexy Red** comes with the badge and is put on for you, including builds that already have it. Only a Post Scorer who has unlocked Sexy Red can wear it. It's never in the store.
+- **Five new back-downs,** played in turn through a possession, never the same one twice in a row:
+  - **Shimmy Grind:** shoulders shimmying, hips grinding round.
+  - **Seal & Sit:** two hip-checks with a look back, then he sits on the defender.
+  - **Slow-Walk Two-Step:** big knee-high steps back, with head fakes.
+  - **Rim Peek:** a look over one shoulder at the rim, then the other.
+  - **Spin-Fake Re-Seal:** starts a spin, snaps back into the seal, then a cocky nod.
+- **Two signature finishes:** the **Shimmy Turnaround** and the **Leaning Hook**.
+- **His chosen package plays as chosen:** the badge no longer forces the Bully Ball body on him in other packages.
+- **Post Control above 99 now counts in back-downs and post moves:** at 99 × 1.05 his post power is 4% higher than at 99. It was the same before.
+
+### ICONs burn purple
+When an **ICON** build is on fire, his Icon badge stays under his feet with a **ring of purple flames burning around it**. He doesn't get the regular On-Fire icon. Regular players keep the normal On-Fire icon, and cold looks the same as before for everyone.
+
+### Also fixed, for everyone
+- **Passing accuracy above 96:** pass aim got slightly *worse* above about 96 Pass Accuracy (a sign error in the aim). It now keeps getting better up to perfect. Nothing at or below 96 changed.
+
+---
+
+*(Tests: 145 Python and 403 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games.)*

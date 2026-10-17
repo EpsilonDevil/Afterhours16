@@ -338,6 +338,131 @@ export class IconAura {
   dispose() { this.scene.remove(this.mesh); this.ctx.disposeGeometry?.(this.mesh.geo); this.mesh = null; }
 }
 
+// ---------------- on fire ----------------
+// v0.4.8.5 quick patch 5: an ICON build on fire (the hot state: session.js PlayerVisual.setStatus) keeps his badge on
+// the floor, and it burns: a ring of purple flame licking up from the cursor's outer rim, in place of the flame icon
+// everyone else gets under him. It's laid out round the camera, like the badge's face: the flames behind the badge
+// stand up tall, the ones at its sides lean out, and the ones between it and the camera lie low, reaching out over the
+// floor toward it, so from any camera they frame the badge without covering it. A violet glow on the floor under them,
+// a taller deep-purple layer with a bright violet-magenta core inside it, and embers rising off the back and sides.
+// One skinned mesh (one draw call), built the first time he goes on fire and kept for the next time: bone 0 carries it
+// to him turned to the camera, 1 the floor glow (pulsing), then one bone per sector of the ring (its tongues flicker:
+// taller, further out, a sway), then the embers. The flames rise through it with the texture (uvOffset).
+export const ICON_FIRE = {
+  r0: 0.83, // where the tongues start (m): the team ring's outer edge
+  len: [0.52, 0.86], // how far they reach (m), in front of the badge and behind it
+  lean: [0.14, 1.22], // their angle up off the floor (rad), in front and behind (the park camera looks down at ~0.3)
+  tongues: 15, // round the ring (the outer layer; the core has its own)
+  glow: [0.78, 1.36], // the floor glow's inner and outer edge (m)
+  speed: 0.95, // the flames' rise (texture heights a second)
+  flicker: 7, // rad/s
+  fadeIn: 0.3, fadeOut: 0.6, // (s: it flares up when he goes on fire, dies down when he cools off)
+  order: 5,
+};
+const NS = 10, NE = 8; // sectors round the ring, embers
+export const FIRE_BONES = { base: 0, glow: 1, tip: 2, ember: 2 + NS, n: 2 + NS + NE };
+const FB = FIRE_BONES;
+
+export function fireGeometry() {
+  const F = ICON_FIRE, P = [], N = [], U = [], C = [], J = [], W = [], I = [], TAU = Math.PI * 2;
+  const v = (x, y, z, u, vv, c, j, w) => { P.push(x, y, z); N.push(0, 1, 0); U.push(u, vv); C.push(c[0], c[1], c[2], c[3]); J.push(j[0], j[1] ?? 0, j[2] ?? 0, 0); W.push(w[0], w[1] ?? 0, w[2] ?? 0, 0); return P.length / 3 - 1; };
+  const su = T.FIRE_UV.solid, [fu0, fu1] = T.FIRE_UV.flames;
+  // the glow on the floor: a ring, strongest just outside the rim, gone at both edges
+  { const n = 48, rows = [[F.glow[0], 0], [F.r0 + 0.05, 0.45], [F.r0 + 0.25, 0.18], [F.glow[1], 0]], k = rows.length, base = P.length / 3;
+    for (let i = 0; i <= n; i++) { const a = i / n * TAU; for (const [r, al] of rows) v(Math.sin(a) * r, 0.019, Math.cos(a) * r, su, 0.5, [0.62, 0.06, 1.35, al], [FB.glow], [1]); }
+    for (let i = 0; i < n; i++) for (let j = 0; j < k - 1; j++) { const a = base + i * k + j, b = a + k; I.push(a, b, a + 1, a + 1, b, b + 1); } }
+  // a layer of flame: segs columns round the ring (reps times across the flame strip, each strip's ends on the same
+  // spot), rows from the rim out to the tips. Angle 0 is toward the camera (local +z)
+  const layer = ({ r0, len, lean, nT, phase, tile, alpha, c0, c1, seed, rows = 6, segs = 90, reps = 3 }) => {
+    let s = seed; const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const tall = Array.from({ length: nT }, () => 0.7 + 0.6 * rnd()), k = segs / reps;
+    for (let rep = 0; rep < reps; rep++) {
+      const base = P.length / 3;
+      for (let j = 0; j <= rows; j++) {
+        const t = j / rows;
+        for (let i = 0; i <= k; i++) {
+          const a = (rep * k + i) / segs * TAU, sa = Math.sin(a), ca = Math.cos(a);
+          const back = sm((1 - ca) / 2); // (0 in front of the badge, 1 behind it)
+          const e = lean[0] + (lean[1] - lean[0]) * back, L = len[0] + (len[1] - len[0]) * back;
+          // the tongues: tall in the middle, low between; the ones behind curl up a little as they rise
+          const tp = a / TAU * nT + phase, ti = Math.floor(tp), prof = 0.5 - 0.5 * Math.cos((tp - ti) * TAU);
+          const reach = L * (0.42 + 0.58 * prof ** 1.4 * tall[((ti % nT) + nT) % nT]) * t, ee = e + (Math.PI / 2 - e) * 0.2 * t * back;
+          const rr = r0 + reach * Math.cos(ee), yy = 0.021 + reach * Math.sin(ee);
+          const al = alpha * sm(t / 0.14) * (1 - t) ** 0.9 * (0.55 + 0.45 * prof);
+          const sp = a / TAU * NS, sk = Math.floor(sp) % NS, sf = sp - Math.floor(sp), w = t ** 1.2;
+          v(sa * rr, yy, ca * rr, fu0 + (fu1 - fu0) * i / k, phase + L * t / tile, [c0[0] + (c1[0] - c0[0]) * t, c0[1] + (c1[1] - c0[1]) * t, c0[2] + (c1[2] - c0[2]) * t, al],
+            [FB.base, FB.tip + sk, FB.tip + (sk + 1) % NS], [1 - w, w * (1 - sf), w * sf]);
+        }
+      }
+      for (let j = 0; j < rows; j++) for (let i = 0; i < k; i++) { const a = base + j * (k + 1) + i, b = a + 1, c = a + k + 1, d = c + 1; I.push(a, c, b, b, c, d); }
+    }
+  };
+  // the outer layer, deep purple at the tips; the core inside it, shorter and brighter (drawn over it)
+  layer({ r0: F.r0, len: F.len, lean: F.lean, nT: F.tongues, phase: 0.13, tile: 0.95, alpha: 1, c0: [1.4, 0.36, 2.4], c1: [0.4, 0.05, 1.15], seed: 7 });
+  layer({ r0: F.r0 - 0.015, len: F.len.map(l => l * 0.55), lean: [F.lean[0] + 0.03, F.lean[1]], nT: 11, phase: 0.61, tile: 0.6, alpha: 1, c0: [2.3, 0.95, 3.0], c1: [1.4, 0.28, 2.5], seed: 29, rows: 4 });
+  // the embers: little sparks facing the camera, each on its own bone (where it is now; scaled to nothing between lives)
+  for (let e = 0; e < NE; e++) {
+    const hw = 0.03, b = FB.ember + e, col = [2.2, 0.7, 3.0], base = P.length / 3;
+    v(0, 0, 0, su, 0.5, [...col, 1], [b], [1]);
+    for (const [x, y] of [[-hw, 0], [0, hw * 1.7], [hw, 0], [0, -hw * 1.7]]) v(x, y, 0, su, 0.5, [...col, 0], [b], [1]);
+    for (let q = 0; q < 4; q++) I.push(base, base + 1 + q, base + 1 + (q + 1) % 4);
+  }
+  return { position: new Float32Array(P), normal: new Float32Array(N), uv: new Float32Array(U), color: new Float32Array(C), joints: new Float32Array(J), weights: new Float32Array(W), index: new Uint16Array(I), bounds: { center: [0, 0.3, 0], radius: 1.7 } };
+}
+
+export class IconFire {
+  constructor(r, scene) {
+    this.r = r; this.ctx = r.ctx; this.scene = scene;
+    this.tex = cachedTexture(this.ctx, 'iconFire', () => T.iconFireTexture(256), {});
+    this.mat = new Material({ map: this.tex, color: [1, 1, 1], opacity: 0, shading: 'unlit', blend: 'alpha', depthWrite: false, fog: false, doubleSided: true });
+    this.mat.uvOffset = [0, Math.random()];
+    this.mesh = new Mesh(this.ctx.geometry(fireGeometry()), this.mat, { castShadow: false, reflect: false, bones: new Float32Array(16 * FB.n), bounds: { center: [0, 0.3, 0], radius: 1.7 } });
+    this.mesh.order = ICON_FIRE.order; this.mesh.name = 'iconFire'; this.mesh.visible = false;
+    scene.add(this.mesh);
+    this.show = 0; this.t = Math.random() * 10;
+    this.tips = Array.from({ length: NS }, (_, i) => ({ ph: i * 2.3 + Math.random() * 2, f: 0.75 + 0.5 * Math.random() }));
+    this.embers = Array.from({ length: NE }, (_, i) => ({ life: 0, age: 0, wait: i * 0.11, a: 0, r: 0, up: 0, out: 0, s: 1 }));
+  }
+  get visible() { return !!this.mesh?.visible; }
+  hide() { this.show = 0; if (this.mesh) this.mesh.visible = false; }
+  // the badge's spot (x, z: it stays on the floor like the badge, whatever his height y), the camera's yaw from it, and
+  // whether he's on fire now (it flares up, and dies down when he cools off)
+  update(dt, x, y, z, yaw, on = true) {
+    const F = ICON_FIRE, mesh = this.mesh;
+    this.show = on ? Math.min(1, this.show + dt / F.fadeIn) : Math.max(0, this.show - dt / F.fadeOut);
+    mesh.visible = this.show > 0.001;
+    if (!mesh.visible) return;
+    const t = (this.t += dt), b = mesh.bones, at = i => b.subarray(i * 16, i * 16 + 16), k = sm(this.show), fl = F.flicker;
+    M.m4fromYaw(at(FB.base), x, 0, z, yaw, 1);
+    M.m4fromYaw(at(FB.glow), x, 0, z, yaw, 0.96 + 0.05 * Math.sin(t * 4.3) + 0.02 * Math.sin(t * 11));
+    // the tongues: each sector of the ring reaches up and out on its own, and sways (they grow up out of the floor as
+    // it flares up)
+    this.tips.forEach((q, i) => {
+      const f = fl * q.f, ph = q.ph, st = 1 + 0.2 * Math.sin(t * f + ph) + 0.1 * Math.sin(t * f * 2.3 + ph * 1.7), out = 1 + 0.07 * (st - 1);
+      bone(at(FB.tip + i), x, 0, z, yaw + 0.045 * Math.sin(t * f * 0.5 + ph * 0.7), out, st * (0.25 + 0.75 * k), out);
+    });
+    // the embers: off the back and the sides of the ring, up and away, gone
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    this.embers.forEach((q, i) => {
+      const m = at(FB.ember + i);
+      if (q.life > 0 && (q.age += dt) < q.life) {
+        const p = q.age / q.life, rr = q.r + q.out * p, lx = Math.sin(q.a) * rr + 0.03 * Math.sin(t * 3 + i), lz = Math.cos(q.a) * rr;
+        M.m4fromYaw(m, x + c * lx + s * lz, 0.04 + q.up * p, z - s * lx + c * lz, yaw, q.s * Math.min(1, p * 6) * (1 - p) ** 0.7 * k);
+        return;
+      }
+      zero(m); q.life = 0;
+      if (on && (q.wait -= dt) <= 0) Object.assign(q, { a: Math.PI + (Math.random() * 2 - 1) * 2.2, r: F.r0 + Math.random() * 0.15, up: 0.55 + Math.random() * 0.6, out: 0.05 + Math.random() * 0.25, life: 0.7 + Math.random() * 0.6, age: 0, s: 0.7 + Math.random() * 0.6, wait: Math.random() * 0.5 });
+    });
+    // the material: a flicker in its strength and brightness; the flames rising through it
+    const mat = this.mat, br = 1 + 0.08 * Math.sin(t * fl * 1.1 + 1);
+    mat.opacity = k * (0.93 + 0.05 * Math.sin(t * fl * 1.6) + 0.02 * Math.sin(t * 23));
+    mat.color[0] = br; mat.color[1] = br; mat.color[2] = br;
+    mat.uvOffset[1] = ((mat.uvOffset[1] - F.speed * dt) % 1 + 1) % 1;
+    const o = mesh.boundsOverride.center; o[0] = x; o[1] = 0.3; o[2] = z;
+  }
+  dispose() { this.scene.remove(this.mesh); this.ctx.disposeGeometry?.(this.mesh.geo); this.mesh = null; }
+}
+
 // ---------------- the two together, for a PlayerVisual ----------------
 // opts.color: the team ring's colour (null: white); opts.cursor: false for the aura alone
 export class IconFX {
@@ -346,6 +471,9 @@ export class IconFX {
     this.state = iconFxState(build);
     this.cursor = opts.cursor === false ? null : new IconCursor(r, scene, this.state.badge || 'the_general', this.color);
     this.aura = null;
+    // (statusOn: cold, the ice icon takes the badge's place; onFire: hot, the badge burns purple: IconFire, built the
+    // first time it's needed)
+    this.fire = null; this.onFire = false;
     this.hidden = false; this.statusOn = false; this.culled = false;
     this.last = null;
     this.setBuild(build, true);
@@ -358,8 +486,8 @@ export class IconFX {
     if (this.aura) this.aura.setLevel(this.state.level, snap);
     if (this.cursor && this.state.badge && this.state.badge !== this.cursor.badge) { this.cursor.dispose(); this.cursor = new IconCursor(this.r, this.scene, this.state.badge, this.color); this.cursor.mesh.culled = this.culled; }
   }
-  setCulled(c) { this.culled = c; if (this.cursor) this.cursor.mesh.culled = c; if (this.aura) this.aura.mesh.culled = c; }
-  setHidden(h) { this.hidden = !!h; if (h) { if (this.cursor) this.cursor.mesh.visible = false; if (this.aura) this.aura.mesh.visible = false; } }
+  setCulled(c) { this.culled = c; if (this.cursor) this.cursor.mesh.culled = c; if (this.aura) this.aura.mesh.culled = c; if (this.fire) this.fire.mesh.culled = c; }
+  setHidden(h) { this.hidden = !!h; if (h) { if (this.cursor) this.cursor.mesh.visible = false; if (this.aura) this.aura.mesh.visible = false; if (this.fire) this.fire.hide(); } }
   // every frame, after he's posed: x, y, z where he is (y: off the floor), view his AthleteView (for his hips and head)
   place(x, y, z, view, hide = false, dt = null) {
     const tn = now(), d = dt ?? (this.last == null ? 1 / 60 : Math.max(0, Math.min(0.1, tn - this.last)));
@@ -370,6 +498,10 @@ export class IconFX {
       this.cursor.mesh.visible = !off && !this.statusOn;
       this.cursor.update(d, x, y, z, yaw);
     }
+    // on fire: the badge stays and burns purple (an ICON build's own on-fire look; everybody else gets the flame icon)
+    const burn = !!this.cursor && this.onFire && !this.statusOn;
+    if (burn && !off && !this.fire) { this.fire = new IconFire(this.r, this.scene); this.fire.mesh.culled = this.culled; }
+    if (this.fire) { if (off) this.fire.hide(); else this.fire.update(d, x, y, z, yaw, burn); }
     if (this.aura) {
       let foot = [x, y, z], head = [x, y + REF_H, z];
       if (view?.joint && view.model !== null) {
@@ -380,5 +512,5 @@ export class IconFX {
       this.aura.update(d, foot, head, yaw);
     }
   }
-  dispose() { if (this.cursor) this.cursor.dispose(); if (this.aura) this.aura.dispose(); this.cursor = this.aura = null; }
+  dispose() { if (this.cursor) this.cursor.dispose(); if (this.aura) this.aura.dispose(); if (this.fire) this.fire.dispose(); this.cursor = this.aura = this.fire = null; }
 }

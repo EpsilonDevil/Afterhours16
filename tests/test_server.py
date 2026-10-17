@@ -654,7 +654,7 @@ class ApiTests(unittest.TestCase):
 
     def test_block_packages_are_in_the_store_with_the_height_break(self):
         # v0.4.7.5 qp3 (revised): five Block Packages, one a tier; the tall need a tier less of Block, the small a tier more
-        pk = [i for i in server_app.CATALOG.values() if i.get("slot") == "block"]
+        pk = [i for i in server_app.CATALOG.values() if i.get("slot") == "block" and not i.get("icon")]  # (v0.4.8.5: and Big Brother's own, tests/test_bigbro.py)
         self.assertEqual(sorted(i["tier"] for i in pk), [1, 2, 3, 4, 5])
         self.assertEqual(builds.DEFAULT_EQUIPMENT["block"], "block_basic")
         self.assertIn("block", builds.EQUIP_SLOTS)

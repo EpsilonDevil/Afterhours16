@@ -139,8 +139,11 @@ export class PlayerVisual {
   }
   setStatus(hot, cold, dt) {
     if (!this.fire) return;
-    if (this.icon) this.icon.statusOn = !!(hot || cold); // (hot / cold takes the Icon badge's place too, while it lasts)
-    this.fire.visible = !!hot; this.ice.visible = !hot && !!cold;
+    // (v0.4.8.5 qp5: an ICON build on fire keeps his Icon badge, and it burns with a purple flame round it, in place of
+    // the flame icon everybody else gets: iconfx.js IconFire. Cold still takes the badge's place, while it lasts)
+    const burns = !!this.icon?.cursor;
+    if (this.icon) { this.icon.onFire = !!hot; this.icon.statusOn = burns ? !hot && !!cold : !!(hot || cold); }
+    this.fire.visible = !!hot && !burns; this.ice.visible = !hot && !!cold;
     if (this.ring) this.ring.visible = !hot && !cold;
     this.statusT += dt;
   }
@@ -450,8 +453,9 @@ export class MatchSession {
   }
 
   celebrationKind(p) {
-    // v0.4.5: The General (Icon badge) unlocks its own salute, which beats whatever is equipped
-    if (p.icon === 'the_general') return 'general';
+    // (v0.4.8.5 qp5: what he has on, always. The General's own salute is an item now, The General's Salute
+    // (cel_general_salute, anim 'general'), put on when the Icon unlocks; it no longer beats whatever else he equips.
+    // Online the kind goes with the input: P.celebrate / it.celebrate)
     const id = p.entry.build.equipment?.celebration;
     const item = id && this.catalog[id];
     return item?.anim || ['flex', 'chest', 'point'][p.id % 3];
@@ -1050,7 +1054,8 @@ export class MatchSession {
           const blk = g.players[e.player];
           const bst = e.style ? BLOCK_BY_ID[e.style] : null;
           hud.pushFeed(`${blk.name} blocks ${g.players[e.shooter].name}${bst ? ' · ' + bst.name : ''}`, blk.team === myTeam ? 'good' : 'bad');
-          if (this.isMe(blk) || this.isMe(g.players[e.shooter])) { hud.callout(e.chase ? 'CHASE-DOWN!' : (this.isMe(blk) && blockCallout(e.style)) || 'REJECTED!', this.isMe(blk) ? 'good' : 'bad'); this.slow(0.5); }
+          // (v0.4.8.5: a Big Brother block's own callout comes first, chase-down or not)
+          if (this.isMe(blk) || this.isMe(g.players[e.shooter])) { hud.callout((this.isMe(blk) && bst?.icon && blockCallout(e.style)) || (e.chase ? 'CHASE-DOWN!' : (this.isMe(blk) && blockCallout(e.style)) || 'REJECTED!'), this.isMe(blk) ? 'good' : 'bad'); this.slow(0.5); }
           break;
         }
         case 'steal': {

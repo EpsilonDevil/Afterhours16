@@ -7,6 +7,7 @@
 // the Post Control rating, height and the archetype: Post Scorers' post moves are the most effective in the game.
 //
 // Nothing here imports the sim: game.js, ai.js, the animator, the store and the preview all read from it.
+import { RED_POST_PKG, RED_ICON, RED_IDS, RED_BACKDOWNS, RED_FINISHES } from './redpost.js'; // (qp5: Sexy Red's package: data only)
 
 export const POST = {
   range: 5.4,          // post-ups happen inside this of the rim
@@ -49,7 +50,14 @@ export const POST_PACKAGES = [
   { id: 'post_legend', tier: 5, name: 'Low Post Legend', price: 19900, rep: 8, ovr: 85, emph: 1.5, sig: ['dropstep', 'postspin', 'upunder', 'hook', 'fade'], hook: 'sky', fade: 'high', body: 'smooth', desc: 'The whole repertoire at its best: every move and every shot out of the post is a signature. The top tier.' },
   { id: 'post_backboard', tier: 5, name: 'Backboard Bully', price: 19900, rep: 8, ovr: 85, emph: 1.5, sig: ['dropstep', 'postspin', 'turn', 'hook'], hook: 'jump', fade: 'lean', body: 'bully', desc: 'Power at the top tier: a back-down nobody holds, a drop step into a dunk, a jump hook off the glass. The top tier.' },
 ];
-export const POST_PKG_BY_ID = Object.fromEntries(POST_PACKAGES.map(p => [p.id, p]));
+// v0.4.8.5 qp5: an Icon badge's own package (sim/redpost.js): Sexy Red's. The holder's alone (postPackageOf gives anyone
+// else Fundamentals), never in the store, free; it bites like the top tier and no more. body 'red': its five back-downs
+// (char/redpose.js); its signature turnaround and hook carry their own flourish
+export const POST_ICON_PACKAGES = [
+  { id: RED_POST_PKG, tier: 5, name: 'Sexy Red', price: 0, icon: RED_ICON, emph: 1.5, sig: ['dropstep', 'postspin', 'turn', 'hook'], hook: 'jump', fade: 'high', body: 'red', backdowns: RED_IDS,
+    desc: `The Post Scorer Icon's own: five back-downs nobody else has, one after another as you work the man (${RED_BACKDOWNS.map(s => `the ${s.name}`).join(', ').replace(/, (the [^,]+)$/, ' and $1')}), and two signature finishes with a flourish of their own: the ${RED_FINISHES.turn} and the ${RED_FINISHES.hook}. Bites like the top tier. Comes with the Sexy Red Icon badge, for that build only; it cannot be bought.` },
+];
+export const POST_PKG_BY_ID = Object.fromEntries([...POST_PACKAGES, ...POST_ICON_PACKAGES].map(p => [p.id, p]));
 export const POST_PKG_IDS = POST_PACKAGES.map(p => p.id);
 
 // the Post Control a build needs for a tier, by height: 6'11" and up a tier less, 6'1" and under a tier more
@@ -67,12 +75,21 @@ export function postPackageItems() {
     description: p.desc + (p.tier > 1 ? ` Requires ${POST.tier[p.tier]} Post Control (6'11"+: ${postPackageNeed(p.tier, POST.tall, p.id)}; 6'1" and under: ${postPackageNeed(p.tier, POST.short, p.id)}).` : ''),
     id: p.id, name: `Post Move Package: ${p.name}`, slot: 'post', price: p.price, style: p.id.slice(5), tier: p.tier, emph: p.emph, sig: [...p.sig], hook: p.hook, fade: p.fade, body: p.body,
     v0475qp3: true, min_attr: { post_control: p.id === 'post_basic' ? 0 : POST.tier[p.tier] }, min_attr_tall: { post_control: postPackageNeed(p.tier, POST.tall, p.id) }, min_attr_short: { post_control: postPackageNeed(p.tier, POST.short, p.id) }, tall_height: POST.tall, short_height: POST.short,
-  }));
+  })).concat(POST_ICON_PACKAGES.map(p => ({
+    // (qp5: an Icon's package: no requirement but the badge, which app.eligible checks)
+    category: 'animation', min_overall: 0, rep_required: 0, original_2k_asset: false, description: p.desc,
+    id: p.id, name: `Post Move Package: ${p.name}`, slot: 'post', price: 0, style: p.id.slice(5), tier: p.tier, emph: p.emph, sig: [...p.sig], hook: p.hook, fade: p.fade, body: p.body,
+    backdowns: [...p.backdowns], min_attr: {}, exclusive: 'icon', icon: p.icon, secret: true, v0485qp5: true,
+  })));
 }
-export const postPackageOf = p => POST_PKG_BY_ID[p?.postPkg] || POST_PACKAGES[0];
+// the package he plays: what he wears; an Icon's package only on the build that holds that Icon badge
+export const postPackageOf = p => { const k = POST_PKG_BY_ID[p?.postPkg]; return k && (!k.icon || k.icon === p?.icon) ? k : POST_PACKAGES[0]; };
 export const isSig = (p, what) => postPackageOf(p).sig.includes(what);
 
-const n = v => Math.max(0, Math.min(1, ((v ?? 50) - 25) / 74));
+// (v0.4.8.5 qp5: Post Control past 99 keeps counting, where an Icon badge takes it (Sexy Red's +5%: 103.95), at the
+// same rate as below, up to what 105 gives; at 99 and under it is exactly what it always was)
+export const PC_TOP = 105;
+const n = v => Math.max(0, Math.min((PC_TOP - 25) / 74, ((v ?? 50) - 25) / 74));
 // how well he plays on the block: the package's emphasis × his Post Control × his archetype × his height
 export function postPower(p) {
   const pkg = postPackageOf(p);

@@ -27,6 +27,10 @@ from .database import Database, encode
 ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "client"
 CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json").read_text())}
+# v0.4.8.5 qp5: Icon items a build that already held the badge gets put on once, each with its own flag on the
+# character (so one never stands in for another): Sexy Red's Post Move Package, The General's Salute
+ICON_EQUIP_ONCE = {"post_sexy_red": "icon_pkg_v0485qp5_sr", "cel_general_salute": "icon_pkg_v0485qp5_gen",
+                   "block_big_brother": "icon_pkg_v0485qp5_bb"}  # (and Big Brother's own Block Package)
 VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
@@ -233,6 +237,17 @@ class Service:
                             if not char.setdefault("equipment", {}).get(i["slot"]):
                                 char["equipment"][i["slot"]] = i["id"]
                         conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                # v0.4.8.5 qp5: Sexy Red's own Post Move Package and The General's Salute: a build that already held the badge
+                # gets its item put on once, over whatever it wore there (the badge used to swap that out in games anyway);
+                # each item its own flag (ICON_EQUIP_ONCE). It can change it back in its Inventory
+                once = [i for i in CATALOG.values() if char.get("icon_badge") and i.get("icon") == char["icon_badge"] and i["id"] in ICON_EQUIP_ONCE
+                        and not char.get(ICON_EQUIP_ONCE[i["id"]]) and i.get("slot") in builds.EQUIP_SLOTS]
+                if once:
+                    for i in once:
+                        conn.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (account_id, i["id"], time.time()))
+                        char.setdefault("equipment", {})[i["slot"]] = i["id"]
+                        char[ICON_EQUIP_ONCE[i["id"]]] = True
+                    conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
                 chars.append(self.describe(char))
             # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
             # that earned the Icon before this patch pick theirs up here
@@ -396,6 +411,8 @@ class Service:
             c.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (aid, i["id"], time.time()))
             if equip and char is not None and i.get("slot") in builds.EQUIP_SLOTS:
                 char.setdefault("equipment", {})[i["slot"]] = i["id"]
+                if i["id"] in ICON_EQUIP_ONCE:  # (qp5: put on at the unlock: the profile's one-time catch-up is done)
+                    char[ICON_EQUIP_ONCE[i["id"]]] = True
         return [i["id"] for i in items]
 
     def eligible(self, char, item):
@@ -404,7 +421,8 @@ class Service:
             # (v0.4.8.5: and says whose it is: "... Icon badge: only a Stretch Big who has unlocked it can equip this.")
             ic = progression.ICON_BADGES.get(item["icon"], {})
             arch = {"two_way": "Two-Way"}.get(ic.get("archetype"), str(ic.get("archetype") or "").replace("_", " ").title())
-            return f"Requires the {ic.get('name', item['icon'])} Icon badge" + (f": only a {arch} who has unlocked it can equip this." if arch else ".")
+            name = ic.get("name", item["icon"])  # (qp5: "Requires The General Icon badge", never "the The General")
+            return f"Requires {'' if name.startswith('The ') else 'the '}{name} Icon badge" + (f": only a {arch} who has unlocked it can equip this." if arch else ".")
         if builds.overall(char["attributes"], char["position"]) < item.get("min_overall", 0):
             return f"Requires {item['min_overall']} overall."
         rep_lvl = progression.rep_level(char.get("progression", {}).get("rep", 0))

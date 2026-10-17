@@ -5,6 +5,7 @@ import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
 import { pickSnag, snagAction, snagTick, snagCuttable, snagBall, SNAG, SNAG_FROM, OA_ICON } from './snags.js';
+import { CLAMP_ICON, pickClampReach, clampGot, clampStealBall, clampPickStart, clampStripStart, clampFxTick, clampPickBall } from './clamp.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
 import { POST, POST_MOVES, POST_SHOTS, postPower, postResist, backdownSpeed, beatChance, postShotK, postPackageOf } from './post.js';
 import { DRIBBLE_SPEED_K } from './player.js';
@@ -17,6 +18,8 @@ import { AI } from './ai.js';
 import { statProfile } from './profile.js';
 
 import { rk as n } from './ratings.js';
+import { over99, RATING_MAX } from './ratings.js';
+import { OP_ICON, pickOprahPass, oprahPlan, oprahBall, oprahFacing } from './oprah.js';
 import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES } from './badges.js';
 // v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
 import { DEF_K } from './shots.js';
@@ -42,8 +45,10 @@ export const MOVE_SPEED_ALL = 0.95;
 export const posMoveK = pos => (POS_MOVE_SPEED[pos] ?? 1) * MOVE_SPEED_ALL;
 // v0.4.7.5: the better the handle, the sooner the next move can cut in (60% through at a 60 handle, 40% at 99) and the
 // harder the burst snaps in (the velocity blend rate)
-export const chainAt = p => Math.max(0.4, Math.min(CHAIN_AT, CHAIN_AT - ((p.ratings.ball_handle ?? 60) - 60) * 0.0052));
-export const moveSnapRate = p => 12 + 10 * Math.max(0, Math.min(1, ((p.ratings.ball_handle ?? 60) - 50) / 49));
+// (v0.4.8.5 qp5: past 99, an Icon's boost, both keep going the same way, as far as a 105 would take them: the chain
+// point from 40% down to 36.9%, the snap from 22 up to 23.2; nothing changes at 99 and below)
+export const chainAt = p => { const bh = p.ratings.ball_handle ?? 60; return bh > 99 ? 0.4 - (Math.min(RATING_MAX, bh) - 99) * 0.0052 : Math.max(0.4, Math.min(CHAIN_AT, CHAIN_AT - (bh - 60) * 0.0052)); };
+export const moveSnapRate = p => { const bh = p.ratings.ball_handle ?? 60, x = (Math.min(RATING_MAX, bh) - 50) / 49; return 12 + 10 * Math.max(0, bh > 99 ? x : Math.min(1, x)); };
 // v0.4.5: the ball travels 0.985% slower on passes
 const PASS_K = 1 - 0.00985;
 // v0.4.5 alley-oops: takeoff spot distance from the lob's aim point, and the most a receiver can drift in the air
@@ -78,6 +83,17 @@ export const RULES = {
 };
 // v0.4.7.5 quick patch: passing 10% more accurate across the board (aim error x0.9, in-flight accuracy x1.1)
 export const PASS_ACC_K = 0.9, PASS_ACC_BOOST = 1.1;
+// v0.4.8.5 qp5: what a pass gets from Pass Accuracy, as functions (releasePass, startPass, startMove use them):
+//  passAcc: the accuracy it steers onto the receiver with (and its speed), capped at 1.15 by ~97 as before, and past 99
+//   rising on with the rating curve (over99) as far as a 105 takes it;
+//  passAimErr: the aim error (m, sigma), which only ever shrinks as the rating rises: nothing from Pass Accuracy at ~96
+//   and up (it used to go negative there and grow again: 7.5 cm at 99, 12 cm at 104), plus a little for moving;
+//  passQuick: the share of the base windup the release takes (counted to RATING_MAX at most);
+//  moveHandleK: how much quicker a dribble move comes out for Ball Handle and Speed With Ball (past 99: over99).
+export const passAcc = pa => Math.min(1.15, n(pa) * PASS_ACC_BOOST) + over99(pa) * PASS_ACC_BOOST;
+export const passAimErr = (pa, speed = 0) => (Math.max(0, 1 - n(pa)) * 0.26 + Math.min(1, speed / 6) * 0.08) * PASS_ACC_K;
+export const passQuick = pa => 1.1 - 0.32 * n(Math.min(RATING_MAX, pa ?? 60));
+export const moveHandleK = p => 1 + 0.4 * (Math.min(1.25, n(p.ratings.ball_handle)) + over99(p.ratings.ball_handle)) + 0.1 * (Math.min(1.2, n(p.ratings.speed_with_ball)) + over99(p.ratings.speed_with_ball));
 // v0.4.7.5 quick patch 3: screens (Game.screenQuality / screenHit). q = base + spd·(run-in speed) + set·(planted)
 // + face·(square to the defender) + called + size·(mass and height edge) + str·(Strength rating edge) + bw·tier
 // − dbw·tier (tiers through badges.bk: 1 / 2.1 / 3.31 / 4.64). A screen takes stop0..1 of the defender's speed and slows him for slow0 + slow1·q seconds; q ≥ stunQ
@@ -1357,12 +1373,24 @@ export class Game {
     const flick = type === 'chest' && p.speed > 3.5;
     const P = PASS[type] || PASS.chest;
     p.spend(COST.pass); this.endMoveChain(p);
-    // v0.4.1: better passers get the ball out quicker (release up to ~25% faster)
-    const quick = 1.1 - 0.32 * n(p.ratings.pass_accuracy);
+    // v0.4.1: better passers get the ball out quicker (release up to ~25% faster) (qp5: counted to RATING_MAX at most)
+    const quick = passQuick(p.ratings.pass_accuracy);
     const a = p.startAction('pass', (flick ? PASS.flick.dur : P.dur) * quick, { ptype: flick ? 'flick' : type, rel: (flick ? PASS.flick.rel : P.rel) * quick, to: target.id, icon: p.icon === 'oprah' ? 'oprah' : null, quick: !!spec.quick });
     // turn to the receiver: part of it at once, the rest through the throw (the ball isn't let go until he's
     // facing within 60 degrees of him, so it always leaves toward the man it's meant for)
     const face = Math.atan2(target.x - p.x, target.z - p.z);
+    // v0.4.8.5 qp5 Oprah (the Playmaker's Icon badge): one of his own streetball passes (sim/oprah.js), picked by the
+    // pass, where the man is off his facing, the ball's hand and whether he's on the move; the same on every peer (his
+    // pass count and the tick, no rng). It changes where the ball goes on the way out and where it leaves his hand,
+    // never when it goes, how fast or how true (a.op: the plan; holdPoint carries the ball on it)
+    if (p.icon === OP_ICON) {
+      const b = this.ball, f0 = p.facing, c = Math.cos(f0), s = Math.sin(f0), dx = b.x - p.x, dz = b.z - p.z;
+      const ctx = { type: a.ptype, bailout: !!spec.bailout, air: p.airborne, d: wrap(face - f0), hand: b.mode === 'dribble' ? p.dribble.hand : null, moving: p.speed, drove: p.speed > 3.5 || (!!p.lastMove && this.time - p.lastMove.end < 0.5) };
+      p.opSeq = (p.opSeq || 0) + 1;
+      const pk = pickOprahPass(ctx, p.opSeq, p.id, this.tick, p.opLast, this.rng.s); // (the rng's state, read, never drawn)
+      p.opLast = pk.id;
+      a.op = oprahPlan(ctx, pk, f0, face, [dx * c - dz * s, b.y - p.y, dx * s + dz * c]);
+    }
     p.facing += wrap(face - p.facing) * 0.4;
     a.face = face;
     this.ball.mode = 'held';
@@ -1412,8 +1440,10 @@ export class Game {
     const from = this.holdPoint(p);
     // (v0.4.7.5 quick patch: every pass is 10% more accurate: PASS_ACC_K takes 10% off the aim error, and the
     // accuracy the ball steers onto the receiver with in flight is 10% better)
-    const acc = Math.min(1.15, n(p.ratings.pass_accuracy) * PASS_ACC_BOOST);
-    let err = ((1 - n(p.ratings.pass_accuracy)) * 0.26 + Math.min(1, p.speed / 6) * 0.08) * PASS_ACC_K;
+    // (v0.4.8.5 qp5: past 99 the accuracy keeps rising, over99, as far as a 105 takes it; and the aim error only ever
+    // shrinks with the rating, to nothing from ~96 up: it used to go negative there and grow again, 7.5 cm at 99)
+    const acc = passAcc(p.ratings.pass_accuracy);
+    let err = passAimErr(p.ratings.pass_accuracy, p.speed);
     if (a.bailout) err += (a.air ? 0.14 : 0.06) * PASS_ACC_K; // passing out of a shot is less precise, more so from the air
     let eta = 0.5;
     let T, vx, vy, vz;
@@ -1475,7 +1505,8 @@ export class Game {
     const sty = moveStyle(p), sig = sty.sig.includes(move);
     // v0.4.3: size-up packages (stat-locked) make moves quicker, chain faster and bite harder. v0.4.7.5: the handle
     // counts for more (a 99 handle's moves are about a quarter shorter than a 60's), and every package plays each move its own way
-    const handleK = 1 + 0.4 * Math.min(1.25, handle) + 0.1 * Math.min(1.2, n(p.ratings.speed_with_ball));
+    // (v0.4.8.5 qp5: past 99 both keep counting, over99, up to what a 105 adds)
+    const handleK = moveHandleK(p);
     const dur = M.dur * MOVE_SNAP * sty.durK * (sig ? 0.95 : 1) / (p.moveSpeed || 1) / handleK / posMoveK(p.position) * (1 + 0.25 * gassed);
     // a different move straight out of the last one is a combo (a crossover straight back the other way counts once:
     // the double crossover; a third in a row is spam again)
@@ -1540,7 +1571,9 @@ export class Game {
     let hand;
     if (dir) hand = dir.x * lx + dir.z * lz >= 0 ? 'L' : 'R';
     else { const b = this.ball; hand = (b.x - p.x) * lx + (b.z - p.z) * lz >= 0 ? 'L' : 'R'; }
-    p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low, icon: p.icon === 'the_clamp' ? 'clamp' : null });
+    // (v0.4.8.5 The Clamp: one of the Icon's six reaches, for the moment: sim/clamp.js. The same reach otherwise)
+    const clampAnim = p.icon === CLAMP_ICON ? pickClampReach(p, this.ball, { hand, low, aimed: !!dir || low, tick: this.tick }) : null;
+    p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low, icon: clampAnim ? 'clamp' : null, clamp: clampAnim });
     p.spend(COST.steal);
     p.cool.steal = 0.85 - bk(p.badges, 'pick_pocket') * 0.08;
     this.emit({ type: 'reach', player: p.id, hand });
@@ -1555,8 +1588,10 @@ export class Game {
     if (b.holder >= 0 && this.players[b.holder].team === p.team) type = 'rebound';
     const hgt = p.phys.vertical * (type === 'block' ? 0.95 : 0.9) * (0.8 + 0.2 * p.stamina);
     const air = 2 * Math.sqrt(2 * hgt / GRAVITY);
-    // v0.4.5 Icon badges: Big Brother blocks and Open Arms rebound snags have their own animations
-    const iconAnim = (type === 'block' && p.icon === 'big_brother') ? 'bigbro' : (type === 'rebound' && p.icon === 'open_arms') ? 'openarms' : null;
+    // v0.4.5 Icon badges: Open Arms rebound snags have their own animation. (v0.4.8.5: Big Brother's blocks are his
+    // Icon's Block Package now, sim/blocks.js: picked below like anyone's, so wearing another package, or none, he
+    // blocks exactly as anyone else would; the old one-pose override turned the styles off)
+    const iconAnim = (type === 'rebound' && p.icon === 'open_arms') ? 'openarms' : null;
     const act = p.startAction(type, air + 0.2, { jumpAt: 0.06, jumpH: hgt, jumped: false, triedBlock: false, air, icon: iconAnim });
     // v0.4.7.5 qp3: the block's style (sim/blocks.js): by his tier (Block rating and height) and the moment
     if (type === 'block' && !iconAnim) {
@@ -1593,6 +1628,7 @@ export class Game {
 
   // ---------- action timeline ----------
   tickAction(p, dt) {
+    if (p.clampFx) clampFxTick(p, dt); // (v0.4.8.5 The Clamp's pick-off / strip overlay: its clock, for show only)
     const a = p.action;
     if (!a) return;
     a.t += dt;
@@ -2211,7 +2247,7 @@ export class Game {
       const clean = this.rng.next() < 0.42;
       h.stats.tov++; p.stats.stl++;
       h.action = null;
-      if (clean) { this.changePossessionTo(p); this.giveBall(p, 'held'); p.dribble.used = false; }
+      if (clean) { if (a.clamp) clampGot(p, a, b); this.changePossessionTo(p); this.giveBall(p, 'held'); p.dribble.used = false; } // (v0.4.8.5: the Clamp's rip carries it from there)
       else this.pokeOut(p, h);
       this.emit({ type: 'steal', player: p.id, victim: h.id, clean });
     } else {
@@ -2480,6 +2516,12 @@ export class Game {
       } else { ly = 0.65 * H + (topY - 0.65 * H) * e; lz = 0.3 + e * 0.25; lx = st === 'onehand' ? -0.1 : 0; }
       const spin = S.dunkSpin(a);
       if (spin) { const c = Math.cos(spin), s2 = Math.sin(spin), x0 = lx; lx = x0 * c + lz * s2; lz = -x0 * s2 + lz * c; }
+    } else if (a && a.type === 'pass' && a.op && b.holder === p.id) {
+      // v0.4.8.5 qp5 Oprah: the ball on the style's own path (sim/oprah.js), in the frame his body faces (oprahFacing),
+      // right up to the moment it's let go (releasePass reads this: the ball leaves from where the pose has it)
+      [lx, ly, lz] = oprahBall(a, H);
+      const psi = oprahFacing(a) - p.facing;
+      if (psi) { const c = Math.cos(psi), s2 = Math.sin(psi), x0 = lx; lx = x0 * c + lz * s2; lz = -x0 * s2 + lz * c; }
     } else if (a && a.type === 'pass' && !a.released) {
       const t = Math.min(1, a.t / a.rel);
       if (a.ptype === 'lob' || a.ptype === 'alley') { ly = 0.66 * H + t * 0.42 * H; lz = 0.25 + t * 0.1; lx = 0; }
@@ -2573,6 +2615,12 @@ export class Game {
       // v0.4.8.5 Open Arms: a rebound snag carries the ball from where his hands met it, along its own rip, through the
       // landing gesture and back to an ordinary hold (sim/snags.js; the animator's hands follow it)
       [lx, ly, lz] = snagBall(a, H, [hs * 0.14, 0.56 * H, 0.3]);
+    } else if (b.holder === p.id && b.mode === 'held' && a && a.type === 'steal' && a.clamp && a.gotFrom) {
+      // v0.4.8.5 The Clamp: a steal he came up with rides the reach's own rip into his hands (sim/clamp.js)
+      [lx, ly, lz] = clampStealBall(a, H, [hs * 0.14, 0.56 * H, 0.3]);
+    } else if (b.holder === p.id && b.mode === 'held' && p.clampFx?.kind === 'pick' && (!a || a.type === 'catch') && this.phase === 'live') {
+      // v0.4.8.5 The Clamp: a pass he picked off, along the pick's own path (sim/clamp.js)
+      [lx, ly, lz] = clampPickBall(p.clampFx, H, [hs * 0.14, 0.56 * H, 0.3]);
     } else if (b.holder === p.id && b.mode === 'held') {
       if (this.phase === 'check' || this.phase === 'inbound') { lx = 0; ly = 0.64 * H; lz = 0.32; }
       else { lx = hs * 0.14; ly = 0.56 * H; lz = 0.3; }
@@ -2829,6 +2877,7 @@ export class Game {
             passer.stats.tov++; p.stats.stl++;
             this.emit({ type: 'steal', player: p.id, victim: passer.id, intercept: true });
             this.changePossessionTo(p, 'steal');
+            if (p.icon === CLAMP_ICON) clampPickStart(p, b, { tick: this.tick, rim: this.rimFor(p.team) }); // (v0.4.8.5: the Clamp's pick-off, for show)
             this.catchBall(p);
             return;
           }
@@ -3164,6 +3213,7 @@ export class Game {
           if (this.ball.mode === 'dribble' && this.rng.next() < strip) {
             handler.stats.tov++; def.stats.stl++;
             const b = this.ball;
+            if (def.icon === CLAMP_ICON) clampStripStart(def, b, { tick: this.tick }); // (v0.4.8.5: the Clamp's chest-up strip, for show)
             this.pokeOut(def, handler);
             this.emit({ type: 'steal', player: def.id, victim: handler.id, bump: true });
           } else if (this.mode === 'proam' && this.isCharge(handler, def, -rv)) {

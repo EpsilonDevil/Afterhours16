@@ -115,7 +115,7 @@ test('v0.4.5 animation packages: 32 new ones, every style is implemented and rea
   for (const i of anims.filter(x => x.slot === 'sizeup' && x.style !== 'basic')) assert.ok(animSrc.includes(`su === '${i.style}'`), `no pose for size-up ${i.style}`);
   // the Icon badges all have an exclusive animation wired up
   const B = await import('../client/js/sim/badges.js');
-  const hooks = ['sharpeye', 'hashsling.js', 'oprah', 'clamp', 'general', 'bigbro', 'openarms', 'sexy_red']; // (qp3: Hash-Slinging is a whole package, sim/hashsling.js)
+  const hooks = ['sharpeye', 'hashsling.js', 'oprah', 'clamp', 'general', 'bigbro', 'openarms', 'redpose.js']; // (qp3: Hash-Slinging is a whole package, sim/hashsling.js; v0.4.8.5 qp5: so is Sexy Red's, char/redpose.js)
   assert.equal(Object.keys(B.ICON_BADGES).length, 8);
   for (const h of hooks) assert.ok(animSrc.includes(h) || gameSrc.includes(h), `Icon animation ${h} is not wired up`);
 });
