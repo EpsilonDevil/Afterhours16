@@ -183,7 +183,10 @@ export class AIWorld {
     const d = dayIndex(t);
     for (const day of [d, d - 1]) for (const s of this.sessions(id, day)) if (t >= s.start && t < s.end) {
       // v0.4.5: entrants of the running park event (the Cup, the Jungle...) spend about half their online hours there
-      if (EVENT_VENUE && cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: EVENT_VENUE, until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000) };
+      // (qp4: the event on at that moment by the server's schedule, so a game left running across a handover sends them
+      // to the new park on time; they used to keep going to the one that had just closed, and the new one stood empty)
+      const ev = eventVenueAt(t);
+      if (ev && cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: ev, until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000, nextEventChange(t) ?? Infinity) };
       return { park: s.park, until: s.end };
     }
     return null;
@@ -306,7 +309,39 @@ export const PARK_NAMES = { harbor: 'Harbor Point', brick: 'Old Brick Yard', fou
 // the AI world sends the event's entrants there). null between events: entrants stay in their home parks.
 export const EVENT_PARKS = new Set(['kingtut', 'jungle', 'beat', 'monster']);
 export let EVENT_VENUE = 'kingtut';
-export const setEventVenue = v => { EVENT_VENUE = v && EVENT_PARKS.has(v) ? v : null; };
+// v0.4.8.5 quick patch 4: the whole schedule (from /api/config `event_schedule`, refreshed by /api/cup), so the AI world
+// follows a handover the moment it happens instead of whatever event was on when the game was started. setEventVenue
+// on its own (no schedule) still pins one venue; keepSchedule leaves a known schedule in charge.
+let EVENT_SCHEDULE = null, CLOCK_SKEW = 0;
+export const setEventVenue = (v, keepSchedule = false) => { EVENT_VENUE = v && EVENT_PARKS.has(v) ? v : null; if (!keepSchedule) EVENT_SCHEDULE = null; };
+// rows: [{event, venue, from, until}] in Unix seconds (null = open-ended); serverNow: the server's clock (s), so a PC
+// clock that's off by a few minutes still switches when the server does (ignored past 6 hours: a clock that wrong is
+// a time-zone mix-up, not drift)
+export function setEventSchedule(rows, serverNow = null) {
+  if (!Array.isArray(rows)) return false;
+  EVENT_SCHEDULE = rows.filter(r => r && typeof r === 'object').map(r => ({
+    venue: EVENT_PARKS.has(r.venue) ? r.venue : null, // (an event this copy of the game doesn't know: nobody goes)
+    from: Number.isFinite(r.from) ? r.from * 1000 : -Infinity, until: Number.isFinite(r.until) ? r.until * 1000 : Infinity,
+  }));
+  if (Number.isFinite(serverNow)) { const k = serverNow * 1000 - Date.now(); CLOCK_SKEW = Math.abs(k) < 6 * 3600000 ? k : 0; }
+  EVENT_VENUE = eventVenueAt(Date.now());
+  return true;
+}
+// the event park on at time t (local clock), or null when nothing is scheduled
+export function eventVenueAt(t = Date.now()) {
+  if (!EVENT_SCHEDULE) return EVENT_VENUE;
+  const st = t + CLOCK_SKEW;
+  for (const r of EVENT_SCHEDULE) if (st >= r.from && st < r.until) return r.venue;
+  return null;
+}
+// the next handover after t (local clock, ms), or null: nothing else is scheduled
+export function nextEventChange(t = Date.now()) {
+  if (!EVENT_SCHEDULE) return null;
+  const st = t + CLOCK_SKEW;
+  let best = null;
+  for (const r of EVENT_SCHEDULE) for (const b of [r.from, r.until]) if (Number.isFinite(b) && b > st && (best == null || b < best)) best = b;
+  return best == null ? null : best - CLOCK_SKEW;
+}
 
 // v0.4.5 King Tut Cup windows and entrants — the same rules as server/cup.py (48-hour windows from
 // 2026-01-01 00:00 UTC; an AI hooper entered window w when FNV("ai-N|cup|w") % 100 < 22)

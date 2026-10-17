@@ -114,6 +114,14 @@ def event_for_window(w, schedule=None):
     return active_event(window_bounds(w)[0] + 1, schedule)
 
 
+def public_schedule(schedule=None):
+    """v0.4.8.5 quick patch 4: the whole schedule as the client needs it ({event, venue, from, until}, in order, Unix
+    seconds, None = open-ended), so a game left running across a handover knows the moment the next event takes over
+    and sends the AI world's entrants to the new park on time (they used to keep going to the closed one)."""
+    return [{"event": r["event"], "venue": EVENTS[r["event"]]["venue"], "from": r.get("from"), "until": r.get("until")}
+            for r in (SCHEDULE if schedule is None else schedule) if r.get("event") in EVENTS]
+
+
 def public_event(ev, w=None):
     """What the client gets to know about an event (id, venue, name) with the window it is in."""
     if not ev:

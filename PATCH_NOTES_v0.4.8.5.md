@@ -321,4 +321,17 @@ The Monster Mash went live on schedule on October 16 at 00:00 UTC. It now has it
 
 ---
 
-*(Tests: 128 Python and 346 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; and the Sharp Eye release frame by frame against the old hop.)*
+## Quick patch 4 (Oct 16): event parks keep their crowd through a handover
+
+**The bug:** online players found And The Beat Goes On empty right after it took over from The Jungle Ballers at 5 pm Pacific, when the park should have been busy. The game decided which event was on **once, when it was started.** Anyone who had the game open through the switch kept sending the event's AI players to the park that had just closed. The Park screen did move on to the Beat, but its AI world still sent everyone to the Jungle, so the Beat stood empty. That lasted until the game was restarted. A game started after 5 pm was fine.
+- Measured on the evening of the switch: with the event set right, about 30–35 AI players were at the Beat from 5 pm on (busy, as the schedule rules intend). With the stale setting there were none.
+
+**The fix:**
+- **The game now knows the whole event schedule,** not just the event that was on when it started. The AI world follows it to the second: the moment one event hands over to the next, the entrants go to the new park and the closed one empties.
+- **The Park screen, its event card and the leaderboard switch on their own** within a few seconds of a handover, and the game tells you ("And The Beat Goes On is live now"). If you're standing in the park that just closed, it says so ("The Jungle Ballers has closed: its leaderboard is final").
+- **The handover uses the server's clock,** so a PC clock that's a few minutes off still switches at the right moment. The server has the last word if the schedule is ever edited while people are playing.
+- Tested live: a game started before a handover switched 8 seconds after it. The new event park then had 35 AI players online, all 6 courts in play and people walking around, and the old park had none.
+
+---
+
+*(Tests: 130 Python and 351 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; and a live event handover with the game left running.)*

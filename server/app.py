@@ -373,7 +373,7 @@ class Service:
                     "event": cup.public_event(ev, w),
                     "board": top, "around": around, "me": {**me, "rank": mine["rank"] if mine else None},
                     "prizes": cup.prize_table(ev),
-                    "previous": prev}
+                    "previous": prev, "event_schedule": cup.public_schedule()}
 
     def rate_limit(self, ip, category):
         limit, period = (8, 600) if category == "register" else (25, 60)
@@ -615,6 +615,7 @@ class Handler(BaseHTTPRequestHandler):
                     "equip_slots": builds.EQUIP_SLOTS, "default_equipment": builds.DEFAULT_EQUIPMENT,
                     "venues": VENUES, "affiliations": progression.AFFILIATIONS, "catalog": list(CATALOG.values()),
                     "event": cup.public_event(cup.active_event()), "event_venues": sorted(cup.EVENT_VENUES),
+                    "event_schedule": cup.public_schedule(), "server_time": time.time(),  # (qp4: the client follows the handovers itself)
                     "badges": progression.BADGES, "rep_thresholds": progression.REP_THRESHOLDS, "rep_tiers": progression.REP_TIERS,
                     "logos": progression.LOGOS, "woods": progression.WOODS,
                     # (qp3: the local account is only offered on the PC running the service)

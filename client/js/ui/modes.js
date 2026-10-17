@@ -25,6 +25,7 @@ import * as Crew from './crew.js';
 import { CrewHQ, RUN_MIN } from '../game/crewhq.js';
 import * as Online from './online.js';
 import { endWinStreak } from '../game/iconfx.js';
+import { syncEvent } from './events.js';
 
 // Tear down whatever 3D world is running (park hub / standalone match)
 export function leaveWorld(app) {
@@ -67,7 +68,7 @@ export function parkEntry(app, root) {
   // v0.4.5: time left and your place in the running Cup (and a nudge when last Cup's prizes are waiting)
   app.api.get('/api/cup').then(st => {
     // v0.4.7.5 qp3: the schedule may have moved on since the config was loaded (the Cup ended, the Jungle began)
-    if ((st.event?.id || null) !== (app.config.event?.id || null)) { app.config.event = st.event; parkEntry(app, root); return; }
+    if (syncEvent(app, st, { announce: false })) { parkEntry(app, root); return; } // (qp4: and the AI world's venue with it)
     const left = $('[data-cup-left]', root), rank = $('[data-cup-rank]', root);
     if (left) left.textContent = `Ends in ${cupTimeLeft(st)}`;
     if (rank) rank.textContent = st.me.rank ? `You: #${st.me.rank} of ${st.field} · ${money(st.me.net)} VC` : `${st.field} hoopers entered`;
@@ -96,7 +97,7 @@ export async function openCupBoard(app) {
   const row = r => `<tr class="${r.id === 'me' ? 'me' : ''}"><td>${r.rank}</td><td>${esc(cupName(app, r.id))}<small>${esc(cupTier(app, r.id))}</small></td><td>${r.games}</td><td>${r.wins}</td><td>${r.best_streak}</td><td class="num">${r.net < 0 ? '−' : ''}${money(Math.abs(r.net))}</td></tr>`;
   const items = ids => ids.map(i => esc(app.catalog[i]?.name || i)).join(', ');
   const prev = st.previous, ev = (st.event && EVENTS[st.event.id]) || null, evName = ev ? ev.name : 'park event', prevName = prev ? eventName(prev.event) : evName;
-  if (st.event && (st.event.id || null) !== (app.config.event?.id || null)) app.config.event = st.event;
+  if (st.event) syncEvent(app, st, { announce: false });
   const card = modal(`<div class="cup-board">
     <div class="eyebrow">${ev ? esc(ev.park.toUpperCase()) : 'PARK EVENT'} · 48-HOUR LEADERBOARD</div>
     <h2>Most VC won <span class="muted small">· ends in ${cupTimeLeft(st)} · ${st.field} on the board</span></h2>
