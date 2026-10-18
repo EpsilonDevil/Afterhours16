@@ -9,6 +9,7 @@ import { advanceDribble, LAYUP_FEEL, LAYUP_COVER, jumperHop } from '../sim/shots
 import { MOVES, MOVE_STYLE, switchesHand } from '../sim/moves.js';
 import { POST_MOVES, POST_SHOTS, POST_PACKAGES, POST_PKG_BY_ID } from '../sim/post.js';
 import { snagAction, snagTick, OA_BASIC, SNAG } from '../sim/snags.js';
+import { CLAMP_BASIC, CLAMP_BY_ID, CLAMP_REACHES, CLAMP_PICKS, CLAMP_HIT, clampGot, clampPickStart, clampStripStart, clampFxTick } from '../sim/clamp.js';
 
 const holdPoint = Game.prototype.holdPoint;
 
@@ -45,9 +46,11 @@ export class PreviewSim {
     let bp = null;
     if (this.ballFree) {
       const b = this.ballFree;
-      b.vy -= GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-      if (b.y < BALL_R + 0.12 && Math.hypot(b.x, b.z) < 1.3) { b.y = BALL_R + 0.12; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
-      else if (b.y < BALL_R) { b.y = BALL_R; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
+      if (!b.pinned) { // (qp6: a ball the preview puts where it is each step, a man's dribble or a pass on its way, is pinned)
+        b.vy -= GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+        if (b.y < BALL_R + 0.12 && Math.hypot(b.x, b.z) < 1.3) { b.y = BALL_R + 0.12; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
+        else if (b.y < BALL_R) { b.y = BALL_R; b.vy = -b.vy * 0.7; b.vx *= 0.8; b.vz *= 0.8; }
+      }
       bp = { x: b.x, y: b.y, z: b.z };
     } else if (this.fake.ball.holder === 0) {
       const h = holdPoint.call(this.fake, p, {});
@@ -261,6 +264,64 @@ export class PreviewSim {
       if (p.action && p.action.type === 'snag' && snagTick(p, p.action)) p.action = null;
       if (p.action && p.action.type === 'rebound' && p.action.t > p.action.dur && !p.airborne) p.action = null;
       p.stance = 'normal';
+      return;
+    }
+    if (kind === 'steal') {
+      // v0.4.8.5 qp6 The Clamp's Steal Package: its ten in turn (sim/clamp.js; the bodies char/clamp.js), each on the
+      // moment it's for, the same action or overlay the game plays and the ball where the game would put it: a reach at
+      // a man's dribble in front of him (ripped into his hands, poked away, or the dribble going on), a pass across him
+      // that he picks off, a driver on his side who runs into him and has it stripped loose. With the slot empty
+      // (opts.styles none), the badge's basic Vise
+      const o = this.previewOpts || {}, list = o.styles?.length ? o.styles : [CLAMP_BASIC];
+      const f = p.facing, fx = Math.sin(f), fz = Math.cos(f), lx = Math.cos(f), lz = -Math.sin(f);
+      const W = (x, y, z) => ({ x: lx * x + fx * z, y, z: lz * x + fz * z }); // (his frame, m, to the podium's)
+      this.stT = (this.stT || 0) + dt;
+      if (this.loop(1.6, dt)) {
+        const n = this.loopN || 0; this.loopN = n + 1; this.stStyle = list[n % list.length];
+        p.action = null; p.clampFx = null; p.y = 0; p.vy = 0; p.airborne = false; p.stance = 'defense';
+        fb.holder = -1; fb.mode = 'dead'; this.ballFree = null; this.stT = 0; this.stHit = false;
+      }
+      const st = this.stStyle, t = this.stT, a = p.action;
+      const kindOf = CLAMP_REACHES.some(s => s.id === st) ? 'reach' : CLAMP_PICKS.some(s => s.id === st) ? 'pick' : 'strip';
+      if (kindOf === 'reach') {
+        // the man's dribble 0.82 m in front on the reaching hand's side (the slap-down reaches across for it); the reach
+        // goes at 0.45 s and the contact is the game's (CLAMP_HIT), with the ball at the top of its bounce then
+        const hand = st === 'slap_down' ? 'R' : 'L', side = 1, result = { dig: 'poke', slap_down: 'poke', double_tap: 'miss' }[st] || 'clean';
+        const top = st === 'dig' ? 0.5 : st === 'hip_rip' || st === 'double_tap' ? 0.95 : 0.85;
+        const dribble = () => { const y = BALL_R + (top - BALL_R) * Math.abs(Math.cos(Math.PI * (t - 0.45 - CLAMP_HIT) * 2.2)), w = W(side * 0.22, y, 0.82); return w; };
+        if (!this.stHit || result === 'miss') { const w = dribble(); this.ballFree = { x: w.x, y: w.y + 0.12, z: w.z, vx: 0, vy: 0, vz: 0, pinned: true }; }
+        if (!a && !this.stStarted && t >= 0.45) { this.stStarted = true; p.startAction('steal', 0.46, { checked: true, hand, low: st === 'dig', aimed: true, icon: 'clamp', clamp: st }); }
+        if (a && a.type === 'steal' && !this.stHit && a.t >= CLAMP_HIT) {
+          this.stHit = true;
+          const w = dribble();
+          if (result === 'clean') { clampGot(p, a, { x: w.x, y: w.y, z: w.z }); this.ballFree = null; fb.holder = 0; fb.mode = 'held'; }
+          else if (result === 'poke') this.ballFree = { x: w.x, y: w.y + 0.12, z: w.z, vx: lx * side * 2.2 + fx * 3.2, vy: 1.0, vz: lz * side * 2.2 + fz * 3.2 };
+        }
+        if (a && a.type === 'steal' && a.t >= a.dur) { p.action = null; if (fb.holder === 0) p.stance = 'normal'; }
+        if (t < 0.05) this.stStarted = false;
+      } else if (kindOf === 'pick') {
+        // a pass across in front of him from his left, caught at 0.35 s where his hands meet it
+        const from = st === 'tip_self' ? [0.15, 1.75, 0.4] : st === 'pick_go' ? [0.42, 1.2, 0.4] : [0.3, 1.0, 0.55], tc = 0.35;
+        const P1 = W(from[0], from[1], from[2]), P0 = W(from[0] + 4, from[1] + 0.4, from[2] + 1.2);
+        if (!this.stHit) {
+          const k = Math.min(1, t / tc);
+          this.ballFree = { x: P0.x + (P1.x - P0.x) * k, y: P0.y + (P1.y - P0.y) * k + 0.12, z: P0.z + (P1.z - P0.z) * k, vx: 0, vy: 0, vz: 0, pinned: true };
+          if (t >= tc) {
+            this.stHit = true; this.ballFree = null; fb.holder = 0; fb.mode = 'held'; p.stance = 'normal';
+            const fx2 = clampPickStart(p, P1);
+            fx2.style = st; fx2.dur = CLAMP_BY_ID[st].dur; fx2.up = 0.7 * fx2.side; // (the turn upcourt: his left here)
+            p.startAction('catch', 0.2, {});
+          }
+        } else clampFxTick(p, dt);
+        if (a && a.type === 'catch' && a.t >= a.dur) p.action = null;
+      } else {
+        // a driver's dribble on his left runs into him: stripped at 0.4 s and poked loose out to that side (clear of him)
+        const w = W(0.3, BALL_R + (0.8 - BALL_R) * Math.abs(Math.cos(Math.PI * ((t * 2.4) % 1))), 0.55);
+        if (!this.stHit) {
+          this.ballFree = { x: w.x, y: w.y + 0.12, z: w.z, vx: 0, vy: 0, vz: 0, pinned: true };
+          if (t >= 0.4) { this.stHit = true; clampStripStart(p, { x: w.x, y: w.y, z: w.z }); this.ballFree = { x: w.x, y: w.y + 0.12, z: w.z, vx: lx * 2.6 + fx * 0.4, vy: 0.9, vz: lz * 2.6 + fz * 0.4 }; }
+        } else clampFxTick(p, dt);
+      }
       return;
     }
     if (kind === 'celebrate') {

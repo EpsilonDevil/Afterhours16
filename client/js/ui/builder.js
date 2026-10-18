@@ -1,9 +1,16 @@
 // MyPlayer builder (create) and appearance editor with live 3D preview and cap preview.
 import { $, $$, esc, toast, heightStr, title, bar, money } from './common.js';
-import { POSITIONS, ARCHETYPES, caps, startingAttributes, upgradeCost, OVR_CAP, PRORUN_GAMES_PER_OVR } from '../sim/builds.js';
+import { POSITIONS, ARCHETYPES, caps, startingAttributes, upgradeCost, OVR_CAP, PRORUN_GAMES_PER_OVR, buildSlots, buildSlotRule } from '../sim/builds.js';
 import { ATTR_GROUPS, ATTR_LABEL, overall } from '../sim/ratings.js';
 import { settings, saveSettings } from '../core/settings.js';
 import * as Screens from './screens.js';
+
+// v0.4.8.5 qp7: ICON build slots (4, +1 for every ICON build, up to 8). With every slot in use the builder says the rule
+// (the server's own words) instead of sending a request it would refuse; the server's check is still the real one
+export function slotsFull(app) {
+  const chars = app.profile?.characters || [], s = { ...buildSlots(chars), ...(app.profile?.build_slots || {}) };
+  return chars.length >= s.unlocked ? s : null;
+}
 
 const DEFAULT = { name: 'Rookie', position: 'SG', archetype: 'sharpshooter', height: 77, weight: 205, wingspan: 81, hand: 'R', appearance: { skin: '#a56945', hair: 'fade', hair_color: '#201b19', face: 'oval', beard: 'stubble', eyes: '#3a2418', number: 16 } };
 
@@ -22,6 +29,7 @@ export function create(app, root, params = {}) {
     <section class="panel builder">
       <div class="eyebrow">MYPLAYER BUILDER</div>
       <h1>Create your player</h1>
+      ${slotsFull(app) ? `<div class="slots-full">${esc(buildSlotRule(slotsFull(app)))}</div>` : ''}
       <div class="step"><h4>Position</h4><div class="chips">${Object.keys(POSITIONS).map(p => `<button class="chip ${d.position === p ? 'on' : ''}" data-pos="${p}">${p}</button>`).join('')}</div></div>
       <div class="step"><h4>Archetype</h4><div class="arch-grid">${Object.entries(ARCHETYPES).map(([k, v]) => `<button class="arch ${d.archetype === k ? 'on' : ''}" data-arch="${k}"><b>${v.label}</b><small>${v.blurb}</small></button>`).join('')}</div></div>
       <div class="step"><h4>Body</h4>
@@ -34,7 +42,7 @@ export function create(app, root, params = {}) {
       <div class="step"><h4>Name & number</h4>
         <div class="row gap"><input class="text" maxlength="24" value="${esc(d.name)}" data-name placeholder="Player name"><input class="text num" type="number" min="0" max="99" value="${d.appearance.number}" data-number></div>
       </div>
-      <div class="row gap end sticky-actions">${app.profile.characters.length ? '<button class="btn ghost" data-cancel>Cancel</button>' : ''}<button class="btn primary" data-create>Create player</button></div>
+      <div class="row gap end sticky-actions">${app.profile.characters.length ? '<button class="btn ghost" data-cancel>Cancel</button>' : ''}<button class="btn primary" data-create ${slotsFull(app) ? 'data-full' : ''}>Create player</button></div>
     </section>
     <aside class="panel builder-side">
       <div class="ovr-row"><div class="ovr"><b>${ovr0}</b><small>START</small></div><div class="ovr dim"><b>${ovr1}</b><small>VC MAX</small></div><div class="ovr dim"><b>${OVR_CAP}</b><small>PRO RUN</small></div></div>
@@ -60,10 +68,13 @@ export function create(app, root, params = {}) {
     $('[data-number]', root).oninput = e => { d.appearance.number = Math.max(0, Math.min(99, +e.target.value | 0)); };
     const cancel = $('[data-cancel]', root); if (cancel) cancel.onclick = () => Screens.go(app, 'myplayer');
     $('[data-create]', root).onclick = async ev => {
+      const full = slotsFull(app);
+      if (full) return toast(buildSlotRule(full), 'error'); // (qp7: no request the server would refuse)
       const btn = ev.currentTarget; btn.disabled = true;
       try {
         const res = await app.api.mutate('/api/characters', { build: { name: d.name, position: d.position, archetype: d.archetype, height: d.height, weight: d.weight, wingspan: d.wingspan, hand: d.hand, appearance: d.appearance } });
         app.replaceChar(res.character);
+        if (res.build_slots) app.profile.build_slots = res.build_slots;
         app.selectedId = res.character.id; settings.character = res.character.id; saveSettings();
         toast(`${res.character.name} is ready. Spend VC on attributes in MyPlayer.`);
         Screens.go(app, 'home');

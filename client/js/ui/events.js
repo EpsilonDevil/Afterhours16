@@ -3,7 +3,7 @@
 // left running across a handover kept sending them to the park that had just closed, and the new event park stood
 // empty for everyone who'd been playing through the switch. Now the AI world follows the schedule itself
 // (sim/world.js eventVenueAt) and this keeps app.config.event, the Park screen's card and the AI world's venue current.
-import { setEventVenue, setEventSchedule, eventVenueAt } from '../sim/world.js';
+import { setEventVenue, setEventSchedule, eventVenueAt, refreshUnlocks } from '../sim/world.js';
 import { EVENTS, THEMES } from '../world/themes.js';
 import { toast } from './common.js';
 
@@ -30,6 +30,8 @@ export function watchEvents(app, every = 15000) {
   let busy = false;
   const tick = async () => {
     if (busy || !app?.config || !app.api) return;
+    // (v0.4.8.5 qp7: a window has closed: what the AI field won in it, for them to wear)
+    if (app.ai?.unlocksDue?.()) refreshUnlocks(app);
     const want = eventVenueAt(Date.now()), have = app.config.event?.venue || null;
     if (want === have) return;
     busy = true;

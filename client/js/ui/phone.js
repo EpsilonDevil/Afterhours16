@@ -3,7 +3,8 @@
 // lately. Add the ones you liked playing with and invite them to your squad whenever they're online.
 import { $, $$, esc, modal, closeModal, toast, heightStr, title, TIER_CLS, money, archHTML } from './common.js';
 import { ARCHETYPES, capBadges } from '../sim/builds.js';
-import { badgeChip } from './badgeart.js';
+import { badgeChip, iconBadgeSVG } from './badgeart.js';
+import { ICON_BADGES } from '../sim/badges.js';
 import { PARK_NAMES } from '../sim/world.js';
 import * as Crew from './crew.js';
 import * as Online from './online.js';
@@ -119,6 +120,13 @@ export function openPhone(app, opts = {}) {
       <div class="ph-sec">Members · ${on} of ${rows.length} online${on >= 4 ? ' · enough for 5-on-5 at the HQ' : ''}</div>
       ${rows.length ? rows.map(([id, s]) => row(id, `${s.text} · ${money(xp[id])} crew XP`, s.online)).join('') : '<p class="ph-empty">No members yet. Add your friends from Manage crew.</p>'}`;
   }
+  // v0.4.8.5 qp7: the AI grind too: his Icon badge first among his badges when he's unlocked it, and what he's won
+  const iconChip = e => { const ic = e.build.icon_badge; return ic ? `<span class="ib hof" title="Icon badge: unlocked with his 7th Hall of Fame badge">${iconBadgeSVG(ic, 18)}<span>${esc(app.config?.icon_badges?.[ic]?.name || ICON_BADGES[ic]?.name || title(ic))} · Icon</span></span>` : ''; };
+  const unlockedFact = e => {
+    const u = e.unlocked, n = (k, one, many) => (k ? `${k} ${k > 1 ? many : one}` : '');
+    const parts = u ? [u.icon ? 'Icon badge' : '', n(u.wheel.length, 'Daily Spin item', 'Daily Spin items'), n(u.prizes.length, 'event prize', 'event prizes')].filter(Boolean) : [];
+    return parts.length ? `<div><span>Unlocked</span><b>${esc(parts.join(' · '))}</b></div>` : '';
+  };
   function profile(id) {
     const e = w.entry(id), a = w.account(id), s = statusOf(id), m = w.met[id];
     const badges = Object.entries(capBadges(e.badges || {}, e.build)).sort((x, y) => y[1] - x[1]);
@@ -133,8 +141,9 @@ export function openPhone(app, opts = {}) {
           <div><span>With you</span><b>${m?.with ? `${m.with} game${m.with > 1 ? 's' : ''} (${m.wins}-${m.with - m.wins})` : '—'}</b></div>
           <div><span>Against you</span><b>${m?.vs ? `${m.vs} game${m.vs > 1 ? 's' : ''}` : '—'}</b></div>
           <div><span>Overall</span><b>${e.build.overall ?? '—'} OVR${e.gk ? ` <span class="ok">↑ improving (${e.games || 0} games tracked)</span>` : ''}</b></div>
+          ${unlockedFact(e)}
         </div>
-        <div class="ph-badges">${badges.length ? badges.map(([k, t]) => badgeChip(k, t, cfg[k]?.name || title(k))).join('') : '<span class="ib none">No badges</span>'}</div>
+        <div class="ph-badges">${iconChip(e)}${badges.length ? badges.map(([k, t]) => badgeChip(k, t, cfg[k]?.name || title(k))).join('') : '<span class="ib none">No badges</span>'}</div>
         <div class="ph-acts">
           ${w.isFriend(id) ? `<button class="btn ghost" data-unfriend="${id}">Remove friend</button>` : `<button class="btn primary" data-add="${id}">Add friend</button>`}
           ${w.inSquad(id) ? `<button class="btn" data-kick="${id}">Remove from squad</button>` : w.isFriend(id) ? `<button class="btn ${s.online ? 'primary' : ''}" data-invite="${id}" ${s.online && w.squad.length < 4 && !busy(id) ? '' : 'disabled'}>${busy(id) ? 'In a game' : 'Invite to squad'}</button>` : ''}

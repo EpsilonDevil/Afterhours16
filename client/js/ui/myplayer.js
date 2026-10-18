@@ -1,10 +1,11 @@
 // MyPlayer: attribute upgrades (VC), badges, appearance, animations, player management.
 import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor, archHTML } from './common.js';
 import { ATTR_GROUPS, ATTR_LABEL, ATTRS, overall } from '../sim/ratings.js';
-import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild, iconStatusInfo, winStreak, iconAuraLevel, ICON_AURA_STEP } from '../sim/builds.js';
+import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild, iconStatusInfo, winStreak, iconAuraLevel, ICON_AURA_STEP, buildSlots, MAX_BUILD_SLOTS } from '../sim/builds.js';
 import { badgeSVG, iconBadgeSVG } from './badgeart.js';
 import { ICON_BADGES } from '../sim/badges.js';
 import { OA_BASIC } from '../sim/snags.js';
+import { CLAMP_BASIC } from '../sim/clamp.js';
 import { appearanceEditor } from './builder.js';
 import { settings, saveSettings } from '../core/settings.js';
 import * as Screens from './screens.js';
@@ -192,24 +193,26 @@ function badges(app, root, c) {
 
 // [slot, label, preview, icon]. icon (v0.4.8.5): a row only the build holding that Icon badge has (the Open Arms Rebound
 // Package; its "Basic Rip" chip takes the package off and leaves the badge's basic snag, the Open Arms Rip)
-// v0.4.8.5 quick patch 3: the ICON status, the endgame, and how far this build is from it
+// v0.4.8.5 quick patch 3: the ICON status, the endgame, and how far this build is from it (qp7: and that every ICON opens
+// a build slot on the account)
 function iconStatusCard(c) {
   const st = iconStatusInfo(c), streak = winStreak(c), lvl = iconAuraLevel(streak);
   const row = (done, label, note) => `<li class="${done ? 'done' : ''}"><i>${done ? '✓' : '·'}</i><span>${label}</span><em>${note}</em></li>`;
   const aura = !st.active ? '' : lvl ? `Aura level ${lvl} of 4 · ${streak}-game win streak${lvl < 4 ? ` · ${ICON_AURA_STEP * (lvl + 1) - streak} more win${ICON_AURA_STEP * (lvl + 1) - streak === 1 ? '' : 's'} to level ${lvl + 1}` : ' · ultimate'}` : `Aura shows at a 3-game win streak · ${streak} now`;
   return `<div class="icon-status-card ${st.active ? 'on' : ''}"><div><b>${st.active ? '<span class="icon-status">ICON</span> status' : 'ICON status'}</b>
-    <small>${st.active ? 'This build is an ICON: ICON before its archetype everywhere, its Icon badge under it in every mode, and a dark aura that grows with every 3 straight wins.' : 'The endgame: unlock every cap breaker, max every badge as far as this build can take it, and reach 99 OVR.'}</small>
+    <small>${st.active ? 'This build is an ICON: ICON before its archetype everywhere, its Icon badge under it in every mode, and a dark aura that grows with every 3 straight wins.' : 'The endgame: unlock every cap breaker, max every badge as far as this build can take it, and reach 99 OVR.'} Every ICON build opens one more build slot on your account (up to ${MAX_BUILD_SLOTS}), for good.</small>
     ${st.active ? `<small class="aura">${aura}</small>` : `<ul>${row(st.cap_breakers, 'All cap breakers unlocked', `${Math.min(st.cap_breakers_earned, st.cap_breakers_max)}/${st.cap_breakers_max}${maxOvr(c) < OVR_CAP ? ` · open at ${OVR_CAP} max OVR` : ''}`)}${row(st.badges, 'Every badge maxed', st.badges ? 'done' : `${st.badges_left} to go`)}${row(st.ovr >= st.ovr_need, '99 overall', `${st.ovr}/${st.ovr_need}`)}</ul>`}</div></div>`;
 }
 
-const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['rebound', 'Rebound package', 'rebound', 'open_arms'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
+const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['rebound', 'Rebound package', 'rebound', 'open_arms'], ['steal', 'Steal package', 'steal', 'the_clamp'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
 function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
     ${ANIM_SLOTS.filter(([, , , icon]) => !icon || c.icon_badge === icon).map(([slot, label, preview, icon]) => {
       const owned = Object.values(app.catalog).filter(i => i.slot === slot && inv.has(i.id) && forBuild(i, c));
       const cur = c.equipment[slot];
-      const basic = icon === 'open_arms' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: the Open Arms badge's own basic snag">Basic Rip</button>` : '';
+      const basic = icon === 'open_arms' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: the Open Arms badge's own basic snag">Basic Rip</button>`
+        : icon === 'the_clamp' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: The Clamp badge's own basic steal, The Vise">Basic Vise</button>` : ''; // (qp6)
       return `<div class="anim-slot"><h5>${label}</h5><div class="chips">${basic}${owned.map(i => `<button class="chip ${cur === i.id ? 'on' : ''}" data-equip="${slot}" data-id="${i.id}">${esc(i.name.split(': ').pop())}</button>`).join('') || (basic ? '' : '<span class="muted small">None owned</span>')}
         <button class="chip ghost" data-preview="${preview}" data-slot="${slot}">Preview ▶</button></div></div>`;
     }).join('')}`;
@@ -227,16 +230,33 @@ function animations(app, root, c) {
     const lay = app.catalog[ch.equipment.layup], su = app.catalog[ch.equipment.sizeup], bk = app.catalog[ch.equipment.block]; // (qp3: and the Block Package)
     const style = kind === 'layup' ? (lay?.style || 'basic') : kind === 'moves' ? (su?.style || 'basic') : dk?.styles?.[0];
     const po = app.catalog[ch.equipment.post], rb = app.catalog[ch.equipment.rebound]; // (v0.4.8.5: the Rebound Package's snags, or the basic Open Arms Rip)
-    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : kind === 'block' ? bk?.styles : kind === 'rebound' ? (rb?.styles || [OA_BASIC]) : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex', pkg: po?.id, sig: po?.sig });
+    const stl = app.catalog[ch.equipment.steal]; // (qp6: the Steal Package's ten, or the basic Clamp Vise)
+    app.showroom.setPreview(kind, { style, styles: kind === 'dunk' ? dk?.styles : kind === 'block' ? bk?.styles : kind === 'rebound' ? (rb?.styles || [OA_BASIC]) : kind === 'steal' ? (stl?.styles || [CLAMP_BASIC]) : undefined, lvl: su?.lvl, speed: su?.move_speed, kind: cel?.anim || 'flex', pkg: po?.id, sig: po?.sig });
     app.showroom.setFocus(kind === 'celebrate' ? 'upper' : 'wide');
   });
 }
 
+// v0.4.8.5 qp7: ICON build slots. An account starts with 4, and every ICON build on it opens one more, up to 8
+// (app.profile.build_slots, the server's word; main.js app.replaceChar keeps it current)
+export function accountSlots(app) {
+  const chars = app.profile?.characters || [];
+  return { ...buildSlots(chars), ...(app.profile?.build_slots || {}), used: chars.length };
+}
+export function slotsLine(s) {
+  const extra = s.unlocked - s.base;
+  const from = !extra ? '' : s.icons > extra ? ` + ${extra} from your ${s.icons} ICON builds` : ` + ${extra} ICON${extra === 1 ? '' : 's'}`;
+  return `Build slots: ${s.unlocked} of ${s.max} open — ${s.base} base${from}. ${s.unlocked >= s.max ? 'That\'s the most an account can have.' : `Every ICON build opens one more, up to ${s.max}.`}`;
+}
+
 function players(app, root) {
-  const chars = app.profile.characters;
-  root.innerHTML = `<div class="player-list">${chars.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${archHTML(ch)} · ${esc(ch.rep.label)}</small></span></button>`).join('')}
-    ${chars.length < 4 ? '<button class="player-card new" data-new>+ Create new player</button>' : ''}</div>
-    <p class="muted small">Up to four players share your VC wallet and locker.</p>`;
+  const chars = app.profile.characters, slots = accountSlots(app);
+  // (under 8, the next slot shows locked, saying how to open it)
+  const next = slots.unlocked < slots.max ? `<div class="player-card locked" title="${esc(slotsLine(slots))}"><b>🔒</b><span>Slot ${slots.unlocked + 1} · locked<small>Make ${slots.icons ? 'another' : 'a'} build an ICON (every cap breaker, every badge maxed, 99 OVR) to open it</small></span></div>` : '';
+  const cards = chars.length + (chars.length < slots.unlocked ? 1 : 0) + (next ? 1 : 0); // (past 5, two across)
+  root.innerHTML = `<p class="muted small build-slots">${esc(slotsLine(slots))}</p>
+    <div class="player-list ${cards > 5 ? 'many' : ''}">${chars.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${archHTML(ch)} · ${esc(ch.rep.label)}</small></span></button>`).join('')}
+    ${chars.length < slots.unlocked ? '<button class="player-card new" data-new>+ Create new player</button>' : ''}${next}</div>
+    <p class="muted small">Your players share one VC wallet and locker.</p>`;
   $$('[data-pick]', root).forEach(b => b.onclick = () => { app.selectedId = b.dataset.pick; settings.character = app.selectedId; saveSettings(); Screens.go(app, 'myplayer', { tab: 'players' }); });
   const nb = $('[data-new]', root); if (nb) nb.onclick = () => Screens.go(app, 'create');
 }

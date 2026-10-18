@@ -1,7 +1,8 @@
 // v0.4.8.5 quick patch 2: The Monster Mash's own seven prizes (server/cup.py PRIZES_MONSTER): the Bone Suit (a
 // glow-in-the-dark skeleton bodysuit: top with gloves, and tights), the Coffin hi-tops with their skull charm, the
 // Jack-o'-Lantern band, the Zombie Shuffle, the Jack-o'-Lantern green release and the Haunted Organ. They exist, they're
-// the event's alone (never sold, never on the AI), and every one is really drawn, posed, played or heard.
+// the event's alone (never sold; on the AI only once one has won them, qp7), and every one is really drawn, posed, played
+// or heard.
 // Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -57,7 +58,9 @@ test('the seven prizes: the ids the prize table hands out, exclusive to the Mash
   assert.equal(new Set(list.map(i => i.id)).size, list.length, 'ids unique');
 });
 
-test('never on the AI: no bot, at any level, ever wears or plays a Monster Mash exclusive', () => {
+// (v0.4.8.5 qp7: an AI hooper of the persistent world wears the Mash prizes he has won: tests/v0485qp7ai.test.mjs. A bare
+// makeBot has unlocked nothing: nothing unlocked → nothing worn)
+test('nothing unlocked → nothing worn: no bare bot, at any level, ever wears or plays a Monster Mash exclusive', () => {
   const rng = new RNG(31);
   for (let n = 0; n < 160; n++) {
     const b = makeBot(rng, { catalog, level: (n % 10) / 10 });

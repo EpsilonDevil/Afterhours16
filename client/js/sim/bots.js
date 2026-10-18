@@ -171,6 +171,49 @@ export function makeBot(rng, opts = {}) {
   return { build, name, number: appearance.number, appearance, badges: bb.badges, badgeUse: bb.use, level };
 }
 
+// v0.4.8.5 qp7: the exclusives an AI hooper of the persistent world has unlocked, put on (sim/world.js AIWorld.entry:
+// the Icon badge he grinds his way to, the Daily Spin items he's hit, the event prizes the server says he's won). makeBot
+// itself still never picks one (nothing unlocked → nothing worn) and nothing here draws on its RNG, so who he is, his
+// body and his fit never move: `rng` is a stream of his own (world.rng(id, 'wear')), one draw for whether he shows his
+// stuff off and two a slot whatever he owns, so a new unlock only ever changes the slot it's for (and its set's other half).
+//   * his Icon's own items (catalog "icon" === build.icon_badge) are always on, as they are for a player the moment the
+//     badge unlocks: an AI Clamp holder steals with the whole Steal Package, not just the basic Vise
+//   * the rest: some guys show off what they've won and most keep their fit (WEAR.show, steeply by flash: legends and
+//     elites far more than casuals); one who does wears an unlocked item in a slot with WEAR.slot (0.3 + 0.45 x flash),
+//     else his usual pick, and a set (the costumes, the wheel's jersey and shorts) goes on together
+// (show: a + b × flash^c, about 3% of casuals, 5% of regulars, 13% of hoopers, 27% of elites, 45% of legends. With the
+// Icons' packages, a busy park has 15-20% of its AI in something they've unlocked: 60-95% of the legends (nearly all of
+// them Icons by six months), 30-40% of the elites, 2-6% of the casuals. Before qp7 makeBot's baseline wheel hit and the
+// wheel chains already put ~15% in a wheel item: 30-36% in all)
+export const WEAR = { show: [0.03, 0.42, 3], slot: [0.3, 0.45] };
+export const WEAR_SETS = [['cup_mocap_top', 'cup_mocap_tights'], ['jb_gorilla_top', 'jb_gorilla_legs'], ['bg_tracksuit_top', 'bg_tracksuit_pants'],
+  ['mm_bones_top', 'mm_bones_tights'], ['wheel_jersey_aurora', 'wheel_shorts_aurora'], ['wheel_jersey_solstice', 'wheel_shorts_solstice']];
+const WEAR_MATE = Object.fromEntries(WEAR_SETS.flatMap(([a, b]) => [[a, b], [b, a]]));
+export const WEAR_SLOTS = ['top', 'bottom', 'shoes', 'headband', 'sleeve', 'chain', 'jumpshot', 'release', 'dunk', 'celebration', 'greensound', 'greenfx'];
+export const wearShow = flash => Math.min(1, WEAR.show[0] + WEAR.show[1] * Math.pow(Math.max(0, Math.min(1, flash)), WEAR.show[2]));
+export const wearChance = flash => WEAR.slot[0] + WEAR.slot[1] * Math.max(0, Math.min(1, flash));
+export function wearUnlocked(build, owned, catalog = {}, rng, flash = 0.5, rep = 0) {
+  const eq = build.equipment || (build.equipment = {}), attrs = build.attributes || {};
+  const ovr = build.overall ?? overall(attrs, build.position || 'SF');
+  const ok = i => !!i && canEquip(i, attrs, ovr, rep, build.height);
+  const taken = new Set();
+  // his Icon's package: always on
+  if (build.icon_badge) for (const i of Object.values(catalog)) if (i.exclusive === 'icon' && i.icon === build.icon_badge && i.slot && ok(i)) { eq[i.slot] = i.id; taken.add(i.slot); }
+  const mine = [...new Set(owned || [])].filter(id => ok(catalog[id]) && catalog[id].exclusive && catalog[id].exclusive !== 'icon').sort();
+  const show = rng.next() < wearShow(flash), p = wearChance(flash);
+  for (const slot of WEAR_SLOTS) {
+    const r1 = rng.next(), r2 = rng.next();
+    if (!show || r1 >= p || taken.has(slot)) continue;
+    const l = mine.filter(id => catalog[id].slot === slot);
+    if (!l.length) continue;
+    const id = l[Math.floor(r2 * l.length)], mate = WEAR_MATE[id];
+    eq[slot] = id; taken.add(slot);
+    // (the other half of his set, when he has it: over whatever went on that slot before, and nothing else goes there)
+    if (mate && mine.includes(mate)) { eq[catalog[mate].slot] = mate; taken.add(catalog[mate].slot); }
+  }
+  return eq;
+}
+
 // v0.4.7.5: in one game no two AI players share a green release sound or effect (you keep yours; an AI player
 // who matches someone already on the floor plays the next free one, picked from his name so it's the same every time)
 export function spreadGreens(players, catalog = {}) {

@@ -111,7 +111,8 @@ test('the seven prizes are the Jungle\'s own: gorilla fur, the Toucan kicks and 
   assert.equal(GREEN_FX.jb_gfx_banana, catalog.jb_gfx_banana.name); assert.ok(GREEN_FX_IDS.includes('jb_gfx_banana'));
   assert.ok(src('client/js/game/greenfx.js').includes('fx.flight') && src('client/js/game/session.js').includes('{ flight }'), 'the peel is timed to the make');
   assert.equal(GREEN_SOUNDS.jb_gsnd_bongos, catalog.jb_gsnd_bongos.name); assert.ok(greenRecipe('jb_gsnd_bongos'));
-  // the AI never wears event exclusives (bots.js filters exclusives); the server never sells them (test_server.py)
+  // a bare bot never picks event exclusives (bots.js filters exclusives: nothing unlocked → nothing worn; the AI world's
+  // hoopers wear the prizes they've won, v0.4.8.5 qp7: tests/v0485qp7ai.test.mjs); the server never sells them (test_server.py)
   assert.ok(src('client/js/sim/bots.js').includes('!i.exclusive'));
 });
 

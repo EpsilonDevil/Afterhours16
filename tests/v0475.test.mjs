@@ -606,6 +606,7 @@ test('green release sounds: thirty to buy, a Cup exclusive, every one plays, and
   const rng = new RNG(5), bots = Array.from({ length: 40 }, () => makeBot(rng, { catalog: catG, level: 0.6 }));
   assert.ok(bots.every(b => b.build.equipment.greensound && b.build.equipment.greensound !== 'gsnd_basic'));
   assert.ok(new Set(bots.map(b => b.build.equipment.greensound)).size >= 10, 'the park plays lots of different sounds');
+  // (a bare bot has unlocked nothing, so none of them is an exclusive: an AI world hooper who has won one wears it, v0.4.8.5 qp7)
   assert.ok(bots.every(b => !catG[b.build.equipment.greensound].exclusive && !catG[b.build.equipment.greenfx].exclusive));
   const voices = new Set(bots.map(b => JSON.stringify(greenVoice(b.name + '|x'))));
   assert.ok(voices.size >= 38, 'and plays it his own way');

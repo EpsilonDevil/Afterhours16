@@ -149,6 +149,30 @@ export function iconStatusInfo(c = {}) {
   return { active: cbDone && badgesLeft === 0 && ovr >= ICON_STATUS_OVR, cap_breakers: cbDone, cap_breakers_earned: cbEarned, cap_breakers_max: cbMax, badges: badgesLeft === 0, badges_left: badgesLeft, ovr, ovr_need: ICON_STATUS_OVR };
 }
 export const iconStatus = c => !!c && (c.icon_status != null ? !!c.icon_status : iconStatusInfo(c).active);
+// v0.4.8.5 qp7: ICON build slots (mirrors server/builds.py build_slots). An account has 4 build slots, +1 for every build
+// holding an ICON slot (an ICON now, or one before: icon_slot, the slot is the account's for good), up to 8. The
+// server's word (profile.build_slots) wins; this keeps it current between profile loads.
+export const BASE_BUILD_SLOTS = 4, MAX_BUILD_SLOTS = 8;
+export const holdsIconSlot = c => !!c && (!!c.icon_slot || iconStatus(c));
+export function buildSlots(chars = []) {
+  const icons = chars.filter(holdsIconSlot).length;
+  return { unlocked: Math.min(MAX_BUILD_SLOTS, BASE_BUILD_SLOTS + icons), base: BASE_BUILD_SLOTS, max: MAX_BUILD_SLOTS, icons, used: chars.length };
+}
+// keeps profile.build_slots current after a build comes back from the server (main.js app.replaceChar; a slot is never
+// taken back). Returns {slot, max, opened} when the account's slots just went up (a build just became an ICON), else null
+export function refreshSlots(profile) {
+  const was = profile.build_slots, now = buildSlots(profile.characters || []);
+  if (was) now.unlocked = Math.max(now.unlocked, was.unlocked | 0);
+  profile.build_slots = now;
+  return was && now.unlocked > was.unlocked ? { slot: now.unlocked, max: now.max, opened: now.unlocked - was.unlocked } : null;
+}
+// why a new build can't be made: the create endpoint's refusal, word for word (server/builds.py build_slot_rule)
+export const buildSlotRule = s => {
+  const max = s?.max ?? MAX_BUILD_SLOTS;
+  return s.unlocked >= max ? `All ${max} build slots are in use (the most an account can have).` : `All ${s.unlocked} build slots are in use. Every ICON build on your account opens one more, up to ${max}.`;
+};
+// what the game says when slots open (u: the server's build_slot_unlocked, {slot, max, opened})
+export const slotOpenedText = u => (u.opened > 1 ? `ICON status: your account opened build slots ${u.slot - u.opened + 1}–${u.slot} of ${u.max}.` : `ICON status: your account opened build slot ${u.slot} of ${u.max}.`);
 // the build's own win streak, every mode together (the server keeps it: progression.win_streak)
 export const winStreak = c => Math.max(0, (c?.win_streak ?? c?.progression?.win_streak ?? 0) | 0);
 // the ICON aura: hidden until a 3-game streak, one step stronger every 3 wins after that, all the way at 12+

@@ -51,11 +51,13 @@ export const POST_PACKAGES = [
   { id: 'post_backboard', tier: 5, name: 'Backboard Bully', price: 19900, rep: 8, ovr: 85, emph: 1.5, sig: ['dropstep', 'postspin', 'turn', 'hook'], hook: 'jump', fade: 'lean', body: 'bully', desc: 'Power at the top tier: a back-down nobody holds, a drop step into a dunk, a jump hook off the glass. The top tier.' },
 ];
 // v0.4.8.5 qp5: an Icon badge's own package (sim/redpost.js): Sexy Red's. The holder's alone (postPackageOf gives anyone
-// else Fundamentals), never in the store, free; it bites like the top tier and no more. body 'red': its five back-downs
+// else Fundamentals), never in the store, free. v0.4.8.5 qp6: it bites a little harder than the top store tier (emph 1.6
+// against 1.5: RED_EMPH). body 'red': its five back-downs
 // (char/redpose.js); its signature turnaround and hook carry their own flourish
+export const RED_EMPH = 1.6;
 export const POST_ICON_PACKAGES = [
-  { id: RED_POST_PKG, tier: 5, name: 'Sexy Red', price: 0, icon: RED_ICON, emph: 1.5, sig: ['dropstep', 'postspin', 'turn', 'hook'], hook: 'jump', fade: 'high', body: 'red', backdowns: RED_IDS,
-    desc: `The Post Scorer Icon's own: five back-downs nobody else has, one after another as you work the man (${RED_BACKDOWNS.map(s => `the ${s.name}`).join(', ').replace(/, (the [^,]+)$/, ' and $1')}), and two signature finishes with a flourish of their own: the ${RED_FINISHES.turn} and the ${RED_FINISHES.hook}. Bites like the top tier. Comes with the Sexy Red Icon badge, for that build only; it cannot be bought.` },
+  { id: RED_POST_PKG, tier: 5, name: 'Sexy Red', price: 0, icon: RED_ICON, emph: RED_EMPH, sig: ['dropstep', 'postspin', 'turn', 'hook'], hook: 'jump', fade: 'high', body: 'red', backdowns: RED_IDS,
+    desc: `The Post Scorer Icon's own: five back-downs nobody else has, one after another as you work the man (${RED_BACKDOWNS.map(s => `the ${s.name}`).join(', ').replace(/, (the [^,]+)$/, ' and $1')}), and two signature finishes with a flourish of their own: the ${RED_FINISHES.turn} and the ${RED_FINISHES.hook}. Bites a little harder than the best package in the store. Comes with the Sexy Red Icon badge, for that build only; it cannot be bought.` },
 ];
 export const POST_PKG_BY_ID = Object.fromEntries([...POST_PACKAGES, ...POST_ICON_PACKAGES].map(p => [p.id, p]));
 export const POST_PKG_IDS = POST_PACKAGES.map(p => p.id);

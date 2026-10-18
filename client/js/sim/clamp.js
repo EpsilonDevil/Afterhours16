@@ -14,7 +14,7 @@
 import { trunkPoint } from './snags.js';
 
 export const CLAMP_ICON = 'the_clamp';
-const clamp =(v, a, b) => Math.max(a, Math.min(b, v));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = v => clamp(v, 0, 1);
 const sm = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const smoother = k => { k = clamp01(k); return k * k * k * (k * (k * 6 - 15) + 10); };
@@ -45,6 +45,42 @@ export const CLAMP_STRIPS = [
 export const CLAMP_BY_ID = Object.fromEntries([...CLAMP_REACHES, ...CLAMP_PICKS, ...CLAMP_STRIPS].map(s => [s.id, s]));
 export const clampName = id => CLAMP_BY_ID[id]?.name || null;
 
+// v0.4.8.5 qp6: the Icon's own Steal Package (slot 'steal', the Inventory's Steals; like the Open Arms Rebound Package).
+// Worn, the holder gets all ten: the six reaches for the moment, the three pick-offs and the strip. Taken off (the slot
+// empty), the badge still has its basic steal, The Vise, on every reach, and no pick-off or strip. Nobody else can wear
+// it, and anyone else who did would get nothing from it. It comes with the badge (server/app.py grant_icon_items, and
+// once on the profile load for a build that already held it: ICON_EQUIP_ONCE); it cannot be bought.
+export const CLAMP_STEAL_PKG = 'steal_the_clamp';
+export const CLAMP_BASIC = 'vise';
+export const CLAMP_PACKAGES = [
+  {
+    id: CLAMP_STEAL_PKG, name: 'Steal Package: The Clamp', icon: CLAMP_ICON, styles: [...CLAMP_REACHES, ...CLAMP_PICKS, ...CLAMP_STRIPS].map(s => s.id),
+    desc: 'The Lockdown Icon\'s own: ten steal animations that exist only for The Clamp. Six reaches picked for the moment (The Vise, Hip Rip, Dig, Slap-Down, Swipe & Spin and Double Tap), three pick-offs for a pass you jump (Lane Dive, Tip to Himself and Pick & Go) and the Chest-Up Strip on a driver who runs into you. Without it, the badge\'s basic steal: The Vise. Comes with The Clamp Icon badge, for that build only (a Lockdown who has unlocked it); it cannot be bought.',
+  },
+];
+export const CLAMP_PKG_BY_ID = Object.fromEntries(CLAMP_PACKAGES.map(k => [k.id, k]));
+// the catalog entry (server/catalog.json carries exactly it: a test checks)
+export function clampPackageItems() {
+  return CLAMP_PACKAGES.map(k => ({
+    category: 'animation', min_overall: 0, rep_required: 0, original_2k_asset: false,
+    id: k.id, name: k.name, slot: 'steal', price: 0, min_attr: {},
+    styles: [...k.styles], signature: k.styles[0], description: k.desc,
+    exclusive: 'icon', icon: k.icon, secret: true, v0485qp6: true,
+  }));
+}
+// the package a player plays (Player.stealPkg): what he wears, only if it's his Icon's (null: none)
+export function stealPackageOf(build, icon) {
+  const id = build?.equipment?.steal, k = id && CLAMP_PKG_BY_ID[id];
+  return k && k.icon === icon ? id : null;
+}
+// the full set: a holder wearing his package (the pick-offs and the strip are his only then)
+export const clampFull = p => !!p && p.icon === CLAMP_ICON && CLAMP_PKG_BY_ID[p.stealPkg]?.icon === p.icon;
+// the styles a player can play: the package's ten, the basic Vise for a holder without it, nothing for anyone else
+export function clampPool(p) {
+  if (!p || p.icon !== CLAMP_ICON) return null;
+  return clampFull(p) ? CLAMP_PKG_BY_ID[p.stealPkg].styles : [CLAMP_BASIC];
+}
+
 // one of the pool, dealt from his own count and the tick (never the game's RNG), never the same twice running
 function deal(p, pool, tick, key) {
   const n = (p.clampN = (p.clampN || 0) + 1);
@@ -65,6 +101,12 @@ export function pickClampReach(p, ball, { hand, low, aimed, tick = 0 }) {
   else if (ball.mode !== 'dribble' || ball.y > 0.95) pool = ['hip_rip', 'double_tap', 'vise'];
   else pool = ['vise', 'hip_rip', 'swipe_spin', 'double_tap', 'dig'];
   return deal(p, pool, tick, 'lastClampReach');
+}
+// the reach a player's steal try shows (Game.startSteal): one for the moment with the package on, The Vise with the
+// slot empty, none for anyone but the holder
+export function clampReach(p, ball, opts) {
+  if (!p || p.icon !== CLAMP_ICON) return null;
+  return clampFull(p) ? pickClampReach(p, ball, opts) : CLAMP_BASIC;
 }
 // the Swipe & Spin's turn (radians; the animator turns him by it, and a ball he came up with goes round with him):
 // a full turn the way the swipe goes, from just before the contact to the end of the reach

@@ -25,11 +25,13 @@ const catalog = Object.fromEntries(list.map(i => [i.id, i]));
 const REACHES = C.CLAMP_REACHES.map(s => s.id), PICKS = C.CLAMP_PICKS.map(s => s.id), STRIPS = C.CLAMP_STRIPS.map(s => s.id);
 const ZERO = { next: () => 0, range: a => a, int: a => a, chance: () => true, pick: arr => arr[0] };
 
-// a park game with a lockdown on team 1 (icon: the Clamp or not)
+// a park game with a lockdown on team 1 (icon: the Clamp or not), wearing the Clamp's Steal Package (qp6: the full set
+// is the package's; tests/v0485clampslot.test.mjs has the slot empty and the item on others)
 function park(icon = 'the_clamp', seed = 21) {
   const r = new RNG(seed), A = makeTeam(r, 3, { catalog, level: 0.8 }), Bt = makeTeam(r, 3, { catalog, level: 0.8 });
   const h = makeBot(r, { catalog, level: 0.95, position: 'SG', archetype: 'lockdown' });
   h.build.icon_badge = icon; h.name = 'LOCK'; Bt[0] = h;
+  if (icon === 'the_clamp') h.build.equipment = { ...h.build.equipment, steal: C.CLAMP_STEAL_PKG };
   const g = new Game({ mode: 'park', seed, rosters: [A, Bt], catalog, target: 21 });
   return { g, d: g.players.find(p => p.name === 'LOCK') };
 }
@@ -225,6 +227,6 @@ test('the Swipe & Spin turns him a full turn (the ball he came up with goes roun
   }
   // wired up: the sim deals them, the animator plays them
   const gs = src('client/js/sim/game.js'), an = src('client/js/char/animator.js');
-  assert.ok(gs.includes('pickClampReach(') && gs.includes('clampPickStart(') && gs.includes('clampStripStart(') && gs.includes('clampFxTick('));
+  assert.ok(gs.includes('clampReach(') && gs.includes('clampPickStart(') && gs.includes('clampStripStart(') && gs.includes('clampFxTick('));
   assert.ok(an.includes('clampStealPose(') && an.includes('clampOverlay(') && an.includes('clampSpin('));
 });

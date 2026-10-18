@@ -266,3 +266,152 @@ def prize_table(event):
 
 def blank_entry():
     return {"games": 0, "wins": 0, "net": 0, "staked": 0, "won_vc": 0, "streak": 0, "best_streak": 0, "claimed": False, "event": None}
+
+
+# ---------- v0.4.8.5 qp7: what the AI world has won ----------
+# The AI hoopers keep grinding the events whether you play them or not, and the ones who finish in a closed window's top 25
+# get that rank's prizes, exactly as you would (GET /api/ai-world/unlocks, then sim/world.js setUnlocks: they wear them).
+# The standings are worked out here, as everything about the AI field is, and they must be exactly standings()'s.
+# standings() takes ~40-60 ms a window (FNV-1a over a fresh string for every hour and every game of ~200 entrants) and a
+# world can be 140 windows old, so the closed windows go through fast_records: the same numbers, with each FNV string
+# continued from the hash of its shared prefix ("ai-N|w|", "ai-N|cup|") instead of hashed again from the start, and the
+# hour weights worked out once a window instead of once an entrant (~6 ms a window). tests/test_ai_unlocks.py checks it
+# against ai_record field by field. A closed window's final top never changes again, so it's kept (_FINAL).
+_M32, _FNV_P = 0xFFFFFFFF, 16777619
+
+
+def _fnv_on(h, s):
+    """FNV-1a, carried on from the state h (fnv(a + b) == _fnv_on(fnv(a), b))."""
+    for ch in s:
+        h = ((h ^ ord(ch)) * _FNV_P) & _M32
+    return h
+
+
+_ID_STATE = tuple(_fnv_on(2166136261, f"ai-{i}|") for i in range(POOL))  # fnv("ai-N|")
+_CUP_STATE = tuple(_fnv_on(h, "cup|") for h in _ID_STATE)                 # fnv("ai-N|cup|"): is_entrant
+_ACCT_STATE = tuple(_fnv_on(h, "acct") for h in _ID_STATE)                # fnv("ai-N|acct"): tier_of
+_TIERS = {}   # seed -> every AI hooper's tier index (tier_of)
+_FINAL = {}   # (seed, w) -> that closed window's AI top (FINAL_ROWS rows), in standings() order
+FINAL_ROWS = 26  # (25 prize ranks, and one more so the board can still be read with you in it)
+FINAL_CACHE_MAX = 6000
+
+
+def _tiers(seed):
+    t = _TIERS.get(seed)
+    if t is None:
+        out = []
+        for h in _ACCT_STATE:
+            x, a, k = Mulberry(h ^ seed).next(), 0.0, len(TIER_SHARES) - 1
+            for i, share in enumerate(TIER_SHARES):
+                a += share
+                if x < a:
+                    k = i
+                    break
+            out.append(k)
+        if len(_TIERS) >= 64:
+            _TIERS.clear()
+        t = _TIERS[seed] = tuple(out)
+    return t
+
+
+def fast_records(seed, w, until=None):
+    """[ai_record(seed, i, w, until) for i in entrants(w)], the same records in the same order, ~7x faster."""
+    start, end = window_bounds(w)
+    now = min(end, time.time() if until is None else until)
+    hours = int(max(0, now - start) // 3600)
+    P, S32 = _FNV_P, 4294967296.0
+    # every hour of the window: its weight and the codes of "b|" (c2 -1 for a one-digit hour). The hash of
+    # "ai-N|w|b|..." is that of "ai-N|w|" carried on; the 32-bit mask can wait to the end of each run of steps (a
+    # product's low 32 bits only depend on its factors' low 32 bits). A fraction f = h / 2^32 compared with x is h
+    # compared with x * 2^32, exactly (both sides scaled by a power of two)
+    hrs = []
+    for b in range(hours):
+        cs = tuple(map(ord, f"{b}|"))
+        hrs.append((_hour_weight(start + b * 3600), cs[0], cs[1], cs[2] if len(cs) > 2 else -1))
+    kc = [tuple(map(ord, f"{k}|w")) for k in range(8)]  # (a busy hour plays at most 2: activity 1.35 x weight 1 x 0.75)
+    wdig, wbar = tuple(map(ord, str(w))), tuple(map(ord, f"{w}|"))
+    tiers = _tiers(seed)
+    out = []
+    for i in range(POOL):
+        h = _CUP_STATE[i]
+        for c in wdig:
+            h = (h ^ c) * P
+        if (h & _M32) % 100 >= ENTRY_PCT:
+            continue
+        s = _ID_STATE[i]
+        for c in wbar:
+            s = (s ^ c) * P
+        s &= _M32
+        tier = tiers[i]
+        # (each expression exactly as ai_record writes it, so every float comes out the same)
+        skill = min(0.98, max(0.08, TIER_SKILL[tier] + (_fnv_on(s, "skill") / 4294967296 - 0.5) * 0.12))
+        activity = 0.25 + 1.1 * (_fnv_on(s, "act") / 4294967296) ** 1.3
+        lo, hi = TIER_ANTE[tier]
+        ante = ANTES[lo + int(_fnv_on(s, "ante") / 4294967296 * (hi - lo + 1)) if hi > lo else lo]
+        p_win = 0.3 + 0.42 * skill
+        win_at = p_win * S32
+        games = wins = streak = best = 0
+        net = 0
+        for wt, c0, c1, c2 in hrs:
+            g = activity * wt * 0.75
+            hb = ((s ^ c0) * P ^ c1) * P
+            if c2 >= 0:
+                hb = (hb ^ c2) * P
+            hb &= _M32
+            gi = int(g)
+            n = gi + (1 if (((hb ^ 110) * P) & _M32) < (g - gi) * S32 else 0)  # (110: "n")
+            for k in range(n):
+                games += 1
+                a0, a1, a2 = kc[k]
+                if ((((hb ^ a0) * P ^ a1) * P ^ a2) * P & _M32) < win_at:
+                    wins += 1
+                    streak += 1
+                    best = max(best, streak)
+                    mult = 1 + 0.30 * min(10, streak - 1)
+                    net += int(ante * mult) + int(800 * mult)
+                else:
+                    streak = 0
+                    net += 470 - ante
+        out.append({"id": f"ai-{i}", "tier": TIER_IDS[tier], "games": games, "wins": wins, "best_streak": best, "net": int(net), "ante": ante})
+    return out
+
+
+def final_top(seed, w):
+    """A closed window's final AI standings, best first, the first FINAL_ROWS rows of standings(seed, w) without you
+    ({id, net, wins, games}): worked out once, then kept."""
+    key = (seed, w)
+    top = _FINAL.get(key)
+    if top is None:
+        rows = [r for r in fast_records(seed, w, window_bounds(w)[1]) if r["games"] > 0]
+        rows.sort(key=lambda r: (-r["net"], -r["wins"], r["id"]))
+        top = tuple({"id": r["id"], "net": r["net"], "wins": r["wins"], "games": r["games"]} for r in rows[:FINAL_ROWS])
+        while len(_FINAL) >= FINAL_CACHE_MAX:
+            _FINAL.pop(next(iter(_FINAL)))  # (the oldest first)
+        _FINAL[key] = top
+    return top
+
+
+def ai_prizes(seed, born_s, mine=None, now=None):
+    """{ai id: sorted item ids} the AI world of `seed` (born at born_s, Unix seconds) has won: every closed window from
+    the one it was born in, whose event hands out prizes, ranks 1-25 getting prize_for's items. `mine`: the account's
+    own entries {window: entry}; where you played a window (games > 0) you're on its board as standings() puts you,
+    so an AI you beat for 1st gets the Top 3 prizes instead. (Ranks past 25 win VC only, so the field size never
+    matters here.)"""
+    now = time.time() if now is None else now
+    mine = mine or {}
+    out = {}
+    for w in range(max(0, window_at(born_s)), window_at(now)):
+        ev = event_for_window(w)
+        if not ev:
+            continue
+        rows = list(final_top(seed, w))
+        me = mine.get(w)
+        if me and me.get("games", 0) > 0:
+            rows.append({"id": "me", "net": int(me.get("net", 0)), "wins": me.get("wins", 0)})
+            rows.sort(key=lambda r: (-r["net"], -r["wins"], r["id"]))
+        for rank, r in enumerate(rows[:25], 1):
+            if r["id"] != "me":
+                items = (prize_for(rank, len(rows), ev) or {}).get("items")
+                if items:
+                    out.setdefault(r["id"], set()).update(items)
+    return {k: sorted(v) for k, v in out.items()}

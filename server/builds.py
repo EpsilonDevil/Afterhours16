@@ -26,9 +26,10 @@ BEARDS = ("none", "stubble", "goatee", "full")
 EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
                      "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic", "post": "post_basic", "block": "block_basic"}
-# (v0.4.8.5: "rebound", the Open Arms Icon's Rebound Package: optional, empty by default, only its holder can fill it)
+# (v0.4.8.5: "rebound", the Open Arms Icon's Rebound Package: optional, empty by default, only its holder can fill it;
+# qp6: "steal", The Clamp Icon's Steal Package, the same way)
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "post", "block")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "steal", "post", "block")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller
@@ -433,6 +434,53 @@ def icon_status_info(char):
 
 def icon_status(char):
     return icon_status_info(char)["active"]
+
+
+# v0.4.8.5 qp7: ICON build slots. An account has 4 build slots, and every ICON build on it opens one more, up to 8 (four
+# ICONs fill it out; builds 5 to 8 can become ICONs too, but the cap stays 8). The slot is the account's for good: the
+# first time a build is seen as an ICON it's marked (icon_slot) and counts from then on, even if a later patch raises
+# the bar (a new badge to max takes a build out of ICON status for a while). So no account ever ends up over its cap,
+# and no slot it earned is taken back. Mirrors client/js/sim/builds.js buildSlots.
+BASE_BUILD_SLOTS = 4
+MAX_BUILD_SLOTS = 8
+
+
+def holds_icon_slot(char):
+    """This build opens a build slot: it's an ICON now, or it has been one (icon_slot)."""
+    return bool(char.get("icon_slot")) or icon_status(char)
+
+
+def mark_icon_slot(char):
+    """Marks the build's slot the first time it's an ICON (call it before the build is saved). True when it was
+    marked just now."""
+    if char.get("icon_slot") or not icon_status(char):
+        return False
+    char["icon_slot"] = True
+    return True
+
+
+def slots_for(icons):
+    return min(MAX_BUILD_SLOTS, BASE_BUILD_SLOTS + max(0, icons))
+
+
+def build_slots(chars):
+    """An account's build slots: {"unlocked", "base", "max", "icons" (builds holding an ICON slot), "used"}."""
+    icons = sum(1 for c in chars if holds_icon_slot(c))
+    return {"unlocked": slots_for(icons), "base": BASE_BUILD_SLOTS, "max": MAX_BUILD_SLOTS, "icons": icons, "used": len(chars)}
+
+
+def slot_opened(marked_before, marked_now):
+    """{"slot", "max", "opened"} when marking builds just now (marked_now of them; marked_before had their mark already)
+    took the account's slots up, so the game can say so at that moment. None otherwise (nothing opens past 8)."""
+    before, after = slots_for(marked_before), slots_for(marked_before + marked_now)
+    return {"slot": after, "max": MAX_BUILD_SLOTS, "opened": after - before} if after > before else None
+
+
+def build_slot_rule(slots):
+    """Why a new build can't be made right now (the create endpoint's refusal; the client's builder says the same)."""
+    if slots["unlocked"] >= MAX_BUILD_SLOTS:
+        return f"All {MAX_BUILD_SLOTS} build slots are in use (the most an account can have)."
+    return f"All {slots['unlocked']} build slots are in use. Every ICON build on your account opens one more, up to {MAX_BUILD_SLOTS}."
 
 
 def apply_cap_breakers(char, attribute, count):

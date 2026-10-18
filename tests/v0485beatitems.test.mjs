@@ -1,7 +1,7 @@
 // v0.4.8.5 quick patch: And The Beat Goes On's own seven prizes (server/cup.py PRIZES_BEAT): the 80s shell suit
 // (windbreaker and track pants), the Boombox hi-tops with their velcro strap, the Neon Terry band, the Running Man, the
-// Disco Ball green release and the Eight-O-Eight green sound. They exist, they're the event's alone (never sold, never on
-// the AI), and every one is really drawn, posed, played or heard.
+// Disco Ball green release and the Eight-O-Eight green sound. They exist, they're the event's alone (never sold; on the AI
+// only once one has won them, qp7), and every one is really drawn, posed, played or heard.
 // Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -45,7 +45,9 @@ test('the seven prizes: the ids the prize table hands out, exclusive to the Beat
   assert.equal(list.filter(i => i.anim === 'runningman').length, 1);
 });
 
-test('never on the AI: no bot, at any level, ever wears or plays a Beat exclusive', () => {
+// (v0.4.8.5 qp7: an AI hooper of the persistent world wears the Beat prizes he has won: tests/v0485qp7ai.test.mjs. A bare
+// makeBot has unlocked nothing: nothing unlocked → nothing worn)
+test('nothing unlocked → nothing worn: no bare bot, at any level, ever wears or plays a Beat exclusive', () => {
   const rng = new RNG(85);
   for (let n = 0; n < 160; n++) {
     const b = makeBot(rng, { catalog, level: (n % 10) / 10 });

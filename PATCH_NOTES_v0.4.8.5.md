@@ -403,4 +403,60 @@ When an **ICON** build is on fire, his Icon badge stays under his feet with a **
 
 ---
 
-*(Tests: 145 Python and 403 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games.)*
+## Quick patch 6 (Oct 17): Sexy Red hits harder, The Clamp gets its own Steals slot
+
+### Sexy Red's package hits a little harder than the best in the store
+**Post Move Package: Sexy Red** now bites a little harder than Low Post Legend and Backboard Bully, the best packages in the store: about 7% more post power for the same player (1.6 against 1.5). On a 6'10" Post Scorer with Sexy Red (Post Control 99 × 1.05) against an elite post defender:
+- **Back-down:** 1.133 m/s, against 1.115 in Backboard Bully.
+- **Drop-step beat chance:** 77%, against 69%.
+- **Turnaround and hook bonus:** +0.239, against +0.224.
+
+Against weaker defenders both packages already reach the game's ceiling on beat chances, so the gap shows most against the best defenders.
+
+### The Clamp's Steals slot
+The Clamp's steal animations are now an item you can see and choose, just like Open Arms' Rebound Package:
+- **Steal Package: The Clamp** sits in a new **Steals** tab in your Inventory (Animations) and a **Steal package** row in MyPlayer → Animations, with a preview of all ten.
+- **Only for a Lockdown who has unlocked The Clamp.** For everyone else the tab and the row don't exist. It's never in the store, and the game refuses to equip it on anyone else ("Requires The Clamp Icon badge").
+- **Put on for you** when you unlock the badge, and once for builds that already have it. Taking it off sticks.
+- **With the package on:** all ten animations, as before (six reaches picked for the moment, three pick-offs and the Chest-Up Strip).
+- **With the slot empty** (the **Basic Vise** chip): The Vise on every reach, like Open Arms' Basic Rip.
+- Your steal chances are the same either way.
+
+---
+
+## Quick patch 7 (Oct 17): the AI wear what they've earned, and ICONs open build slots
+
+### The AI unlock exclusives, and wear them
+The AI in your world keep playing whether you're there or not, and now they unlock things the way you do.
+- **Icon badges.** A Park Legend, or an Elite who's good enough, gets his archetype's Icon badge once he's played enough games. That counts the games you've seen him play plus about three a day he plays while you're away. His badges go up to their caps and his Icon's package goes on:
+  - a Big Brother Icon blocks with the Big Brother package;
+  - a Clamp holder gets the full Steal Package, not just The Vise;
+  - a Sharp Eye holder shoots the Sharp Eye jumpshot, and so on.
+
+  Once he has it, he keeps it. The AI stay at 90 OVR, so they never get ICON status.
+- **How many AI Icons:** about 5–10 in a world two months old, about 40 at six months (nearly every Park Legend) and about 80 after a year.
+- **Daily Spin.** Every day he plays, he may spin the wheel at the same odds you get (12% gear, 9.8% animation). Each time it lands on an item, he wins a wheel item he doesn't have yet.
+- **Event prizes.** Every AI who finished in the top 25 of a closed event leaderboard since your world began has that place's prizes, from the same table you play for. This covers the King Tut Cup, The Jungle Ballers, And The Beat Goes On and The Monster Mash. If you beat an AI for 1st, he gets the Top 3 prizes instead. The Monster Mash prizes reach the AI when its leaderboard closes (Oct 18, 00:00 UTC).
+- **What they wear:**
+  - **Icon packages** are always on.
+  - **Everything else** depends on the player. Some like to show off: about 3% of casuals, up to 45% of Park Legends. Those wear their unlocks in most slots, and matching sets go on together: the King Tut mo-cap suit, the gorilla suit, the tracksuit, the Bone Suit, and the Aurora and Solstice sets.
+  - **At a busy park,** about 15–19% of the AI wear something they've unlocked. Counting the wheel items some already had before this patch, it's about 30–36%. That's most Park Legends, a third of Elites and very few casuals.
+  - A Park Legend who shows off can wear 6–12 exclusives at once.
+- **Nothing else changes.** An AI who hasn't unlocked anything is exactly who he was, with the same name, body, look and gear.
+- **On the phone,** an AI Icon's profile shows his Icon badge first, plus an "Unlocked" line, for example "Icon badge · 9 Daily Spin items · 6 event prizes".
+- **Online,** your AI squad mates bring their gear and Icon into hosted games, so everyone sees the same thing.
+
+### ICON builds open more build slots
+- **Every ICON build opens one more slot.** An account starts with 4 build slots and can have up to 8. Four ICONs open all 8; ICONs after that don't add any.
+- **The slot is yours for good.** Once a build has been an ICON, its slot stays open, even if a later update adds a badge that build hasn't maxed yet.
+- **MyPlayer → Players** shows your slots, e.g. "Build slots: 5 of 8 open — 4 base + 1 ICON". You get the Create button while a slot is free. Under 8, you also see the next locked slot and what opens it. The ICON status card mentions it too.
+- **When it happens:**
+  - A toast tells you: "ICON status: your account opened build slot 5 of 8." It comes after the game, upgrade or cap breakers that made the build an ICON.
+  - The results screen shows the new slot. When a game opens one, that screen waits for you instead of moving on after 10 seconds.
+  - If you already have ICON builds, you get their slots, with a one-time note, the next time you log in.
+- **At the cap,** the player creator shows the rule and won't let you start a player you can't save.
+- **Also fixed:** the ICON tag on a player card no longer drops onto a line of its own.
+
+---
+
+*(Tests: 166 Python and 424 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games; a park full of AI in their unlocks and an AI Icon's phone profile, with every AI entry checked unchanged for three worlds where nothing is unlocked; and MyPlayer's Players tab at 4, 5 and 8 slots, the creator at the cap and a real game that opens slot 6.)*

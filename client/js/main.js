@@ -11,6 +11,7 @@ import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
 import { resolveLook } from './sim/bots.js';
+import { refreshSlots, slotOpenedText } from './sim/builds.js';
 import { initWorld, setEventVenue, setEventSchedule } from './sim/world.js';
 import { watchEvents } from './ui/events.js';
 import { $, toast, modal, closeModal, esc } from './ui/common.js';
@@ -117,12 +118,23 @@ function noteBadgeUpdates(app) {
     if (u.cap_breakers_awarded) parts.push(`+${u.cap_breakers_awarded} cap breakers`);
     if (parts.length) toast(`${u.name}: ${parts.join(' · ')}`, 'good');
   }, 900 + k * 4200));
+  // v0.4.8.5 qp7: then the build slots this load opened (a build that was an ICON before the patch, or just became one)
+  const opened = app.profile?.build_slot_unlocked;
+  if (opened) setTimeout(() => toast(slotOpenedText(opened), 'good'), 900 + ups.length * 4200);
 }
 
 app.char = () => app.profile?.characters.find(c => c.id === app.selectedId) || null;
 app.look = (char, override = {}) => resolveLook({ ...char, name: char.name }, app.catalog, override);
 app.refresh = async () => { app.profile = await app.api.get('/api/me'); Screens.updateTopbar(app); return app.profile; };
-app.replaceChar = c => { const i = app.profile.characters.findIndex(x => x.id === c.id); if (i >= 0) app.profile.characters[i] = c; else app.profile.characters.push(c); };
+// v0.4.8.5 qp7: every response that brings a build back comes through here, so this is where the account's build slots
+// (profile.build_slots) stay current. When they go up (a build just became an ICON: a game, an upgrade, cap breakers)
+// it says so once, a moment later so the action's own toast is read first (the results screen says it too)
+app.replaceChar = c => {
+  const p = app.profile, i = p.characters.findIndex(x => x.id === c.id);
+  if (i >= 0) p.characters[i] = c; else p.characters.push(c);
+  const up = refreshSlots(p);
+  if (up) setTimeout(() => toast(slotOpenedText(up), 'good'), 1600);
+};
 app.setBalance = b => { if (app.profile && b != null) { app.profile.balance = b; Screens.updateTopbar(app); } };
 
 // Switch what the main loop renders/updates

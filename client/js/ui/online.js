@@ -89,7 +89,8 @@ export async function initOnline(app) {
     const c = app.char(), key = c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null;
     if (key !== lastChar) { lastChar = key; net.sendEntry(); }
     // (your AI squad mates: they walk with you on everyone's screen and run in your online squad)
-    const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}`).join(',');
+    // (v0.4.8.5 qp7: and what they wear: one who unlocks his Icon badge or puts on a prize is sent again)
+    const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}:${a.entry.build.icon_badge || ''}:${Object.values(a.entry.build.equipment || {}).join('.')}`).join(',');
     if (aiKey !== lastAI) { lastAI = aiKey; net.send({ t: 'aisquad', members: ai }); }
   }, 1000);
   // where you're walking, for the others at the same park or HQ to see you there (5 times a second)

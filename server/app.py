@@ -30,7 +30,8 @@ CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json"
 # v0.4.8.5 qp5: Icon items a build that already held the badge gets put on once, each with its own flag on the
 # character (so one never stands in for another): Sexy Red's Post Move Package, The General's Salute
 ICON_EQUIP_ONCE = {"post_sexy_red": "icon_pkg_v0485qp5_sr", "cel_general_salute": "icon_pkg_v0485qp5_gen",
-                   "block_big_brother": "icon_pkg_v0485qp5_bb"}  # (and Big Brother's own Block Package)
+                   "block_big_brother": "icon_pkg_v0485qp5_bb",  # (and Big Brother's own Block Package)
+                   "steal_the_clamp": "icon_pkg_v0485qp6_clamp"}  # (qp6: and The Clamp's Steal Package, into the new "steal" slot)
 VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
@@ -201,12 +202,35 @@ class Service:
         out["proam_rank"] = progression.proam_rank(rp)
         return out
 
+    # v0.4.8.5 qp7: ICON build slots (builds.build_slots): the account's slots from its builds as saved. claim=True (a new
+    # build is about to take a slot) marks any ICON build not marked yet first, so the slot it's using stays for good
+    @staticmethod
+    def build_slots(c, account_id, claim=False):
+        chars = []
+        for cid, data in c.execute("SELECT id, data FROM characters WHERE account_id=?", (account_id,)).fetchall():
+            ch = builds.normalize(json.loads(data))
+            if claim and builds.mark_icon_slot(ch):
+                c.execute("UPDATE characters SET data=? WHERE id=?", (encode(ch), cid))
+            chars.append(ch)
+        return builds.build_slots(chars)
+
+    # Called with a build about to be saved after anything that can make it an ICON (a game's result, an upgrade, cap
+    # breakers): marks its slot for good, and returns {"slot", "max", "opened"} when that opened a build slot on the
+    # account (so the game can say so right then), else None
+    @staticmethod
+    def icon_slot_check(c, account_id, char):
+        if not builds.mark_icon_slot(char):
+            return None
+        others = c.execute("SELECT data FROM characters WHERE account_id=? AND id<>?", (account_id, char.get("id"))).fetchall()
+        return builds.slot_opened(sum(1 for r in others if json.loads(r[0]).get("icon_slot")), 1)
+
     def profile(self, account_id):
         with self.db.lock:
             conn = self.db.conn
             account = conn.execute("SELECT id,username,created_at FROM accounts WHERE id=?", (account_id,)).fetchone()
             rows = conn.execute("SELECT id, data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,)).fetchall()
             chars, badge_updates = [], []
+            stored, marked_before, marked_now = [], 0, 0  # (v0.4.8.5 qp7: the builds as saved; ICON slots marked before / now)
             for cid, data in rows:
                 char = builds.normalize(json.loads(data))
                 # v0.4.8.5: badges catch up with the current requirements as the profile loads (a lowered Hall of Fame
@@ -248,6 +272,14 @@ class Service:
                         char.setdefault("equipment", {})[i["slot"]] = i["id"]
                         char[ICON_EQUIP_ONCE[i["id"]]] = True
                     conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                # v0.4.8.5 qp7: an ICON build keeps the build slot it opened for good, from the first time it's seen as one
+                # (here: a build that was an ICON before this patch, or became one just now in the badge catch-up above)
+                if char.get("icon_slot"):
+                    marked_before += 1
+                elif builds.mark_icon_slot(char):
+                    marked_now += 1
+                    conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                stored.append(char)
                 chars.append(self.describe(char))
             # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
             # that earned the Icon before this patch pick theirs up here
@@ -258,6 +290,9 @@ class Service:
                     "balance": conn.execute("SELECT balance FROM wallets WHERE account_id=?", (account_id,)).fetchone()[0],
                     "inventory": [r[0] for r in conn.execute("SELECT item_id FROM inventory WHERE account_id=?", (account_id,))],
                     "characters": chars,
+                    # v0.4.8.5 qp7: 4 base + 1 a build holding an ICON slot, up to 8 (and the slots this load opened, if any)
+                    "build_slots": builds.build_slots(stored),
+                    "build_slot_unlocked": builds.slot_opened(marked_before, marked_now),
                     "proam_team": json.loads(team[0]) if team else None,
                     "badge_updates": badge_updates,
                     "daily_spin": self.spin_status(conn, account_id),
@@ -389,6 +424,22 @@ class Service:
                     "board": top, "around": around, "me": {**me, "rank": mine["rank"] if mine else None},
                     "prizes": cup.prize_table(ev),
                     "previous": prev, "event_schedule": cup.public_schedule()}
+
+    # v0.4.8.5 qp7: the prizes the AI world has won in the closed event windows (cup.ai_prizes), for the client to dress
+    # them in (sim/world.js setUnlocks). The rows are read under the lock; the standings are worked out after it (a cold
+    # world can take a second; it's kept after that), so nobody else waits on them
+    def ai_unlocks(self, account_id):
+        with self.db.lock:
+            conn = self.db.conn
+            world = self.load_ai_world(conn, account_id)
+            if not world:
+                return {"prizes": {}, "through": None}
+            seed = self.cup_seed(conn, account_id)
+            mine = {int(r[0]): json.loads(r[1]) for r in conn.execute("SELECT window, data FROM cup_entries WHERE account_id=?", (account_id,))}
+        born = world.get("born")
+        born = float(born) / 1000 if isinstance(born, (int, float)) and not isinstance(born, bool) and born > 0 else time.time()
+        now = time.time()
+        return {"prizes": cup.ai_prizes(seed, born, mine, now), "through": cup.window_at(now) - 1}
 
     def rate_limit(self, ip, category):
         limit, period = (8, 600) if category == "register" else (25, 60)
@@ -699,6 +750,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"career": json.loads(rows[0]["data"]) if rows else None, "updated_at": rows[0]["updated_at"] if rows else None})
             if path == "/api/cup":
                 return self.respond(200, s.cup_status(self.account()))
+            if path == "/api/ai-world/unlocks":  # (v0.4.8.5 qp7: what the AI world has won)
+                return self.respond(200, s.ai_unlocks(self.account()))
             if re.fullmatch(r"/api/matches/[a-f0-9-]{36}", path):
                 aid = self.account()
                 rows = s.db.query("SELECT id,mode,status,seed,meta,result FROM matches WHERE id=? AND account_id=?", (path.split("/")[-1], aid))
@@ -919,13 +972,15 @@ class Handler(BaseHTTPRequestHandler):
                 build = builds.spec(data.get("build"))
 
                 def create(c):
-                    if c.execute("SELECT count(*) FROM characters WHERE account_id=?", (aid,)).fetchone()[0] >= 4:
-                        raise builds.Invalid("Up to four players per account.")
+                    # v0.4.8.5 qp7: 4 build slots, and one more for every build holding an ICON slot, up to 8 (was a flat 4)
+                    slots = s.build_slots(c, aid, claim=True)
+                    if slots["used"] >= slots["unlocked"]:
+                        raise builds.Invalid(builds.build_slot_rule(slots))
                     char = builds.normalize({**build, "id": str(uuid.uuid4()), "attributes": builds.starting_attributes(build),
                                              "equipment": dict(builds.DEFAULT_EQUIPMENT), "schema": 3, "badges": {}, "affiliation": None,
                                              "progression": {"games": 0, "wins": 0, "xp": 0, "rep": 0, "park": {"games": 0, "wins": 0, "streak": 0, "best_streak": 0}, "proam": {"games": 0, "wins": 0, "rp": 0, "best_rp": 0}, "career": {}}})
                     c.execute("INSERT INTO characters VALUES(?,?,?,?)", (char["id"], aid, encode(char), time.time()))
-                    return {"character": s.describe(char)}
+                    return {"character": s.describe(char), "build_slots": {**slots, "used": slots["used"] + 1}}
                 return self.respond(200, db.once(aid, data.get("key"), "character_create", build, create))
             char_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/(upgrade|appearance|equip|affiliation|capbreakers)", path)
             if char_route:
@@ -1070,8 +1125,10 @@ class Handler(BaseHTTPRequestHandler):
                     if why:
                         raise builds.Invalid(why)
                     char["equipment"][slot] = item_id
+            # v0.4.8.5 qp7: an upgrade or cap breakers can take a build to 99 and make it an ICON: its build slot opens now
+            opened = s.icon_slot_check(c, aid, char)
             c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char_id))
-            return {**result, "character": s.describe(char)}
+            return {**result, "character": s.describe(char), **({"build_slot_unlocked": opened, "build_slots": s.build_slots(c, aid)} if opened else {})}
         return self.respond(200, db.once(aid, data.get("key"), action + ":" + char_id, payload, mutate))
 
     # ---------------- v0.4.2: daily rewards wheel ----------------
@@ -1431,6 +1488,8 @@ class Handler(BaseHTTPRequestHandler):
             prog = progression.apply_progress(char, summary, rw)
             icon_items = s.grant_icon_items(c, aid, prog["icon_unlocked"], char, equip=True) if prog["icon_unlocked"] else []
             balance = db.change_wallet(c, aid, rw["vc"], "match_reward", "match:" + match_id) if rw["vc"] > 0 else c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]
+            # v0.4.8.5 qp7: the game that makes a build an ICON (its last badge maxed, its Legend +1 to 99) opens a build slot
+            slot_opened = s.icon_slot_check(c, aid, char)
             c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char["id"]))
             team = None
             if row["mode"] == "proam" and not summary["forfeit"]:
@@ -1470,7 +1529,8 @@ class Handler(BaseHTTPRequestHandler):
                       "streak": rw["streak"], "bounty": rw.get("bounty", 0), "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
                       "badges_upgraded": prog["badges_upgraded"], "badge_progress": rw["badges"], "stats": summary["stats"],
                       "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "icon_items": icon_items, "max_ovr_unlocked": prog["max_ovr_unlocked"],
-                      "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team, "proam_rank": proam_rank}
+                      "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team, "proam_rank": proam_rank,
+                      "build_slot_unlocked": slot_opened, **({"build_slots": s.build_slots(c, aid)} if slot_opened else {})}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result
         return self.respond(200, db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete))

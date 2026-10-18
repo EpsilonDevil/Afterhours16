@@ -26,6 +26,7 @@ import { CrewHQ, RUN_MIN } from '../game/crewhq.js';
 import * as Online from './online.js';
 import { endWinStreak } from '../game/iconfx.js';
 import { syncEvent } from './events.js';
+import { slotOpenedText } from '../sim/builds.js';
 
 // Tear down whatever 3D world is running (park hub / standalone match)
 export function leaveWorld(app) {
@@ -508,7 +509,10 @@ export function showResults(app, summary, result, won, opts = {}) {
   // qp3: the items an Icon badge brings (the Hash-Slinging dunk package) are in the inventory and equipped already
   if (r?.icon_items?.length && app.profile?.inventory) for (const id of r.icon_items) if (!app.profile.inventory.includes(id)) app.profile.inventory.push(id);
   const iconItems = (r?.icon_items || []).map(id => app.catalog?.[id]?.name).filter(Boolean);
-  if (hof) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b>${iconItems.length ? `<span class="muted small">${esc(iconItems.join(', '))} — yours, and equipped</span>` : ''}</div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}</div>`);
+  // v0.4.8.5 qp7: the game that made this build an ICON opened a build slot on the account (none past 8): said here too
+  const slotUp = r?.build_slot_unlocked;
+  const slotNote = slotUp ? `<div class="slot-unlock"><span class="icon-status">ICON</span><b>${esc(slotOpenedText(slotUp))}</b><span class="muted small">${slotUp.slot < slotUp.max ? `Make another build an ICON for the next one, up to ${slotUp.max}.` : 'That\'s every slot an account can have.'} Create the new player in MyPlayer → Players.</span></div>` : '';
+  if (hof || slotUp) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b>${iconItems.length ? `<span class="muted small">${esc(iconItems.join(', '))} — yours, and equipped</span>` : ''}</div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}${slotNote}</div>`);
   let countdown = null;
   const stopCountdown = () => { if (countdown) { clearInterval(countdown); countdown = null; } };
   const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => { stopCountdown(); closeModal(); if (hof && r.cap_breakers_awarded && cbOpen && MyPlayer.openCapBreakers) MyPlayer.openCapBreakers(app, f); else f(); }; };
@@ -522,7 +526,8 @@ export function showResults(app, summary, result, won, opts = {}) {
   // park after a loss), unless you're placing new cap breakers or adding someone as a friend
   // v0.4.8.5: Pro-Am and the Pro Run do the same: the next game starts by itself after 10 seconds (back to the menu
   // when there's no next game to play, like the draft after the third college game, or a squad mate's online game)
-  const auto = hof ? null : opts.park ? card.querySelector(won && (!opts.online || opts.stay) ? '[data-stay]' : opts.back ? '[data-back]' : '[data-leave]')
+  // (qp7: and not when the game opened a build slot: that one stays up until it's read)
+  const auto = hof || slotUp ? null : opts.park ? card.querySelector(won && (!opts.online || opts.stay) ? '[data-stay]' : opts.back ? '[data-back]' : '[data-leave]')
     : opts.autoNext ? card.querySelector('[data-again]') || card.querySelector('[data-menu]') : null;
   if (auto) {
     let left = 10; const label = auto.textContent;

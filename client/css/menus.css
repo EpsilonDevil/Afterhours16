@@ -141,8 +141,18 @@ select { background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(
 .player-list { display: flex; flex-direction: column; gap: 8px; }
 .player-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); text-align: left; }
 .player-card b { font-family: var(--display); font-size: 26px; color: var(--accent); width: 44px; }
-.player-card span { display: flex; flex-direction: column; font-size: 16px; } .player-card small { color: var(--muted); font-size: 12px; }
+.player-card > span { display: flex; flex-direction: column; font-size: 16px; } .player-card small { color: var(--muted); font-size: 12px; }
 .player-card.on { border-color: var(--accent); } .player-card.new { justify-content: center; color: var(--muted); border-style: dashed; }
+/* v0.4.8.5 qp7: ICON build slots: the next slot, locked until another build is an ICON; past 5 cards the list goes two
+   across (up to 8 builds). (The name's own span only: the ICON tag in the line under it stays inline) */
+.player-card.locked { border-style: dashed; background: rgba(255,255,255,.02); color: var(--muted); cursor: default; }
+.player-list.many { display: grid; grid-template-columns: 1fr 1fr; }
+@media (max-width: 1100px) { .player-list.many { grid-template-columns: 1fr; } }
+.player-card.locked b { color: var(--muted); font-size: 20px; text-align: center; opacity: .8; }
+.build-slots { margin: 0 0 8px; }
+.slot-unlock { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; } .slot-unlock .icon-status { font-size: 13px; }
+.slots-full { margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,91,87,.45); background: rgba(255,91,87,.08); color: #ffd2d0; font-size: 13px; }
+.btn[data-full] { opacity: .55; } /* (the builder at the cap: Create says the rule instead) */
 
 /* Store */
 .store { width: min(660px, 52vw); }

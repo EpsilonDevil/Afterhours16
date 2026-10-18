@@ -45,7 +45,8 @@ test('the Big Brother Block Package: the catalog carries the table\'s entry, an 
   for (const ic of [null, 'open_arms', 'the_clamp', 'sharp_eye']) assert.equal(forBuild(it, { icon_badge: ic }), false);
   // it is a Block Package: the slot's row in MyPlayer lists it and its Preview plays its styles (the store's try-on too)
   assert.ok(src('client/js/ui/myplayer.js').includes("kind === 'block' ? bk?.styles"));
-  // bots never carry it (exclusives are left out of their picks)
+  // bare bots never carry it (exclusives are left out of their picks: nothing unlocked → nothing worn; an AI world
+  // Glass Cleaner who has unlocked Big Brother wears it, v0.4.8.5 qp7: tests/v0485qp7ai.test.mjs)
   const team = makeTeam(new RNG(4), 8, { catalog, level: 0.95 });
   assert.ok(team.every(e => e.build.equipment.block !== PKG));
   // and the badge still says what it unlocks

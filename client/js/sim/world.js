@@ -5,7 +5,9 @@
 // at your park — changes through the day. Skill comes in clear tiers, from casuals to park legends, and the
 // tier drives attributes, badges, rep, gear and basketball IQ together.
 import { RNG, hashString } from '../core/rng.js';
-import { makeBot } from './bots.js';
+import { makeBot, wearUnlocked } from './bots.js';
+import { ICON_FOR_ARCH } from './badges.js';
+import { capBadges } from './builds.js';
 
 export const POOL_SIZE = 900;
 export const PARKS = ['harbor', 'brick', 'foundry'];
@@ -31,8 +33,21 @@ export const HABITS = [
   { id: 'grinder', label: 'Grinder', share: 0.12, start: [9, 15], len: [8, 13], days: 0.88 },
 ];
 const DAY = 86400000;
+// v0.4.8.5 qp7: the persistent world keeps grinding, and the AI unlock exclusives the way you do.
+//  * The Icon badge comes with a build's 7th Hall of Fame badge: a Park Legend or an Elite good enough to get there
+//    (level + growth at least minLevel) unlocks his archetype's after his own number of career games (need: [from,
+//    spread], per tier, stable per AI). Career games: the ones this world has seen him play (prog g) plus the ones he
+//    plays when you're not around, about perDay a day he's on (his habit's activity × how often he plays). Tuned so a
+//    two-month-old world has a handful of AI Icons (5-10), six months a few dozen (35-45, nearly every legend), a year 75-90.
+//  * The Daily Spin: every day he plays he may spin (habit: how keen he is on it, 0.25-0.85 × how often he's on), with the
+//    wheel's own odds (server/progression.py WHEEL_ODDS: gear 12, animations 9.8 of 100, VC the rest), an item he
+//    doesn't have yet of that kind each time it lands on one.
+export const ICON_GRIND = { perDay: 3, minLevel: 0.86, need: { legend: [90, 330], elite: [380, 820] } };
+export const AI_WHEEL = { gear: 12, anim: 9.8, habit: [0.25, 0.85] };
+const activityOf = a => (a.habit.id === 'grinder' ? 1.6 : a.habit.id === 'weekend' || a.habit.id === 'lunch' ? 0.6 : 1);
+const NONE = Object.freeze([]);
 
-const shareOf = (list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
+const shareOf =(list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
 const fmtHour = h => { h = ((h % 24) + 24) % 24; const hh = Math.floor(h), mm = Math.round((h - hh) * 4) * 15; const H = hh % 12 || 12; return `${H}${mm ? ':' + String(mm % 60).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`; };
 // local midnight-based day number (so schedules follow the player's clock)
 const dayIndex = t => { const d = new Date(t); return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY); };
@@ -57,6 +72,13 @@ export class AIWorld {
     this.dirty = !data.seed;
     this.listeners = new Set();
     this.extra = new Map(); // id → {park, until}: regulars who hopped on early to keep a quiet park playable
+    // v0.4.8.5 qp7: what they've unlocked. iconIds: the AI Icons (once earned, kept); wheel: id → his Daily Spins so
+    // far ({day: the next UTC day to spin, spins, owned}); prizes: id → the event prizes he's won (the server's word,
+    // setUnlocks), unlockVer: bumped when they change (every entry is built again)
+    this.iconIds = new Set();
+    this.wheel = new Map();
+    this.prizes = {};
+    this.unlockVer = 0; this.unlockSig = '{}'; this.unlockThrough = null; this.unlockAsked = 0; this.unlockOk = false;
   }
 
   toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met, prog: this.prog, ...(this.exSquad ? { exSquad: this.exSquad } : {}) }; }
@@ -98,11 +120,15 @@ export class AIWorld {
     return Math.max(0, Math.min(0.12, g, Math.min(1, a.tier.hi + 0.08) - a.level));
   }
   // full player: build, gear and look (deterministic), plus the header fields. v0.4.7.5: his attributes, overall and
-  // badges grow with growth(); who he is (name, body, gear, look) never changes
+  // badges grow with growth(); who he is (name, body, gear, look) never changes. v0.4.8.5 qp7: and he wears what he's
+  // unlocked (his Icon badge's package, the wheel's items, the events' prizes: bots.js wearUnlocked); with nothing
+  // unlocked he is exactly the makeBot hooper he always was
   entry(id) {
-    const gk = Math.round(this.growth(id) * 400);
+    const t = Date.now(), gk = Math.round(this.growth(id, t) * 400);
+    const icon = this.hasIcon(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE;
+    const key = `${gk}|${icon ? 1 : 0}|${wheel.owned.length}|${this.unlockVer}`;
     let e = this.full.get(id);
-    if (e && e.gk === gk) return e;
+    if (e && e.key === key) return e;
     const a = this.account(id);
     const flash = Math.min(1, a.level * 0.6 + a.rep / 40);
     const bot = makeBot(this.rng(id, 'build'), { catalog: this.catalog, position: a.position, level: a.level, rep: a.rep, flash });
@@ -111,10 +137,82 @@ export class AIWorld {
       bot.build.attributes = up.build.attributes; bot.build.overall = up.build.overall;
       bot.badges = up.badges; bot.badgeUse = up.badgeUse; bot.level = up.level;
     }
-    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, games: this.prog[id]?.g || 0 };
+    // (qp7: an Icon holder's badges are as high as his build lets them go: his 7th Hall of Fame badge is what unlocked it.
+    // He's still capped at 90 OVR, so never ICON status)
+    const ic = icon ? ICON_FOR_ARCH[bot.build.archetype] || null : null;
+    if (ic) { bot.build.icon_badge = ic; bot.badges = capBadges(Object.fromEntries(Object.keys(bot.badges || {}).map(k => [k, 4])), bot.build); }
+    if (ic || wheel.owned.length || prizes.length) wearUnlocked(bot.build, [...wheel.owned, ...prizes], this.catalog, this.rng(id, 'wear'), flash, a.rep);
+    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, key, games: this.prog[id]?.g || 0 };
+    if (ic || wheel.owned.length || prizes.length) e.unlocked = { icon: ic, wheel: wheel.owned.slice(), prizes: [...prizes] };
     e.build.rep = e.rep;
     this.full.set(id, e);
     return e;
+  }
+
+  // ---------- v0.4.8.5 qp7: what they unlock grinding ----------
+  // his games since this world began: the ones it has seen (prog g: with you, against you, on the park's other courts)
+  // and the ones he plays when you're not around
+  careerGames(id, t = Date.now()) {
+    const a = this.account(id), days = Math.max(0, (t - this.born) / DAY);
+    return (this.prog[id]?.g || 0) + days * activityOf(a) * a.daysP * ICON_GRIND.perDay;
+  }
+  // the career games his 7th Hall of Fame badge takes (Infinity: below Elite, never)
+  iconNeed(id) {
+    const r = ICON_GRIND.need[this.account(id).tier.id];
+    return r ? r[0] + ((hashString(`${id}|icon|`) ^ this.seed) >>> 0) % r[1] : Infinity;
+  }
+  // has he unlocked his Icon badge (by time t)? Everything it's made of only grows, and once it's his it stays his
+  hasIcon(id, t = Date.now()) {
+    if (this.iconIds.has(id)) return true;
+    const a = this.account(id);
+    if (!ICON_GRIND.need[a.tier.id] || a.level + this.growth(id, t) < ICON_GRIND.minLevel || this.careerGames(id, t) < this.iconNeed(id)) return false;
+    this.iconIds.add(id);
+    return true;
+  }
+  // the wheel's exclusives of a kind ('gear' or 'anim'), as server/progression.py spin_wheel lists them (sorted ids)
+  wheelPool(kind) {
+    const k = '_wheel_' + kind;
+    if (!this[k]) this[k] = Object.values(this.catalog).filter(i => i.exclusive === 'wheel' && (i.category === 'animation') === (kind === 'anim')).map(i => i.id).sort();
+    return this[k];
+  }
+  // his Daily Spins, every UTC day finished since this world began (spun once, kept: each day only adds to it)
+  wheelOf(id, t = Date.now()) {
+    const today = Math.floor(t / DAY);
+    let s = this.wheel.get(id);
+    if (!s) { s = { day: Math.floor(this.born / DAY), spins: 0, owned: [] }; this.wheel.set(id, s); }
+    if (s.day >= today) return s;
+    const a = this.account(id), [h0, h1] = AI_WHEEL.habit, p = a.daysP * (h0 + (h1 - h0) * this.rng(id, 'spinhabit').next());
+    for (let d = s.day; d < today; d++) {
+      const r = this.rng(id, 'spin' + d);
+      if (r.next() >= p) continue;
+      s.spins++;
+      const x = r.next() * 100, kind = x < AI_WHEEL.gear ? 'gear' : x < AI_WHEEL.gear + AI_WHEEL.anim ? 'anim' : null;
+      if (!kind) continue; // (VC)
+      const pool = this.wheelPool(kind).filter(i => !s.owned.includes(i));
+      if (pool.length) s.owned.push(pool[Math.floor(r.next() * pool.length)]); // (nothing left of that kind: VC instead)
+    }
+    s.day = today;
+    return s;
+  }
+  // the event prizes the AI field has won, from the server (GET /api/ai-world/unlocks: {prizes: {id: [items]}, through:
+  // the last closed window}). Returns true when they changed (every entry is built again the next time it's asked for)
+  setUnlocks(data, t = Date.now()) {
+    const raw = data && data.prizes && typeof data.prizes === 'object' ? data.prizes : {}, prizes = {};
+    for (const [id, l] of Object.entries(raw)) if (/^ai-\d+$/.test(id) && Array.isArray(l)) prizes[id] = Object.freeze(l.filter(x => typeof x === 'string').slice(0, 64));
+    this.unlockThrough = Number.isFinite(data?.through) ? data.through : null;
+    this.unlockAsked = this.unlockAsked || t; this.unlockOk = true;
+    const sig = JSON.stringify(prizes);
+    if (sig === this.unlockSig) return false;
+    this.prizes = prizes; this.unlockSig = sig; this.unlockVer++;
+    return true;
+  }
+  // time to ask again: never asked, the last ask failed (a minute on), or an event window has closed since the last
+  // closed one the server told us about (a minute between asks, so a PC clock a bit ahead of the server's catches up)
+  unlocksDue(t = Date.now()) {
+    if (!this.unlockAsked) return true;
+    if (t - this.unlockAsked < 60000) return false;
+    if (!this.unlockOk) return true;
+    return cupWindow(t) - 1 > (this.unlockThrough ?? cupWindow(this.unlockAsked) - 1);
   }
   // v0.4.7.5: a game they played (any court): ids played, winners won
   playedGame(ids, winners = []) {
@@ -365,5 +463,12 @@ export function initWorld(app) {
   };
   w.onChange(save);
   if (w.dirty) save();
+  refreshUnlocks(app, w); // (v0.4.8.5 qp7: what the AI field has won in the events; ui/events.js asks again as windows close)
   return w;
+}
+// v0.4.8.5 qp7: the AI world's event prizes, from the server (it alone knows the final standings)
+export async function refreshUnlocks(app, w = app?.ai) {
+  if (!w || !app?.api) return false;
+  w.unlockAsked = Date.now(); w.unlockOk = false;
+  try { const r = await app.api.get('/api/ai-world/unlocks'); return app.ai === w ? w.setUnlocks(r) : false; } catch (e) { console.warn('AI unlocks not loaded', e.message); return false; }
 }

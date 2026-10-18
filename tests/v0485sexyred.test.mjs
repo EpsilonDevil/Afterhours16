@@ -48,9 +48,10 @@ test('the Sexy Red Post Move Package: the holder\'s alone, free, never in the st
   assert.equal(new Set(RP.RED_BACKDOWNS.map(s => s.name)).size, 5);
   for (const s of RP.RED_BACKDOWNS) { assert.ok(s.len >= 1.2 && s.len <= 2, s.id); assert.ok(it.description.includes(s.name), s.name); }
   assert.ok(it.description.includes('Sexy Red Icon badge'));
-  // bites like the top tier, never more; its own body (no store package's)
+  // (qp6) bites a little harder than the best package in the store (1.6 against 1.5); its own body (no store package's)
   const top = Math.max(...POST_PACKAGES.map(p => p.emph));
-  assert.equal(it.emph, top);
+  assert.equal(it.emph, 1.6);
+  assert.ok(it.emph > top && it.emph <= top * 1.1, 'harder, but only a little');
   assert.ok(!POST_PACKAGES.some(p => p.body === 'red'));
   assert.equal(POST_ICON_PACKAGES.length, 1);
   assert.equal(POST_PACKAGES.length, 10, 'the store\'s ten are unchanged');
@@ -101,9 +102,11 @@ test('postPower: identical at Post Control 99 and under; past 99 it keeps counti
   const k = at(103.95) / at(99);
   assert.ok(Math.abs(k - (0.35 + 0.65 * (78.95 / 74))) < 1e-9, k.toFixed(4));
   assert.ok(k > 1.04 && k < 1.05);
-  // and through to the back-down, the moves and the shots, against a good defender
+  // and through to the back-down, the moves and the shots, against an elite post defender (qp6: the package bites a
+  // little harder than the store's best, so against a merely good one his drop step is already at the 0.8 ceiling)
   const me = pc => ({ postPkg: PKG, icon: 'sexy_red', archetype: 'post_scorer', heightIn: 82, ratings: { post_control: pc }, phys: { strength: 0.7 } });
-  const def = { ratings: { interior_d: 95 }, phys: { strength: 0.9 }, badges: { brick_wall: 2 } };
+  const def = { ratings: { interior_d: 104 }, phys: { strength: 0.95 }, badges: { brick_wall: 4 } };
+  assert.ok(beatChance(me(103.95), def, 'dropstep') < 0.8, 'under the ceiling');
   assert.ok(backdownSpeed(me(103.95), def) > backdownSpeed(me(99), def));
   assert.ok(beatChance(me(103.95), def, 'dropstep') > beatChance(me(99), def, 'dropstep'));
   // (a shot out of the post has its own ceiling, power 1.6, which the holder in his top-tier package is already past at
@@ -309,4 +312,16 @@ test('the preview backs down long enough to show all five in two loops, then its
   assert.ok(store.includes('inStore(i) && inCat(i, cat)'));
   assert.ok(store.includes("app.showroom.setPreview('post', { pkg: item.id, sig: item.sig })"));
   assert.ok(POST_PKG_BY_ID[PKG], 'the preview finds it');
+});
+
+test('qp6: Sexy Red\'s package hits a little harder than the best in the store, in every part of the post game', () => {
+  const me = pkg => ({ postPkg: pkg, icon: 'sexy_red', archetype: 'post_scorer', heightIn: 82, ratings: { post_control: 103.95 }, phys: { strength: 0.7 } });
+  const def = { ratings: { interior_d: 104 }, phys: { strength: 0.95 }, badges: { brick_wall: 4 } };
+  const red = me(PKG), store = me('post_backboard');
+  assert.ok(Math.abs(postPower(red) / postPower(store) - 1.6 / 1.5) < 1e-9, 'post power ×1.067');
+  assert.ok(backdownSpeed(red, def) > backdownSpeed(store, def));
+  for (const m of ['dropstep', 'postspin']) assert.ok(beatChance(red, def, m) > beatChance(store, def, m), m);
+  for (const k of ['hook', 'turn']) assert.ok(postShotK(red, k, false).bonus > postShotK(store, k, false).bonus, k);
+  // only a little: under 10% more power
+  assert.ok(postPower(red) / postPower(store) < 1.1);
 });

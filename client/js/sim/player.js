@@ -1,6 +1,7 @@
 // Player state + movement physics (momentum, braking, plant cuts, jumps, stamina).
 import { HS_PKG } from './hashsling.js';
 import { reboundPackageOf } from './snags.js';
+import { stealPackageOf } from './clamp.js';
 import { physical } from './ratings.js';
 import { bodyDims } from '../char/skeleton.js';
 import { DT, GRAVITY, COURT } from './constants.js';
@@ -68,6 +69,9 @@ export class Player {
     // v0.4.8.5 Open Arms: the Rebound Package he wears (sim/snags.js), only ever his Icon's own (null: an Open Arms
     // holder snags with the basic Open Arms Rip; nobody else snags at all). lastSnag: so the next board is another one
     this.reboundPkg = reboundPackageOf(entry.build, this.icon); this.lastSnag = null;
+    // v0.4.8.5 qp6 The Clamp: the Steal Package he wears (sim/clamp.js), only ever his Icon's own (null: a Clamp holder
+    // reaches with the basic Vise and has no pick-off or strip; nobody else has any of it)
+    this.stealPkg = stealPackageOf(entry.build, this.icon);
     // qp3: the Post Move Package he wears (sim/post.js; none → Fundamentals). postUp: the trigger is held with the ball
     this.postPkg = entry.build.equipment?.post || 'post_basic';
     this.postUp = false; this.backing = 0; this.postDef = -1; this.heightIn = entry.build.height || 78;

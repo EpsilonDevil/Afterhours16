@@ -5,7 +5,7 @@ import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
 import { pickSnag, snagAction, snagTick, snagCuttable, snagBall, SNAG, SNAG_FROM, OA_ICON } from './snags.js';
-import { CLAMP_ICON, pickClampReach, clampGot, clampStealBall, clampPickStart, clampStripStart, clampFxTick, clampPickBall } from './clamp.js';
+import { clampReach, clampFull, clampGot, clampStealBall, clampPickStart, clampStripStart, clampFxTick, clampPickBall } from './clamp.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
 import { POST, POST_MOVES, POST_SHOTS, postPower, postResist, backdownSpeed, beatChance, postShotK, postPackageOf } from './post.js';
 import { DRIBBLE_SPEED_K } from './player.js';
@@ -1571,8 +1571,9 @@ export class Game {
     let hand;
     if (dir) hand = dir.x * lx + dir.z * lz >= 0 ? 'L' : 'R';
     else { const b = this.ball; hand = (b.x - p.x) * lx + (b.z - p.z) * lz >= 0 ? 'L' : 'R'; }
-    // (v0.4.8.5 The Clamp: one of the Icon's six reaches, for the moment: sim/clamp.js. The same reach otherwise)
-    const clampAnim = p.icon === CLAMP_ICON ? pickClampReach(p, this.ball, { hand, low, aimed: !!dir || low, tick: this.tick }) : null;
+    // (v0.4.8.5 The Clamp: one of the Icon's six reaches, for the moment, with his Steal Package on; The Vise with the
+    // slot empty; sim/clamp.js. The same reach otherwise)
+    const clampAnim = clampReach(p, this.ball, { hand, low, aimed: !!dir || low, tick: this.tick });
     p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low, icon: clampAnim ? 'clamp' : null, clamp: clampAnim });
     p.spend(COST.steal);
     p.cool.steal = 0.85 - bk(p.badges, 'pick_pocket') * 0.08;
@@ -2877,7 +2878,7 @@ export class Game {
             passer.stats.tov++; p.stats.stl++;
             this.emit({ type: 'steal', player: p.id, victim: passer.id, intercept: true });
             this.changePossessionTo(p, 'steal');
-            if (p.icon === CLAMP_ICON) clampPickStart(p, b, { tick: this.tick, rim: this.rimFor(p.team) }); // (v0.4.8.5: the Clamp's pick-off, for show)
+            if (clampFull(p)) clampPickStart(p, b, { tick: this.tick, rim: this.rimFor(p.team) }); // (v0.4.8.5: the Clamp's pick-off, for show: his Steal Package's)
             this.catchBall(p);
             return;
           }
@@ -3213,7 +3214,7 @@ export class Game {
           if (this.ball.mode === 'dribble' && this.rng.next() < strip) {
             handler.stats.tov++; def.stats.stl++;
             const b = this.ball;
-            if (def.icon === CLAMP_ICON) clampStripStart(def, b, { tick: this.tick }); // (v0.4.8.5: the Clamp's chest-up strip, for show)
+            if (clampFull(def)) clampStripStart(def, b, { tick: this.tick }); // (v0.4.8.5: the Clamp's chest-up strip, for show: his Steal Package's)
             this.pokeOut(def, handler);
             this.emit({ type: 'steal', player: def.id, victim: handler.id, bump: true });
           } else if (this.mode === 'proam' && this.isCharge(handler, def, -rv)) {
