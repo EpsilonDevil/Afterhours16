@@ -447,6 +447,29 @@ class HQUI extends ParkUI {
 }
 
 // ---------------- Results ----------------
+// v0.4.8.5 qp8: how long a results screen waits before it moves on by itself, in every mode. The regular screen: 10
+// seconds. One with news to read (a build slot opened, a new Hall of Fame badge or Icon badge, the cards for a max OVR
+// or an Icon Legend OVR increase): 30 seconds. They used to wait for a press forever, so a player who'd stepped away
+// came back to a game stuck on the results.
+export const RESULTS_AUTO_SECS = 10, RESULTS_NEWS_SECS = 30;
+// a countdown on a button ("Continue · 30"): clicks it when it runs out. Returns stop(); it stops by itself if the
+// button leaves the page
+export function autoPress(btn, secs, onFire = null) {
+  if (!btn) return () => {};
+  let left = secs, h = null;
+  const label = btn.textContent;
+  const stop = () => { if (h) { clearInterval(h); h = null; } };
+  const tick = () => { if (!btn.isConnected) return stop(); btn.textContent = `${label} · ${left}`; if (left-- <= 0) { stop(); onFire?.(); btn.click(); } };
+  tick(); h = setInterval(tick, 1000);
+  return stop;
+}
+// (a card shown before the results: its Continue moves on by itself after RESULTS_NEWS_SECS)
+function autoCard(card, next) {
+  const btn = card.querySelector('[data-ok]');
+  const stop = autoPress(btn, RESULTS_NEWS_SECS);
+  btn.onclick = () => { stop(); closeModal(); next(); };
+}
+
 // v0.4.7.5: every third Pro Run game played raises the build's max OVR by 1 (80 -> 90). A small card says so
 // right after the game, before the results.
 function maxOvrUnlocked(app, u, character, next) {
@@ -457,7 +480,7 @@ function maxOvrUnlocked(app, u, character, next) {
     <p class="muted">You can now upgrade your player to ${u.to} OVR with VC. ${u.to >= top ? `That's the full ${top}: <b>cap breakers are unlocked</b>, and any you've banked are ready to place in MyPlayer → Attributes → Cap Breakers.` : `${per} more Pro Run games for the next +1 (up to ${top}).`}</p>
     <div class="row gap"><button class="btn primary" data-ok>Continue</button></div></div>`, { close: false, cls: 'ovr-unlock-card' });
   audio.ui('buy');
-  card.querySelector('[data-ok]').onclick = () => { closeModal(); next(); };
+  autoCard(card, next); // (qp8: moves on by itself after 30 s)
 }
 
 // v0.4.7.5 quick patch, Icon Legend: with the Icon badge, every 2 Pro Run games are +1 OVR (to 99), placed for you
@@ -471,7 +494,7 @@ function legendUnlocked(app, u, character, next) {
     <p class="muted">Placed by your build on what it leans on${u.to >= cap ? `. That's ${cap}: <b>fully grinded</b>.` : `. ${per} more Pro Run games for the next +1 (up to ${cap}).`}</p>
     <div class="row gap"><button class="btn primary" data-ok>Continue</button></div></div>`, { close: false, cls: 'ovr-unlock-card' });
   audio.ui('buy');
-  card.querySelector('[data-ok]').onclick = () => { closeModal(); next(); };
+  autoCard(card, next); // (qp8: moves on by itself after 30 s)
 }
 
 export function showResults(app, summary, result, won, opts = {}) {
@@ -513,9 +536,14 @@ export function showResults(app, summary, result, won, opts = {}) {
   const slotUp = r?.build_slot_unlocked;
   const slotNote = slotUp ? `<div class="slot-unlock"><span class="icon-status">ICON</span><b>${esc(slotOpenedText(slotUp))}</b><span class="muted small">${slotUp.slot < slotUp.max ? `Make another build an ICON for the next one, up to ${slotUp.max}.` : 'That\'s every slot an account can have.'} Create the new player in MyPlayer → Players.</span></div>` : '';
   if (hof || slotUp) card.querySelector('.results .row.end')?.insertAdjacentHTML('beforebegin', `<div class="hof-note">${r.icon_unlocked ? `<div class="icon-unlock">${iconBadgeSVG(r.icon_unlocked, 56)}<b>Icon badge unlocked: ${esc(app.config.icon_badges?.[r.icon_unlocked]?.name || r.icon_unlocked)}</b>${iconItems.length ? `<span class="muted small">${esc(iconItems.join(', '))} — yours, and equipped</span>` : ''}</div>` : ''}${r.cap_breakers_awarded ? `<b>+${r.cap_breakers_awarded} cap breakers</b> for a new Hall of Fame badge${cbOpen ? '' : ` · banked until your max OVR reaches ${app.config.badge_rules?.ovr_cap ?? 90}`}` : ''}${slotNote}</div>`);
-  let countdown = null;
-  const stopCountdown = () => { if (countdown) { clearInterval(countdown); countdown = null; } };
-  const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => { stopCountdown(); closeModal(); if (hof && r.cap_breakers_awarded && cbOpen && MyPlayer.openCapBreakers) MyPlayer.openCapBreakers(app, f); else f(); }; };
+  let stopCountdown = () => {}, autoFired = false;
+  // (qp8: when the screen moves on by itself, new cap breakers stay banked instead of opening their menu over the next
+  // game; a toast says where they are)
+  const on = (sel, f) => { const b = card.querySelector(sel); if (b) b.onclick = () => {
+    stopCountdown(); closeModal();
+    if (hof && r.cap_breakers_awarded && cbOpen && MyPlayer.openCapBreakers && !autoFired) MyPlayer.openCapBreakers(app, f);
+    else { if (autoFired && hof && r.cap_breakers_awarded && cbOpen) toast(`+${r.cap_breakers_awarded} cap breakers banked: place them in MyPlayer → Attributes → Cap Breakers.`, 'good'); f(); }
+  }; };
   on('[data-upgrade]', () => Screens.go(app, 'myplayer', { tab: 'attributes' }));
   on('[data-stay]', () => opts.stay && opts.stay());
   on('[data-back]', () => opts.back && opts.back());
@@ -526,13 +554,13 @@ export function showResults(app, summary, result, won, opts = {}) {
   // park after a loss), unless you're placing new cap breakers or adding someone as a friend
   // v0.4.8.5: Pro-Am and the Pro Run do the same: the next game starts by itself after 10 seconds (back to the menu
   // when there's no next game to play, like the draft after the third college game, or a squad mate's online game)
-  // (qp7: and not when the game opened a build slot: that one stays up until it's read)
-  const auto = hof || slotUp ? null : opts.park ? card.querySelector(won && (!opts.online || opts.stay) ? '[data-stay]' : opts.back ? '[data-back]' : '[data-leave]')
+  // (qp7 kept a screen that opened a build slot, and qp3-on a new Hall of Fame or Icon badge, up until it was pressed.
+  // qp8: every mode moves on by itself: 10 seconds for the regular screen, 30 when it has that news to read)
+  const news = !!(hof || slotUp);
+  const auto = opts.park ? card.querySelector(won && (!opts.online || opts.stay) ? '[data-stay]' : opts.back ? '[data-back]' : '[data-leave]')
     : opts.autoNext ? card.querySelector('[data-again]') || card.querySelector('[data-menu]') : null;
   if (auto) {
-    let left = 10; const label = auto.textContent;
-    const tick = () => { if (!auto.isConnected) return stopCountdown(); auto.textContent = `${label} · ${left}`; if (left-- <= 0) { stopCountdown(); auto.click(); } };
-    tick(); countdown = setInterval(tick, 1000);
+    stopCountdown = autoPress(auto, news ? RESULTS_NEWS_SECS : RESULTS_AUTO_SECS, () => { autoFired = true; });
     const prevClose = closeModal.onClose; closeModal.onClose = () => { stopCountdown(); if (prevClose) prevClose(); };
   }
   card.querySelectorAll('[data-addf]').forEach(b => b.onclick = () => {

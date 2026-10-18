@@ -56,11 +56,11 @@ def gold_short(ch):
 class SlotRules(unittest.TestCase):
     def test_four_base_one_an_icon_up_to_eight(self):
         plain = {"archetype": "stretch_big", "position": "PF", "height": 83, "weight": 235, "wingspan": 87, "attributes": {a: 60 for a in builds.ATTRIBUTES}}
-        self.assertEqual(builds.build_slots([]), {"unlocked": 4, "base": 4, "max": 8, "icons": 0, "used": 0})
+        self.assertEqual(builds.build_slots([]), {"unlocked": 4, "base": 4, "max": 8, "icons": 0, "kept": 0, "used": 0})
         self.assertEqual(builds.build_slots([plain] * 4)["unlocked"], 4)
-        self.assertEqual(builds.build_slots([icon_build()] + [plain] * 3), {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "used": 4})
+        self.assertEqual(builds.build_slots([icon_build()] + [plain] * 3), {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "kept": 0, "used": 4})
         self.assertEqual(builds.build_slots([icon_build()] * 4)["unlocked"], 8)
-        self.assertEqual(builds.build_slots([icon_build()] * 7), {"unlocked": 8, "base": 4, "max": 8, "icons": 7, "used": 7})
+        self.assertEqual(builds.build_slots([icon_build()] * 7), {"unlocked": 8, "base": 4, "max": 8, "icons": 7, "kept": 0, "used": 7})
         # the mark keeps the slot after the build stops qualifying (a badge taken back below its cap); without it, gone
         c = icon_build()
         self.assertTrue(builds.mark_icon_slot(c))
@@ -155,19 +155,19 @@ class SlotsApi(unittest.TestCase):
     def test_four_then_icons_open_slots_up_to_eight(self):
         ids = [r["character"]["id"] for r in self.create(4)]
         me = self.call("/api/me")
-        self.assertEqual(me["build_slots"], {"unlocked": 4, "base": 4, "max": 8, "icons": 0, "used": 4})
+        self.assertEqual(me["build_slots"], {"unlocked": 4, "base": 4, "max": 8, "icons": 0, "kept": 0, "used": 4})
         self.assertIsNone(me["build_slot_unlocked"])
         self.assertEqual(self.create(1, 400)[0]["error"], FULL4)
         # one ICON: the profile load marks it and opens slot 5 (said once)
         self.patch(ids[0], make_icon)
         me = self.call("/api/me")
-        self.assertEqual(me["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "used": 4})
+        self.assertEqual(me["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "kept": 0, "used": 4})
         self.assertEqual(me["build_slot_unlocked"], {"slot": 5, "max": 8, "opened": 1})
         self.assertIs(next(c for c in me["characters"] if c["id"] == ids[0])["icon_slot"], True)
         self.assertIs(self.stored(ids[0]).get("icon_slot"), True)
         self.assertIsNone(self.call("/api/me")["build_slot_unlocked"])
         fifth = self.create(1)[0]
-        self.assertEqual(fifth["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "used": 5})
+        self.assertEqual(fifth["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "kept": 0, "used": 5})
         ids.append(fifth["character"]["id"])
         self.assertEqual(self.create(1, 400)[0]["error"], "All 5 build slots are in use. Every ICON build on your account opens one more, up to 8.")
         # the build stops qualifying (a later patch's new bar): it keeps the slot, and the account isn't over its cap
@@ -179,13 +179,13 @@ class SlotsApi(unittest.TestCase):
         first = next(c for c in me["characters"] if c["id"] == ids[0])
         self.assertIs(first["icon_status"], False)
         self.assertIs(first["icon_slot"], True)
-        self.assertEqual(me["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "used": 5})
+        self.assertEqual(me["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "kept": 0, "used": 5})
         self.assertEqual(self.create(1, 400)[0]["error"], "All 5 build slots are in use. Every ICON build on your account opens one more, up to 8.")
         # three more ICONs: 8 slots (the three said at once)
         for cid in ids[1:4]:
             self.patch(cid, make_icon)
         me = self.call("/api/me")
-        self.assertEqual(me["build_slots"], {"unlocked": 8, "base": 4, "max": 8, "icons": 4, "used": 5})
+        self.assertEqual(me["build_slots"], {"unlocked": 8, "base": 4, "max": 8, "icons": 4, "kept": 0, "used": 5})
         self.assertEqual(me["build_slot_unlocked"], {"slot": 8, "max": 8, "opened": 3})
         ids += [r["character"]["id"] for r in self.create(3)]
         self.assertEqual(self.create(1, 400)[0]["error"], FULL8)
@@ -193,7 +193,7 @@ class SlotsApi(unittest.TestCase):
         for cid in ids[4:8]:
             self.patch(cid, make_icon)
         me = self.call("/api/me")
-        self.assertEqual(me["build_slots"], {"unlocked": 8, "base": 4, "max": 8, "icons": 8, "used": 8})
+        self.assertEqual(me["build_slots"], {"unlocked": 8, "base": 4, "max": 8, "icons": 8, "kept": 0, "used": 8})
         self.assertIsNone(me["build_slot_unlocked"])
         self.assertTrue(all(c["icon_slot"] for c in me["characters"]))
         self.assertEqual(self.create(1, 400)[0]["error"], FULL8)
@@ -220,7 +220,7 @@ class SlotsApi(unittest.TestCase):
         self.assertIs(res["character"]["icon_status"], True)
         self.assertIs(res["character"]["icon_slot"], True)
         self.assertEqual(res["build_slot_unlocked"], {"slot": 5, "max": 8, "opened": 1})
-        self.assertEqual(res["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "used": 4})
+        self.assertEqual(res["build_slots"], {"unlocked": 5, "base": 4, "max": 8, "icons": 1, "kept": 0, "used": 4})
         self.assertIsNone(self.call("/api/me")["build_slot_unlocked"], "said once, by the upgrade")
         self.create(1)
 

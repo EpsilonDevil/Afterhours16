@@ -664,6 +664,10 @@ export class ParkHub {
       return;
     }
     for (const e of [...home, ...away]) { e.look = e.look || resolveLook(e.build, this.catalog); e.human = false; }
+    // (v0.4.8.5 qp8: the kings' streak on this court is their win streak: an AI ICON among them shows his aura from 3 wins,
+    // as your ICON does from yours)
+    for (const e of home) if (e.build) e.build = { ...e.build, win_streak: c.kingsStreak || 0 };
+    for (const e of away) if (e.build?.win_streak) e.build = { ...e.build, win_streak: 0 };
     c.kings = home;
     c.session = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters: [home, away], teams: [{ name: 'Kings', abbr: 'KNG', color: '#ffd84a' }, { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' }], seed: this.rng.int(1, 1e9), target: 11, difficulty: 0.6, assist: true });
     c.session.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
@@ -1075,6 +1079,8 @@ export class ParkHub {
     for (const w of l0.members) w.dispose();
     this.walkers = this.walkers.filter(w => !l0.members.includes(w));
     this.myMates = mates;
+    // (v0.4.8.5 qp8: kings you step up against bring their streak: an AI ICON's aura with it)
+    for (const e of opponents || []) if (e?.build) e.build = { ...e.build, win_streak: this.myOppStreak };
     this.myOpp = opponents;
     if (li >= 0) c.lines[li] = null;
     this.startSession(c, opponents, ticket);

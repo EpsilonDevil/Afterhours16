@@ -1920,7 +1920,7 @@ export class Game {
     this.shotLog.push({ x: a.startX, z: a.startZ, team: p.team, player: p.id, three, made: plan.made, grade });
     this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three, made: plan.made, kind: a.kind, post: a.post || null, closest: this.closestDef(p), ...(a.kind === 'close' && !a.post ? {} : { err, tRel: a.tRel, win, nat: W.natural, sure: W.sure }) });
     if (a.post) p.stats.postShots = (p.stats.postShots || 0) + 1;
-    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
+    this.pendingFoul = foul || null; if (foul && this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one. qp8: a new shot always replaces the last one's foul)
   }
 
   // v0.4.7.5 quick patch: the defense at the release, for the AI too. The AI picks its timing when the shot starts,
@@ -1985,7 +1985,7 @@ export class Game {
     if (grade === 'excellent') p.stats.greens++;
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made: plan.made, grade });
     this.emit({ type: 'release', player: p.id, grade, chance, contest, guard, smothered, scratch, three: false, made: plan.made, kind: 'layup', closest: this.closestDef(p), ...(W ? { err, tRel: a.tRel, win: W.total, nat: W.natural, sure: W.sure } : {}) });
-    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
+    this.pendingFoul = foul || null; if (foul && this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one. qp8: a new shot always replaces the last one's foul)
   }
 
   slam(p, a, rim) {
@@ -2040,7 +2040,7 @@ export class Game {
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.stats.fga++;
     const foul = this.checkShootingFoul(p, contest, 'dunk');
-    if (foul) { this.pendingFoul = foul; if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; } // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one)
+    this.pendingFoul = foul || null; if (foul && this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul; // (qp3: a missed shot with the foul goes to the line too: it used to count only as an and-one. qp8: a new shot always replaces the last one's foul)
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
     this.shotLog.push({ x: p.x, z: p.z, team: p.team, player: p.id, three: false, made, grade: 'none' });
     a.hang = made && (a.style === 'power' || a.style === 'tomahawk' || a.style === 'double' || a.style === 'rimrock' || a.style === 'bully' || this.rng.next() < 0.35 + 0.1 * (a.tier || 0)) ? 0.45 + 0.12 * (a.tier || 0) + this.rng.range(0, 0.35) : 0;
@@ -2145,6 +2145,7 @@ export class Game {
 
   blockBall(d, shooter, chase, countFga = true) {
     const b = this.ball;
+    this.pendingFoul = null; // (qp8: a blocked shot's foul goes with it, as before, and is never kept for a later basket)
     const kind = (b.mode === 'flight' && b.info?.type) || (shooter.action?.type === 'dunk' ? 'dunk' : shooter.action?.type === 'layup' ? 'layup' : 'jumper'); // (qp3: for the record scratch)
     const fx = Math.sin(d.facing), fz = Math.cos(d.facing);
     const P = b.mode === 'flight' ? { x: b.x, y: b.y, z: b.z } : this.holdPoint(shooter);
@@ -2743,10 +2744,14 @@ export class Game {
           this.emit({ type: 'assist', player: lp.from, to: shooter.id });
         }
       }
-      this.emit({ type: 'score', team, pts, player: shooter?.id, kind: info.type || 'tip', three: !!info.three, swish: e.clean, andOne: !!this.pendingFoul, poster: info.poster, style: info.style, oop: !!info.oop, ft: !!info.ft, contest: info.contest || 0, catchShoot: !!info.catchShoot, corner: !!info.corner, d: info.d || 0, clutch: !!info.clutch });
+      // v0.4.8.5 qp8: an and-one is the foul on THIS shot, by the man who scored it. The callout used to fire whenever any
+      // foul was still pending, and a foul left over from an earlier shot (one that missed and was already called, or
+      // was blocked) made the next basket by a teammate "AND ONE!" with no foul behind it, so the ball went to the other team
+      const own = info.foul || this.pendingFoul;
+      const andOne = !info.ft && shooter && shooter.team === team && own && own.shooter === shooter.id ? own : null;
+      this.emit({ type: 'score', team, pts, player: shooter?.id, kind: info.type || 'tip', three: !!info.three, swish: e.clean, andOne: !!andOne, poster: info.poster, style: info.style, oop: !!info.oop, ft: !!info.ft, contest: info.contest || 0, catchShoot: !!info.catchShoot, corner: !!info.corner, d: info.d || 0, clutch: !!info.clutch });
       this.lastPass = null;
       b.kind = 'dead';
-      const andOne = this.pendingFoul && this.pendingFoul.shooter === shooter?.id ? this.pendingFoul : null;
       this.pendingFoul = null; if (info) info.foul = null;
       if (this.checkGameOver()) return;
       if (info.ft) { this.ftMade(); return; }
@@ -2762,6 +2767,7 @@ export class Game {
 
   deadBall(t, after) {
     this.phase = 'dead'; this.phaseT = t; this.after = after;
+    this.pendingFoul = null; // (qp8: whatever stops play (a call, the ball out, a turnover, a make) ends the last shot's foul)
     const b = this.ball;
     if (b.holder >= 0) { b.holder = -1; b.mode = 'dead'; }
     else if (b.mode === 'flight') { b.mode = 'dead'; }
@@ -2828,7 +2834,11 @@ export class Game {
       this.emit({ type: 'miss', player: b.info.shooter, team: b.info.team });
       if (this.shotClockReset && !this.half) { this.shotClock = 24; this.shotClockReset = false; }
       if (this.half) this.shotClock = 24;
-      if (b.info.foul) { const f = b.info.foul; b.info.foul = null; this.callFoul(this.players[f.fouler], this.players[f.shooter], true, f.three ? 3 : 2); return; }
+      // (qp8: the shot's foul, whether it rode on the ball or was decided while the ball was still in his hands (a dunk or
+      // layup), is called now and never left pending for a later basket)
+      const pf = this.pendingFoul && this.pendingFoul.shooter === b.info.shooter ? this.pendingFoul : null;
+      this.pendingFoul = null;
+      if (b.info.foul || pf) { const f = b.info.foul || pf; b.info.foul = null; this.callFoul(this.players[f.fouler], this.players[f.shooter], true, f.three ? 3 : 2); return; }
       if (this.practice) { this.practiceReturn(1.6); return; }
       if (b.info.ft) { this.ftMissed(); return; }
     }

@@ -7,6 +7,7 @@ import { ICON_BADGES } from '../sim/badges.js';
 import { OA_BASIC } from '../sim/snags.js';
 import { CLAMP_BASIC } from '../sim/clamp.js';
 import { appearanceEditor } from './builder.js';
+import { openDeleteBuild } from './deletebuild.js';
 import { settings, saveSettings } from '../core/settings.js';
 import * as Screens from './screens.js';
 
@@ -245,19 +246,28 @@ export function accountSlots(app) {
 export function slotsLine(s) {
   const extra = s.unlocked - s.base;
   const from = !extra ? '' : s.icons > extra ? ` + ${extra} from your ${s.icons} ICON builds` : ` + ${extra} ICON${extra === 1 ? '' : 's'}`;
-  return `Build slots: ${s.unlocked} of ${s.max} open — ${s.base} base${from}. ${s.unlocked >= s.max ? 'That\'s the most an account can have.' : `Every ICON build opens one more, up to ${s.max}.`}`;
+  // (qp8: a deleted ICON build's slot stays open, and says where it came from)
+  const kept = extra && s.kept ? ` (${s.kept} kept from ${s.kept === 1 ? 'a deleted ICON build' : 'deleted ICON builds'})` : '';
+  return `Build slots: ${s.unlocked} of ${s.max} open — ${s.base} base${from}${kept}. ${s.unlocked >= s.max ? 'That\'s the most an account can have.' : `Every ICON build opens one more, up to ${s.max}.`}`;
 }
 
+// v0.4.8.5 qp8: each build's card picks it (a click, or A on a controller) and has a small Delete next to the name, its own
+// control (it never picks the card; padnav reaches it with right from the card), which opens the 5-second hold screen
+// (ui/deletebuild.js). The card is a div so the button can sit inside it (a button can't hold another)
 function players(app, root) {
   const chars = app.profile.characters, slots = accountSlots(app);
   // (under 8, the next slot shows locked, saying how to open it)
   const next = slots.unlocked < slots.max ? `<div class="player-card locked" title="${esc(slotsLine(slots))}"><b>🔒</b><span>Slot ${slots.unlocked + 1} · locked<small>Make ${slots.icons ? 'another' : 'a'} build an ICON (every cap breaker, every badge maxed, 99 OVR) to open it</small></span></div>` : '';
   const cards = chars.length + (chars.length < slots.unlocked ? 1 : 0) + (next ? 1 : 0); // (past 5, two across)
   root.innerHTML = `<p class="muted small build-slots">${esc(slotsLine(slots))}</p>
-    <div class="player-list ${cards > 5 ? 'many' : ''}">${chars.map(ch => `<button class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}"><b>${ch.overall}</b><span>${esc(ch.name)}<small>${ch.position} · ${archHTML(ch)} · ${esc(ch.rep.label)}</small></span></button>`).join('')}
+    <div class="player-list ${cards > 5 ? 'many' : ''}">${chars.map(ch => `<div class="player-card ${ch.id === app.selectedId ? 'on' : ''}" data-pick="${ch.id}" role="button" tabindex="0"><b>${ch.overall}</b><span><span class="pc-name">${esc(ch.name)}<button class="pc-del" data-del="${ch.id}" title="Delete ${esc(ch.name)}" aria-label="Delete ${esc(ch.name)}">Delete</button></span><small>${ch.position} · ${archHTML(ch)} · ${esc(ch.rep.label)}</small></span></div>`).join('')}
     ${chars.length < slots.unlocked ? '<button class="player-card new" data-new>+ Create new player</button>' : ''}${next}</div>
     <p class="muted small">Your players share one VC wallet and locker.</p>`;
-  $$('[data-pick]', root).forEach(b => b.onclick = () => { app.selectedId = b.dataset.pick; settings.character = app.selectedId; saveSettings(); Screens.go(app, 'myplayer', { tab: 'players' }); });
+  $$('[data-pick]', root).forEach(b => {
+    b.onclick = e => { if (e.target.closest('[data-del]')) return; app.selectedId = b.dataset.pick; settings.character = app.selectedId; saveSettings(); Screens.go(app, 'myplayer', { tab: 'players' }); };
+    b.onkeydown = e => { if ((e.code === 'Enter' || e.code === 'Space') && e.target === b) { e.preventDefault(); b.click(); } };
+  });
+  $$('[data-del]', root).forEach(b => b.onclick = e => { e.stopPropagation(); const ch = chars.find(x => x.id === b.dataset.del); if (ch) openDeleteBuild(app, ch); });
   const nb = $('[data-new]', root); if (nb) nb.onclick = () => Screens.go(app, 'create');
 }
 

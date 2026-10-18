@@ -35,7 +35,7 @@ export function tendenciesFor(build, rng = null) {
 }
 
 // v0.4.3: AI hoopers carry badges that fit their archetype (shown in game intros, and they work in game)
-const BADGE_POOL = {
+export const BADGE_POOL = { // (v0.4.8.5 qp8: exported: an AI world hooper climbing past 90 fills out his set from his pool first)
   sharpshooter: ['deadeye', 'catch_shoot', 'corner_specialist', 'limitless', 'green_machine', 'clutch'],
   slasher: ['posterizer', 'contact_finisher', 'acrobat', 'ankle_breaker', 'chasedown'],
   playmaker: ['dimer', 'handles_for_days', 'ankle_breaker', 'catch_shoot', 'pick_pocket'],

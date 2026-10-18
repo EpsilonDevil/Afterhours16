@@ -215,6 +215,9 @@ export class MatchSession {
       // (online: your ring is gold; the other people playing get blue rings with you, red against you)
       // (watching: the people playing get a white ring)
       if (p.human) pv.addRing(this.r, this.spectate ? '#f4f2ec' : this.isMe(p) ? '#ffd84a' : p.team === this.game.human?.team ? '#4ac8ff' : '#ff5a6a');
+      // (v0.4.8.5 qp8: an AI ICON, a 99 of the AI world with everything maxed, carries the ICON cursor too, in the team's
+      // colour as a person would: blue with you, red against you, white when nobody of yours is on the floor)
+      else pv.addIcon(this.r, opts.background || this.spectate || !this.game.human ? null : p.team === this.game.human.team ? '#4ac8ff' : '#ff5a6a');
       if (!opts.background) pv.addStatus(this.r);
       return pv;
     });

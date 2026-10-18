@@ -123,10 +123,10 @@ test('fouls in the park: shooting fouls and reach-ins are called, with no free t
   assert.ok(src.includes("(this.mode === 'proam' || this.mode === 'park') && pf > 0 && this.rng.next() < pf * (this.mode === 'park' ? RULES.parkFoulK : 1)"), 'reach-ins in the park');
   assert.ok(src.includes("if (this.mode === 'park') { this.deadBall(1.3, () => this.restartFor(victim.team, vx, vz)); return; }"), 'no free throws: their ball');
   // a missed shot with the foul goes to the line (Pro-Am): the foul rides on the ball now, not only on a make
-  assert.ok(src.includes("if (this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul;"));
+  assert.ok(src.includes("if (foul && this.ball.mode === 'flight' && this.ball.info) this.ball.info.foul = foul;")); // (v0.4.8.5 qp8: and a new shot clears the last one's: tests/v0485qp8andone.test.mjs)
   // in games: park fouls happen, free throws never do, and after one the fouled team has the ball
   let fouls = 0, fta = 0, keeps = 0, n = 0;
-  for (let seed = 1; seed <= 4; seed++) {
+  for (let seed = 1; seed <= 8; seed++) {
     const rng = new RNG(seed);
     const g = new Game({ mode: 'park', seed, rosters: [makeTeam(rng, 3, { catalog, level: 0.6 }), makeTeam(rng, 3, { catalog, level: 0.6 })], catalog, target: 21, difficulty: 0.6 });
     let pend = null, steps = 0;
@@ -137,9 +137,10 @@ test('fouls in the park: shooting fouls and reach-ins are called, with no free t
     }
     for (const p of g.players) fta += p.stats.fta;
   }
-  assert.ok(fouls >= 6, `fouls called in the park (${fouls} in 4 games)`);
+  // (v0.4.8.5 qp8: 8 games, not 4: the count used to include phantom fouls from the and-one bug, about 1.5 a game are real)
+  assert.ok(fouls >= 8, `fouls called in the park (${fouls} in 8 games)`);
   assert.equal(fta, 0, 'no free throws in the park');
-  assert.ok(keeps / Math.max(1, n) > 0.8, `the fouled team keeps the ball (${keeps}/${n})`);
+  assert.equal(keeps, n, `the fouled team keeps the ball, every time (qp8; ${keeps}/${n})`);
 });
 
 test('Pro-Am: charges, goaltending and the inbounder\'s five seconds are in the book', () => {

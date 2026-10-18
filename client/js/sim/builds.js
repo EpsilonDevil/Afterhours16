@@ -1,5 +1,5 @@
 // Build legality (mirrors server/builds.py — keep the two in sync; tests cross-check them).
-import { ATTRS, overall } from './ratings.js';
+import { ATTRS, overall, OVERALL_WEIGHTS } from './ratings.js';
 
 export const POSITIONS = { PG: [67, 79], SG: [70, 80], SF: [75, 82], PF: [77, 84], C: [80, 87] };
 export const ARCHETYPES = {
@@ -76,6 +76,37 @@ export function caps(b, target = null) {
 // placed by the build system (mirrors server/builds.py LEGEND_*)
 export const LEGEND_GAMES_PER_OVR = 2;
 export const LEGEND_OVR_CAP = 99;
+// v0.4.8.5 qp8: the order the build system raises a build's attributes in (server/builds.py legend_raise's `fit`): its
+// own shape (the curve its caps come from: what its archetype, size and weight lean on) and what its position's overall
+// counts most. (The AI world's hoopers place their cap breakers along it too: sim/world.js)
+export function buildFit(b) {
+  const base = baseCaps(b), w = OVERALL_WEIGHTS[b.position || 'SF'] || OVERALL_WEIGHTS.SF;
+  return ATTRS.map((a, i) => [a, base[a] + 6 * (w[a] ?? 0.45), i]).sort((x, y) => y[1] - x[1] || x[2] - y[2]).map(x => x[0]);
+}
+// v0.4.8.5 qp8: one Icon Legend upgrade, server/builds.py legend_raise to the letter (tests/test_ai_ladder.py runs the two
+// side by side): +1 overall, a point at a time round the top half of buildFit until the overall is up by one (an
+// attribute at 99 drops out, the next in line takes its place), the legend floor raised with it so the caps never drop
+// below. Changes b (attributes, legend.floor); returns {from, to, changes}, or null at 99. (The AI world's Icons climb to
+// 99 with it, the way you do)
+export function legendRaise(b) {
+  const attrs = { ...(b.attributes || {}) }, pos = b.position || 'SF', cur = overall(attrs, pos);
+  if (cur >= LEGEND_OVR_CAP) return null;
+  const fit = buildFit(b), cand = {};
+  for (const a of ATTRS) cand[a] = attrs[a] ?? 40;
+  const target = cur + 1, group = Math.floor(ATTRS.length / 2);
+  while (overall(cand, pos) < target) {
+    const open = fit.filter(a => cand[a] < 99);
+    if (!open.length) break;
+    for (const a of open.slice(0, group)) { cand[a]++; if (overall(cand, pos) >= target) break; }
+  }
+  const changes = {};
+  for (const a of ATTRS) if (cand[a] > (attrs[a] ?? 0)) changes[a] = cand[a] - (attrs[a] ?? 0);
+  if (!Object.keys(changes).length) return null;
+  b.attributes = cand;
+  const lg = b.legend || (b.legend = { games: 0, upgrades: 0, floor: {} }), floor = lg.floor || (lg.floor = {});
+  for (const a of Object.keys(changes)) floor[a] = Math.max(floor[a] | 0, cand[a]);
+  return { from: cur, to: overall(cand, pos), changes };
+}
 export function startingAttributes(b) {
   const c = caps(b, OVR_CAP), out = {};
   for (const k of ATTRS) out[k] = Math.max(35, Math.round(c[k] * 0.72));
@@ -154,14 +185,16 @@ export const iconStatus = c => !!c && (c.icon_status != null ? !!c.icon_status :
 // server's word (profile.build_slots) wins; this keeps it current between profile loads.
 export const BASE_BUILD_SLOTS = 4, MAX_BUILD_SLOTS = 8;
 export const holdsIconSlot = c => !!c && (!!c.icon_slot || iconStatus(c));
-export function buildSlots(chars = []) {
-  const icons = chars.filter(holdsIconSlot).length;
-  return { unlocked: Math.min(MAX_BUILD_SLOTS, BASE_BUILD_SLOTS + icons), base: BASE_BUILD_SLOTS, max: MAX_BUILD_SLOTS, icons, used: chars.length };
+// (qp8: kept, the slots deleted ICON builds left open for the account: the server's build_slots.kept)
+export function buildSlots(chars = [], kept = 0) {
+  kept = Math.max(0, kept | 0);
+  const icons = chars.filter(holdsIconSlot).length + kept;
+  return { unlocked: Math.min(MAX_BUILD_SLOTS, BASE_BUILD_SLOTS + icons), base: BASE_BUILD_SLOTS, max: MAX_BUILD_SLOTS, icons, kept, used: chars.length };
 }
 // keeps profile.build_slots current after a build comes back from the server (main.js app.replaceChar; a slot is never
 // taken back). Returns {slot, max, opened} when the account's slots just went up (a build just became an ICON), else null
 export function refreshSlots(profile) {
-  const was = profile.build_slots, now = buildSlots(profile.characters || []);
+  const was = profile.build_slots, now = buildSlots(profile.characters || [], was?.kept);
   if (was) now.unlocked = Math.max(now.unlocked, was.unlocked | 0);
   profile.build_slots = now;
   return was && now.unlocked > was.unlocked ? { slot: now.unlocked, max: now.max, opened: now.unlocked - was.unlocked } : null;

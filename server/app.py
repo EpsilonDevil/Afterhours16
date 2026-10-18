@@ -40,6 +40,9 @@ VERSION = "0.4.8.5"
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
+# v0.4.8.5 qp8: a game started this long ago can still be finished (a result reports up to 4 hours of play), so its build
+# can't be deleted until it's done or left. An older one still marked running was left for good (the page closed)
+GAME_OPEN_SECS = 4 * 3600
 # Explicit types: Windows registry MIME entries are often wrong (e.g. .js as text/plain), which breaks ES modules.
 STATIC_EXT = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
               ".svg": "image/svg+xml", ".json": "application/json", ".ico": "image/x-icon", ".txt": "text/plain", ".woff2": "font/woff2",
@@ -212,17 +215,22 @@ class Service:
             if claim and builds.mark_icon_slot(ch):
                 c.execute("UPDATE characters SET data=? WHERE id=?", (encode(ch), cid))
             chars.append(ch)
-        return builds.build_slots(chars)
+        return builds.build_slots(chars, Service.kept_slots(c, account_id))
+
+    # v0.4.8.5 qp8: the ICON slots deleted builds left open for the account (icon_slots: one row each, counted once)
+    @staticmethod
+    def kept_slots(c, account_id):
+        return c.execute("SELECT count(*) FROM icon_slots WHERE account_id=?", (account_id,)).fetchone()[0]
 
     # Called with a build about to be saved after anything that can make it an ICON (a game's result, an upgrade, cap
     # breakers): marks its slot for good, and returns {"slot", "max", "opened"} when that opened a build slot on the
-    # account (so the game can say so right then), else None
+    # account (so the game can say so right then), else None. (qp8: the slots kept from deleted ICONs count as marked)
     @staticmethod
     def icon_slot_check(c, account_id, char):
         if not builds.mark_icon_slot(char):
             return None
         others = c.execute("SELECT data FROM characters WHERE account_id=? AND id<>?", (account_id, char.get("id"))).fetchall()
-        return builds.slot_opened(sum(1 for r in others if json.loads(r[0]).get("icon_slot")), 1)
+        return builds.slot_opened(sum(1 for r in others if json.loads(r[0]).get("icon_slot")) + Service.kept_slots(c, account_id), 1)
 
     def profile(self, account_id):
         with self.db.lock:
@@ -230,7 +238,10 @@ class Service:
             account = conn.execute("SELECT id,username,created_at FROM accounts WHERE id=?", (account_id,)).fetchone()
             rows = conn.execute("SELECT id, data FROM characters WHERE account_id=? ORDER BY created_at", (account_id,)).fetchall()
             chars, badge_updates = [], []
-            stored, marked_before, marked_now = [], 0, 0  # (v0.4.8.5 qp7: the builds as saved; ICON slots marked before / now)
+            # (v0.4.8.5 qp7: the builds as saved; ICON slots marked before / now. qp8: the ones deleted ICONs left open count
+            # as marked before, so they're never said again)
+            kept = self.kept_slots(conn, account_id)
+            stored, marked_before, marked_now = [], kept, 0
             for cid, data in rows:
                 char = builds.normalize(json.loads(data))
                 # v0.4.8.5: badges catch up with the current requirements as the profile loads (a lowered Hall of Fame
@@ -291,7 +302,7 @@ class Service:
                     "inventory": [r[0] for r in conn.execute("SELECT item_id FROM inventory WHERE account_id=?", (account_id,))],
                     "characters": chars,
                     # v0.4.8.5 qp7: 4 base + 1 a build holding an ICON slot, up to 8 (and the slots this load opened, if any)
-                    "build_slots": builds.build_slots(stored),
+                    "build_slots": builds.build_slots(stored, kept),
                     "build_slot_unlocked": builds.slot_opened(marked_before, marked_now),
                     "proam_team": json.loads(team[0]) if team else None,
                     "badge_updates": badge_updates,
@@ -985,6 +996,9 @@ class Handler(BaseHTTPRequestHandler):
             char_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/(upgrade|appearance|equip|affiliation|capbreakers)", path)
             if char_route:
                 return self.character_action(aid, data, *char_route.groups())
+            del_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/delete", path)  # (v0.4.8.5 qp8: deleting a build)
+            if del_route:
+                return self.delete_character(aid, data, del_route.group(1))
             if path == "/api/store/purchase":
                 builds.strict_keys(data, ("key", "item_id", "character_id"))
                 item = CATALOG.get(data.get("item_id")) if isinstance(data.get("item_id"), str) else None
@@ -1071,6 +1085,30 @@ class Handler(BaseHTTPRequestHandler):
         with self.service.db.transaction() as c:
             for item_id in self.starter_items():
                 c.execute("INSERT OR IGNORE INTO inventory VALUES(?,?,?)", (aid, item_id, time.time()))
+
+    # v0.4.8.5 qp8: deleting a build (MyPlayer → Players, after a 5-second hold). Owner only, and never while it's in a game
+    # that can still finish (GAME_OPEN_SECS). One transaction: its games (matches; their foreign key to characters is
+    # enforced, and they're only its own history) and its Pro Run career go with it. What every build shares stays: VC
+    # and the ledger, the locker, the crew, the Pro-Am team, Cup entries, the AI world. A build holding an ICON slot leaves
+    # it open for the account (icon_slots), so 4 builds can have 5 slots; it's counted once and never announced again.
+    def delete_character(self, aid, data, char_id):
+        s, db = self.service, self.service.db
+        builds.strict_keys(data, ("key",))
+
+        def run(c):
+            char = s.character(aid, char_id, c)  # (404 for another account's build, or one already gone)
+            if c.execute("SELECT 1 FROM matches WHERE character_id=? AND status='running' AND created_at>?", (char_id, time.time() - GAME_OPEN_SECS)).fetchone():
+                raise builds.Invalid(f"{char.get('name') or 'This build'} is in a game that's still running. Finish it or leave it first, then delete the build.")
+            kept = builds.holds_icon_slot(char)
+            if kept:
+                c.execute("INSERT OR IGNORE INTO icon_slots(account_id, character_id, name, deleted_at) VALUES(?,?,?,?)", (aid, char_id, char.get("name"), time.time()))
+            removed = {"matches": c.execute("DELETE FROM matches WHERE character_id=?", (char_id,)).rowcount,
+                       "prorun_careers": c.execute("DELETE FROM prorun_careers WHERE character_id=?", (char_id,)).rowcount}
+            c.execute("DELETE FROM characters WHERE id=? AND account_id=?", (char_id, aid))
+            rest = [s.describe(builds.normalize(json.loads(r[0]))) for r in c.execute("SELECT data FROM characters WHERE account_id=? ORDER BY created_at", (aid,)).fetchall()]
+            return {"deleted": {"id": char_id, "name": char.get("name"), "icon_slot_kept": kept, "removed": removed},
+                    "build_slots": s.build_slots(c, aid), "characters": rest}
+        return self.respond(200, db.once(aid, data.get("key"), "delete:" + char_id, {}, run))
 
     def character_action(self, aid, data, char_id, action):
         s, db = self.service, self.service.db

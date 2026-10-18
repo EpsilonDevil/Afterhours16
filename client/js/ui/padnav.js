@@ -55,7 +55,10 @@ export class PadNav {
     document.body.classList.add('pad-mode');
     this.ensure(root);
     if (dir) this.move(root, dir);
-    if (inp.gpEdge(PAD.A)) { this.activate(); inp.gp.prev[PAD.A] = true; }
+    // (v0.4.8.5 qp8: a dialog with a hold-to-confirm button, deleting a build, reads A itself as a 5-second hold: here A
+    // never clicks anything, so a press can't hit Cancel or the hold button's click; B still backs out)
+    const holdA = modalOpen() && $('#modal [data-padhold]');
+    if (inp.gpEdge(PAD.A)) { if (!holdA) this.activate(); inp.gp.prev[PAD.A] = true; }
     if (inp.gpEdge(PAD.B)) { this.back(); inp.gp.prev[PAD.B] = true; }
     // v0.4.4: bumpers switch tabs on release, so LB + RB together can open the social phone instead
     if (g.buttons[PAD.LB] && g.buttons[PAD.RB]) this.bumperCombo = true;
@@ -107,7 +110,7 @@ export class PadNav {
       let best = 1e9;
       for (const el of list) { const r = el.getBoundingClientRect(); const dd = Math.hypot(r.x + r.width / 2 - cx, r.y + r.height / 2 - cy); if (dd < best) { best = dd; pick = el; } }
     }
-    if (!pick) pick = list.find(el => el.matches('.btn.primary') && !el.closest('.topbar')) || list.find(el => !el.closest('.topbar')) || list[0];
+    if (!pick) pick = list.find(el => el.matches('[data-padhold]')) || list.find(el => el.matches('.btn.primary') && !el.closest('.topbar')) || list.find(el => !el.closest('.topbar')) || list[0];
     this.set(pick && visible(pick) ? pick : list[0]);
   }
 

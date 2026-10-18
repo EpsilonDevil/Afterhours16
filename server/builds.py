@@ -463,10 +463,11 @@ def slots_for(icons):
     return min(MAX_BUILD_SLOTS, BASE_BUILD_SLOTS + max(0, icons))
 
 
-def build_slots(chars):
-    """An account's build slots: {"unlocked", "base", "max", "icons" (builds holding an ICON slot), "used"}."""
-    icons = sum(1 for c in chars if holds_icon_slot(c))
-    return {"unlocked": slots_for(icons), "base": BASE_BUILD_SLOTS, "max": MAX_BUILD_SLOTS, "icons": icons, "used": len(chars)}
+def build_slots(chars, kept=0):
+    """An account's build slots: {"unlocked", "base", "max", "icons" (ICON slots: builds holding one, and kept ones),
+    "kept" (qp8: slots left open by deleted ICON builds, the icon_slots table), "used"}."""
+    icons = sum(1 for c in chars if holds_icon_slot(c)) + max(0, kept)
+    return {"unlocked": slots_for(icons), "base": BASE_BUILD_SLOTS, "max": MAX_BUILD_SLOTS, "icons": icons, "kept": max(0, kept), "used": len(chars)}
 
 
 def slot_opened(marked_before, marked_now):

@@ -459,4 +459,54 @@ The AI in your world keep playing whether you're there or not, and now they unlo
 
 ---
 
-*(Tests: 166 Python and 424 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games; a park full of AI in their unlocks and an AI Icon's phone profile, with every AI entry checked unchanged for three worlds where nothing is unlocked; and MyPlayer's Players tab at 4, 5 and 8 slots, the creator at the cap and a real game that opens slot 6.)*
+## Quick patch 8 (Oct 18): the AI climb to 99, delete a build, results that move on, and-ones fixed
+
+### The AI climb past 90, by your rules
+- **The same ladder as you.** The AI get to a full 90 max OVR, then earn Hall of Fame badges. The first five bring five cap breakers each, the 7th brings the Icon badge, and from there Icon Legend adds +1 OVR every 2 Pro Run games, up to 99. Their builds carry the same cap breakers, badges and Legend progress as yours, and the same rules decide every step, including who is an ICON.
+- **The only ICONs are 99s.**
+  - An AI is an ICON only at 99, with every cap breaker and every badge maxed, and every AI ICON is exactly 99.
+  - They get what an ICON gets: ICON in front of the archetype; the Icon badge under them in games (blue with you, red against you, white on courts you're only watching); the aura once a king's win streak reaches 3; and the purple flame when on fire.
+- **How many 99 ICONs:** about 6–9 in a world two months old, 43–45 at six months and 76–87 after a year.
+- **Rarer the higher you go.**
+  - At every age, fewer AI are above 90 than at 90 or under, and fewer are 96–99 than 91–95.
+  - At six months, for example: about 660–680 AI are at 90 or under, 180–200 at 91–95 and about 43 at 99.
+  - 96–98 stays thin, because the Legend climb from about 92 to 99 goes quickly.
+  - Park Legends and the better Elites can go all the way. The other Elites and the best Hoopers stop around 91–93.
+- **They play like it.**
+  - A 99 has about +6 on every attribute over the same player at 90, or about +8.7 with his Icon boost and full badge set.
+  - In testing, three AI 99s beat the same three at 90 in 24 of 24 games.
+  - Expect ICON kings to be very hard to beat with a 90 build.
+- **Icon badges** still come with the 7th Hall of Fame badge, before 99, as yours do, so at any time a few more AI hold an Icon badge than are ICONs.
+- **A world started today** is unchanged: nobody climbs until they've played.
+- **On the phone,** an AI's profile shows how far up the climb he is ("↑ climbing: N Hall of Fame badges · Icon Legend +N").
+
+### Delete a build
+- **Delete** sits next to each build's name in MyPlayer → Players.
+- **A confirmation screen** shows the build and spells out:
+  - **what goes:** attributes and cap breakers, badges and the Icon badge, games and record, win streaks and Rep, Pro-Am rank, the Pro Run career, and lifetime stats and game history;
+  - **what your account keeps:** your VC and your locker.
+- **To delete it, hold ✕ (PlayStation) or A (Xbox) for 5 seconds.** On keyboard, hold Enter or Space; with a mouse, click and hold.
+  - Letting go early resets the bar.
+  - A button already held down when the screen opens doesn't count.
+  - ○/B, Esc or Cancel backs out.
+- **ICON slots stay.** Deleting an ICON build keeps its build slot open for good, so you can have 5 slots and 4 builds.
+- **Not during a game:** a build can't be deleted while it's in a game that's still running. A game left open for more than 4 hours doesn't count.
+- **Your last build:** deleting it takes you to the creator.
+
+### Results screens move on by themselves
+- **The regular results screen** still moves on after 10 seconds, in every mode.
+- **Screens with news** now move on after **30 seconds** instead of waiting for a press:
+  - a results screen with news (a build slot opened, or a new Hall of Fame or Icon badge);
+  - the OVR increase cards (the Pro Run's +1 max OVR, and an Icon Legend +1 OVR).
+- **New cap breakers:** if the screen moves on by itself, they stay banked in MyPlayer → Attributes → Cap Breakers, and a toast says so; their menu doesn't open over your next game. Pressing the button still opens it.
+
+### And-ones in the park
+- **Fixed: "AND ONE!" with no foul.** The callout could fire on a basket with no foul behind it, and then the ball went to the other team.
+  - The cause: a foul from an earlier shot (one that missed and had already been called, or was blocked) was left pending, and a teammate's next basket set off the callout.
+  - Now an and-one is only the foul on that very shot by the player who scored it, and the fouled team always gets the ball: a check in the half-court game, a sideline inbound in full court.
+  - In 30 test games at the park's foul rate, 11 of 26 and-one calls had no foul before the fix. After it, every call was a real foul and the fouled team kept the ball every time.
+- **Also fixed:** a missed dunk or layup that was fouled while the ball was still in his hands is now called like a missed jumper: the ball in the park, free throws in Pro-Am. It used to go uncalled.
+
+---
+
+*(Tests: 177 Python and 445 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games; a park full of AI in their unlocks and an AI Icon's phone profile, with every AI entry checked unchanged for three worlds where nothing is unlocked; MyPlayer's Players tab at 4, 5 and 8 slots, the creator at the cap and a real game that opens slot 6; and three AI 99 ICON kings on a court with their cursors and auras, an ICON's phone profile, the Delete screen mid-hold with a controller, the keyboard and the mouse, the refusal during a game, a deleted ICON's kept slot, the creator after the last build, and a results screen counting down from 30.)*

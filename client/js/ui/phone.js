@@ -120,7 +120,9 @@ export function openPhone(app, opts = {}) {
       <div class="ph-sec">Members · ${on} of ${rows.length} online${on >= 4 ? ' · enough for 5-on-5 at the HQ' : ''}</div>
       ${rows.length ? rows.map(([id, s]) => row(id, `${s.text} · ${money(xp[id])} crew XP`, s.online)).join('') : '<p class="ph-empty">No members yet. Add your friends from Manage crew.</p>'}`;
   }
-  // v0.4.8.5 qp7: the AI grind too: his Icon badge first among his badges when he's unlocked it, and what he's won
+  // v0.4.8.5 qp7: the AI grind too: his Icon badge first among his badges when he's unlocked it, and what he's won.
+  // (qp8: past 90 the OVR line says where he is on the climb, his HOF badges and Icon Legend upgrades; nothing at 99,
+  // where the Build line's ICON tag says it all)
   const iconChip = e => { const ic = e.build.icon_badge; return ic ? `<span class="ib hof" title="Icon badge: unlocked with his 7th Hall of Fame badge">${iconBadgeSVG(ic, 18)}<span>${esc(app.config?.icon_badges?.[ic]?.name || ICON_BADGES[ic]?.name || title(ic))} · Icon</span></span>` : ''; };
   const unlockedFact = e => {
     const u = e.unlocked, n = (k, one, many) => (k ? `${k} ${k > 1 ? many : one}` : '');
@@ -140,7 +142,7 @@ export function openPhone(app, opts = {}) {
           <div><span>Home park</span><b>${esc(a.home ? PARK_NAMES[a.home] : 'Gets around')}</b></div>
           <div><span>With you</span><b>${m?.with ? `${m.with} game${m.with > 1 ? 's' : ''} (${m.wins}-${m.with - m.wins})` : '—'}</b></div>
           <div><span>Against you</span><b>${m?.vs ? `${m.vs} game${m.vs > 1 ? 's' : ''}` : '—'}</b></div>
-          <div><span>Overall</span><b>${e.build.overall ?? '—'} OVR${e.gk ? ` <span class="ok">↑ improving (${e.games || 0} games tracked)</span>` : ''}</b></div>
+          <div><span>Overall</span><b>${e.build.overall ?? '—'} OVR${(e.build.overall ?? 0) >= 99 ? '' : e.climb ? ` <span class="ok">↑ climbing: ${e.climb.hof} Hall of Fame badge${e.climb.hof === 1 ? '' : 's'}${e.climb.legend ? ` · Icon Legend +${e.climb.legend}` : ''}</span>` : e.gk ? ` <span class="ok">↑ improving (${e.games || 0} games tracked)</span>` : ''}</b></div>
           ${unlockedFact(e)}
         </div>
         <div class="ph-badges">${iconChip(e)}${badges.length ? badges.map(([k, t]) => badgeChip(k, t, cfg[k]?.name || title(k))).join('') : '<span class="ib none">No badges</span>'}</div>

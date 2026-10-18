@@ -10,10 +10,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { AIWorld, ICON_GRIND, AI_WHEEL, PARKS, cupWindow, setEventVenue, CUP_EPOCH, CUP_WINDOW } from '../client/js/sim/world.js';
+import { AIWorld, ICON_GRIND, AI_WHEEL, AI_LADDER, PARKS, cupWindow, setEventVenue, CUP_EPOCH, CUP_WINDOW } from '../client/js/sim/world.js';
 import { makeBot, wearUnlocked, WEAR, WEAR_SETS, WEAR_SLOTS, wearShow, wearChance, spreadGreens } from '../client/js/sim/bots.js';
 import { ICON_FOR_ARCH, ICON_BADGES } from '../client/js/sim/badges.js';
-import { badgeCaps, iconStatus, OVR_CAP } from '../client/js/sim/builds.js';
 import { Player } from '../client/js/sim/player.js';
 import { Game } from '../client/js/sim/game.js';
 import { clampFull } from '../client/js/sim/clamp.js';
@@ -42,7 +41,8 @@ const who = e => { const { rep, ...build } = e.build; return JSON.stringify({ na
 
 test('nothing unlocked, nothing changes: every one of the 900 is exactly the makeBot hooper he was', () => {
   for (const seed of [4242, 123456789]) {
-    const prog = {}; for (let i = 0; i < 900; i += 3) prog['ai-' + i] = { g: (i * 13) % 80, w: (i * 5) % 40 }; // (some of them growing)
+    // (some of them growing; qp8: fewer games tracked than any AI's climb past 90 takes, AI_LADDER.full90's least)
+    const prog = {}; for (let i = 0; i < 900; i += 3) prog['ai-' + i] = { g: (i * 13) % 8, w: (i * 5) % 4 };
     const w = world(seed, 0, { prog });
     w.setUnlocks({ prizes: {}, through: cupWindow(NOW) - 1 });
     let grown = 0;
@@ -68,24 +68,22 @@ test('nothing unlocked, nothing changes: every one of the 900 is exactly the mak
 
 test('an unlock only ever changes what he wears: name, body, look, badges and the same draws as before', () => {
   for (const seed of [4242, 31337]) {
+    // (qp8: both climb past 90 alike, so what's left between them is the wheel's items and the prizes, and what they wear)
     const w = world(seed, 365), bare = world(seed, 365);
-    bare.hasIcon = () => false; bare.wheelOf = () => ({ owned: [], spins: 0 });
+    bare.wheelOf = () => ({ owned: [], spins: 0 });
+    w.setUnlocks({ prizes: { 'ai-1': ['cup_band_scarab', 'cup_celly_pharaoh'], 'ai-2': ['jb_gorilla_top', 'jb_gorilla_legs'] }, through: 1 });
     let changed = 0;
     for (const id of w.ids()) {
       const e = w.entry(id), b = bare.entry(id);
-      for (const k of ['name', 'number', 'appearance', 'level']) assert.deepEqual(e[k], b[k], `${id} ${k}`);
-      for (const k of ['height', 'weight', 'wingspan', 'archetype', 'position', 'hand', 'attributes', 'overall', 'tendencies', 'name', 'appearance']) assert.deepEqual(e.build[k], b.build[k], `${id} build.${k}`);
-      const icon = iconItems(e.build.icon_badge).map(i => i.slot);
+      for (const k of ['name', 'number', 'appearance', 'level', 'badges']) assert.deepEqual(e[k], b[k], `${id} ${k}`);
+      for (const k of ['height', 'weight', 'wingspan', 'archetype', 'position', 'hand', 'attributes', 'overall', 'tendencies', 'name', 'appearance', 'icon_badge', 'cap_breakers', 'legend', 'badges']) assert.deepEqual(e.build[k], b.build[k], `${id} build.${k}`);
       for (const [slot, id2] of Object.entries(e.build.equipment)) {
         if (id2 === b.build.equipment[slot]) continue;
         changed++;
-        assert.ok(WEAR_SLOTS.includes(slot) || icon.includes(slot), `${id}: ${slot}`);
+        assert.ok(WEAR_SLOTS.includes(slot), `${id}: ${slot}`);
         assert.ok(catalog[id2].exclusive, `${id}: what changed is something he unlocked (${id2})`);
       }
       for (const slot of Object.keys(b.build.equipment)) assert.ok(slot in e.build.equipment, `${id} still wears a ${slot}`);
-      // an Icon's badges: the same badges, each as high as his build lets it go
-      if (e.build.icon_badge) { assert.deepEqual(Object.keys(e.badges).sort(), Object.keys(b.badges).sort()); const cap = badgeCaps(e.build); for (const [k, t] of Object.entries(e.badges)) assert.equal(t, cap[k], `${id} ${k}`); }
-      else assert.deepEqual(e.badges, b.badges);
     }
     assert.ok(changed > 200, `a year in, plenty to see (${changed} slots)`);
   }
@@ -96,38 +94,27 @@ test('an unlock only ever changes what he wears: name, body, look, badges and th
   assert.ok(!mk.includes('wearUnlocked') && !mk.includes('icon_badge') && mk.includes('!i.exclusive'));
 });
 
-test('Icon badges by grinding: legends and elites good enough, a handful at two months, dozens at six, never lost', () => {
-  const counts = {};
+// (qp8: the Icon badge is now the 7th Hall of Fame badge of the climb past 90, the way it is for you, and ICON status the
+// 99 at the top of it: tests/v0485qp8ai.test.mjs counts both at every age)
+test('Icon badges by grinding: the climb\'s 7th Hall of Fame badge, legends and the best elites only, never lost', () => {
   for (const seed of SEEDS) {
     let prev = new Set();
-    for (const D of [30, 60, 90, 180, 365]) {
+    for (const D of [30, 60, 180]) {
       const w = world(seed, D), ic = w.ids().filter(id => w.hasIcon(id, NOW));
-      (counts[D] ||= []).push(ic.length);
       for (const id of prev) assert.ok(ic.includes(id), `${seed}: ${id} kept his Icon from day ${D}`);
       prev = new Set(ic);
       for (const id of ic) {
-        const a = w.account(id);
-        assert.ok(['legend', 'elite'].includes(a.tier.id), `${id} ${a.tier.id}`);
-        assert.ok(a.level + w.growth(id, NOW) >= ICON_GRIND.minLevel);
-        assert.ok(w.careerGames(id, NOW) >= w.iconNeed(id));
-        const e = w.entry(id);
+        const a = w.account(id), L = w.ladder(id, NOW), e = w.entry(id);
+        assert.ok(['legend', 'elite'].includes(a.tier.id) && w.potential(id) >= AI_LADDER.icon, `${id} ${a.tier.id}`);
+        assert.ok(L.h >= L.target && L.h === Object.values(e.badges).filter(t => t >= 4).length, `${id}: his Icon is his ${L.target}th HOF`);
         assert.equal(e.build.icon_badge, ICON_FOR_ARCH[e.build.archetype]);
-        assert.ok(e.build.overall <= OVR_CAP && !iconStatus(e.build), 'an Icon badge, never ICON status');
       }
     }
   }
-  const range = (D, lo, hi) => assert.ok(counts[D].every(n => n >= lo && n <= hi), `${D} days: ${counts[D]}`);
-  range(30, 0, 6); range(60, 3, 16); range(90, 8, 30); range(180, 28, 60); range(365, 60, 110);
-  // more games, sooner: the games this world sees him play count (and once his, his for good)
-  const w = world(4242, 40), cand = w.ids().filter(id => w.account(id).tier.id === 'legend' && !w.hasIcon(id));
-  assert.ok(cand.length > 20);
-  const id = cand[0];
-  w.prog[id] = { g: w.iconNeed(id), w: 10 };
-  assert.ok(w.hasIcon(id) && w.entry(id).build.icon_badge);
-  w.prog[id] = { g: 0, w: 0 }; assert.ok(w.hasIcon(id), 'never lost');
   // below Elite: never, however much he plays
-  const reg = w.ids().find(x => w.account(x).tier.id === 'hooper');
-  w.prog[reg] = { g: 99999, w: 99999 }; assert.equal(w.hasIcon(reg), false); assert.equal(w.iconNeed(reg), Infinity);
+  const w = world(4242, 40), reg = w.ids().find(x => w.account(x).tier.id === 'hooper');
+  w.prog[reg] = { g: 99999, w: 99999 }; assert.equal(w.hasIcon(reg), false);
+  assert.equal(ICON_GRIND.perDay, 3);
 });
 
 test('every one of the eight: an AI Icon wears his Icon\'s package and plays it', () => {
@@ -224,7 +211,7 @@ test('a busy park: some wear what they\'ve unlocked, not everyone, legends far m
   setEventVenue(null);
   const share = (seed, D, prizes = {}) => {
     const w = world(seed, D), bare = world(seed, D);
-    bare.hasIcon = () => false; bare.wheelOf = () => ({ owned: [], spins: 0 });
+    bare.ladder = () => null; bare.wheelOf = () => ({ owned: [], spins: 0 }); // (qp8: the Icon's package comes with the climb)
     w.setUnlocks({ prizes, through: cupWindow(NOW) - 1 });
     const seen = new Set(), d0 = new Date(NOW); d0.setHours(19, 0, 0, 0);
     for (let k = 0; k < 7; k++) for (const h of [0, 1, 2]) for (const pk of PARKS) for (const id of w.onlineAt(pk, d0.getTime() + k * DAY + h * 3600000)) seen.add(id);

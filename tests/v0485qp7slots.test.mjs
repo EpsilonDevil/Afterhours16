@@ -36,14 +36,14 @@ function playersTab(app) {
 test('4 base slots, one more for every build holding an ICON slot, up to 8 (mirrors server/builds.py build_slots)', () => {
   assert.equal(B.BASE_BUILD_SLOTS, 4);
   assert.equal(B.MAX_BUILD_SLOTS, 8);
-  assert.deepEqual(B.buildSlots([]), { unlocked: 4, base: 4, max: 8, icons: 0, used: 0 });
-  assert.deepEqual(B.buildSlots([build(), build(), build(), build()]), { unlocked: 4, base: 4, max: 8, icons: 0, used: 4 });
+  assert.deepEqual(B.buildSlots([]), { unlocked: 4, base: 4, max: 8, icons: 0, kept: 0, used: 0 });
+  assert.deepEqual(B.buildSlots([build(), build(), build(), build()]), { unlocked: 4, base: 4, max: 8, icons: 0, kept: 0, used: 4 });
   assert.equal(B.buildSlots([icon(), build(), build(), build()]).unlocked, 5);
   // a build that was an ICON and isn't right now (a later patch's new bar) keeps its slot: the server's mark says so
   assert.equal(B.buildSlots([build({ icon_slot: true }), build()]).unlocked, 5);
   assert.equal(B.holdsIconSlot(build({ icon_status: true })), true, 'an ICON not marked yet counts too');
   assert.equal(B.holdsIconSlot(build()), false);
-  assert.deepEqual(B.buildSlots(Array.from({ length: 7 }, () => icon())), { unlocked: 8, base: 4, max: 8, icons: 7, used: 7 });
+  assert.deepEqual(B.buildSlots(Array.from({ length: 7 }, () => icon())), { unlocked: 8, base: 4, max: 8, icons: 7, kept: 0, used: 7 });
   // the builder's rule is the server's refusal word for word
   assert.equal(B.buildSlotRule({ unlocked: 4, max: 8 }), FULL4);
   assert.equal(B.buildSlotRule({ unlocked: 5, max: 8 }), 'All 5 build slots are in use. Every ICON build on your account opens one more, up to 8.');
@@ -75,11 +75,12 @@ test('the toast when a slot opens, and app.replaceChar keeping profile.build_slo
   const main = src('client/js/main.js');
   assert.match(main, /app\.replaceChar = c => \{[\s\S]*?const up = refreshSlots\(p\);\s*if \(up\) setTimeout\(\(\) => toast\(slotOpenedText\(up\), 'good'\), 1600\);/);
   assert.match(main, /const opened = app\.profile\?\.build_slot_unlocked;\s*if \(opened\) setTimeout\(\(\) => toast\(slotOpenedText\(opened\), 'good'\)/);
-  // the results screen: the same note where Icon badge unlocks show, and no 10-second auto-continue past it
+  // the results screen: the same note where Icon badge unlocks show (qp8: and 30 seconds before it moves on, not 10:
+  // tests/v0485qp8results.test.mjs)
   const modes = src('client/js/ui/modes.js');
   assert.match(modes, /const slotUp = r\?\.build_slot_unlocked;/);
   assert.match(modes, /if \(hof \|\| slotUp\) card\.querySelector\('\.results \.row\.end'\)[\s\S]*?\$\{slotNote\}<\/div>`\);/);
-  assert.match(modes, /const auto = hof \|\| slotUp \? null :/);
+  assert.match(modes, /const news = !!\(hof \|\| slotUp\);/);
 });
 
 test('MyPlayer → Players reads app.profile.build_slots: create while under the cap, the line, the next slot locked', () => {

@@ -5,9 +5,10 @@
 // at your park — changes through the day. Skill comes in clear tiers, from casuals to park legends, and the
 // tier drives attributes, badges, rep, gear and basketball IQ together.
 import { RNG, hashString } from '../core/rng.js';
-import { makeBot, wearUnlocked } from './bots.js';
+import { makeBot, wearUnlocked, BADGE_POOL } from './bots.js';
 import { ICON_FOR_ARCH } from './badges.js';
-import { capBadges } from './builds.js';
+import { capBadges, badgeCaps, caps, overall, iconNeed, buildFit, legendRaise, BADGE_IDS, OVR_CAP, BASE_OVR_CAP, PRORUN_GAMES_PER_OVR,
+  CAP_BREAKERS_PER_HOF, CAP_BREAKER_HOF_LIMIT, LEGEND_GAMES_PER_OVR } from './builds.js';
 
 export const POOL_SIZE = 900;
 export const PARKS = ['harbor', 'brick', 'foundry'];
@@ -34,24 +35,89 @@ export const HABITS = [
 ];
 const DAY = 86400000;
 // v0.4.8.5 qp7: the persistent world keeps grinding, and the AI unlock exclusives the way you do.
-//  * The Icon badge comes with a build's 7th Hall of Fame badge: a Park Legend or an Elite good enough to get there
-//    (level + growth at least minLevel) unlocks his archetype's after his own number of career games (need: [from,
-//    spread], per tier, stable per AI). Career games: the ones this world has seen him play (prog g) plus the ones he
-//    plays when you're not around, about perDay a day he's on (his habit's activity × how often he plays). Tuned so a
-//    two-month-old world has a handful of AI Icons (5-10), six months a few dozen (35-45, nearly every legend), a year 75-90.
+//  * Career games: the ones this world has seen him play (prog g) plus the ones he plays when you're not around, about
+//    perDay a day he's on (his habit's activity × how often he plays). (qp7's Icon badge by career games alone is now the
+//    7th Hall of Fame badge of the qp8 climb below)
 //  * The Daily Spin: every day he plays he may spin (habit: how keen he is on it, 0.25-0.85 × how often he's on), with the
 //    wheel's own odds (server/progression.py WHEEL_ODDS: gear 12, animations 9.8 of 100, VC the rest), an item he
 //    doesn't have yet of that kind each time it lands on one.
-export const ICON_GRIND = { perDay: 3, minLevel: 0.86, need: { legend: [90, 330], elite: [380, 820] } };
+export const ICON_GRIND = { perDay: 3 };
 export const AI_WHEEL = { gear: 12, anim: 9.8, habit: [0.25, 0.85] };
+// v0.4.8.5 qp8: past 90 to 99, by your own rules (sim/builds.js maxOvr, caps with the cap breakers and the legend floor,
+// legendRaise, badgeCaps, iconNeed, iconStatus: the same functions your build goes through). His potential (his level plus
+// all the growth his tier allows) says how far his play can take him: the whole way (icon) or at most a few Hall of Fame
+// badges (hof). One who can climb at all gets to a full 90 max OVR (every attribute at its cap, 30 Pro Run games in) after
+// his own number of career games (full90: [from, spread] per tier, stable per AI), then earns Hall of Fame badges as he
+// grinds (the n-th takes perHof × ramp[n] games: the first ones come quickly, the 6th and 7th take longest), the rest of
+// a full badge set filling out alongside. The first five bring 5 cap breakers each (he puts them one apiece on his five
+// best-fit attributes), the 7th his Icon badge, and from then on every 2 of his Pro Run games (proRun: the share of his
+// games that are) are a Legend +1 OVR, to 99. At 99, every badge done and every cap breaker in, iconStatus says ICON,
+// exactly as it would for you, and nowhere else.
+//  * Rarity (seeds 4242 / 777 / 31337, checked every 15 days to two years): fewer above 90 than at 90 and under, fewer
+//    at 96-99 than at 91-95, at every age. ICONs 6-9 at two months, 43-45 at six, 76-87 at a year, 127-133 at two years
+//    (then it levels off at ~130: the Legends and the Elites with the potential for it). The other Elites and the better
+//    Hoopers stop at 3-5 HOFs, 91-93 with their cap breakers in, which keeps the 91-95 band the bigger one for good.
+export const AI_LADDER = {
+  icon: 0.92, // potential for the whole climb (the 7th HOF, the Icon badge, Legend to 99)
+  hof: [[0.76, 5], [0.7, 3], [0.66, 1]], // below that: potential at least → most HOF badges (below the last: never past 90)
+  full90: { legend: [8, 40], elite: [60, 280], hooper: [110, 450] },
+  perHof: { legend: [13, 20], elite: [60, 90], hooper: [40, 60] },
+  ramp: [0, 0.5, 0.6, 0.7, 0.9, 1.1, 1.5, 1.9], // (the n-th HOF takes perHof × ramp[n] games)
+  proRun: 0.3,
+};
 const activityOf = a => (a.habit.id === 'grinder' ? 1.6 : a.habit.id === 'weekend' || a.habit.id === 'lunch' ? 0.6 : 1);
 const NONE = Object.freeze([]);
 
-const shareOf =(list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
+const shareOf = (list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
 const fmtHour = h => { h = ((h % 24) + 24) % 24; const hh = Math.floor(h), mm = Math.round((h - hh) * 4) * 15; const H = hh % 12 || 12; return `${H}${mm ? ':' + String(mm % 60).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`; };
 // local midnight-based day number (so schedules follow the player's clock)
 const dayIndex = t => { const d = new Date(t); return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY); };
 const localHour = t => { const d = new Date(t); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; };
+
+// v0.4.8.5 qp8: his badges on the climb, a set like yours: his Hall of Fame badges (h of them: his own first, best first,
+// then his archetype's, then the rest his build can take to Hall of Fame) and, filling out as h goes up, every other
+// badge toward Gold (or its cap, if that's lower), never below what he already had. At h = target (his Icon badge) every
+// badge is done: what ICON status asks of the badges
+export function climbBadges(b, start, h, target) {
+  const cap = badgeCaps(b), base = capBadges(start || {}, b), arch = b.archetype || 'two_way';
+  const order = [...new Set([...Object.keys(base).filter(k => base[k] >= 4), ...Object.keys(base).filter(k => cap[k] >= 4).sort((x, y) => base[y] - base[x]),
+    ...(BADGE_POOL[arch] || []).filter(k => cap[k] >= 4), ...BADGE_IDS.filter(k => cap[k] >= 4)])];
+  const hof = new Set(order.slice(0, h)), q = target > 0 ? Math.min(1, h / target) : 1, out = {};
+  for (const k of BADGE_IDS) {
+    const fill = Math.floor(q * Math.min(cap[k], 3) + 1e-9), tier = hof.has(k) ? 4 : Math.min(cap[k], Math.max(base[k] || 0, fill));
+    if (tier > 0) out[k] = tier;
+  }
+  return out;
+}
+// v0.4.8.5 qp8: his build at his place on the climb (AIWorld.ladder), the way yours gets there: his Pro Run games (a full 90
+// max OVR: maxOvr), every attribute at its cap (caps), 5 cap breakers for each of his first five Hall of Fame badges, put one
+// apiece on his five best-fit attributes (buildFit; a cap breaker only goes on an attribute at its cap, below 99, as
+// yours), the Icon badge with the 7th, then a Legend +1 OVR (legendRaise) for every 2 Pro Run games since. Sets the same
+// fields your build has (progression.prorun_completed, cap_breakers, legend, badges, icon_badge, overall), so
+// iconStatus(build) decides ICON for him exactly as it does for you
+export function climb(bot, L) {
+  const b = bot.build;
+  b.progression = { prorun_completed: L.pr };
+  const tiers = climbBadges(b, L.frame.badges, L.h, L.target);
+  const n = CAP_BREAKERS_PER_HOF * Math.min(CAP_BREAKER_HOF_LIMIT, L.h), top = caps(b), fit = buildFit(b), applied = {};
+  for (let left = n; left > 0;) {
+    let round = Math.min(CAP_BREAKERS_PER_HOF, left);
+    const before = left;
+    for (const k of fit) { if (!round) break; if (top[k] + (applied[k] || 0) < 99) { applied[k] = (applied[k] || 0) + 1; round--; left--; } }
+    if (left === before) break; // (everything at 99)
+  }
+  b.cap_breakers = { earned: n, available: n - Object.values(applied).reduce((s, v) => s + v, 0), applied };
+  b.legend = { games: L.legendGames, upgrades: 0, floor: {} };
+  b.attributes = caps(b);
+  for (let ups = Math.floor(L.legendGames / LEGEND_GAMES_PER_OVR); ups > 0 && legendRaise(b); ups--) b.legend.upgrades++;
+  b.overall = overall(b.attributes, b.position);
+  if (L.icon) b.icon_badge = ICON_FOR_ARCH[b.archetype] || 'the_general';
+  bot.badges = tiers;
+  b.badges = Object.fromEntries(Object.entries(tiers).map(([k, t]) => [k, { tier: t, progress: L.frame.use?.[k] || 0 }]));
+  // (how strong he rates as a teammate or an opponent, sim/ranks.js levelRating: past 1 with every point past 90)
+  bot.level = Math.max(bot.level || 0, 1 + (b.overall - OVR_CAP) * 0.0037);
+  return bot;
+}
 
 export class AIWorld {
   constructor(data, catalog) {
@@ -72,10 +138,10 @@ export class AIWorld {
     this.dirty = !data.seed;
     this.listeners = new Set();
     this.extra = new Map(); // id → {park, until}: regulars who hopped on early to keep a quiet park playable
-    // v0.4.8.5 qp7: what they've unlocked. iconIds: the AI Icons (once earned, kept); wheel: id → his Daily Spins so
-    // far ({day: the next UTC day to spin, spins, owned}); prizes: id → the event prizes he's won (the server's word,
-    // setUnlocks), unlockVer: bumped when they change (every entry is built again)
-    this.iconIds = new Set();
+    // v0.4.8.5 qp7: what they've unlocked. wheel: id → his Daily Spins so far ({day: the next UTC day to spin, spins,
+    // owned}); prizes: id → the event prizes he's won (the server's word, setUnlocks), unlockVer: bumped when they change
+    // (every entry is built again)
+    this.frames = new Map(); // (qp8: id → his build at his potential, what his climb past 90 starts from)
     this.wheel = new Map();
     this.prizes = {};
     this.unlockVer = 0; this.unlockSig = '{}'; this.unlockThrough = null; this.unlockAsked = 0; this.unlockOk = false;
@@ -122,11 +188,12 @@ export class AIWorld {
   // full player: build, gear and look (deterministic), plus the header fields. v0.4.7.5: his attributes, overall and
   // badges grow with growth(); who he is (name, body, gear, look) never changes. v0.4.8.5 qp7: and he wears what he's
   // unlocked (his Icon badge's package, the wheel's items, the events' prizes: bots.js wearUnlocked); with nothing
-  // unlocked he is exactly the makeBot hooper he always was
-  entry(id) {
-    const t = Date.now(), gk = Math.round(this.growth(id, t) * 400);
-    const icon = this.hasIcon(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE;
-    const key = `${gk}|${icon ? 1 : 0}|${wheel.owned.length}|${this.unlockVer}`;
+  // unlocked he is exactly the makeBot hooper he always was. qp8: past 90, his build carries what yours does on the way
+  // to 99 (max OVR, cap breakers, the legend floor, a badge set, the Icon badge): climb()
+  entry(id, t = Date.now()) {
+    const gk = Math.round(this.growth(id, t) * 400);
+    const L = this.ladder(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE;
+    const key = `${gk}|${L ? `${L.h}:${L.pr}` : '-'}|${wheel.owned.length}|${this.unlockVer}`;
     let e = this.full.get(id);
     if (e && e.key === key) return e;
     const a = this.account(id);
@@ -137,13 +204,12 @@ export class AIWorld {
       bot.build.attributes = up.build.attributes; bot.build.overall = up.build.overall;
       bot.badges = up.badges; bot.badgeUse = up.badgeUse; bot.level = up.level;
     }
-    // (qp7: an Icon holder's badges are as high as his build lets them go: his 7th Hall of Fame badge is what unlocked it.
-    // He's still capped at 90 OVR, so never ICON status)
-    const ic = icon ? ICON_FOR_ARCH[bot.build.archetype] || null : null;
-    if (ic) { bot.build.icon_badge = ic; bot.badges = capBadges(Object.fromEntries(Object.keys(bot.badges || {}).map(k => [k, 4])), bot.build); }
+    if (L) climb(bot, L);
+    const ic = bot.build.icon_badge || null;
     if (ic || wheel.owned.length || prizes.length) wearUnlocked(bot.build, [...wheel.owned, ...prizes], this.catalog, this.rng(id, 'wear'), flash, a.rep);
     e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, key, games: this.prog[id]?.g || 0 };
     if (ic || wheel.owned.length || prizes.length) e.unlocked = { icon: ic, wheel: wheel.owned.slice(), prizes: [...prizes] };
+    if (L) e.climb = { hof: L.h, proRun: L.pr, legend: bot.build.legend.upgrades };
     e.build.rep = e.rep;
     this.full.set(id, e);
     return e;
@@ -156,19 +222,47 @@ export class AIWorld {
     const a = this.account(id), days = Math.max(0, (t - this.born) / DAY);
     return (this.prog[id]?.g || 0) + days * activityOf(a) * a.daysP * ICON_GRIND.perDay;
   }
-  // the career games his 7th Hall of Fame badge takes (Infinity: below Elite, never)
-  iconNeed(id) {
-    const r = ICON_GRIND.need[this.account(id).tier.id];
-    return r ? r[0] + ((hashString(`${id}|icon|`) ^ this.seed) >>> 0) % r[1] : Infinity;
+  // a number of his own, stable per AI (a hash of his id with this world's seed)
+  hashOf(id, salt) { return (hashString(`${id}|${salt}|`) ^ this.seed) >>> 0; }
+  // ---------- v0.4.8.5 qp8: the climb past 90 (AI_LADDER) ----------
+  // how good he can get: his level plus all the growth his tier allows (growth()'s ceiling)
+  potential(id) { const a = this.account(id); return Math.min(a.level + 0.12, Math.min(1, a.tier.hi + 0.08)); }
+  // his build at his potential (body, archetype and the badges his best play earns): where his climb starts. Drawn from his
+  // own build seed like every entry, a hair above anything growth() can reach, so nothing he had on the way is lost
+  frame(id) {
+    let f = this.frames.get(id);
+    if (!f) {
+      const a = this.account(id);
+      const b = makeBot(this.rng(id, 'build'), { catalog: this.catalog, position: a.position, level: Math.min(1, this.potential(id) + 0.0025), rep: a.rep, flash: Math.min(1, a.level * 0.6 + a.rep / 40) });
+      f = { archetype: b.build.archetype, height: b.build.height, badges: b.badges, use: b.badgeUse };
+      this.frames.set(id, f);
+    }
+    return f;
   }
-  // has he unlocked his Icon badge (by time t)? Everything it's made of only grows, and once it's his it stays his
-  hasIcon(id, t = Date.now()) {
-    if (this.iconIds.has(id)) return true;
-    const a = this.account(id);
-    if (!ICON_GRIND.need[a.tier.id] || a.level + this.growth(id, t) < ICON_GRIND.minLevel || this.careerGames(id, t) < this.iconNeed(id)) return false;
-    this.iconIds.add(id);
-    return true;
+  // where he is on the climb by time t: null below a full 90 max OVR, else {h: Hall of Fame badges, target: the HOFs his
+  // Icon badge takes (iconNeed), pr: his Pro Run games, icon, legendGames: his Pro Run games since the Icon}. Every part
+  // of it only grows with his career games
+  ladder(id, t = Date.now()) {
+    const a = this.account(id), L = AI_LADDER, r90 = L.full90[a.tier.id], pot = this.potential(id);
+    const most = pot >= L.icon ? Infinity : (L.hof.find(([p]) => pot >= p) || [0, -1])[1];
+    if (!r90 || most < 0) return null;
+    const G = this.careerGames(id, t), g90 = r90[0] + this.hashOf(id, 'full90') % r90[1];
+    if (G < g90) return null;
+    const f = this.frame(id), target = iconNeed(f), cap = badgeCaps(f);
+    const h0 = Object.entries(f.badges).filter(([k, v]) => Math.min(v, cap[k] ?? 4) >= 4).length;
+    const ph = L.perHof[a.tier.id], per = ph[0] + this.hashOf(id, 'hof') % ph[1];
+    const top = Math.max(h0, Math.min(target, most, pot >= L.icon ? target : target - 1)); // (only the whole climb takes the Icon)
+    // (the n-th Hall of Fame badge takes per × ramp[n] games: the first few come quickly, the 6th and 7th take the longest)
+    const cost = n => per * (L.ramp[n] ?? 1);
+    let h = h0, used = 0;
+    while (h < top && used + cost(h + 1) <= G - g90) used += cost(++h);
+    const pr0 = PRORUN_GAMES_PER_OVR * (OVR_CAP - BASE_OVR_CAP), pr = pr0 + Math.floor(L.proRun * (G - g90));
+    let toIcon = 0; for (let n = h0 + 1; n <= target; n++) toIcon += cost(n);
+    const icon = h >= target, prIcon = pr0 + Math.floor(L.proRun * toIcon);
+    return { G, g90, per, h0, h, target, pr, icon, legendGames: icon ? Math.max(0, pr - prIcon) : 0, frame: f };
   }
+  // has he unlocked his Icon badge (his 7th Hall of Fame badge) by time t? (ICON status is iconStatus(entry.build): 99)
+  hasIcon(id, t = Date.now()) { return !!this.ladder(id, t)?.icon; }
   // the wheel's exclusives of a kind ('gear' or 'anim'), as server/progression.py spin_wheel lists them (sorted ids)
   wheelPool(kind) {
     const k = '_wheel_' + kind;

@@ -153,6 +153,29 @@ select { background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(
 .slot-unlock { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; } .slot-unlock .icon-status { font-size: 13px; }
 .slots-full { margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,91,87,.45); background: rgba(255,91,87,.08); color: #ffd2d0; font-size: 13px; }
 .btn[data-full] { opacity: .55; } /* (the builder at the cap: Create says the rule instead) */
+/* v0.4.8.5 qp8: deleting a build. Delete sits on the name's line, at the card's right edge (so right on the D-pad reaches
+   it from the card); the confirmation screen: what goes, what stays, and the 5-second hold button with its filling bar */
+.player-card[data-pick] { cursor: pointer; } .player-card[data-pick] > span { flex: 1; min-width: 0; }
+.pc-name { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pc-del { flex: none; padding: 3px 9px; border-radius: 7px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); background: rgba(255,255,255,.03); }
+.pc-del:hover, .pc-del.pad-focus, .pc-del:focus-visible { color: #ffd2d0; border-color: rgba(255,91,87,.65); background: rgba(255,91,87,.14); }
+.delete-card { width: min(600px, 94vw); }
+.del-build h2 { margin: 4px 0 12px; }
+.del-who { margin-bottom: 14px; }
+.del-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.del-cols h5 { margin: 0 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.del-cols ul { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: 13px; }
+.del-lose, .del-keep { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); }
+.del-lose { border-color: rgba(255,91,87,.45); background: rgba(255,91,87,.07); } .del-lose h5 { color: #ff8a84; }
+.del-keep { border-color: rgba(95,191,58,.45); background: rgba(95,191,58,.07); } .del-keep h5 { color: #9be15d; }
+@media (max-width: 640px) { .del-cols { grid-template-columns: 1fr; } }
+.hold-btn { position: relative; overflow: hidden; width: 100%; margin: 8px 0 10px; padding: 14px 18px; justify-content: space-between; touch-action: none; user-select: none; -webkit-user-select: none;
+  background: rgba(255,91,87,.12); border: 1px solid rgba(255,91,87,.6); color: #ffe1df; letter-spacing: .06em; text-transform: none; font-size: 15px; }
+.hold-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(255,91,87,.55), rgba(255,140,80,.75)); pointer-events: none; }
+.hold-btn:not(.holding) .hold-fill { transition: width .35s ease-out; } /* (let go early: it drains back to empty) */
+.hold-label, .hold-count { position: relative; } .hold-count { font-family: var(--display); font-size: 22px; min-width: 2.6em; text-align: right; }
+.hold-btn.holding { border-color: #ff8a84; box-shadow: 0 0 0 3px rgba(255,91,87,.18); }
+.hold-cancel { margin-right: auto; }
 
 /* Store */
 .store { width: min(660px, 52vw); }
