@@ -94,11 +94,12 @@ class UPnPTests(unittest.TestCase):
     def test_opens_the_port_with_a_lease_reports_the_address_and_closes_it(self):
         r = FakeRouter()
         try:
-            m = upnp.PortMapper(8765, "Afterhours 16", locations=[r.location])
+            m = upnp.PortMapper(8765, locations=[r.location])  # (v0.4.8.6: the router lists the mapping as RIMRIFT)
             self.assertTrue(m.open())
             st = m.status()
             self.assertEqual((st["state"], st["router"], st["external_ip"], st["internal_ip"], st["lease"]), ("open", "Test Router 9000", "203.0.113.7", "127.0.0.1", 3600))
-            self.assertEqual(r.mappings[("8765", "TCP")], {"port": "8765", "client": "127.0.0.1", "lease": "3600", "desc": "Afterhours 16"})
+            self.assertEqual(r.mappings[("8765", "TCP")], {"port": "8765", "client": "127.0.0.1", "lease": "3600", "desc": "RIMRIFT"})
+            self.assertIn('upnp.PortMapper(server.server_address[1], "RIMRIFT")', (Path(__file__).resolve().parents[1] / "server/app.py").read_text())
             lines = m.summary(wait=1)
             self.assertIn("PUBLIC http://203.0.113.7:8765/", lines)
             self.assertIn("OK Port 8765 opened on Test Router 9000", lines)

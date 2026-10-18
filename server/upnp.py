@@ -219,7 +219,7 @@ def internal_ip_for(router_host, port=80):
 class PortMapper:
     """Forward TCP `port` on the router to this PC while hosting. Thread-safe; every step is short and times out."""
 
-    def __init__(self, port, description="Afterhours 16", locations=None, discover_timeout=2.5):
+    def __init__(self, port, description="RIMRIFT", locations=None, discover_timeout=2.5):  # (v0.4.8.6: the name the router lists)
         self.port, self.description = int(port), description
         self.locations = locations              # (tests: skip discovery)
         self.discover_timeout = discover_timeout

@@ -235,7 +235,7 @@ function buildPark(r, scene, theme, opts) {
   if (theme.style === 'horror') for (let i = 0; i < 10; i++) lamps.push({ geo: G.cylinder(0.11, 0.16, 0.3, 8, { y0: true }), matrix: M.m4translation(M.m4(), -40 + i * 9 + 0.5, 5.4, -27), color: [1, 0.62, 0.3, 1] }); // (v0.4.8.5 quick patch 2: the lamps glow sodium orange)
   // murals on a wall behind the west court
   // (v0.4.8.5 quick patch: the Beat Goes On's wall is its boombox-and-cassette mural)
-  const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : theme.style === 'horror' ? cachedTexture(ctx, 'mural-monster', () => T.monsterMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'AFTERHOURS', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
+  const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : theme.style === 'horror' ? cachedTexture(ctx, 'mural-monster', () => T.monsterMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'RIMRIFT', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
   const wall = new Mesh(ctx.geometry(G.box(18, 6, 0.6)), new Material({ map: muralTex, roughness: 0.85, color: [1, 1, 1], ...(theme.style === 'horror' ? { emissiveMap: muralTex, emissive: [0.42, 0.42, 0.42] } : {}) })); // (v0.4.8.5 quick patch 2: the monster poster glows a little, as if lit)
   // (v0.4.8.5: at the Old Brick Yard the west avenue runs where it stood: the mural is on the building line across it)
   M.m4mul(wall.matrix, M.m4translation(M.m4(), theme.style === 'city' ? -75.15 : -66, 3, -4), M.m4fromYaw(M.m4(), 0, 0, 0, Math.PI / 2));
@@ -722,8 +722,9 @@ function buildArena(r, scene, theme, opts) {
   const spec = { ...theme.court };
   if (team.primary) {
     spec.paint = team.primary; spec.apron = hexA(team.primary, 0.92);
-    spec.logo = { shape: team.logo || 'circle', color: team.primary, accent: team.secondary || '#f6f1e6', text: (team.abbr || 'AH').slice(0, 4), size: 1.6 };
-    spec.sideText = (team.name || 'AFTERHOURS').toUpperCase(); spec.baselineText = (opts.baseline || team.abbr || 'PRO-AM').toUpperCase();
+    // (v0.4.8.6 RIMRIFT: a team's colours take the floor over the brand's: its own logo and name, in its own lines colour)
+    spec.logo = { shape: team.logo || 'circle', color: team.primary, accent: team.secondary || '#f6f1e6', text: (team.abbr || 'RR').slice(0, 4), size: 1.6 };
+    spec.sideText = (team.name || 'RIMRIFT').toUpperCase(); spec.sideTextColor = undefined; spec.baselineText = (opts.baseline || team.abbr || 'PRO-AM').toUpperCase();
     spec.woodTone = team.wood || undefined;
   }
   const built = buildCourt(ctx, { ...spec, margin: 2.4 }, [0, 0, 0]);
@@ -760,7 +761,8 @@ function buildArena(r, scene, theme, opts) {
   }
   // fascia LED ribbon
   const label = (opts.label || 'PRO-AM').toUpperCase(); // v0.4.5: the Pro Run's college and pro arenas say so
-  const ledTex = cachedTexture(ctx, 'led-' + (team.name || '') + label, () => T.banner(`${(team.name || 'AFTERHOURS PRO-AM').toUpperCase()}  ·  ${label}  ·  ${(team.abbr || 'AH16').toUpperCase()}`, { w: 2048, h: 128, bg: '#06070a', color: team.primary ? '#ffffff' : '#f2c14e', size: 64 }), {});
+  // (v0.4.8.6 RIMRIFT: with no team colours the ribbon and the table are the brand's, Ember on Carbon)
+  const ledTex = cachedTexture(ctx, 'led-' + (team.name || '') + label, () => T.banner(`${(team.name || 'RIMRIFT PRO-AM').toUpperCase()}  ·  ${label}  ·  ${(team.abbr || 'RR').toUpperCase()}`, { w: 2048, h: 128, bg: team.primary ? '#06070a' : '#080A0D', color: team.primary ? '#ffffff' : '#FF4D24', size: 64 }), {});
   const ledMat = new Material({ map: ledTex, shading: 'unlit', color: [1.6, 1.6, 1.6], fog: false });
   for (const [x, z, w, yaw] of [[0, -(L - 0.2), COURT.width + 8, 0], [0, L - 0.2, COURT.width + 8, Math.PI], [-(W - 0.2), 0, COURT.length + 8, Math.PI / 2], [W - 0.2, 0, COURT.length + 8, -Math.PI / 2]]) {
     const m = new Mesh(ctx.geometry(G.quad(w, 0.5, { bottom: true })), ledMat, { castShadow: false });
@@ -772,7 +774,7 @@ function buildArena(r, scene, theme, opts) {
   matte.push({ geo: G.box(0.9, 0.8, 9), matrix: M.m4translation(M.m4(), tableX, 0.4, 0), color: [...lin('#2b2f36'), 1] });
   matte.push({ geo: G.box(1.0, 0.04, 9.1), matrix: M.m4translation(M.m4(), tableX, 0.82, 0), color: [...lin('#d9d4c8'), 1] });
   // LED fascia on the court-facing side of the table
-  const tableTex = cachedTexture(ctx, 'table-' + (team.name || '') + label, () => T.banner(`${(team.abbr || 'AH16').toUpperCase()}  ·  ${(team.name || 'AFTERHOURS').toUpperCase()}  ·  ${label}`, { w: 1024, h: 80, bg: '#05070b', color: team.primary ? '#ffffff' : '#f2c14e', size: 46 }), {});
+  const tableTex = cachedTexture(ctx, 'table-' + (team.name || '') + label, () => T.banner(`${(team.abbr || 'RR').toUpperCase()}  ·  ${(team.name || 'RIMRIFT').toUpperCase()}  ·  ${label}`, { w: 1024, h: 80, bg: team.primary ? '#05070b' : '#080A0D', color: team.primary ? '#ffffff' : '#FF4D24', size: 46 }), {});
   const tableLed = new Mesh(ctx.geometry(G.quad(8.6, 0.62, { bottom: true })), new Material({ map: tableTex, shading: 'unlit', color: [1.5, 1.5, 1.5], fog: false }), { castShadow: false });
   M.m4fromYaw(tableLed.matrix, tableX + 0.46, 0.1, 0, Math.PI / 2);
   scene.add(tableLed);

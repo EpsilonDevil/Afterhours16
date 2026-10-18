@@ -519,7 +519,7 @@ export function showResults(app, summary, result, won, opts = {}) {
       ${r ? `<div class="reward-row"><div class="reward"><b>+${money(r.vc)}</b><small>VC EARNED</small></div>${pro ? '<div class="reward"><b>×1.5</b><small>VC & BADGE PROGRESS</small></div>' : `<div class="reward"><b>+${money(r.rep)}</b><small>REP</small></div>`}${summary.mode === 'park' ? `<div class="reward"><b>${r.streak}</b><small>WIN STREAK</small></div>` : ''}${summary.mode === 'park' && r.streak_mult > 1 ? `<div class="reward"><b>×${r.streak_mult.toFixed(2)}</b><small>STREAK BONUS</small></div>` : ''}${r.proam_rank ? `<div class="reward rp ${r.proam_rank.delta < 0 ? 'neg' : ''}"><b>${signed(r.proam_rank.delta)}<i> RP</i></b><small>${esc(r.proam_rank.rank_after.name.toUpperCase())}</small></div>` : ''}${r.proam_team ? `<div class="reward"><b>${r.proam_team.wins}-${r.proam_team.losses}</b><small>TEAM RECORD</small></div>` : ''}</div>
         ${rankResult(r.proam_rank)}
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}
-        ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ffd84a' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
+        ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ff4d24' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
         ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag badge-up ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${badgeSVG(b.id, b.tier, 22)}${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
         ${Object.keys(r.badge_progress || {}).length ? `<div class="muted small">Badge progress: ${Object.entries(r.badge_progress).slice(0, 6).map(([k, v]) => `${esc(app.config.badges[k]?.name || k)} +${v}`).join(' · ')}</div>` : ''}` : '<p class="muted">This result was not recorded (see message).</p>'}
       ${peopleRow(app, opts.players)}
@@ -584,7 +584,7 @@ export function proam(app, root) {
   const draw = () => {
     const roster = proamRoster(app, t);
     root.innerHTML = `<section class="panel wide-panel proam">
-      <div class="eyebrow">PRO-AM · 5V5 · AFTERHOURS ARENA</div><h1>${esc(t.name || 'Your team')}</h1>
+      <div class="eyebrow">PRO-AM · 5V5 · RIMRIFT ARENA</div><h1>${esc(t.name || 'Your team')}</h1>
       ${rankCard(c)}
       <div class="proam-cols">
         <div><h4>Team identity</h4>
@@ -915,7 +915,7 @@ function startPractice(app, defender) {
   const me = { build: { ...c }, name: c.name, human: true, look: app.look(c), badges: badgeTiers(c) };
   const opp = defender ? makeTeam(new RNG(Date.now() & 0xffff), 1, { catalog: app.catalog, level: 0.7 }) : [];
   opp.forEach(e => { e.look = resolveLook(e.build, app.catalog); });
-  const session = new MatchSession(app, { mode: 'practice', scene, venue, court: venue.courts[0], rosters: [[me], opp], teams: [{ name: 'You', abbr: 'YOU', color: '#ffd84a' }, { name: '', abbr: '', color: '#888' }], seed: 3 });
+  const session = new MatchSession(app, { mode: 'practice', scene, venue, court: venue.courts[0], rosters: [[me], opp], teams: [{ name: 'You', abbr: 'YOU', color: '#ff4d24' }, { name: '', abbr: '', color: '#888' }], seed: 3 }); // (v0.4.8.6: YOU in Ember)
   const world = { session, scene, frame: dt => { if (app.input.wasPressed('pause')) { Screens.go(app, 'practice'); return; } session.frame(dt); }, dispose: () => session.dispose() };
   app.world = world;
   app.mode = 'match';

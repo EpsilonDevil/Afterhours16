@@ -2,14 +2,16 @@
 // career's seed, and runs in node for the tests.
 //
 // A career: pick a college, play 3 college games, and your performance sets your draft slot (2 rounds x 32 picks).
-// The team holding that pick takes you. The Afterhours Pro League has 32 original teams in two conferences of 16,
+// The team holding that pick takes you. The RIMRIFT Pro League has 32 original teams in two conferences of 16,
 // 15-man rosters, an 82-game schedule (each team: 2 games against every team in the other conference, 4 against
 // five conference rivals and 3 against the other ten), a play-in tournament, four playoff rounds and the Finals.
 // Your games can be played (3D, through a server ticket) or simmed; every other game is simmed here.
 import { RNG, hashString } from '../core/rng.js';
 import { makeBot } from './bots.js';
 
-export const LEAGUE = { name: 'Afterhours Pro League', abbr: 'APL' };
+// (v0.4.8.6 RIMRIFT: was the Afterhours Pro League, APL. A saved career never stores the name, so every career carries on
+// under the new one)
+export const LEAGUE = { name: 'RIMRIFT Pro League', abbr: 'RPL' };
 export const SEASON_GAMES = 82;
 export const ROSTER = 15;
 export const CONFS = ['East', 'West'];

@@ -11,7 +11,7 @@
 import { settings, volumeGain } from './settings.js';
 
 export const PLAYLISTS = {
-  main: { dir: 'audio/music/', album: 'Afterhours 16 Soundtrack', recent: 'ah16.music.recent' },
+  main: { dir: 'audio/music/', album: 'RIMRIFT Soundtrack', recent: 'ah16.music.recent' }, // (v0.4.8.6: the game's new name; the storage key stays)
   beat: { dir: 'audio/beat/', album: 'And The Beat Goes On · Event Soundtrack', recent: 'ah16.music.recent.beat' },
   monster: { dir: 'audio/monster/', album: 'The Monster Mash · Event Soundtrack', recent: 'ah16.music.recent.monster' },
 };
@@ -178,7 +178,7 @@ export class Soundtrack {
     let box = document.getElementById('np-ticker');
     if (!box) { box = document.createElement('div'); box.id = 'np-ticker'; box.className = 'np-ticker'; document.body.appendChild(box); }
     const artist = t.artist ? esc(t.artist) : '';
-    box.innerHTML = `<div class="np-k"><i>♪</i>${resumed ? 'BACK ON' : 'NOW PLAYING'}</div><div class="np-body"><div class="np-scroll"><b>${esc(t.title)}</b>${artist ? `<span>${artist}</span>` : ''}<em>${esc(t.album || PLAYLISTS[this.list]?.album || 'Afterhours 16 Soundtrack')}</em></div></div>`;
+    box.innerHTML = `<div class="np-k"><i>♪</i>${resumed ? 'BACK ON' : 'NOW PLAYING'}</div><div class="np-body"><div class="np-scroll"><b>${esc(t.title)}</b>${artist ? `<span>${artist}</span>` : ''}<em>${esc(t.album || PLAYLISTS[this.list]?.album || 'RIMRIFT Soundtrack')}</em></div></div>`;
     box.classList.remove('out'); box.classList.remove('on'); void box.offsetWidth; box.classList.add('on');
     const sc = box.querySelector('.np-scroll'), body = box.querySelector('.np-body');
     requestAnimationFrame(() => { if (sc.scrollWidth > body.clientWidth + 4) sc.classList.add('long'); });

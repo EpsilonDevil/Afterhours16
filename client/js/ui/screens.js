@@ -18,6 +18,7 @@ import * as Stats from './stats.js';
 import * as Codes from './codes.js';
 import * as ProRun from './prorun.js';
 import { reportBug } from './bugreport.js';
+import { mountBrandIntro } from './brandintro.js';
 
 // v0.4.7.5: the modes and your player across the top; Stats and Locker Codes are icon buttons on the right (and tiles
 // on Home), so the bar never runs into itself
@@ -46,7 +47,7 @@ export function go(app, name, params = {}) {
   bindTopbar(app);
   const root = $('#screen');
   const char = app.char();
-  if (char) { app.showroom.setCharacter(char, app.look(char)); app.showroom.setAccent(char.affiliation ? AFFILIATIONS[char.affiliation].color : '#ffd84a'); }
+  if (char) { app.showroom.setCharacter(char, app.look(char)); app.showroom.setAccent(char.affiliation ? AFFILIATIONS[char.affiliation].color : '#ff4d24'); } // (v0.4.8.6: Ember)
   app.showroom.setFocus('full'); app.showroom.setPreview('idle');
   switch (name) {
     case 'home': return home(app, root);
@@ -67,7 +68,7 @@ export function go(app, name, params = {}) {
 function topbar(app) {
   const c = app.char();
   return `<header class="topbar">
-    <div class="brand" data-go="home">AFTERHOURS<b>16</b><small>v${esc(app.config.version)}</small></div>
+    <div class="brand" data-go="home" title="Home"><img src="brand/rimrift-wordmark.svg" alt="RIMRIFT" width="1270" height="221"><small>v${esc(app.config.version)}</small></div>
     <nav class="tabs">${NAV.map(([id, label]) => `<button class="tab ${app.screen === id || (id === 'myplayer' && app.screen === 'create') ? 'on' : ''}" data-go="${id}" ${!c && id !== 'home' ? 'disabled' : ''}>${label.replace(/^(Locker |The |VC )/, '<span class="tab-lg">$1</span>')}</button>`).join('')}</nav>
     <div class="tb-right">
       ${c ? `<button class="pill rep" data-go="myplayer" title="Park Rep">${esc(c.rep.label)}</button>` : ''}
@@ -94,7 +95,7 @@ export const LAUNCHED = new URLSearchParams(location.search).has('launcher');
 export function confirmQuit() {
   if (!LAUNCHED) return;
   const card = modal(`
-    <h2>Quit Afterhours 16?</h2>
+    <h2>Quit RIMRIFT?</h2>
     <p class="muted">Your progress is saved after every game.</p>
     <div class="col gap"><button class="btn primary" data-yes>Quit to desktop</button><button class="btn" data-no>Cancel</button></div>`);
   card.querySelector('[data-no]').onclick = () => closeModal();
@@ -103,7 +104,7 @@ export function confirmQuit() {
     try { await lockin.exit(); } catch {}
     try { await fetch('/api/quit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch {}
     window.close();
-    setTimeout(() => { document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:#ccc;font:16px system-ui">Afterhours 16 has stopped. You can close this window.</div>'; }, 600);
+    setTimeout(() => { document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:#ccc;font:16px system-ui">RIMRIFT has stopped. You can close this window.</div>'; }, 600);
   };
 }
 
@@ -111,7 +112,7 @@ export function showAuth(app, mode = 'login') {
   const card = modal(`
     <div class="auth">
       <div class="eyebrow">WELCOME TO</div>
-      <h1 class="logo-big">AFTERHOURS<b>16</b></h1>
+      <h1 class="logo-big"><img src="brand/rimrift-logo.svg" alt="RIMRIFT" width="1270" height="810"></h1>
       <p class="muted">An original basketball game: run The Park, build a Pro-Am squad, and spend your VC. New accounts get <b>1,000,000 fictional VC</b> once.</p>
       ${app.config.dev_accounts ? `<button class="btn primary wide" data-local>Start local session</button><div class="divider">or use an account</div>` : ''}
       <div class="seg"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Sign in</button><button data-mode="register" class="${mode === 'register' ? 'on' : ''}">Create account</button></div>
@@ -163,7 +164,7 @@ function home(app, root) {
         <div><b>${pr.park?.best_streak || 0}</b><small>BEST STREAK</small></div>
       </div>
       <nav class="hub" aria-label="Main menu">
-        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ffd84a'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small>${app.config?.event && EVENTS[app.config.event.id] ? `<span class="tile-event" style="--c:${EVENTS[app.config.event.id].color}">${esc(EVENTS[app.config.event.id].eyebrow)} · LIVE</span>` : ''}</button>
+        <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ff4d24'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small>${app.config?.event && EVENTS[app.config.event.id] ? `<span class="tile-event" style="--c:${EVENTS[app.config.event.id].color}">${esc(EVENTS[app.config.event.id].eyebrow)} · LIVE</span>` : ''}</button>
         <button class="tile t-prorun" data-go="prorun"><span class="tile-k">THE PRO RUN</span><b>${pro ? esc(pro) : 'College → Draft → League'}</b><small>${pro ? 'Your career' : '82 games · playoffs · Finals'}</small></button>
         <button class="tile t-proam" data-go="proam"><span class="tile-k">PRO-AM</span><b>${team ? esc(team.name) : '5v5 Arena'}</b><small>${team ? `${team.wins}-${team.losses} · 5v5` : 'Build your team'}</small></button>
         <button class="tile t-mp" data-go="myplayer"><span class="tile-k">MYPLAYER</span><b>Upgrades</b><small>${c.cap_breakers_available ? `${c.cap_breakers_available} cap breakers to place` : `Max upgrade ${money(c.max_upgrade_cost)} VC`}</small></button>
@@ -203,7 +204,7 @@ export function bindVolume(root) {
 
 export function openSettings(app) {
   const card = modal(`
-    <div class="row between"><h2>Settings</h2><button class="btn ghost small" data-bug title="F8 anywhere">Report a bug</button></div>
+    <div class="row between"><h2>Settings</h2><div class="row gap">${app.mode === 'menu' ? '<button class="btn ghost small" data-title title="See the title screen again">Title screen</button>' : ''}<button class="btn ghost small" data-bug title="F8 anywhere">Report a bug</button></div></div>
     <div class="settings-grid">
       <label>Graphics<select data-k="quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>
       <label>Default camera<select data-k="camera"><option value="2k" ${settings.camera === '2k' ? 'selected' : ''}>2K Cam</option><option value="broadcast" ${settings.camera === 'broadcast' ? 'selected' : ''}>Broadcast</option><option value="player" ${settings.camera === 'player' ? 'selected' : ''}>Player Lock</option></select></label>
@@ -234,6 +235,7 @@ export function openSettings(app) {
     <div class="row gap" style="align-items:center;justify-content:space-between"><h3>Controls</h3><button class="btn small" data-remap>Remap buttons…</button></div>${controlsTable(app)}
     <div class="row gap end"><button class="btn ghost" data-logout>Sign out</button><button class="btn primary" data-close>Done</button></div>`, { wide: true });
   const bugB = card.querySelector('[data-bug]'); if (bugB) bugB.onclick = () => reportBug(app);
+  const titleB = card.querySelector('[data-title]'); if (titleB) titleB.onclick = () => showTitle(app);
   card.querySelectorAll('[data-k]').forEach(el => el.onchange = el.oninput = () => {
     const k = el.dataset.k;
     let v = el.value;
@@ -251,6 +253,14 @@ export function openSettings(app) {
   });
   card.querySelector('[data-remap]').onclick = () => openRemap(app);
   card.querySelector('[data-logout]').onclick = async () => { try { await app.api.post('/api/logout', {}); } catch { /* ignore */ } location.reload(); };
+}
+
+// v0.4.8.6: the title screen again (Settings → Title screen, in the menus). The game's own input waits under it
+// (capturing: padnav and the controls ignore everything) until it's entered; the A that opened it doesn't enter it
+export function showTitle(app) {
+  closeModal();
+  if (app.input) app.input.capturing = true;
+  mountBrandIntro({ onEnter: () => { if (app.input) app.input.capturing = false; } });
 }
 
 export function controlsTable(app) {

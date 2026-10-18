@@ -157,7 +157,7 @@ export function openPhone(app, opts = {}) {
     const online = w.onlineCount();
     const body = st.who ? profile(st.who) : st.tab === 'park' ? listPark() : st.tab === 'friends' ? listFriends() : st.tab === 'squad' ? listSquad() : st.tab === 'crew' ? listCrew() : st.tab === 'online' ? Online.phoneTab(app) : listRecent();
     const scroll = host.querySelector('.ph-body')?.scrollTop || 0;
-    host.innerHTML = `<div class="ph-status"><span>${clock()}</span><b>AH16</b><span><i class="ph-dot on"></i> ${online} online</span></div>
+    host.innerHTML = `<div class="ph-status"><span>${clock()}</span><b>RIMRIFT</b><span><i class="ph-dot on"></i> ${online} online</span></div>
       <div class="ph-head"><b>Social</b><small>${hub ? esc(PARK_NAMES[hub.themeId] || '') : 'Not at a park'} · ${w.friends.length} friends · squad ${w.squad.length}/4</small></div>
       ${st.who ? '' : `<nav class="tabs-inner ph-tabs">${TABS.map(([k, l]) => `<button class="${st.tab === k ? 'on' : ''}" data-tab="${k}">${l === 'Park' && !hub ? 'Parks' : l}</button>`).join('')}</nav>`}
       <div class="ph-body">${body}</div>

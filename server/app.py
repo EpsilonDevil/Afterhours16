@@ -36,7 +36,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8.5"
+VERSION = "0.4.8.6"  # (v0.4.8.6: the RIMRIFT identity patch)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
@@ -106,7 +106,7 @@ def load_online_default(path=None):
 
 def save_online_default(hub, code, path=None):
     path = Path(path or ONLINE_FILE)
-    text = json.dumps({"_": "The online server every copy of Afterhours 16 connects to by itself, and its join code (README: Play online). "
+    text = json.dumps({"_": "The online server every copy of RIMRIFT connects to by itself, and its join code (README: Play online). "
                             "Leave server empty to have none.", "server": hub or "", "joinCode": code or ""}, indent=2) + "\n"
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -1575,7 +1575,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Afterhours 16 local service")
+    p = argparse.ArgumentParser(description="RIMRIFT local service")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--db", default=str(ROOT / "data/afterhours.sqlite3"))
@@ -1628,7 +1628,7 @@ def main():
     print(f"Afterhours 16 v{VERSION}\nOpen {url}\nPress Ctrl+C to stop.", flush=True)
     if args.online and not args.no_upnp:
         # qp3: the router forwards the port to this PC by itself (UPnP), for as long as the service runs
-        service.upnp = upnp.PortMapper(server.server_address[1], "Afterhours 16")
+        service.upnp = upnp.PortMapper(server.server_address[1], "RIMRIFT")  # (v0.4.8.6: the router's port-mapping list says RIMRIFT)
 
         def open_port():
             service.upnp.open()

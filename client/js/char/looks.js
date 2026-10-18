@@ -988,10 +988,10 @@ export function paintShoe(spec = {}) {
         g.closePath(); g.fill(); break;
       }
     }
-    // stitching along the toe cap and the eyestay, and a small original "AH" tab on the heel
+    // stitching along the toe cap and the eyestay, and a small original "RR" tab on the heel (v0.4.8.6: RIMRIFT; was "AH")
     line(half, curve(t => 0.5 + 0.28 * Math.sqrt(Math.max(0, (t - 0.8) / 0.2)) - 0.015, 0.8, 1), 'rgba(0,0,0,0.3)', 1.5, [4, 4]);
     line(half, [[0.38, 0.84], [0.82, 0.84]], 'rgba(0,0,0,0.25)', 1.5, [4, 4]);
-    if (lat) { g.fillStyle = lum(hexToRgb(heelCol.startsWith('#') ? heelCol : upper)) > 0.5 ? '#16171a' : '#f4f2ec'; g.font = '900 16px "Arial Black", sans-serif'; g.textAlign = 'center'; g.fillText('AH', X(half, 0.05), Y(0.7)); }
+    if (lat) { g.fillStyle = lum(hexToRgb(heelCol.startsWith('#') ? heelCol : upper)) > 0.5 ? '#16171a' : '#f4f2ec'; g.font = '900 16px "Arial Black", sans-serif'; g.textAlign = 'center'; g.fillText('RR', X(half, 0.05), Y(0.7)); }
   }
   // (v0.4.8.5 quick patch 2: the Coffin Hi's skull charm reads two swatches between the halves: bone white, and black)
   if (model === 'coffin') { g.fillStyle = upper; g.fillRect(0.493 * W, 0, 0.014 * W, Hh); g.fillStyle = trim; g.fillRect(0.493 * W, Hh / 2, 0.014 * W, Hh / 2); }

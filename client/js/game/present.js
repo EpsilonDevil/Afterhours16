@@ -50,7 +50,7 @@ export function introCards(session) {
 export function introHTML(card, idx, total) {
   const { team, players, fiveV5 } = card;
   const sub = fiveV5 ? 'TOP BADGE' : 'TOP 3 BADGES';
-  return `<div class="intro-card ${fiveV5 ? 'five' : ''}" style="--tc:${esc(team.color || '#ffd84a')}">
+  return `<div class="intro-card ${fiveV5 ? 'five' : ''}" style="--tc:${esc(team.color || '#ff4d24')}">
     <div class="intro-team"><span class="intro-k">${idx === 0 ? 'STARTING FOR' : 'AND THEIR OPPONENTS'}</span><b>${esc(team.name || 'Team')}</b><span class="intro-step">${idx + 1}/${total}</span></div>
     <div class="intro-players">${players.map((p, i) => `
       <div class="intro-p ${p.human ? 'me' : ''}" style="--d:${i * 0.12}s">

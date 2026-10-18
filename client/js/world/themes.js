@@ -141,8 +141,10 @@ export const THEMES = {
     floodlights: true, lightColor: [0.9, 1.0, 0.86], envIntensity: 0.55,
   },
   arena: {
-    id: 'arena', kind: 'arena', name: 'Afterhours Arena', style: 'arena',
-    court: { surface: 'wood', paint: '#1e3d63', lines: '#f6f1e6', apron: 'rgba(20,32,52,0.92)', keyText: '', baselineText: 'PRO-AM', sideText: 'AFTERHOURS 16', logo: { shape: 'circle', color: '#1e3d63', accent: '#f6f1e6', text: 'AH', size: 1.55 }, reflective: true, reflectStrength: 0.6, gloss: 0.22 },
+    // (v0.4.8.6 RIMRIFT: the name down the sidelines and the mark at centre court, in Ember, Bone and Carbon; the mark
+    // turned to read upright from the broadcast sideline, as the sideline lettering does)
+    id: 'arena', kind: 'arena', name: 'RIMRIFT Arena', style: 'arena',
+    court: { surface: 'wood', paint: '#1e3d63', lines: '#f6f1e6', apron: 'rgba(20,32,52,0.92)', keyText: '', baselineText: 'PRO-AM', sideText: 'RIMRIFT', sideTextColor: '#FF4D24', logo: { shape: 'rimrift', color: '#080A0D', accent: '#FF4D24', ink: '#F3EEE4', size: 1.55, rotate: Math.PI / 2 }, reflective: true, reflectStrength: 0.6, gloss: 0.22 },
     sky: { top: [0.01, 0.01, 0.015], horizon: [0.02, 0.02, 0.03], ground: [0.01, 0.01, 0.01], stars: 0 },
     sun: { dir: [0.12, 1, 0.3], color: [1.0, 0.97, 0.92], intensity: 3.1 },
     ambient: { sky: [0.3, 0.29, 0.3], ground: [0.22, 0.16, 0.1] },

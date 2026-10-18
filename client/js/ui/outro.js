@@ -27,7 +27,7 @@ export function playOutro(app, { summary, session, result, auto = 4.5, practice 
     const won = summary.winner === myTeam;
     const pro = summary.mode === 'prorun';
     const table = t => `
-      <div class="ob-team ${summary.winner === t ? 'won' : ''}" style="--tc:${esc(teams[t]?.color || '#ffd84a')}">
+      <div class="ob-team ${summary.winner === t ? 'won' : ''}" style="--tc:${esc(teams[t]?.color || '#ff4d24')}">
         <div class="ob-head"><b>${esc(teams[t]?.name || (t ? 'Away' : 'Home'))}</b><span>${summary.score[t]}</span>${summary.winner === t ? '<em>WIN</em>' : ''}</div>
         <table class="ob-table"><thead><tr><th>Player</th>${COLS.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>
         ${players.filter(p => p.team === t).map((p, i) => `<tr class="${p.human ? 'me' : ''}" style="--d:${0.15 + i * 0.07 + t * 0.3}s"><td><span class="ob-ovr">${esc(p.ovr)}</span>${esc(p.name)}${p.human ? ' <em class="ob-you">YOU</em>' : ''}${p === mvp ? ' <em class="ob-mvp" title="Player of the game">★ POG</em>' : ''}<small>${esc(p.pos)}</small></td>${COLS.map(c => `<td>${c[1](p.stats)}</td>`).join('')}</tr>`).join('')}

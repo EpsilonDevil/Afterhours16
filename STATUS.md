@@ -1,4 +1,19 @@
-# Status — v0.4.8.5 (parks rebuilt, Pro-Am ranks, home park until Pro 1, off-ball screens; quick patches: And The Beat Goes On, The Monster Mash, ICON status / Open Arms / the Mash's soundtrack, event handovers, Icon badges made true, Clamp Steals slot; v0.4.8 and v0.4.7.5 below)
+# Status — v0.4.8.6, the RIMRIFT identity patch (v0.4.8.5 with its quick patches, v0.4.8 and v0.4.7.5 below)
+
+## v0.4.8.6: RIMRIFT identity
+
+The game is now RIMRIFT. The player-facing list is in `PATCH_NOTES_v0.4.8.6.docx` (source: `PATCH_NOTES_v0.4.8.6.md`); the plan it belongs to is the v0.5 roadmap (project doc `claude/rimrift-v0.5-roadmap.md`, Stage 0 step 0.3). Built by two agents (Brand, UI) from the RIMRIFT kit; the kit's installer was not run (it targets a plain v0.4.8.5), its changes were ported by hand.
+
+| Area | Files | Notes |
+|---|---|---|
+| Brand assets | `client/brand/` (`rimrift-logo.svg` 1270×810, `rimrift-mark.svg`, `rimrift-wordmark.svg`, `rimrift-mark-small.svg`, `rimrift-logo.png`, `gravity-keyart.jpg` 1920×1080 384 KB, `favicon.ico` 16/32/48, `icon-180/192/512.png`), `gfx/brandmark.js` (the mark's path data) | traced from the master PNG, two fills (#FF4D24, #F3EEE4); IoU vs the master's color masks: lockup 0.992/0.993, mark 0.984/0.990, wordmark 0.996/0.997; full mark readable from 32 px, the small mark at 16 px |
+| Title screen | `js/brandboot.js` (page entry: mounts the intro, then imports `main.js`, preloaded), `ui/brandintro.js`, `css/brandintro.css`, `index.html` | fresh presses only (held keys = repeats ignored; a connected pad's A/Start read once at mount); `?launcher` heartbeat every 5 s while up; the entering click/key triggers lock-in; Settings → Title screen; `?nointro` skips it (automated browser scripts) |
+| Palette | `css/app.css` (`--accent` #ff4d24, `--accent2` #f3eee4, `--bg` #080a0d, `--text` Bone, new `--accent-deep`, `--accent-hi`, `--on-accent`, `--gold`), `css/menus.css`, `ui/rewards.js`, `ui/outro.js`, `game/present.js`, `game/showroom.js`, `ui/modes.js` (crew fallback, Pro-Am eyebrow) | Carbon on Ember ~6:1, Ember on Carbon ~6:1 (tested); gold kept for VC, OVR tile, grade C, MVP, spin jackpot, Gold tier, HOF/ICON, bounty, rarity, events, teams; the user's floor ring and defense arrows unchanged (`game/session.js`, distinct from the opponents' red); shot clock Bone |
+| Name | `index.html`, `ui/screens.js` (wordmark in the nav, lockup on the welcome card, quit/stopped text), `ui/phone.js`, `ui/bugreport.js`, `core/music.js`, `char/looks.js` (shoe heel RR), `world/themes.js` + `world/venues.js` + `gfx/textures.js` (arena sideline RIMRIFT, center-court mark via Path2D, 'RR' fallback in Node; banners RIMRIFT PRO-AM / RR; mural and jumbotron fallbacks), `game/session.js` (one word), `sim/league.js` (RIMRIFT Pro League, RPL), `server/catalog.json` (13 items renamed/relettered, ids unchanged), `client/audio/music/tracks.json` (album), `server/upnp.py` + `server/app.py` (port-mapping label), `server/app.py` (VERSION 0.4.8.6, argparse/online.json text), `package.json` (version, description) | the brand court/ribbon show only without team colors (Pro-Am/Pro Run pass team colors) |
+| Unchanged on purpose | `data/`, `deploy/` service names, `Afterhours16.exe` and its icon/messages (launcher source on the PC: `launcher/`), start/host/join.cmd, `online.json`, `"app": "afterhours16"`, the Server header, `Afterhours16_Bug_Reports.txt`, settings keys, affiliation names, mode names | renames come with the Godot build / Stage 1 menu rebuild |
+
+Tests: `node --test tests/*.test.mjs` (462; new `tests/v0486brand.test.mjs`, `tests/v0486ui.test.mjs`) and `python -m unittest discover -s tests` (179; `test_server.py` index check expects RIMRIFT, `test_upnp.py` label).
+
 
 v0.4.7.5 was built in twelve stages (A–L), each committed with its own tests. The full player-facing list is in `PATCH_NOTES_v0.4.7.5.docx` (source: `PATCH_NOTES_v0.4.7.5.md`). Where things live:
 

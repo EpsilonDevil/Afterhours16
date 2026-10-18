@@ -1,6 +1,7 @@
 // Procedural canvas textures. Every texture here is original, generated at load time.
 import { RNG, makeNoise2D } from '../core/rng.js';
 import { COURT } from '../sim/constants.js';
+import { RIMRIFT_MARK, BRAND } from './brandmark.js';
 
 export function canvas(w, h) {
   const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -429,6 +430,7 @@ export function drawLogo(g, logo, x, y, size) {
   if (shape === 'toucan') { if (logo.rotate) g.rotate(logo.rotate); drawToucan(g, logo, size); g.restore(); return; }
   if (shape === 'sunset') { if (logo.rotate) g.rotate(logo.rotate); drawSunsetLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch)
   if (shape === 'jack') { if (logo.rotate) g.rotate(logo.rotate); drawJackLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch 2)
+  if (shape === 'rimrift') { if (logo.rotate) g.rotate(logo.rotate); drawRimriftLogo(g, logo, size); g.restore(); return; } // (v0.4.8.6)
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);
@@ -447,6 +449,27 @@ export function drawLogo(g, logo, x, y, size) {
     g.fillText(logo.text, 0, size * 0.04);
   }
   g.restore();
+}
+
+// v0.4.8.6 RIMRIFT: the brand's centre-court logo: a Carbon medallion ringed in Ember with the mark (the fractured rim, the
+// slash and the R pair) painted from its own vector paths (gfx/brandmark.js, the same as client/brand/rimrift-mark.svg).
+// Where there's no Path2D (Node, painting into a stand-in context) it's 'RR' in Bone split by an Ember slash instead
+export function drawRimriftLogo(g, logo, size) {
+  const ember = logo.accent || BRAND.ember, bone = logo.ink || BRAND.bone;
+  g.beginPath(); g.arc(0, 0, size, 0, Math.PI * 2);
+  g.fillStyle = logo.color || BRAND.carbon; g.globalAlpha = logo.alpha ?? 0.94; g.fill(); g.globalAlpha = 1;
+  g.lineWidth = size * 0.05; g.strokeStyle = ember; g.stroke();
+  if (typeof Path2D !== 'undefined') {
+    const M = RIMRIFT_MARK, k = (size * 1.62) / M.w;
+    g.save(); g.scale(k, k); g.translate(-M.w / 2, -M.h / 2);
+    g.fillStyle = ember; g.fill(new Path2D(M.ember), 'evenodd');
+    g.fillStyle = bone; g.fill(new Path2D(M.bone), 'evenodd');
+    g.restore();
+    return;
+  }
+  g.fillStyle = bone; g.font = `italic 900 ${size * 0.9}px "Arial Black", Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('RR', 0, size * 0.06);
+  g.beginPath(); g.moveTo(size * 0.18, -size * 0.62); g.lineTo(-size * 0.12, size * 0.5); g.lineWidth = size * 0.11; g.strokeStyle = ember; g.stroke();
 }
 
 export function chainlink(size = 256) {

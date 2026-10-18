@@ -1202,7 +1202,7 @@ export class MatchSession {
 
   jumboInfo() {
     const g = this.game, t = this.teams;
-    return { title: this.opts.jumboTitle || (t[0].name ? 'PRO-AM' : 'AFTERHOURS'), home: g.score[0], away: g.score[1], homeName: t[0].abbr, awayName: t[1].abbr, homeColor: t[0].color, awayColor: t[1].color, clock: fmtClock(g.gameClock), period: g.quarter > g.quarters ? 'OT' : `Q${g.quarter}` };
+    return { title: this.opts.jumboTitle || (t[0].name ? 'PRO-AM' : 'RIMRIFT'), home: g.score[0], away: g.score[1], homeName: t[0].abbr, awayName: t[1].abbr, homeColor: t[0].color, awayColor: t[1].color, clock: fmtClock(g.gameClock), period: g.quarter > g.quarters ? 'OT' : `Q${g.quarter}` };
   }
 
   // v0.4.5 quick patch: the live shot meter, from the very functions that grade the release (Game.jumperWindow /

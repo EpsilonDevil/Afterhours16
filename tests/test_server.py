@@ -1019,7 +1019,7 @@ class ApiTests(unittest.TestCase):
 
     def test_static_client_is_served_but_dev_pages_are_not(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
-            self.assertIn(b"AFTERHOURS", r.read().upper())
+            self.assertIn(b"RIMRIFT", r.read().upper())  # (v0.4.8.6: the game's new name)
         with urllib.request.urlopen(self.base + "/js/main.js", timeout=10) as r:
             self.assertIn("javascript", r.headers["Content-Type"])
         for path in ("/dev/match-test.html", "/../server/app.py", "/js/../../data/afterhours.sqlite3"):

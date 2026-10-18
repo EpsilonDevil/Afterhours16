@@ -26,7 +26,7 @@ export function openWheel(app, onSpin) {
     </div>`, { wide: true, cls: 'wheel-card' });
   const cv = card.querySelector('canvas'), g = cv.getContext('2d');
   const face = document.createElement('canvas'); face.width = face.height = 520;
-  drawWheel(face.getContext('2d'), 520, segs, app.affColor || '#ffd84a');
+  drawWheel(face.getContext('2d'), 520, segs, app.affColor || '#ff4d24'); // (v0.4.8.6: Ember without an affiliation)
   let ang = 0, spinning = false, timer = 0;
   const paint = () => { g.clearRect(0, 0, 520, 520); g.save(); g.translate(260, 260); g.rotate(ang); g.drawImage(face, -260, -260); g.restore(); };
   paint();

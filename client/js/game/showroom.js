@@ -31,10 +31,10 @@ export class Showroom {
     floor.material.floor = null;
     s.add(floor);
     // podium
-    this.accent = [1, 0.78, 0.25];
+    this.accent = M.hexLinear('#ff4d24'); // (v0.4.8.6: Ember until a build's affiliation colours it, as setAccent does)
     const pod = new Mesh(ctx.geometry(G.cylinder(1.25, 1.32, 0.12, 64, { y0: true })), new Material({ color: [0.06, 0.065, 0.075], roughness: 0.35, metalness: 0.2 }));
     s.add(pod);
-    this.ringMat = new Material({ color: this.accent, shading: 'unlit', emissive: [2.2, 1.6, 0.5], fog: false });
+    this.ringMat = new Material({ color: this.accent, shading: 'unlit', emissive: this.accent.map(v => v * 2.4), fog: false });
     const ring = new Mesh(ctx.geometry(G.torus(1.3, 0.012, 96, 6)), this.ringMat, { castShadow: false });
     M.m4translation(ring.matrix, 0, 0.12, 0);
     s.add(ring);
@@ -46,7 +46,7 @@ export class Showroom {
     gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.35, '#7d7d7d'); gr.addColorStop(1, '#000000');
     g2.fillStyle = gr; g2.fillRect(0, 0, 512, 256);
     for (let y = 0; y < 256; y += 4) { g2.fillStyle = 'rgba(0,0,0,0.12)'; g2.fillRect(0, y, 512, 1); }
-    this.backMat = new Material({ color: [0.3, 0.24, 0.08], shading: 'unlit', map: ctx.texture(glow, { wrap: 'clamp' }), fog: false });
+    this.backMat = new Material({ color: this.accent.map(v => v * 0.3 + 0.025), shading: 'unlit', map: ctx.texture(glow, { wrap: 'clamp' }), fog: false });
     const backMesh = new Mesh(ctx.geometry(back), this.backMat, { castShadow: false, reflect: false });
     // only the far half of the cylinder carries the glow: rotate so u=0.5 (glow center) faces the camera side behind the player
     M.m4fromYaw(backMesh.matrix, 0, 0, 0, Math.PI / 2);

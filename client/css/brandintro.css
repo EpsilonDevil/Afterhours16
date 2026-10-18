@@ -1,0 +1,39 @@
+/* v0.4.8.6 RIMRIFT: the title screen (js/ui/brandintro.js), ported from the brand kit's intro. It sits over everything,
+   before the game loads (js/brandboot.js) and again from Settings → Title screen. Ember for actions, Bone for the
+   headline, Carbon behind; the key art on the right, the copy on the left. */
+#rimrift-intro { --rr-ember: #ff4d24; --rr-bone: #f3eee4; --rr-carbon: #080a0d; position: fixed; inset: 0; z-index: 2147483000; overflow: hidden; background: var(--rr-carbon); color: var(--rr-bone);
+  font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", Arial, sans-serif; isolation: isolate; user-select: none; animation: rrIn .35s ease-out both; }
+#rimrift-intro * { box-sizing: border-box; }
+#rimrift-intro .rr-backdrop { position: absolute; inset: 0; background-size: cover; background-position: 65% center; z-index: -3; animation: rrDrift 18s ease-out both; }
+#rimrift-intro .rr-shade { position: absolute; inset: 0; z-index: -2;
+  background: linear-gradient(90deg, rgba(8,10,13,.98) 0%, rgba(8,10,13,.82) 30%, rgba(8,10,13,.15) 75%), linear-gradient(0deg, rgba(8,10,13,.92), transparent 28%, transparent 75%, rgba(8,10,13,.55)); }
+#rimrift-intro .rr-top, #rimrift-intro .rr-bottom { position: absolute; left: 4.5%; right: 4.5%; display: flex; justify-content: space-between; gap: 24px; font-size: 10px; font-weight: 700; letter-spacing: .22em; }
+#rimrift-intro .rr-top { top: 30px; padding-bottom: 18px; border-bottom: 1px solid rgba(243,238,228,.2); }
+#rimrift-intro .rr-top span:first-child { color: var(--rr-ember); }
+#rimrift-intro .rr-bottom { bottom: 26px; color: #b9b6ae; }
+#rimrift-intro .rr-content { position: absolute; left: 7.5%; top: 50%; transform: translateY(-47%); width: min(47%, 650px); }
+#rimrift-intro .rr-eyebrow { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .25em; color: var(--rr-ember); }
+#rimrift-intro .rr-logo { display: block; width: clamp(210px, 24vw, 450px); height: auto; margin: 0 0 12px -6px; }
+#rimrift-intro h1 { margin: 0 0 18px; font-family: Impact, "Arial Black", "Bahnschrift", Arial, sans-serif; font-size: clamp(36px, 4.7vw, 80px); font-weight: 900; font-style: italic; line-height: .98; letter-spacing: -.035em; color: var(--rr-bone); }
+#rimrift-intro .rr-intro-copy { margin: 0 0 28px; font-size: 15px; line-height: 1.5; color: #bdbbb5; }
+#rimrift-intro .rr-enter { display: flex; align-items: center; justify-content: space-between; width: 270px; max-width: 100%; min-height: 55px; padding: 18px 22px; border: 0; border-radius: 0; cursor: pointer;
+  background: var(--rr-ember); color: var(--rr-carbon); font: 800 14px "Bahnschrift", Arial, sans-serif; letter-spacing: .07em; clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); }
+#rimrift-intro .rr-enter span { font-size: 22px; line-height: 1; }
+#rimrift-intro .rr-enter:hover { background: #ff6d49; }
+#rimrift-intro .rr-enter:focus-visible { outline: 3px solid var(--rr-bone); outline-offset: 6px; }
+#rimrift-intro .rr-hint { margin-top: 16px; font-size: 9px; line-height: 1.6; letter-spacing: .15em; color: #adaba5; }
+#rimrift-intro .rr-hint span { padding: 0 7px; color: var(--rr-ember); }
+@keyframes rrIn { from { opacity: 0; } }
+@keyframes rrDrift { from { transform: scale(1.06); } }
+@media (max-width: 700px) {
+  #rimrift-intro .rr-backdrop { background-position: 66% center; }
+  #rimrift-intro .rr-shade { background: linear-gradient(90deg, rgba(8,10,13,.96), rgba(8,10,13,.42)), linear-gradient(0deg, #080a0d, transparent 70%); }
+  #rimrift-intro .rr-content { width: 85%; left: 7.5%; top: 53%; }
+  #rimrift-intro .rr-logo { width: 220px; } #rimrift-intro h1 { font-size: 48px; }
+  #rimrift-intro .rr-top, #rimrift-intro .rr-bottom { font-size: 8px; letter-spacing: .12em; }
+}
+@media (max-height: 650px) and (min-width: 701px) {
+  #rimrift-intro .rr-content { top: 53%; transform: translateY(-50%); } #rimrift-intro .rr-logo { width: 210px; margin-bottom: 0; }
+  #rimrift-intro h1 { font-size: 40px; margin-bottom: 10px; } #rimrift-intro .rr-intro-copy { margin-bottom: 16px; } #rimrift-intro .rr-hint { margin-top: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { #rimrift-intro, #rimrift-intro * { animation: none !important; transition: none !important; } }
