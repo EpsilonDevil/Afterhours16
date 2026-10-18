@@ -40,14 +40,14 @@ BADGES = {
     "contact_finisher": {"name": "Contact Finisher", "group": "Finishing", "stat": "fgm", "tiers": (30, 100, 150, 300), "desc": "Contested layups are less affected."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 250 and 500)
     "acrobat": {"name": "Acrobat", "group": "Finishing", "stat": "fgm", "tiers": (45, 130, 180, 360), "desc": "Boost on heavily contested layups."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 300 and 600)
     "ankle_breaker": {"name": "Ankle Breaker", "group": "Playmaking", "stat": "ankles", "tiers": (3, 12, 30, 70), "desc": "Dribble moves drop defenders more often."},
-    "dimer": {"name": "Dimer", "group": "Playmaking", "stat": "ast", "tiers": (13, 40, 100, 210), "desc": "Teammates shoot better off your passes."},  # (v0.4.8.5: every tier halved, was 25/80/200/420)
+    "dimer": {"name": "Dimer", "group": "Playmaking", "stat": "ast", "tiers": (9, 28, 70, 147), "desc": "Teammates shoot better off your passes."},  # (v0.4.8.5: every tier halved, was 25/80/200/420; qp9: every tier 30% lower again, was 13/40/100/210)
     "handles_for_days": {"name": "Handles for Days", "group": "Playmaking", "stat": "games", "tiers": (10, 30, 80, 115), "desc": "Dribble moves cost less stamina."},  # (v0.4.8: Hall of Fame at 115, was 160)
     "pick_pocket": {"name": "Pick Pocket", "group": "Defense", "stat": "stl", "tiers": (15, 50, 120, 250), "desc": "Better steal odds and faster reach recovery."},
     "interceptor": {"name": "Interceptor", "group": "Defense", "stat": "stl", "tiers": (20, 60, 150, 300), "desc": "Deflect and pick off more passes."},
     "rim_protector": {"name": "Rim Protector", "group": "Defense", "stat": "blk", "tiers": (7, 23, 59, 130), "desc": "More blocks at the rim."},  # (v0.4.8.5: every tier 35% lower, was 10/35/90/200)
     "chasedown": {"name": "Chase-Down Artist", "group": "Defense", "stat": "blk", "tiers": (8, 25, 60, 125), "desc": "Blocks from behind on breakaways."},  # (v0.4.8.5: every tier halved, was 15/50/120/250)
     # v0.4.8.5: Brick Wall levels up from successful screens set (screens that catch the defender), not games played
-    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "screens", "tiers": (25, 90, 220, 450), "desc": "Screens and bumps hit harder."},
+    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "screens", "tiers": (18, 63, 154, 315), "desc": "Screens and bumps hit harder."},  # (v0.4.8.5 qp9: every tier 30% lower, was 25/90/220/450)
     "rebound_chaser": {"name": "Rebound Chaser", "group": "Rebounding", "stat": "reb", "tiers": (16, 56, 140, 280), "desc": "Track down more boards."},  # (v0.4.8.5: every tier 60% lower, was 40/140/350/700)
 }
 

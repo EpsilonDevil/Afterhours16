@@ -99,6 +99,7 @@ export class Player {
     this.action = null;
     this.stance = 'normal';
     this.handsUp = false;
+    this.contestHand = null; // (v0.4.8.5 qp9: 'L' / 'R' while the guard stance's auto-contest has a hand up: Game.autoContest)
     this.sprinting = false;
     this.dribble = { hand: this.hand, phase: 0, live: true, used: false };
     this.cool = { steal: 0, block: 0, move: 0, pass: 0, call: 0 };

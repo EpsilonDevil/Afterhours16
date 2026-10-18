@@ -503,6 +503,13 @@ export class Animator {
     if (screenK) { set3(T, 'handL', -0.07, 1.02, 0.2); set3(T, 'handR', 0.07, 0.98, 0.23); set3(T, 'elbowL', 0.6, -0.5, -0.1); set3(T, 'elbowR', -0.6, -0.5, -0.1); }
     // (v0.4.7.5: hands up stays alive: a little reach and sway, one hand a touch higher, elbows soft)
     if (p.handsUp && !a) { const hw = Math.sin(this.time * 4 + p.id); set3(T, 'handL', 0.22 + 0.03 * hw, 2.2 + 0.04 * hw, 0.22); set3(T, 'handR', -0.2 + 0.03 * hw, 2.28 - 0.04 * hw, 0.24); set3(T, 'elbowL', 0.7, -0.1, -0.5); set3(T, 'elbowR', -0.7, -0.1, -0.5); }
+    // (v0.4.8.5 qp9: the guard stance's auto-contest: one hand straight up and out toward the shooter's ball, the other
+    // low and wide for balance, eased in so it rises rather than snaps)
+    else if (p.contestHand && !a) {
+      const hd = p.contestHand, od = hd === 'L' ? 'R' : 'L', sg = hd === 'L' ? 1 : -1;
+      set3(T, 'hand' + hd, sg * 0.12, 2.34, 0.36); set3(T, 'elbow' + hd, sg * 0.6, -0.1, -0.4);
+      set3(T, 'hand' + od, -sg * 0.62, 1.1, 0.18); set3(T, 'elbow' + od, -sg * 0.9, -0.4, -0.3);
+    }
     else if (p.handsSide && !a) {
       // v0.4.4: a hand out on one side (right stick held left/right on defense)
       const c0 = Math.cos(this.f), s0 = Math.sin(this.f), lxs = p.handsSide.x * c0 - p.handsSide.z * s0;

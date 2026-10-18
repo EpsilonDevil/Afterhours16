@@ -37,17 +37,18 @@ class BadgeTableTests(unittest.TestCase):
     def test_the_new_requirements(self):
         T = {k: v["tiers"] for k, v in progression.BADGES.items()}
         # every tier: Dimer and Chase-Down halved, Rim Protector 35% lower, Rebound Chaser 60% lower (rounded half up)
-        for bid, k in (("dimer", 0.5), ("chasedown", 0.5), ("rim_protector", 0.65), ("rebound_chaser", 0.4)):
+        # (qp9: Dimer 30% lower again, from 13/40/100/210, and Brick Wall 30% lower: tests the qp9 table below)
+        for bid, k in (("dimer", 0.35), ("chasedown", 0.5), ("rim_protector", 0.65), ("rebound_chaser", 0.4)):
             self.assertEqual(T[bid], tuple(jsround(t * k) for t in OLD[bid]), bid)
         # Acrobat and Contact Finisher: Gold and Hall of Fame 40% lower, Bronze and Silver as they were
         for bid in ("acrobat", "contact_finisher"):
             o = OLD[bid]
             self.assertEqual(T[bid], (o[0], o[1], jsround(o[2] * 0.6), jsround(o[3] * 0.6)), bid)
             self.assertTrue(T[bid][1] < T[bid][2] < T[bid][3])
-        self.assertEqual((T["dimer"], T["chasedown"], T["rim_protector"], T["rebound_chaser"]), ((13, 40, 100, 210), (8, 25, 60, 125), (7, 23, 59, 130), (16, 56, 140, 280)))
+        self.assertEqual((T["dimer"], T["chasedown"], T["rim_protector"], T["rebound_chaser"]), ((9, 28, 70, 147), (8, 25, 60, 125), (7, 23, 59, 130), (16, 56, 140, 280)))
         # Brick Wall: successful screens, not games
         bw = progression.BADGES["brick_wall"]
-        self.assertEqual((bw["stat"], bw["tiers"]), ("screens", (25, 90, 220, 450)))
+        self.assertEqual((bw["stat"], bw["tiers"]), ("screens", (18, 63, 154, 315)))
         self.assertIn("screens", progression.STAT_KEYS)
         for b in progression.BADGES.values():
             self.assertEqual(list(b["tiers"]), sorted(b["tiers"]))
@@ -70,8 +71,8 @@ class BadgeTableTests(unittest.TestCase):
         for o, n in zip(old, new):
             self.assertEqual(progression.convert_progress(o, old, new), n)  # a tier's mark is the new tier's mark
         self.assertEqual(progression.convert_progress(0, old, new), 0)
-        self.assertEqual(progression.convert_progress(5, old, new), 12)  # half way to Bronze
-        self.assertEqual(progression.convert_progress(170, old, new), 424)  # 80/90 of the way from Gold to Hall of Fame
+        self.assertEqual(progression.convert_progress(5, old, new), 9)  # half way to Bronze (qp9: Bronze is 18 screens, was 25)
+        self.assertEqual(progression.convert_progress(170, old, new), 297)  # 80/90 of the way from Gold to Hall of Fame (qp9: was 424)
         vals = [progression.convert_progress(p, old, new) for p in range(0, 400)]
         self.assertEqual(vals, sorted(vals))
 
@@ -112,10 +113,10 @@ class SyncTests(unittest.TestCase):
     def test_brick_wall_moves_to_screens_once_and_keeps_its_tier(self):
         ch = char_for("lockdown", height=78, games=170, badges={"brick_wall": {"progress": 170, "tier": 3}})
         progression.sync_badges(ch)
-        self.assertEqual(ch["badges"]["brick_wall"], {"progress": 424, "tier": 3})
+        self.assertEqual(ch["badges"]["brick_wall"], {"progress": 297, "tier": 3})  # (qp9: the lower tiers, was 424)
         self.assertTrue(ch["badges_v0485"])
         progression.sync_badges(ch)
-        self.assertEqual(ch["badges"]["brick_wall"]["progress"], 424)  # (once)
+        self.assertEqual(ch["badges"]["brick_wall"]["progress"], 297)  # (once)
         # a tier is never taken away, even if the converted progress is short of it
         ch2 = char_for("lockdown", height=78, badges={"brick_wall": {"progress": 3, "tier": 2}})
         progression.sync_badges(ch2)

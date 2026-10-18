@@ -69,6 +69,12 @@ export function repeatMoveK(run) {
 // v0.4.7.5 quick patch, reach-in fouls by contact (Game.reachContact): how far the hand goes (m), how close counts as
 // touching (m), and how often a reach into the handler's body or arm (not the ball first) is called
 export const REACH_FOUL = { len: 0.68, touch: 0.07, body: 0.8 };
+// v0.4.8.5 qp9: the guard stance's auto-contest (Game.autoContest). deadzone: the stick counts as untouched below this;
+// front: how far round the side he can be and still count as in front (the cosine to the shooter's line to the rim,
+// as the contest itself scores it: above -0.1 is a side-on or better contest); push: how hard the stick is pushed for
+// him (0..1 of his slide speed: gentle); stop: how close he steps in (m, centre to centre); follow: how long the hand
+// stays up after the release (s of ball flight)
+export const AUTO_CONTEST = { deadzone: 0.15, front: -0.1, push: 0.55, stop: 0.9, follow: 0.35 };
 // v0.4.7.5 qp3: the rule book. Every mode: offensive three seconds in the lane (`three`; a man driving, shooting or
 // in the air is exempt, and the count resets when a shot goes up), reach-in and shooting fouls (the park plays them
 // streetball style: no free throws, the offense keeps the ball — `parkFoulK` scales how often they're called there;
@@ -913,6 +919,42 @@ export class Game {
   // ---------- intents → actions ----------
   canAct(p) { return !p.action || p.action.type === 'catch' || p.action.type === 'celebrate'; }
 
+  // v0.4.8.5 qp9: the guard stance's auto-contest (your defender only). Holding the guard stance (L2 / LT) with nothing
+  // else pressed (stick centred, no hands, no jump, no steal) and in position when your man goes up (within contest
+  // range, not trailing behind him), a hand goes up by itself and he steps in toward the shooter, at a gentle pace, until
+  // the shot is off. Whether he was in range is decided once, when the shot starts: a defender out of range gets
+  // nothing, so it never closes out for you, and any input of yours takes over at once. No jump: blocks stay yours.
+  autoContest(p, it, has) {
+    p.contestHand = null;
+    if (has || !p.human || this.assist || p.stance !== 'defense' || this.phase !== 'live' || p.airborne || !this.canAct(p)) { p.autoC = null; return; }
+    const quiet = Math.hypot(it.mx || 0, it.mz || 0) < AUTO_CONTEST.deadzone && !it.handsUp && !it.handsSide && !it.jump && !it.steal && !it.shoot;
+    const h = this.holder(), a = h && h.team !== p.team ? h.action : null;
+    const live = a && (a.type === 'shoot' || a.type === 'layup') && !a.released ? a : null;
+    if (live && (!p.autoC || p.autoC.a !== live)) {
+      // (the moment he goes up: in range and in front, or not at all for this shot)
+      const rim = this.rimFor(h.team), fx = rim.x - h.x, fz = rim.z - h.z, fl = Math.hypot(fx, fz) || 1;
+      const dx = p.x - h.x, dz = p.z - h.z, d = Math.hypot(dx, dz) || 1e-6;
+      const pw = S.paintWeight(fl), range = (2.0 + pw * 0.3 * n(p.ratings.interior_d)) * DEF_K;
+      const front = (dx * fx + dz * fz) / (fl * d);
+      // (the hand that goes up: the one facing his shooting hand)
+      const lefty = h.entry?.build?.hand === 'L';
+      p.autoC = { a: live, shooter: h.id, ok: d <= range && front > AUTO_CONTEST.front, hand: lefty ? 'R' : 'L' };
+    }
+    const c = p.autoC;
+    if (!c || !c.ok || !quiet) return;
+    if (live && live === c.a) {
+      p.contestHand = c.hand;
+      // step in toward him, stopping a stride short of his body (a gentle push on the stick, never a sprint)
+      const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz);
+      if (d > AUTO_CONTEST.stop) { const k = AUTO_CONTEST.push * Math.min(1, (d - AUTO_CONTEST.stop) / 0.25); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = false; }
+      return;
+    }
+    // (the follow-through: the hand stays up a moment after the ball is out)
+    const b = this.ball;
+    if (b.mode === 'flight' && b.kind === 'shot' && b.info?.shooter === c.shooter && b.flightTime < AUTO_CONTEST.follow) p.contestHand = c.hand;
+    else p.autoC = null;
+  }
+
   applyIntent(p, dt) {
     const it = p.intent;
     const b = this.ball;
@@ -946,6 +988,7 @@ export class Game {
         if (tl > 0.12) { const k = Math.min(1, tl / 0.6) * 0.3; it.mx = it.mx * (1 - k) + tx / tl * k; it.mz = it.mz * (1 - k) + tz / tl * k; }
       }
     }
+    this.autoContest(p, it, has);
     // v0.4.7.5 qp3 post moves: the post-up trigger held with the ball (post.js). Back to the basket, the stick backs
     // the man down, the right stick calls the moves, the shot button shoots out of the post
     if (has && it.post && !p.airborne && this.phase === 'live' && (!p.action || p.action.type === 'post' || p.action.type === 'catch')) this.postUp(p, it, dt);

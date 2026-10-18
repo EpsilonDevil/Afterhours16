@@ -465,7 +465,7 @@ export function contestRaw(shooter, defenders, rim, releaseH) {
     const ang = front > 0.35 ? 1 : front > -0.1 ? 0.55 : 0.18 + pw * 0.22 * n(d.ratings.block);
     const prox = Math.max(0, Math.min(1, ((2.0 + pw * 0.3 * n(d.ratings.interior_d)) * DEF_K - dist) / 1.45));
     // v0.4.5: hands up on a shot puts 3.75% more pressure on it
-    const up = d.handsUp || d.action?.type === 'contest' || d.action?.type === 'block';
+    const up = d.handsUp || !!d.contestHand || d.action?.type === 'contest' || d.action?.type === 'block'; // (qp9: the guard stance's auto-contest hand counts as a hand up)
     const reach = d.phys.reach + (d.y || 0) + (up ? 0.12 * DEF_K : -0.35);
     // height and length count for more around the rim. v0.4.7.5 quick patch: and a release up over the defender's
     // reach counts for more out on the floor too (0.9 per metre, was 0.7): a high release over a shorter or later

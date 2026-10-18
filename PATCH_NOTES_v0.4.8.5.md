@@ -507,6 +507,35 @@ The AI in your world keep playing whether you're there or not, and now they unlo
   - In 30 test games at the park's foul rate, 11 of 26 and-one calls had no foul before the fix. After it, every call was a real foul and the fouled team kept the ball every time.
 - **Also fixed:** a missed dunk or layup that was fouled while the ball was still in his hands is now called like a missed jumper: the ball in the park, free throws in Pro-Am. It used to go uncalled.
 
+
 ---
 
-*(Tests: 177 Python and 445 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games; a park full of AI in their unlocks and an AI Icon's phone profile, with every AI entry checked unchanged for three worlds where nothing is unlocked; MyPlayer's Players tab at 4, 5 and 8 slots, the creator at the cap and a real game that opens slot 6; and three AI 99 ICON kings on a court with their cursors and auras, an ICON's phone profile, the Delete screen mid-hold with a controller, the keyboard and the mouse, the refusal during a game, a deleted ICON's kept slot, the creator after the last build, and a results screen counting down from 30.)*
+## Quick patch 9 (Oct 18): Dimer and Brick Wall need 30% less, and the guard stance contests for you
+
+### Dimer and Brick Wall need 30% less
+
+Every tier of **Dimer** and **Brick Wall** now needs 30% less (rounded to the nearest whole number):
+
+| Badge | Counts | Bronze | Silver | Gold | Hall of Fame |
+|---|---|---|---|---|---|
+| Dimer | assists | 9 (was 13) | 28 (was 40) | 70 (was 100) | 147 (was 210) |
+| Brick Wall | successful screens | 18 (was 25) | 63 (was 90) | 154 (was 220) | 315 (was 450) |
+
+- **Progress you've already made counts.** A badge whose progress already meets a new mark moves up the moment you log in, not a game later. Your build's badge caps and the Hall of Fame limit apply as usual.
+
+### The guard stance contests for you
+Hold the guard stance (**L2 / LT**) and press nothing else. If the man you're on goes up for a shot while you're in position, your player contests it by himself:
+- **A hand goes up**, straight up on the side of the shooter's shooting hand. It counts as a hand up in the contest, the same as putting your hands up yourself.
+- **He steps in toward the shooter** until the ball is out, at a gentle pace (about half your slide speed), stopping a stride short of his body.
+  - From 2 m away, he closes about 0.7 m before the release. Pushing the stick at the shooter yourself covers about 1.5 m.
+- **Only when you're already in position.** You need to be within contest range and not trailing behind the shooter when he goes up. That's decided the moment the shot starts:
+  - from further away you get nothing, even if you walk in during the shot, so it never closes out for you;
+  - from behind him you get nothing either.
+- **Your input always wins.** Moving the stick, using the hands on the right stick, jumping or going for a steal turns it off for that moment.
+- **It never jumps for you.** Blocks are still yours to time.
+- **How much it helps** (on a jumper from the top of the key): from 1.2 m the contest goes from 0.21 to 0.57; from 2 m, from 0.02 to 0.42. That's a solid contest, short of a well-timed jump.
+- **Who it works for:** the defender you control, in every mode. It never applies to the AI, and online everyone's game sees the same contest.
+
+---
+
+*(Tests: 179 Python and 450 node tests, plus browser checks of every park, the Pro-Am rank card and results, the Park screen's locks, the Inventory's locks, the Sharp Eye hop and pop-up, an off-ball screen in a Pro-Am game and the results countdown. For the quick patches: each event park in every direction, its events and streak effect; the rewards on a player and in a game, with the green sounds measured against the other green sounds; each schedule handover, the event soundtracks and the store labels; the ICON cursor and aura at every level in the park, a park game and practice, day and night; every Open Arms snag in the showroom and in games; the Sharp Eye release frame by frame against the old hop; a live event handover with the game left running; and every new Icon animation frame by frame in the showroom and at the game camera, with Big Brother's hand-to-ball measured over 40 games; a park full of AI in their unlocks and an AI Icon's phone profile, with every AI entry checked unchanged for three worlds where nothing is unlocked; MyPlayer's Players tab at 4, 5 and 8 slots, the creator at the cap and a real game that opens slot 6; and three AI 99 ICON kings on a court with their cursors and auras, an ICON's phone profile, the Delete screen mid-hold with a controller, the keyboard and the mouse, the refusal during a game, a deleted ICON's kept slot, the creator after the last build, and a results screen counting down from 30.)*
