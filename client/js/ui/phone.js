@@ -8,6 +8,7 @@ import { ICON_BADGES } from '../sim/badges.js';
 import { PARK_NAMES } from '../sim/world.js';
 import * as Crew from './crew.js';
 import * as Online from './online.js';
+import * as Squad from './squadwatch.js';
 
 // (v0.4.7.5 qp3: Online = real people on the hosted game: your friends there, your squad, your online crew)
 const TABS = [['park', 'Park'], ['friends', 'Friends'], ['squad', 'Squad'], ['crew', 'Crew'], ['recent', 'Recent'], ['online', 'Online']];
@@ -50,10 +51,11 @@ export function openPhone(app, opts = {}) {
     if (w.isFriend(id)) return statusOf(id).online && w.squad.length < 4 && !busy(id) ? `<button class="ph-act inv" data-invite="${id}">Invite</button>` : `<button class="ph-act fr" data-who="${id}">${busy(id) ? 'In a game' : 'Friend'}</button>`;
     return `<button class="ph-act add" data-add="${id}">+ Add</button>`;
   };
+  // (v0.4.8.6 qp: a member of the ICON squad that's on has the purple ICON SQUAD chip by his name)
   const row = (id, line, dot = null) => {
     const e = w.entry(id);
     const on = dot ?? statusOf(id).online;
-    return `<div class="ph-row"><button class="ph-main" data-who="${id}">${circle(e)}<span class="ph-who"><b>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}</b><small>${sub(e)}</small><em>${esc(line)}</em></span><i class="ph-dot ${on ? 'on' : ''}"></i></button>${action(id)}</div>`;
+    return `<div class="ph-row"><button class="ph-main" data-who="${id}">${circle(e)}<span class="ph-who"><b>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}${Squad.inSquadNow(app, id) ? ' ' + Squad.SQUAD_CHIP : ''}</b><small>${sub(e)}</small><em>${esc(line)}</em></span><i class="ph-dot ${on ? 'on' : ''}"></i></button>${action(id)}</div>`;
   };
 
   function listPark() {
@@ -94,7 +96,8 @@ export function openPhone(app, opts = {}) {
   function listRecent() {
     const rec = w.recent(40);
     if (!rec.length) return '<p class="ph-empty">Play a park or Pro-Am game and everyone you ran with or against shows up here.</p>';
-    return `<div class="ph-sec">Played with lately</div>${rec.map(m => row(m.id, `${m.games} game${m.games > 1 ? 's' : ''} · ${m.with ? `${m.with} with (${m.wins}-${m.with - m.wins})` : ''}${m.with && m.vs ? ', ' : ''}${m.vs ? `${m.vs} against` : ''} · ${ago(m.last)}`)).join('')}`;
+    // (v0.4.8.6 qp: while one of them is out with the ICON squad, his row says that instead of your history together)
+    return `<div class="ph-sec">Played with lately</div>${rec.map(m => row(m.id, Squad.inSquadNow(app, m.id) ? statusOf(m.id).text : `${m.games} game${m.games > 1 ? 's' : ''} · ${m.with ? `${m.with} with (${m.wins}-${m.with - m.wins})` : ''}${m.with && m.vs ? ', ' : ''}${m.vs ? `${m.vs} against` : ''} · ${ago(m.last)}`)).join('')}`;
   }
   // v0.4.5 Crews: your crew at a glance (level, who's on), and the way into the crew menu
   function listCrew() {
@@ -134,7 +137,7 @@ export function openPhone(app, opts = {}) {
     const badges = Object.entries(capBadges(e.badges || {}, e.build)).sort((x, y) => y[1] - x[1]);
     const cfg = app.config?.badges || {};
     return `<button class="ph-back" data-back>‹ Back</button>
-      <div class="ph-prof">${circle(e, true)}<h3>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}</h3><div class="ph-tier t-${e.tier}">${esc(e.tierLabel)} · ${esc(e.rep.label)}</div>
+      <div class="ph-prof">${circle(e, true)}<h3>${esc(e.name)}${w.isFriend(id) ? ' <i class="ph-star">★</i>' : ''}${Squad.inSquadNow(app, id) ? ' ' + Squad.SQUAD_CHIP : ''}</h3><div class="ph-tier t-${e.tier}">${esc(e.tierLabel)} · ${esc(e.rep.label)}</div>
         <div class="ph-facts">
           <div><span>Build</span><b>${archHTML(e.build)} ${esc(e.build.position)} · ${heightStr(e.build.height)} · ${e.build.weight} lbs</b></div>
           <div><span>Status</span><b class="${s.online ? 'ok' : ''}">${esc(s.text)}</b></div>

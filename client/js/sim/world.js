@@ -7,8 +7,9 @@
 import { RNG, hashString } from '../core/rng.js';
 import { makeBot, wearUnlocked, BADGE_POOL } from './bots.js';
 import { ICON_FOR_ARCH } from './badges.js';
-import { capBadges, badgeCaps, caps, overall, iconNeed, buildFit, legendRaise, BADGE_IDS, OVR_CAP, BASE_OVR_CAP, PRORUN_GAMES_PER_OVR,
+import { capBadges, badgeCaps, caps, overall, iconNeed, buildFit, legendRaise, iconStatus, BADGE_IDS, OVR_CAP, BASE_OVR_CAP, PRORUN_GAMES_PER_OVR,
   CAP_BREAKERS_PER_HOF, CAP_BREAKER_HOF_LIMIT, LEGEND_GAMES_PER_OVR } from './builds.js';
+import { squadWindowAt, nextSquadWindow, pickTrio, squadOutfit, setSquadClock, FIT_SLOTS } from './iconsquad.js';
 
 export const POOL_SIZE = 900;
 export const PARKS = ['harbor', 'brick', 'foundry'];
@@ -70,6 +71,7 @@ const NONE = Object.freeze([]);
 
 const shareOf = (list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
 const fmtHour = h => { h = ((h % 24) + 24) % 24; const hh = Math.floor(h), mm = Math.round((h - hh) * 4) * 15; const H = hh % 12 || 12; return `${H}${mm ? ':' + String(mm % 60).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`; };
+const fmtClock = t => { const d = new Date(t), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
 // local midnight-based day number (so schedules follow the player's clock)
 const dayIndex = t => { const d = new Date(t); return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY); };
 const localHour = t => { const d = new Date(t); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; };
@@ -145,6 +147,8 @@ export class AIWorld {
     this.wheel = new Map();
     this.prizes = {};
     this.unlockVer = 0; this.unlockSig = '{}'; this.unlockThrough = null; this.unlockAsked = 0; this.unlockOk = false;
+    this.squads = new Map(); // (v0.4.8.6: window k → its ICON Squad, or null: none that time)
+    this.preparing = null; this.squadAsync = typeof window !== 'undefined' && typeof setTimeout === 'function';
   }
 
   toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met, prog: this.prog, ...(this.exSquad ? { exSquad: this.exSquad } : {}) }; }
@@ -192,8 +196,8 @@ export class AIWorld {
   // to 99 (max OVR, cap breakers, the legend floor, a badge set, the Icon badge): climb()
   entry(id, t = Date.now()) {
     const gk = Math.round(this.growth(id, t) * 400);
-    const L = this.ladder(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE;
-    const key = `${gk}|${L ? `${L.h}:${L.pr}` : '-'}|${wheel.owned.length}|${this.unlockVer}`;
+    const L = this.ladder(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE, sq = this.squadKnown(id, t); // (only a squad already picked: an entry never sets a pick off)
+    const key = `${gk}|${L ? `${L.h}:${L.pr}` : '-'}|${wheel.owned.length}|${this.unlockVer}|${sq ? sq.k : '-'}`;
     let e = this.full.get(id);
     if (e && e.key === key) return e;
     const a = this.account(id);
@@ -207,9 +211,12 @@ export class AIWorld {
     if (L) climb(bot, L);
     const ic = bot.build.icon_badge || null;
     if (ic || wheel.owned.length || prizes.length) wearUnlocked(bot.build, [...wheel.owned, ...prizes], this.catalog, this.rng(id, 'wear'), flash, a.rep);
+    // (v0.4.8.6: for his ICON Squad's hour, the squad's outfit: sim/iconsquad.js squadOutfit)
+    if (sq) { const eq = bot.build.equipment = { ...bot.build.equipment }; for (const slot of FIT_SLOTS) { if (sq.outfit[slot]) eq[slot] = sq.outfit[slot]; else delete eq[slot]; } }
     e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, key, games: this.prog[id]?.g || 0 };
     if (ic || wheel.owned.length || prizes.length) e.unlocked = { icon: ic, wheel: wheel.owned.slice(), prizes: [...prizes] };
     if (L) e.climb = { hof: L.h, proRun: L.pr, legend: bot.build.legend.upgrades };
+    if (sq) e.iconSquad = sq.k;
     e.build.rep = e.rep;
     this.full.set(id, e);
     return e;
@@ -263,6 +270,64 @@ export class AIWorld {
   }
   // has he unlocked his Icon badge (his 7th Hall of Fame badge) by time t? (ICON status is iconStatus(entry.build): 99)
   hasIcon(id, t = Date.now()) { return !!this.ladder(id, t)?.icon; }
+  // ---------- v0.4.8.6 quick patch: the ICON Squad (sim/iconsquad.js) ----------
+  // the squad on now: {k, park, start, end, ids (guard to big), leader, roles ('handler', 'wing', 'big'), outfit, fit}, or null (no window on,
+  // or this world doesn't have three ICONs yet). Chosen once per window, as of its start. In the game the pick runs a
+  // slice at a time off the frame (prepareSquad: going through a year-old world's ICONs takes 0.1-0.4 s), started a few
+  // minutes early by initWorld's timer, so the squad is ready when its hour begins (if the game opens mid-hour, they
+  // show up a second or two after it loads); squadAsync false (Node, the tests) picks at once
+  iconSquad(t = Date.now()) {
+    const w = squadWindowAt(t);
+    if (!w) return null;
+    if (this.squads.has(w.k)) return this.squads.get(w.k);
+    if (this.squadAsync) { this.prepareSquad(w); return null; }
+    this.squads.set(w.k, null); // (while it's being picked: entries built for it are nobody's squad yet)
+    this.keepSquad(w.k, this.pickSquad(w));
+    return this.squads.get(w.k);
+  }
+  keepSquad(k, s) { this.squads.set(k, s); while (this.squads.size > 6) this.squads.delete(this.squads.keys().next().value); return s; }
+  // pick window w's squad a slice (sliceMs) at a time, yielding to the frame in between. Resolves to the squad (or null)
+  prepareSquad(w, sliceMs = 4) {
+    if (!w) return Promise.resolve(null);
+    if (this.squads.has(w.k) && this.preparing?.k !== w.k) return Promise.resolve(this.squads.get(w.k));
+    if (this.preparing?.k === w.k) return this.preparing.p;
+    const run = async () => {
+      const pause = () => new Promise(r => setTimeout(r, 0)), now = () => (globalThis.performance ? performance.now() : Date.now());
+      let t0 = now();
+      for (let i = 0; i < POOL_SIZE; i++) {
+        const id = 'ai-' + i, a = this.account(id);
+        if (AI_LADDER.full90[a.tier.id] && this.potential(id) >= AI_LADDER.icon && this.hasIcon(id, w.start)) this.entry(id, w.start);
+        if (now() - t0 > sliceMs) { await pause(); t0 = now(); }
+      }
+      this.squads.set(w.k, null);
+      return this.keepSquad(w.k, this.pickSquad(w)); // (everything it needs is built now: a few ms)
+    };
+    const p = run().catch(e => { console.warn('ICON Squad not picked', e?.message || e); return this.keepSquad(w.k, null); }).finally(() => { if (this.preparing?.k === w.k) this.preparing = null; });
+    this.preparing = { k: w.k, p };
+    return p;
+  }
+  squadOf(id, t = Date.now()) { const s = this.iconSquad(t); return s && s.ids.includes(id) ? s : null; }
+  squadKnown(id, t = Date.now()) { const w = squadWindowAt(t), s = w && this.squads.get(w.k); return s && s.ids.includes(id) ? s : null; }
+  // this world's ICONs at time t (99 OVR, every badge done, every cap breaker in: iconStatus, as for you), as
+  // {id, position, archetype}. Only an AI with the potential for the whole climb can be one (AI_LADDER.icon)
+  iconPool(t = Date.now()) {
+    const out = [];
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const id = 'ai-' + i, a = this.account(id);
+      if (!AI_LADDER.full90[a.tier.id] || this.potential(id) < AI_LADDER.icon || !this.hasIcon(id, t)) continue;
+      const e = this.entry(id, t);
+      if (iconStatus(e.build)) out.push({ id, position: e.build.position, archetype: e.build.archetype });
+    }
+    return out;
+  }
+  pickSquad(w) {
+    const t = w.start, trio = pickTrio(this.iconPool(t), w.k);
+    if (!trio) return null;
+    const order = [trio.leader, ...trio.ids.filter(x => x !== trio.leader)];
+    const members = order.map(id => { const e = this.entry(id, t); return { id, build: e.build, owned: [...(e.unlocked?.wheel || []), ...(e.unlocked?.prizes || [])] }; });
+    return Object.freeze({ k: w.k, park: w.park, start: w.start, end: w.end, ids: Object.freeze(trio.ids), leader: trio.leader, roles: Object.freeze(trio.roles),
+      outfit: Object.freeze(squadOutfit(members, this.catalog, w.k)), fit: trio.fit });
+  }
   // the wheel's exclusives of a kind ('gear' or 'anim'), as server/progression.py spin_wheel lists them (sorted ids)
   wheelPool(kind) {
     const k = '_wheel_' + kind;
@@ -322,7 +387,7 @@ export class AIWorld {
   aiParty(t = Date.now()) {
     const x = this.exSquad;
     if (!x || t - x.at > 6 * 3600000) return [];
-    return x.ids.filter(id => (hashString(id + '|party|' + x.at) % 100) < 60 && this.online(id, t));
+    return x.ids.filter(id => (hashString(id + '|party|' + x.at) % 100) < 60 && this.online(id, t) && !this.squadOf(id, t));
   }
   // v0.4.7.5: closing the game leaves the squad. Called once when the game starts up: last time's squad breaks up.
   leaveSquadOnStart(t = Date.now()) {
@@ -370,6 +435,9 @@ export class AIWorld {
   }
   // where is this account right now? → {park, until} or null when offline
   status(id, t = Date.now()) {
+    // (v0.4.8.6: for his ICON Squad's hour he's at the squad's park, whatever else he'd be doing)
+    const sq = this.squadOf(id, t);
+    if (sq) return { park: sq.park, until: sq.end, iconSquad: sq.k };
     const x = this.extra.get(id);
     if (x && x.until > t) return x;
     const d = dayIndex(t);
@@ -400,8 +468,8 @@ export class AIWorld {
     const s = this.status(id, t);
     if (s) {
       const left = (s.until - t) / 3600000;
-      const at = s.park === here ? 'at this park' : `at ${PARK_NAMES[s.park] || s.park}`;
-      return { online: true, park: s.park, text: `Online ${at} · on for ${left < 1 ? Math.max(5, Math.round(left * 12) * 5) + ' more min' : 'about ' + Math.round(left) + ' more hr'}` };
+      const at = (s.park === here ? 'at this park' : `at ${PARK_NAMES[s.park] || s.park}`) + (s.iconSquad != null ? ' with his ICON squad' : '');
+      return { online: true, park: s.park, ...(s.iconSquad != null ? { iconSquad: s.iconSquad } : {}), text: `Online ${at} · on for ${left < 1 ? Math.max(5, Math.round(left * 12) * 5) + ' more min' : 'about ' + Math.round(left) + ' more hr'}` };
     }
     const nx = this.nextOnline(id, t);
     if (!nx) return { online: false, text: 'Offline' };
@@ -441,6 +509,7 @@ export class AIWorld {
       if (exclude.has(id)) continue;
       const a = this.account(id);
       if (position && a.position !== position) continue;
+      if (online && this.squadOf(id, t)) continue; // (v0.4.8.6: busy with his ICON Squad)
       let v = Math.abs(a.level - level) * 4 + (hashString(id + '#' + key) % 1000) / 1000 * 0.7;
       if (online && !this.online(id, t)) v += 3;
       if (v < bv) { bv = v; best = id; }
@@ -457,6 +526,7 @@ export class AIWorld {
   // in ~6-minute blocks, the same answer for everyone asking during that block)
   playingElsewhere(id, t = Date.now()) {
     if (!this.online(id, t)) return false;
+    if (this.squadOf(id, t)) return true; // (v0.4.8.6: his ICON Squad runs the whole hour)
     return (hashString(id + '@' + Math.floor(t / 360000) + '|' + this.seed) % 100) < 45;
   }
   // v0.4.5: you can only pull someone into your squad when he's online and not in a game. `playing` comes from
@@ -466,6 +536,8 @@ export class AIWorld {
     if (!this.isFriend(id)) return { ok: false, msg: 'Add him as a friend first.' };
     if (this.squad.length >= 4) return { ok: false, msg: 'Your squad is full (4 + you).' };
     if (!this.online(id, t)) return { ok: false, msg: `${this.entry(id).name} is offline.` };
+    const sq = this.squadOf(id, t);
+    if (sq) return { ok: false, msg: `${this.entry(id).name} is running with his ICON squad at ${PARK_NAMES[sq.park] || sq.park} until ${fmtClock(sq.end)}.` };
     if (playing ?? this.playingElsewhere(id, t)) return { ok: false, msg: `${this.entry(id).name} is in a game right now. Try again when it's over.` };
     this.squad.push(id); this.changed();
     return { ok: true, msg: `${this.entry(id).name} joined your squad.` };
@@ -473,7 +545,7 @@ export class AIWorld {
   kick(id) { this.squad = this.squad.filter(x => x !== id); this.changed(); }
   // squad members who are online right now (offline ones drop out of the squad)
   activeSquad(t = Date.now()) {
-    const keep = this.squad.filter(id => this.online(id, t));
+    const keep = this.squad.filter(id => this.online(id, t) && !this.squadOf(id, t)); // (v0.4.8.6: and not off with his ICON Squad)
     if (keep.length !== this.squad.length) { this.squad = keep; this.changed(); }
     return keep;
   }
@@ -515,7 +587,7 @@ export function setEventSchedule(rows, serverNow = null) {
     venue: EVENT_PARKS.has(r.venue) ? r.venue : null, // (an event this copy of the game doesn't know: nobody goes)
     from: Number.isFinite(r.from) ? r.from * 1000 : -Infinity, until: Number.isFinite(r.until) ? r.until * 1000 : Infinity,
   }));
-  if (Number.isFinite(serverNow)) { const k = serverNow * 1000 - Date.now(); CLOCK_SKEW = Math.abs(k) < 6 * 3600000 ? k : 0; }
+  if (Number.isFinite(serverNow)) { const k = serverNow * 1000 - Date.now(); CLOCK_SKEW = Math.abs(k) < 6 * 3600000 ? k : 0; setSquadClock(CLOCK_SKEW); }
   EVENT_VENUE = eventVenueAt(Date.now());
   return true;
 }
@@ -558,6 +630,14 @@ export function initWorld(app) {
   w.onChange(save);
   if (w.dirty) save();
   refreshUnlocks(app, w); // (v0.4.8.5 qp7: what the AI field has won in the events; ui/events.js asks again as windows close)
+  // (v0.4.8.6: the ICON Squad is picked a few minutes before its hour, off the frame, so it's ready on time)
+  const watch = () => {
+    if (app.ai !== w) return; // (another account signed in: its own world watches)
+    const t = Date.now(), on = squadWindowAt(t), nx = nextSquadWindow(t);
+    if (on) w.prepareSquad(on); else if (nx && nx.start - t < 4 * 60000) w.prepareSquad(nx);
+    setTimeout(watch, 60000);
+  };
+  setTimeout(watch, 1500);
   return w;
 }
 // v0.4.8.5 qp7: the AI world's event prizes, from the server (it alone knows the final standings)

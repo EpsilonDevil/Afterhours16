@@ -204,6 +204,20 @@ select { background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(
 .aff-grid.small .aff { min-height: 110px; padding: 14px; } .aff.home { box-shadow: 0 0 0 2px var(--accent); }
 /* v0.4.8.5: other parks stay locked until Pro 1 */
 .aff.locked { filter: grayscale(.75) brightness(.7); cursor: not-allowed; } .aff.locked:hover { transform: none; }
+/* v0.4.8.6 qp: the ICON Squad event, in the ICON purple: the park they're at (its tag, their names under it), the toast
+   when they show up, the phone's chip on a member's row */
+.aff.has-squad { box-shadow: 0 0 0 1px rgba(166,59,255,.75), 0 0 22px rgba(166,59,255,.28); }
+.aff.home.has-squad { box-shadow: 0 0 0 2px var(--accent), 0 0 22px rgba(166,59,255,.35); }
+.squad-wrap { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.aff.locked.has-squad { filter: none; box-shadow: inset 0 0 0 999px rgba(8,10,13,.42), 0 0 0 1px rgba(166,59,255,.75), 0 0 22px rgba(166,59,255,.28); } /* (a park you can't visit yet: dimmed, its tag still lit) */
+.aff.locked.has-squad > :not(.squad-wrap) { opacity: .6; }
+.squad-tag { align-self: flex-start; white-space: nowrap; padding: 3px 8px; border-radius: 6px; font: 800 10px/1.2 var(--display); letter-spacing: .1em; color: #f1e6ff; background: rgba(166,59,255,.3); border: 1px solid rgba(201,168,255,.75); animation: squadGlow 2.4s ease-in-out infinite; }
+.aff .squad-names { font-size: 11px; color: #d9c9ff; }
+@keyframes squadGlow { 50% { box-shadow: 0 0 12px rgba(166,59,255,.6); } }
+.toast.squad { border-color: rgba(201,168,255,.75); box-shadow: 0 12px 40px rgba(0,0,0,.5), 0 0 24px rgba(166,59,255,.3); }
+.toast.squad::before { content: 'ICON SQUAD'; margin-right: 10px; padding: 2px 7px; border-radius: 5px; font: 800 10px/1.4 var(--display); letter-spacing: .14em; color: #f1e6ff; background: rgba(166,59,255,.45); vertical-align: 1px; }
+.ph-chip.squad { font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: .12em; padding: 1px 5px; border-radius: 4px; color: #f1e6ff; background: rgba(166,59,255,.4); border: 1px solid rgba(201,168,255,.6); vertical-align: 2px; }
+@media (prefers-reduced-motion: reduce) { .squad-tag { animation: none; } }
 .proam-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .roster { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .roster-row { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); }

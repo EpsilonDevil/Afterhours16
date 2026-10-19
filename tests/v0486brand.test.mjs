@@ -36,7 +36,9 @@ function pathPoints(d) {
   return out;
 }
 function readSvg(f) {
-  const t = src(f);
+  // a copy saved to the PC can carry a content-credentials (C2PA) manifest, added on save in a <metadata> block: that's
+  // provenance, not drawing, so it's left out of the checks
+  const t = src(f).replace(/ xmlns:c2pa="[^"]*"/, '').replace(/<metadata>[\s\S]*?<\/metadata>/, '');
   assert.match(t, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 (\d+) (\d+)" width="\1" height="\2"/, f);
   const [, W, H] = t.match(/viewBox="0 0 (\d+) (\d+)"/).map(Number);
   const tags = [...t.matchAll(/<\/?([a-zA-Z]+)/g)].map(m => m[1]);

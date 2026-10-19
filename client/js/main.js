@@ -19,6 +19,7 @@ import * as Screens from './ui/screens.js';
 import { togglePhone, phoneOpen } from './ui/phone.js';
 import { installErrorCapture, reportBug } from './ui/bugreport.js';
 import { initOnline } from './ui/online.js';
+import { watchSquads } from './ui/squadwatch.js';
 
 installErrorCapture(); // v0.4.7.5: errors go along with bug reports
 
@@ -99,6 +100,9 @@ function afterLogin() {
   closeModal();
   initWorld(app); // v0.4.4: this account's persistent AI population (friends, squad, who you've played with)
   initOnline(app).catch(e => console.error(e)); // v0.4.7.5 qp3: real friends, invites and online games (from your own copy too)
+  // v0.4.8.6 qp: the ICON Squad event: a toast when a squad of ICONs shows up at a park, once a squad, looked at every 25 s
+  // (never during a game). The first look waits for the sign-in toasts to go by
+  if (!app.squadWatch) { app.squadWatch = watchSquads(app, { say: text => toast(text, 'squad') }); setTimeout(() => app.squadWatch.check(), 10000); }
   const chars = app.profile.characters;
   if (!chars.length) { app.selectedId = null; Screens.go(app, 'create'); return; }
   app.selectedId = chars.find(c => c.id === settings.character)?.id || chars[0].id;

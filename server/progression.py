@@ -36,7 +36,7 @@ BADGES = {
     "limitless": {"name": "Limitless Range", "group": "Shooting", "stat": "tpm", "tiers": (30, 90, 200, 400), "desc": "Extends range on deep threes."},
     "green_machine": {"name": "Green Machine", "group": "Shooting", "stat": "greens", "tiers": (20, 70, 180, 400), "desc": "Wider Excellent release window."},
     "clutch": {"name": "Clutch Shooter", "group": "Shooting", "stat": "fgm", "tiers": (40, 120, 280, 550), "desc": "Boost on shots late in close games."},
-    "posterizer": {"name": "Posterizer", "group": "Finishing", "stat": "dunks", "tiers": (8, 30, 80, 180), "desc": "Better odds to dunk on contesting defenders."},
+    "posterizer": {"name": "Posterizer", "group": "Finishing", "stat": "dunks", "tiers": (8, 30, 80, 126), "desc": "Better odds to dunk on contesting defenders."},  # (v0.4.8.6 qp: Hall of Fame 30% lower, was 180)
     "contact_finisher": {"name": "Contact Finisher", "group": "Finishing", "stat": "fgm", "tiers": (30, 100, 150, 300), "desc": "Contested layups are less affected."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 250 and 500)
     "acrobat": {"name": "Acrobat", "group": "Finishing", "stat": "fgm", "tiers": (45, 130, 180, 360), "desc": "Boost on heavily contested layups."},  # (v0.4.8.5: Gold and Hall of Fame 40% lower, were 300 and 600)
     "ankle_breaker": {"name": "Ankle Breaker", "group": "Playmaking", "stat": "ankles", "tiers": (3, 12, 30, 70), "desc": "Dribble moves drop defenders more often."},
@@ -47,7 +47,7 @@ BADGES = {
     "rim_protector": {"name": "Rim Protector", "group": "Defense", "stat": "blk", "tiers": (7, 23, 59, 130), "desc": "More blocks at the rim."},  # (v0.4.8.5: every tier 35% lower, was 10/35/90/200)
     "chasedown": {"name": "Chase-Down Artist", "group": "Defense", "stat": "blk", "tiers": (8, 25, 60, 125), "desc": "Blocks from behind on breakaways."},  # (v0.4.8.5: every tier halved, was 15/50/120/250)
     # v0.4.8.5: Brick Wall levels up from successful screens set (screens that catch the defender), not games played
-    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "screens", "tiers": (18, 63, 154, 315), "desc": "Screens and bumps hit harder."},  # (v0.4.8.5 qp9: every tier 30% lower, was 25/90/220/450)
+    "brick_wall": {"name": "Brick Wall", "group": "Defense", "stat": "screens", "tiers": (18, 63, 154, 173), "desc": "Screens and bumps hit harder."},  # (v0.4.8.5 qp9: every tier 30% lower, was 25/90/220/450; v0.4.8.6 qp: Hall of Fame 45% lower again, was 315)
     "rebound_chaser": {"name": "Rebound Chaser", "group": "Rebounding", "stat": "reb", "tiers": (16, 56, 140, 280), "desc": "Track down more boards."},  # (v0.4.8.5: every tier 60% lower, was 40/140/350/700)
 }
 

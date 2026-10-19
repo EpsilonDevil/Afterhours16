@@ -48,7 +48,7 @@ class BadgeTableTests(unittest.TestCase):
         self.assertEqual((T["dimer"], T["chasedown"], T["rim_protector"], T["rebound_chaser"]), ((9, 28, 70, 147), (8, 25, 60, 125), (7, 23, 59, 130), (16, 56, 140, 280)))
         # Brick Wall: successful screens, not games
         bw = progression.BADGES["brick_wall"]
-        self.assertEqual((bw["stat"], bw["tiers"]), ("screens", (18, 63, 154, 315)))
+        self.assertEqual((bw["stat"], bw["tiers"]), ("screens", (18, 63, 154, 173)))  # (v0.4.8.6 qp: Hall of Fame 45% lower, was 315)
         self.assertIn("screens", progression.STAT_KEYS)
         for b in progression.BADGES.values():
             self.assertEqual(list(b["tiers"]), sorted(b["tiers"]))
@@ -72,7 +72,7 @@ class BadgeTableTests(unittest.TestCase):
             self.assertEqual(progression.convert_progress(o, old, new), n)  # a tier's mark is the new tier's mark
         self.assertEqual(progression.convert_progress(0, old, new), 0)
         self.assertEqual(progression.convert_progress(5, old, new), 9)  # half way to Bronze (qp9: Bronze is 18 screens, was 25)
-        self.assertEqual(progression.convert_progress(170, old, new), 297)  # 80/90 of the way from Gold to Hall of Fame (qp9: was 424)
+        self.assertEqual(progression.convert_progress(170, old, new), 170)  # 80/90 of the way from Gold to Hall of Fame (qp9: was 424, then 297; v0.4.8.6 qp: Hall of Fame is 173 screens)
         vals = [progression.convert_progress(p, old, new) for p in range(0, 400)]
         self.assertEqual(vals, sorted(vals))
 
@@ -113,10 +113,10 @@ class SyncTests(unittest.TestCase):
     def test_brick_wall_moves_to_screens_once_and_keeps_its_tier(self):
         ch = char_for("lockdown", height=78, games=170, badges={"brick_wall": {"progress": 170, "tier": 3}})
         progression.sync_badges(ch)
-        self.assertEqual(ch["badges"]["brick_wall"], {"progress": 297, "tier": 3})  # (qp9: the lower tiers, was 424)
+        self.assertEqual(ch["badges"]["brick_wall"], {"progress": 170, "tier": 3})  # (qp9: the lower tiers, was 424; v0.4.8.6 qp: 297 before Hall of Fame came down to 173)
         self.assertTrue(ch["badges_v0485"])
         progression.sync_badges(ch)
-        self.assertEqual(ch["badges"]["brick_wall"]["progress"], 297)  # (once)
+        self.assertEqual(ch["badges"]["brick_wall"]["progress"], 170)  # (once)
         # a tier is never taken away, even if the converted progress is short of it
         ch2 = char_for("lockdown", height=78, badges={"brick_wall": {"progress": 3, "tier": 2}})
         progression.sync_badges(ch2)

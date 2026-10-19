@@ -56,3 +56,42 @@ Everyone has to be on v0.4.8.6 to play online together. Pull the update before y
 ---
 
 *(Tests: 179 Python and 462 node tests. Browser checks covered the title screen (mouse, keyboard and controller, fresh presses only, the launcher heartbeat and lock-in), the welcome card, home, MyPlayer, the store, Settings, the Park screen, Pro-Am, a park and a game HUD, and the results screen. They also covered the arena from four cameras, a team arena (unchanged), the rebranded gear on a player, and the logo and icons at 16, 32 and 64 px. The traced logo matches the original artwork at an overlap of 0.99 for each color.)*
+
+---
+
+## Quick patch (Oct 18): The ICON Squad, Brick Wall and Posterizer
+
+The rarest thing in the park. About every 12 hours, a full squad of three AI ICONs (99 OVR) shows up at one of the three parks and runs there for an hour.
+
+### When and where
+- **Every 12 hours plus 10 to 30 minutes.** Each squad arrives 12 hours and 10 to 30 minutes after the last one did, a different amount every time. It never comes sooner than 12 hours, and it lands about 40 minutes later each day, so over a few weeks it visits every hour of the day.
+- **Harbor Point, Old Brick Yard or Foundry Works,** never the same park twice in a row.
+- **Only ever one.** There is one ICON Squad at a time across the three parks, and no other AI team in the parks ever has three ICONs on it.
+- **The same schedule for everyone.** It runs on the server's clock, so every copy of the game sees the squad arrive at the same moment, at the same park.
+- **There's no countdown.** You find out when they show up.
+
+### Who they are
+- **Three real ICONs of your world:** AI hoopers who got to 99 by the same rules you do. Nobody is made an ICON for the occasion.
+- **Builds that fit together:** a ball handler, a wing and a big, on three different archetypes that cover playmaking, shooting, inside scoring and defense between them. Most squads are a new mix of ICONs.
+- **One outfit:** the squad leader's clothes, worn by all three. An exclusive only goes on if all three have unlocked it. Each keeps his own name, number, animations and Icon package.
+- **A young world has to wait.** A world needs three ICONs before a squad can form, which takes about six to eight weeks. Until then, the hour passes with no squad.
+
+### At the park
+- **They walk in together** and take a 3v3 court, or a GOT NEXT spot as a group.
+- **Winners stay.** They keep the court while they win. Beat them and they get back in line to run it again.
+- **To play them,** get next on their court.
+- **When the hour is up,** they finish the game they're in and walk out together.
+- **They're busy for the hour.** You can't invite one of them to your squad. One who's in your squad leaves to run with them, and you can ask him back when their hour is over.
+
+### Where you'll see it
+- **A toast** when they show up, wherever you are in the menus or at another park.
+- **The Park screen** tags their park ICON SQUAD HERE with the time left and their names.
+- **The phone** shows an ICON SQUAD chip on each of them, and where they are.
+- **On the court and the scoreboard,** they play as the ICON Squad.
+
+### Badges
+- **Brick Wall:** Hall of Fame takes **173 successful screens** (was 315, 45% fewer). Bronze, Silver and Gold are unchanged (18, 63 and 154).
+- **Posterizer:** Hall of Fame takes **126 dunks** (was 180, 30% fewer). Bronze, Silver and Gold are unchanged (8, 30 and 80).
+- **Progress you've already made counts.** A build already past the new mark moves up to Hall of Fame as soon as you log in, if the badge can reach Hall of Fame on that build and it has a Hall of Fame slot free.
+
+*(Tests: 181 Python and 487 node tests. A browser check covered a year-old world with the clock moved into a squad's hour at the Old Brick Yard: the real pick, the toast, the Park screen tag, the squad holding a court in one outfit and the phone list, with no page errors. The one-squad rule was checked over 3,200 random park steps with half the AI as ICONs: no other team ever had more than two.)*

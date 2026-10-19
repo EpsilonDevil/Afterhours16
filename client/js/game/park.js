@@ -24,6 +24,12 @@ import * as M from '../core/math.js';
 import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
 import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP, squadAIPlayers } from '../ui/online.js';
 import { endWinStreak } from './iconfx.js';
+import { MAX_ICONS_PER_AI_TEAM, isIconEntry } from '../sim/iconsquad.js';
+
+// v0.4.8.6 the ICON Squad: after their hour, the three don't drift back in one by one for a while (they just walked out);
+// their team on the scoreboard, the ticker and the court cards
+const ICON_COOL = 30 * 60000, NO_IDS = new Set();
+const ICON_TEAM = { name: 'ICON Squad', abbr: 'ICN', color: '#f4f2ec' };
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
@@ -82,6 +88,8 @@ export class Walker {
     const p = this.p, it = p.intent;
     it.mx = 0; it.mz = 0; it.sprint = false; it.face = null;
     if (this.visual.pending) return; // still being built (a few frames): he walks in once he's there
+    // (v0.4.8.6 ICON Squad: his leader walked out of the park: so does he, with him)
+    if (this.lead && (this.lead.gone || this.lead.disposed)) { if (this.exit) { this.gone = true; return; } this.lead = null; }
     if (this.follow != null && !this.spot && !this.exit) {
       // squad: stay a step behind you, fanned out to the sides
       const me = this.hub.me, f = me.facing, slot = this.follow;
@@ -89,6 +97,16 @@ export class Walker {
       const tx = me.x - Math.sin(f) * back + Math.cos(f) * lat, tz = me.z - Math.cos(f) * back - Math.sin(f) * lat;
       const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
       if (d > 22) { p.setPos(tx, tz, f); }
+      else if (d > 0.35) { const k = Math.min(1, d / 1.4) * (d > 3.5 ? 1 : 0.62); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 4.5; }
+      else it.face = f;
+      this.state = 'follow';
+    } else if (this.lead && !this.spot && !this.lead.spot) {
+      // v0.4.8.6 ICON Squad: off a Got Next spot, the other two keep a step behind their leader (walking in, round the
+      // park, and out of it), one to each side
+      const L = this.lead.p, f = L.facing, lat = (this.unitSlot % 2 ? 1 : -1) * 0.95;
+      const tx = L.x - Math.sin(f) * 1.35 + Math.cos(f) * lat, tz = L.z - Math.cos(f) * 1.35 - Math.sin(f) * lat;
+      const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+      if (d > 22) p.setPos(tx, tz, f);
       else if (d > 0.35) { const k = Math.min(1, d / 1.4) * (d > 3.5 ? 1 : 0.62); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 4.5; }
       else it.face = f;
       this.state = 'follow';
@@ -132,7 +150,7 @@ export class Walker {
     else this.visual.anim.update(k, { x: p.x, y: 0, z: p.z, facing: p.facing }, p, null, null, {});
     this.visual.place(p.x, 0, p.z);
   }
-  dispose() { this.visual.dispose(); }
+  dispose() { this.disposed = true; this.visual.dispose(); }
 }
 
 // v0.4.7.5 qp3 online: a real player at this park (or Crew HQ), walking it on his own screen (his position comes ~5
@@ -363,7 +381,10 @@ export class ParkHub {
     // v0.4.7.5: every court has two GOT NEXT spots; c.lines[r] is the group standing on spot r, and a mine line is
     // the user's. The first line to fill up (l.fullAt) runs next; the other waits for that game to end.
     this.courts = this.venue.courts.map(c => ({ ...c, rect: courtPlayRect(c), session: null, lines: new Array(SQUAD_ROWS).fill(null), mine: false, kings: null, kingsStreak: 0 }));
-    for (const c of this.courts) this.newBackgroundGame(c, null);
+    // (v0.4.8.6: you came in during the ICON Squad's hour here: they're on a court already)
+    this.icon = null; this.iconT = 2;
+    this.squadTick(Date.now(), true);
+    for (const c of this.courts) if (!c.session) this.newBackgroundGame(c, null);
     for (const id of this.availableHere().slice(0, 9)) {
       const z = this.pickZone(), q = pickIn(this.rng, z);
       this.walkers.push(this.spawnWalker(q.x, q.z, this.entryFor(id)));
@@ -478,6 +499,7 @@ export class ParkHub {
       next: my && my.c === c ? this.myTurn(c, my) : sq && sq.c === c ? 'squad' : null,
       people: busy ? busy.names.join(', ') : c.liveSetup ? Object.values(c.liveSetup.names || {}).join(', ') : '',
       kings: ct?.kings && !mine ? ct.kings.names.join(', ') : '', claims,
+      icon: this.unitAt(c), // (v0.4.8.6: the ICON Squad on it: 'kings', 'challengers', 'you' (your game) or 'next' (Got Next))
     };
   }
   // where your line stands: next, after the other squad, or still filling up
@@ -565,34 +587,52 @@ export class ParkHub {
     if (st && st.park === this.themeId) return this.playingIds().has(id);
     return this.world.playingElsewhere(id, t);
   }
-  stays(e, t = Date.now()) { return !e?.aiId || this.world.online(e.aiId, t); }
-  // online at this park and not already doing something here
+  // still on (v0.4.8.6: one of the ICON Squad goes where his squad runs, and once their hour here is up he's on his way
+  // out with them)
+  stays(e, t = Date.now()) {
+    const id = e?.aiId;
+    if (!id) return true;
+    const sq = this.world.squadOf?.(id, t);
+    if (sq) return sq.park === this.themeId;
+    if (this.icon?.formed && this.iconIds(t).has(id)) return false;
+    return this.world.online(id, t);
+  }
+  // online at this park and not already doing something here (v0.4.8.6: and never one of the ICON Squad on his own)
   availableHere(t = Date.now()) {
-    const busy = this.busyIds(), squad = new Set(this.world.squad);
+    const busy = this.busyIds(), squad = new Set(this.world.squad), icon = this.iconIds(t);
     const ids = this.world.onlineAt(this.themeId, t);
-    return ids.filter(id => !busy.has(id) && !squad.has(id));
+    return ids.filter(id => !busy.has(id) && !squad.has(id) && !icon.has(id));
   }
   // n players for a court: people around first (closest to a wanted level when asked), then free park-goers;
-  // topUp: if the park is too quiet, regulars who are about to come on "hop on early"
+  // topUp: if the park is too quiet, regulars who are about to come on "hop on early". v0.4.8.6: no AI team but the
+  // ICON Squad ever has three ICONs: once this one has MAX_ICONS_PER_AI_TEAM (counting the teammates it has already:
+  // opts.have) the next ICON is passed over; nobody is used up (a walker, an early hop-on) unless the team comes together
   takeEntries(n, opts = {}) {
     const t = Date.now(), ex = opts.exclude || new Set();
     let ids = this.rng.shuffle(this.availableHere(t).filter(id => !ex.has(id)));
     if (opts.level != null) ids = ids.map(id => [id, Math.abs(this.world.account(id).level - opts.level) + this.rng.range(0, 0.15)]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
-    const free = opts.walkers === false ? [] : this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.entry.aiId);
+    const free = opts.walkers === false ? [] : this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.unit == null && w.entry.aiId);
     if (!opts.topUp && ids.length + free.length < n) return null;
-    const out = ids.slice(0, n).map(id => this.entryFor(id));
-    for (const w of free) { if (out.length >= n) break; out.push(w.entry); w.dispose(); this.walkers = this.walkers.filter(x => x !== w); }
+    let icons = (opts.have || []).filter(isIconEntry).length;
+    const fits = e => { if (!isIconEntry(e)) return true; if (icons >= MAX_ICONS_PER_AI_TEAM) return false; icons++; return true; };
+    const out = [], used = [], hop = [];
+    for (const id of ids) { if (out.length >= n) break; if (fits(this.world.entry(id, t))) out.push(this.entryFor(id)); }
+    for (const w of free) { if (out.length >= n) break; if (fits(w.entry)) { out.push(w.entry); used.push(w); } }
     if (out.length < n) {
-      const ex2 = new Set([...ex, ...this.busyIds(), ...out.map(e => e.aiId), ...this.world.squad]);
-      for (const id of this.world.closestOffline(this.themeId, n - out.length, t, ex2)) { this.world.extra.set(id, { park: this.themeId, until: t + 25 * 60000 }); out.push(this.entryFor(id)); }
+      const ex2 = new Set([...ex, ...this.busyIds(), ...out.map(e => e.aiId), ...this.world.squad, ...this.iconIds(t)]);
+      for (const id of this.world.closestOffline(this.themeId, n - out.length + MAX_ICONS_PER_AI_TEAM + 1, t, ex2)) { if (out.length >= n) break; if (fits(this.world.entry(id, t))) { hop.push(id); out.push(this.entryFor(id)); } }
     }
-    return out.length >= n ? out : null;
+    if (out.length < n) return null;
+    for (const w of used) w.dispose();
+    if (used.length) this.walkers = this.walkers.filter(x => !used.includes(x));
+    for (const id of hop) this.world.extra.set(id, { park: this.themeId, until: t + 25 * 60000 });
+    return out;
   }
   // people come and go: logged-off park-goers head out, idle courts fill up, new arrivals walk in
   populationTick() {
     const t = Date.now();
     for (const [id, x] of this.world.extra) if (x.until < t) this.world.extra.delete(id);
-    for (const w of this.walkers) if (w.entry.aiId && !w.spot && w.follow == null && !w.exit && !this.stays(w.entry, t)) w.leave();
+    for (const w of this.walkers) if (w.entry.aiId && !w.spot && w.follow == null && !w.exit && w.unit == null && !this.stays(w.entry, t)) w.leave(); // (the ICON Squad goes as one: unitDone)
     for (const c of this.courts) if (!c.session && !c.mine && !c.live) this.newBackgroundGame(c, null);
     // v0.4.5: groups of park-goers line up on the squad spots of busy courts (one new group per tick)
     const busyCourts = this.rng.shuffle(this.courts.filter(c => c.session && c.lines.some(l => !l)));
@@ -609,10 +649,15 @@ export class ParkHub {
   // squad mates who are online run with you; whoever left the squad goes back to hanging out
   syncSquad(initial = false) {
     const active = this.world.activeSquad();
+    // v0.4.8.6: a squad mate whose ICON Squad's hour has begun leaves you to run with them (wherever he is: following
+    // you, on your spot, or in your game: he finishes that first)
+    for (const id of this.lastActive || []) if (!active.includes(id) && this.world.squadOf?.(id) && !this.iconLeft?.has(id)) { (this.iconLeft ||= new Set()).add(id); this.ui.toast(`${this.world.entry(id).name} left to run with his ICON squad.`); }
+    this.lastActive = active.slice();
     for (const w of this.walkers) if (w.follow != null && !active.includes(w.entry.aiId)) { w.follow = null; w.state = 'idle'; w.t = 1; }
     const busy = this.busyIds();
     active.forEach((id, i) => {
       let w = this.walkers.find(x => x.entry.aiId === id);
+      if (w && w.unit != null) { for (const x of this.walkers) if (x.lead === w) { x.lead = null; if (x.exit) x.leave(); } w.unit = null; w.lead = null; } // (back in your squad after their hour)
       if (w) { if (!w.spot) { w.follow = i; w.exit = false; } return; }
       if (busy.has(id)) return; // finishing a game on one of the courts: he comes over when it ends
       const me = this.me, near = initial;
@@ -624,16 +669,19 @@ export class ParkHub {
   }
   // the social phone's park list: everyone online at this park, with what they're up to
   parkList() {
-    const t = Date.now(), out = [], seen = new Set();
-    const add = (e, where, extra = {}) => { if (!e?.aiId || seen.has(e.aiId)) return; seen.add(e.aiId); out.push({ id: e.aiId, entry: e, where, ...extra }); };
-    if (this.mode === 'match' && this.mySession) { (this.myMates || []).forEach(e => add(e, 'Running with you', { mine: 'mate' })); (this.myOpp || []).forEach(e => add(e, 'Across from you', { mine: 'opp' })); }
+    const t = Date.now(), out = [], seen = new Set(), u = this.iconLive(t) ? this.icon : null;
+    // (v0.4.8.6: the ICON Squad's three carry its window: iconSquad)
+    const add = (e, where, extra = {}) => { if (!e?.aiId || seen.has(e.aiId)) return; seen.add(e.aiId); out.push({ id: e.aiId, entry: e, where, ...extra, ...(u?.ids.has(e.aiId) ? { iconSquad: u.k } : {}) }); };
+    const tag = es => this.isUnit(es) ? ' · ICON Squad' : '';
+    if (this.mode === 'match' && this.mySession) { (this.myMates || []).forEach(e => add(e, 'Running with you', { mine: 'mate' })); (this.myOpp || []).forEach(e => add(e, `Across from you${tag(this.myOpp)}`, { mine: 'opp' })); }
     for (const w of this.walkers) if (w.follow != null) add(w.entry, 'In your squad', { squad: true });
     for (const c of this.courts) {
-      if (c.session) c.session.opts.rosters.forEach((r, ti) => r.forEach(e => add(e, `Playing on ${c.name}${ti === 0 && c.kingsStreak ? ` · ${c.kingsStreak}-game streak` : ''}`)));
-      c.lines.forEach(l => { if (l) l.members.forEach(w => add(w.entry, l.mine ? `Got next with you on ${c.name}` : `Got next on ${c.name}`)); });
+      if (c.session) c.session.opts.rosters.forEach((r, ti) => r.forEach(e => add(e, `Playing on ${c.name}${tag(r)}${ti === 0 && c.kingsStreak ? ` · ${c.kingsStreak}-game streak` : ''}`)));
+      c.lines.forEach(l => { if (l) l.members.forEach(w => add(w.entry, l.mine ? `Got next with you on ${c.name}` : `Got next on ${c.name}${l.icon != null ? ' · ICON Squad' : ''}`)); });
     }
-    for (const w of this.walkers) if (!w.exit) add(w.entry, w.watch ? 'Watching the games' : 'Hanging out');
+    for (const w of this.walkers) if (!w.exit) add(w.entry, w.unit != null ? 'ICON Squad · looking for a game' : w.watch ? 'Watching the games' : 'Hanging out');
     for (const id of this.availableHere(t)) add(this.world.entry(id), 'On the sidelines');
+    if (u) for (const id of u.ids) add(this.world.entry(id, t), 'ICON Squad · on the way'); // (one of them is finishing a game somewhere first)
     return out;
   }
 
@@ -648,18 +696,27 @@ export class ParkHub {
   newBackgroundGame(c, kings, force = false) {
     if (c.session) { c.session.dispose(); c.session = null; }
     // (v0.4.7.5 qp3 online: real people hold this court, a game or kings between games: no AI game of ours on it)
-    if (!force && (this.realHeld(c) || c.live)) { c.kings = null; c.kingsStreak = 0; return; }
+    if (!force && (this.realHeld(c) || c.live)) { this.unitOff(c, kings); c.kings = null; c.kingsStreak = 0; return; }
     const fmt = c.format, t = Date.now();
-    // kings keep the court while they're all still on (and none of them left to run with you)
-    let home = kings && kings.every(e => this.stays(e, t) && !this.world.inSquad(e.aiId)) ? kings : null;
+    // kings keep the court while they're all still on (and none of them left to run with you; v0.4.8.6: the ICON Squad
+    // while their hour runs: after it, out they walk together)
+    let home = kings && this.holds(kings, t) ? kings : null;
+    if (kings && !home) this.unitOff(c, kings);
+    // (v0.4.8.6: the ICON Squad is walking up to this empty court to hold it: it waits for them)
+    const ul = !home && this.icon ? c.lines.find(l => l && l.icon === this.icon.k) : null;
+    if (ul && !this.lineSet(c, ul) && !this.upNext(c, false)) { c.kings = null; c.kingsStreak = 0; return; }
     let away = null;
     const nx = this.upNext(c, false);
     if (nx) { away = nx.l.members.map(w => w.entry); this.takeLine(c, nx.i); }
+    // (v0.4.8.6: nobody holds it and the ICON Squad steps on: they're the kings)
+    if (!home && this.isUnit(away)) { home = away; away = null; c.kingsStreak = 0; }
     if (!home) { c.kingsStreak = 0; home = this.takeEntries(fmt, { exclude: new Set((away || []).map(e => e.aiId)) }); }
     if (home && !away) away = this.takeEntries(fmt, { exclude: new Set(home.map(e => e.aiId)) });
     if (!home || !away) {
-      // not enough people around: the court sits empty for now; anyone pulled for it goes back to hanging out
-      for (const e of [...(home || []), ...(away || [])]) if (this.walkers.length < 14 && this.stays(e, t)) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); this.walkers.push(w); }
+      // not enough people around: the court sits empty for now; anyone pulled for it goes back to hanging out (v0.4.8.6:
+      // the ICON Squad as one, and they give it a while before they look for a game again)
+      if (this.icon && (this.isUnit(home) || this.isUnit(away))) this.icon.idle = t + 30000;
+      for (const e of this.unitOff(c, [...(home || []), ...(away || [])])) if (this.walkers.length < 14 && this.stays(e, t)) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); this.walkers.push(w); }
       c.kings = null; c.session = null;
       return;
     }
@@ -669,9 +726,160 @@ export class ParkHub {
     for (const e of home) if (e.build) e.build = { ...e.build, win_streak: c.kingsStreak || 0 };
     for (const e of away) if (e.build?.win_streak) e.build = { ...e.build, win_streak: 0 };
     c.kings = home;
-    c.session = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters: [home, away], teams: [{ name: 'Kings', abbr: 'KNG', color: '#ffd84a' }, { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' }], seed: this.rng.int(1, 1e9), target: 11, difficulty: 0.6, assist: true });
-    c.session.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
+    const team = (es, d) => this.isUnit(es) ? { ...ICON_TEAM } : d; // (v0.4.8.6: the ICON Squad plays under its own name)
+    c.session = this.bgSession(c, [home, away], [team(home, { name: 'Kings', abbr: 'KNG', color: '#ffd84a' }), team(away, { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' })]);
     c.bgStart = performance.now();
+  }
+  // the AI game on a court (v0.4.8.6: on its own, so the tests can play the park's rotations without a renderer)
+  bgSession(c, rosters, teams) {
+    const s = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters, teams, seed: this.rng.int(1, 1e9), target: 11, difficulty: 0.6, assist: true });
+    s.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
+    return s;
+  }
+
+  // ---------- v0.4.8.6 the ICON Squad (sim/iconsquad.js, AIWorld.iconSquad) ----------
+  // About every 12 hours three of this world's 99 OVR ICONs run together for an hour at one park, in one outfit, with
+  // builds that fit (a handler, a wing and a big); there is only ever one such squad. Here they're one unit: nobody pulls
+  // one of them on his own (availableHere, takeEntries, the free walkers, formAILine); they walk in together, hold a free
+  // 3v3 court or line up for one as a group, stay on while they win and get back in line when they lose; when the hour
+  // is up they finish the game they're in and walk out together. No other AI team anywhere has three ICONs: takeEntries
+  // and formAILine pass an ICON over once a team has MAX_ICONS_PER_AI_TEAM. this.icon: the squad of this park's latest
+  // window {k, sq, ids, formed (they've come in), over (when their hour ended), last (the court they last played on),
+  // idle (no game to be had: when they look again)}
+  iconLive(t = Date.now()) { const u = this.icon; return !!u && !u.over && this.world.iconSquad?.(t)?.k === u.k; }
+  // the squad's ids while their hour runs here and for a while after it (nobody takes one of them on his own; their
+  // hour just begun and not ticked yet: theirs too)
+  iconIds(t = Date.now()) {
+    const u = this.icon, sq = this.world.iconSquad?.(t), cool = !!u && t < (u.over || u.end) + ICON_COOL;
+    if (sq && sq.park === this.themeId && u?.k !== sq.k) return new Set([...sq.ids, ...(cool ? u.ids : [])]);
+    return cool ? u.ids : NO_IDS;
+  }
+  // the three of them, as one team (in any order)
+  isUnit(es) { const u = this.icon; return !!u && es?.length === 3 && es.every(e => e?.aiId && u.ids.has(e.aiId)); }
+  // kings who keep their court: all still on, none gone to run with you, none of them one of the ICON Squad playing on
+  // his own while their hour runs (he goes to them when this game's over)
+  holds(team, t = Date.now()) {
+    if (!team?.length) return false;
+    const unit = this.isUnit(team);
+    if (!unit && this.iconLive(t) && team.some(e => this.icon.ids.has(e?.aiId))) return false;
+    return team.every(e => this.stays(e, t) && (unit || !this.world.inSquad(e.aiId)));
+  }
+  // where they are on court c, for its card and the ticker: 'kings', 'challengers', 'you' (your game), 'next' or ''
+  unitAt(c) {
+    const u = this.icon;
+    if (!u?.formed) return '';
+    if (c === this.myCourt && (this.mySession || this.mode === 'starting') && this.isUnit(this.myOpp)) return 'you';
+    const i = c.session ? c.session.opts.rosters.findIndex(r => this.isUnit(r)) : -1;
+    if (i >= 0) return i ? 'challengers' : 'kings';
+    return c.lines.some(l => l && l.icon === u.k) ? 'next' : '';
+  }
+  // every couple of seconds (and as courts turn over): their hour starting, where they are, their hour ending
+  squadTick(t = Date.now(), initial = false) {
+    const sq = this.world.iconSquad?.(t) || null, u = this.icon;
+    if (u && !u.over && sq?.k !== u.k) this.unitDone(u, t);
+    if (!sq) return;
+    if (sq.k !== this.iconK) { this.iconK = sq.k; this.iconLeft = new Set(); if (!initial) this.syncSquad(); } // (a squad mate of yours among them leaves you)
+    const here = sq.park === this.themeId;
+    if (here && this.icon?.k !== sq.k) this.icon = { k: sq.k, sq, ids: new Set(sq.ids), end: sq.end, formed: false, over: 0, last: null, idle: 0 };
+    this.pullSingles(sq, here);
+    if (!here) return;
+    const v = this.icon;
+    if (!v.formed) this.formUnit(v, t, initial);
+    else if (t >= v.idle) this.placeUnit(t);
+    // an empty court they've walked up to: on they go, and hold it
+    for (const c of this.courts) if (!c.session && !c.mine && !c.live && c.lines.some(l => l && l.icon === v.k && this.lineSet(c, l))) this.newBackgroundGame(c, null);
+  }
+  // one of them here on his own (walking about, or on somebody's Got Next spot: a park-goer group's breaks up, yours
+  // fills up again) when their hour begins: here he walks back in with the other two; for another park he heads off.
+  // One in a game finishes it first (rotateCourt, leaveCourt, stayOnCourt)
+  pullSingles(sq, here) {
+    const ids = new Set(sq.ids);
+    for (const w of [...this.walkers]) {
+      const id = w.entry?.aiId;
+      if (!id || !ids.has(id) || w.unit === sq.k || w.follow != null || w.exit) continue;
+      if (w.spot) {
+        const c = w.spot.court, r = c.lines.findIndex(l => l?.members.includes(w)), l = c.lines[r];
+        if (l?.mine) {
+          l.members = l.members.filter(x => x !== w); l.ready = false; w.spot = null; this.placeLine(c, r);
+          if (!this.iconLeft.has(id)) { this.iconLeft.add(id); this.ui.toast(`${w.entry.name} left your spot to run with his ICON squad.`); }
+        } else if (l) this.disperseLine(c, r);
+        w.spot = null;
+      }
+      if (here) { w.dispose(); this.walkers = this.walkers.filter(x => x !== w); } else w.leave();
+    }
+  }
+  // all three free (none of them in a game here): in they come. Loading in during their hour, they're on a court (or a
+  // Got Next spot) already; otherwise they walk in from the plaza together and you hear about it
+  formUnit(u, t, initial = false) {
+    const busy = this.busyIds();
+    if (u.sq.ids.some(id => busy.has(id))) return;
+    const lead = u.sq.ids.includes(u.sq.leader) ? u.sq.leader : u.sq.ids[0];
+    const es = [lead, ...u.sq.ids.filter(id => id !== lead)].map(id => this.entryFor(id));
+    u.formed = true;
+    if (initial) {
+      const c = this.rng.shuffle(this.courts.filter(c => c.format === 3 && !c.session && !c.mine && !c.live && !this.realHeld(c)))[0];
+      if (c) { this.newBackgroundGame(c, es); return; } // (no one to play them: they're about the park, as one: unitOff)
+    }
+    const q = initial ? pickIn(this.rng, this.pickZone()) : { x: this.rng.range(-24, 24), z: -30.5 };
+    const ws = es.map((e, i) => { const w = this.spawnWalker(q.x + (i - 1) * 1.2, q.z, e); this.walkers.push(w); return w; });
+    this.unitGroup(ws);
+    const placed = this.placeUnit(t);
+    if (initial) { for (const w of ws) if (w.spot) { const sp = w.spot.court.rows[w.spot.row][w.spot.slot]; w.p.setPos(sp.x, sp.z, Math.atan2(w.spot.court.origin[0] - sp.x, w.spot.court.origin[2] + 8 - sp.z)); w.path = []; w.state = 'queued'; } return; }
+    if (!placed) ws[0].goTo(this.rng.range(-20, 20), -24); // (every spot's taken: they hang about by the courts till one opens up)
+    const names = es.map(e => e.name), left = (u.sq.end - t) / 60000;
+    this.ui.toast(`ICON SQUAD at ${this.aff?.park || parkInfo(this.themeId)?.park || 'the park'}: ${names.slice(0, -1).join(', ')} and ${names.at(-1)} · ${left > 50 ? 'here for the next hour' : `here for another ${Math.max(5, Math.round(left / 5) * 5)} min`}`);
+  }
+  // they walk as one: the leader first, the other two a step behind him
+  unitGroup(ws) {
+    const u = this.icon, lead = ws.find(w => w.entry.aiId === u.sq.leader) || ws[0];
+    let n = 0;
+    for (const w of ws) { w.unit = u.k; w.watch = null; w.lead = w === lead ? null : lead; w.unitSlot = w === lead ? -1 : n++; }
+    return [lead, ...ws.filter(w => w !== lead)];
+  }
+  // free (off court, off a spot): a Got Next spot as a group. Back on the court they just played on first, then a free
+  // 3v3 court (they'll hold it: it waits for them), then any open spot on a 3v3 court
+  placeUnit(t = Date.now()) {
+    const u = this.icon;
+    if (!u?.formed || u.over) return false;
+    const ws = this.walkers.filter(w => w.unit === u.k && !w.exit && !w.spot);
+    if (ws.length !== 3) return false;
+    const open = this.courts.filter(c => c.format === 3 && !c.live && !this.realHeld(c) && c.lines.some(l => !l));
+    if (!open.length) return false;
+    const free = open.filter(c => !c.session && !c.mine);
+    const c = open.includes(u.last) ? u.last : free.length ? this.rng.pick(free) : this.rng.pick(open);
+    return this.formAILine(c, this.unitGroup(ws), u.k);
+  }
+  // people coming off court c (at(i): where entries[i] is standing). The ICON Squad among them goes as one: back to a
+  // Got Next spot while their hour runs (this court's first: the next squad tick), out of the park together after it.
+  // One of them who was playing on his own while their hour runs just comes off (he walks in with the other two); after
+  // it he's a regular again. → everyone else, for the usual walk-off
+  unitOff(c, entries, at = null) {
+    const u = this.icon, es = entries || [];
+    if (!u || !es.length) return es;
+    const mine = es.filter(e => e?.aiId && u.ids.has(e.aiId)), live = this.iconLive();
+    if (!mine.length) return es;
+    if (mine.length === 3 && u.formed) {
+      const ws = mine.map((e, j) => { const q = at?.(es.indexOf(e)) || { x: c.origin[0] + 10.5, z: c.origin[2] - 1.2 + j * 1.2 }; const w = this.spawnWalker(q.x, q.z, e); w.leaving = 8; this.walkers.push(w); return w; });
+      this.unitGroup(ws);
+      u.last = c;
+      if (live) this.iconT = 0; else this.unitLeave(ws);
+    } else if (!live) return es;
+    return es.filter(e => !mine.includes(e));
+  }
+  // out of the park together: the leader heads for the plaza, the other two a step behind him (gone when he is)
+  unitLeave(ws) {
+    const lead = ws.find(w => !w.lead) || ws[0];
+    for (const w of ws) { w.spot = null; w.watch = null; w.exit = true; w.lead = w === lead ? null : lead; if (w !== lead) w.state = 'follow'; }
+    lead.leave();
+  }
+  // their hour is over: off a Got Next spot, or wherever they're standing, and out together. In a game (a court's or
+  // yours) they finish it first: rotateCourt, leaveCourt and stayOnCourt walk them out
+  unitDone(u, t) {
+    u.over = t;
+    if (!u.formed) return;
+    for (const c of this.courts) c.lines.forEach((l, r) => { if (l && l.icon === u.k) { for (const w of l.members) w.spot = null; c.lines[r] = null; } });
+    const ws = this.walkers.filter(w => w.unit === u.k && !w.exit);
+    if (ws.length) this.unitLeave(ws);
   }
 
   // ---------------- frame ----------------
@@ -713,6 +921,7 @@ export class ParkHub {
     if (this.cup && (this.cupT -= dt) <= 0) { this.cupT = 60; this.refreshCup(); }
     this.popT -= dt;
     if (this.popT <= 0) { this.popT = 20; this.populationTick(); }
+    if ((this.iconT -= dt) <= 0) { this.iconT = 2; this.squadTick(); } // (v0.4.8.6 the ICON Squad: their hour, and where they are)
     if (this.mode !== 'roam' && this.overview) this.setOverview(false);
     if (this.mode === 'roam') this.roam(dt);
     else if (this.mode === 'match' && this.mySession) {
@@ -859,22 +1068,26 @@ export class ParkHub {
     l.members.forEach((w, i) => { const slot = i + (l.mine ? 1 : 0), sp = c.rows[r][slot]; w.spot = { court: c, row: r, slot }; w.follow = null; w.goTo(sp.x, sp.z); });
   }
   // a group of park-goers (free walkers first, then new arrivals from the plaza) takes an open spot. v0.4.7.5: old
-  // squad mates of yours who chose to keep running together line up as a group
-  formAILine(c, group = null) {
+  // squad mates of yours who chose to keep running together line up as a group. v0.4.8.6: icon: the ICON Squad's window
+  // when the group is the ICON Squad; never one of them in anybody else's group, nor more than MAX_ICONS_PER_AI_TEAM
+  // ICONs in one
+  formAILine(c, group = null, icon = null) {
     const r = c.lines.findIndex(l => !l);
     if (r < 0) return false;
     let members = group;
     if (!members) {
       const head = c.rows[r][0], party = new Set(this.world.aiParty ? this.world.aiParty() : []);
-      const free = this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.entry.aiId).sort((a, b) => (party.has(b.entry.aiId) - party.has(a.entry.aiId)) || (Math.hypot(a.p.x - head.x, a.p.z - head.z) - Math.hypot(b.p.x - head.x, b.p.z - head.z))).slice(0, c.format);
+      let icons = 0;
+      const free = this.walkers.filter(w => !w.spot && w.follow == null && !w.exit && w.unit == null && w.entry.aiId).sort((a, b) => (party.has(b.entry.aiId) - party.has(a.entry.aiId)) || (Math.hypot(a.p.x - head.x, a.p.z - head.z) - Math.hypot(b.p.x - head.x, b.p.z - head.z)))
+        .filter(w => !isIconEntry(w.entry) || icons++ < MAX_ICONS_PER_AI_TEAM).slice(0, c.format);
       if (free.length < c.format) {
-        const more = this.takeEntries(c.format - free.length, { walkers: false });
+        const more = this.takeEntries(c.format - free.length, { walkers: false, have: free.map(w => w.entry) });
         if (!more) return false;
         for (const e of more) { const w = this.spawnWalker(this.rng.range(-30, 30), -30.5, e); this.walkers.push(w); free.push(w); }
       }
       members = free;
     }
-    c.lines[r] = { members, mine: false, ready: false, readyAt: 0 };
+    c.lines[r] = { members, mine: false, ready: false, readyAt: 0, ...(icon != null ? { icon } : {}) };
     this.markFull(c, c.lines[r]);
     this.placeLine(c, r);
     return true;
@@ -969,7 +1182,7 @@ export class ParkHub {
     let w = squad[0];
     const head = c.rows[r][0];
     if (!w) {
-      const free = this.walkers.filter(x => !x.spot && x.follow == null && !x.exit).sort((a, b) => Math.hypot(a.p.x - head.x, a.p.z - head.z) - Math.hypot(b.p.x - head.x, b.p.z - head.z));
+      const free = this.walkers.filter(x => !x.spot && x.follow == null && !x.exit && x.unit == null).sort((a, b) => Math.hypot(a.p.x - head.x, a.p.z - head.z) - Math.hypot(b.p.x - head.x, b.p.z - head.z)); // (v0.4.8.6: never one of the ICON Squad)
       w = free[0];
       if (!w || this.rng.next() < 0.35) { const e = this.takeEntries(1, { topUp: true, walkers: false }); if (e) { w = this.spawnWalker(this.rng.range(-20, 20), -29, e[0]); this.walkers.push(w); } }
       if (!w) return;
@@ -988,10 +1201,14 @@ export class ParkHub {
     // v0.4.5 stage 7: the finished game hands its athletes back to the pool first, so the losers walking off and
     // the next game on this court pick up the same ones instead of building new people mid-frame
     s.dispose();
+    // (v0.4.8.6: where each of a team stood when the game ended, for the ICON Squad walking off it as one: unitOff)
+    const at = team => i => { const p = g.teams[team]?.[i]; return p ? { x: p.x + c.origin[0], z: p.z + c.origin[2] } : null; };
     // losers are forced off the court: they walk off into the park (or log off and head home). v0.4.5: some
-    // of them walk back around to the back of the line to run it again
-    const off = [];
+    // of them walk back around to the back of the line to run it again. v0.4.8.6: the ICON Squad always does, as one
+    // (or, their hour up, walks out together)
+    const off = [], lost = this.unitOff(c, losers, at(1 - g.winner));
     for (let i = 0; i < g.teams[1 - g.winner].length && this.walkers.length < 18; i++) {
+      if (!lost.includes(losers[i])) continue;
       const p = g.teams[1 - g.winner][i];
       const w = this.spawnWalker(p.x + c.origin[0], p.z + c.origin[2], losers[i]);
       w.leaving = 8;
@@ -1002,23 +1219,29 @@ export class ParkHub {
     const nx = this.nextLine(c), l0 = nx?.l;
     if (l0 && l0.mine && l0.ready && this.canStart(c)) {
       s.dispose(); c.session = null;
-      // kings who logged off (or left to join your squad) are replaced by whoever's around
-      const kept = winners.every(e => this.stays(e) && !this.world.inSquad(e.aiId));
+      // kings who logged off (or left to join your squad) are replaced by whoever's around (v0.4.8.6: the ICON Squad
+      // while their hour runs: you play them like any kings)
+      const kept = this.holds(winners);
+      if (!kept) this.unitOff(c, winners, at(g.winner));
       const opp = kept ? winners : this.takeEntries(c.format, { topUp: true, exclude: new Set(l0.members.map(w => w.entry.aiId)) });
       this.startMyGame(c, opp, kept ? c.kingsStreak : 0); // (the kings bring their streak; fill-ins don't)
       this.syncSquad();
       if (off.length === c.format && this.rng.next() < 0.45) this.formAILine(c, off);
+      this.squadTick();
       return;
     }
     if (off.length === c.format && this.rng.next() < 0.45 && c.lines.some(l => !l)) this.formAILine(c, off);
-    // winners stay on; anyone who just logged off walks out instead
-    const leaving = winners.filter(e => !this.stays(e) || this.world.inSquad(e.aiId));
+    // winners stay on; anyone who just logged off walks out instead (v0.4.8.6: the ICON Squad stay on as one while their
+    // hour runs, and walk out together after it; one of them who was playing on his own comes off to join them)
+    const leaving = this.isUnit(winners) ? (this.holds(winners) ? [] : winners.slice()) : winners.filter(e => !this.stays(e) || this.world.inSquad(e.aiId) || (this.iconLive() && this.icon.ids.has(e.aiId)));
     if (leaving.length) {
       s.opts.rosters[g.winner] = []; // so they no longer count as busy on this court
-      winners.forEach((e, i) => { if (!leaving.includes(e)) return; const p = g.teams[g.winner][i]; const w = this.spawnWalker(p.x + c.origin[0], p.z + c.origin[2], e); w.leaving = 8; if (this.world.inSquad(e.aiId)) w.follow = 0; else w.leave(); this.walkers.push(w); });
+      const go = this.unitOff(c, leaving, i => at(g.winner)(winners.indexOf(leaving[i])));
+      winners.forEach((e, i) => { if (!go.includes(e)) return; const p = g.teams[g.winner][i]; const w = this.spawnWalker(p.x + c.origin[0], p.z + c.origin[2], e); w.leaving = 8; if (this.world.inSquad(e.aiId)) w.follow = 0; else w.leave(); this.walkers.push(w); });
     }
     this.newBackgroundGame(c, leaving.length ? null : winners);
     if (leaving.length) this.syncSquad();
+    this.squadTick(); // (v0.4.8.6: the ICON Squad, beaten or waiting on a spot, gets back in line: this court's first)
   }
 
   // ---------------- v0.4.5 streaks you can see ----------------
@@ -1102,7 +1325,7 @@ export class ParkHub {
     await this.pool.prebuild([...mine, ...opp].filter(e => !e.human).map(e => ({ build: e.build, look: e.look, opts: { detail: 1, faceRes: 512, lod: true } })));
     if (this.disposed) return;
     this.lendMe();
-    const teams = [{ name: this.aff.name, abbr: 'YOU', color: this.aff.color }, { name: 'Court Kings', abbr: 'KNG', color: '#e8e3d8' }];
+    const teams = [{ name: this.aff.name, abbr: 'YOU', color: this.aff.color }, this.isUnit(opponents) ? { ...ICON_TEAM } : { name: 'Court Kings', abbr: 'KNG', color: '#e8e3d8' }]; // (v0.4.8.6: across from the ICON Squad)
     this.myCourt = c;
     this.myOpp = opponents;
     this.mySession = new MatchSession(app, {
@@ -1150,7 +1373,12 @@ export class ParkHub {
     // new challengers walk up: the hotter your streak, the better the people who step up
     const old = this.myOpp || [];
     this.myOpp = [];
-    for (const e of old) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    // (v0.4.8.6: the ICON Squad you just beat walks off as one, back in line while their hour runs: unitOff)
+    for (const e of this.unitOff(c, old)) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    // (v0.4.8.6: a teammate whose ICON Squad's hour has begun goes to run with them: someone from around takes his place)
+    const toSquad = (this.myMates || []).filter(e => this.world.squadOf?.(e.aiId));
+    const fill = toSquad.length ? this.takeEntries(toSquad.length, { topUp: true, exclude: new Set([...this.myMates, ...old].map(e => e.aiId).filter(Boolean)) }) : null;
+    if (fill) this.myMates = [...this.myMates.filter(e => !toSquad.includes(e)), ...fill];
     // v0.4.5: the group with next gets the shot at you; with nobody in line, whoever's around steps up
     const nx = this.upNext(c, false);
     let challengers;
@@ -1174,9 +1402,11 @@ export class ParkHub {
     if (session) session.dispose();
     this.mySession = null;
     c.mine = false;
-    // teammates become park-goers again (squad mates stay with you; anyone who logged off heads home)
-    for (let i = 0; i < (this.myMates || []).length; i++) {
-      const e = this.myMates[i];
+    // teammates become park-goers again (squad mates stay with you; anyone who logged off heads home; v0.4.8.6: one
+    // whose ICON Squad's hour has begun goes to them: unitOff)
+    const mates = this.unitOff(c, this.myMates || []);
+    for (let i = 0; i < mates.length; i++) {
+      const e = mates[i];
       const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + 4 + i, e);
       if (this.world.inSquad(e.aiId)) w.follow = 0;
       else if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0])));
@@ -1188,7 +1418,9 @@ export class ParkHub {
     // brought if they beat you, nothing if you won and walked off (or no game was played)
     c.kingsStreak = session && !won ? (this.myOppStreak || 0) + 1 : 0;
     const opp = this.myOpp; this.myOpp = [];
-    if (won && opp) for (const e of opp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] - 4, e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    // (v0.4.8.6: the ICON Squad you beat walks off as one: back in line while their hour runs, out together after it.
+    // If they beat you they hold the court, as kings do, while their hour runs: newBackgroundGame, holds)
+    if (won && opp) for (const e of this.unitOff(c, opp)) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] - 4, e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     this.newBackgroundGame(c, won ? null : opp, true);
     // put me on the sideline
     this.me.setPos(c.origin[0] + 10.8, c.origin[2] + 2, -Math.PI / 2);
@@ -1342,10 +1574,12 @@ export class ParkHub {
   vacate(c) {
     const s = c.session; if (!s) return;
     const g = s.game;
+    // (v0.4.8.6: the ICON Squad on it walks off as one, and lines up somewhere else)
+    const keep = s.opts.rosters.map((ro, ti) => this.unitOff(c, ro, i => { const p = g.teams[ti]?.[i]; return p ? { x: p.x + c.origin[0], z: p.z + c.origin[2] } : null; }));
     for (const p of g.players) {
       if (this.walkers.length >= 18) break;
       const e = s.opts.rosters[p.team][g.teams[p.team].indexOf(p)];
-      if (!e?.aiId) continue;
+      if (!e?.aiId || !keep[p.team].includes(e)) continue;
       const w = this.spawnWalker(p.x + c.origin[0], p.z + c.origin[2], e);
       w.leaving = 8;
       if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave();
@@ -1391,7 +1625,7 @@ export class ParkHub {
   topUp(side, n, opts = {}) {
     if (side.length >= n) return side;
     const ex = new Set(side.map(x => x.entry.aiId).filter(Boolean));
-    const more = this.takeEntries(n - side.length, { topUp: true, exclude: ex, ...opts }) || [];
+    const more = this.takeEntries(n - side.length, { topUp: true, exclude: ex, have: side.map(x => x.entry), ...opts }) || []; // (v0.4.8.6: have: its ICONs count)
     return [...side, ...more.map(e => ({ entry: e }))];
   }
   // your squad's game: you, your friends in the squad and the park-goers on your spot, against the other squad with next
@@ -1431,10 +1665,10 @@ export class ParkHub {
     // yours and your park's are themselves again, from your world)
     const byName = new Map((this.myMates || []).map(e => [e.name, e]));
     const aiMine = session.opts.rosters[myTeam].filter(e => !e.human).map(e => e.sq?.owner === me ? { ...this.entryFor(e.sq.id), sq: e.sq } : byName.get(e.name) || e);
-    for (const e of aiMine) if (home.length < c.format) home.push({ entry: e });
+    for (const e of aiMine) if (home.length < c.format && !this.world.squadOf?.(e.aiId)) home.push({ entry: e }); // (v0.4.8.6: not one whose ICON Squad's hour has begun)
     const oldOpp = this.onlineGame ? [] : this.myOpp || [];
     session.dispose(); this.mySession = null; this.onlineGame = null;
-    for (const e of oldOpp) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    for (const e of this.unitOff(c, oldOpp)) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     const rc = this.remoteClaimLine(c);
     let away, nm = 'Challengers';
     if (rc) { away = [...this.people(rc.claim.members), ...squadAIPlayers(this.app, rc.claim.members.filter(id => net.people.has(id)))].slice(0, c.format); nm = `${net.usernameOf(rc.claim.leader)}'s squad`; }
@@ -1446,9 +1680,9 @@ export class ParkHub {
     const sides = [this.topUp(home, c.format), this.topUp(away, c.format, { exclude: new Set(home.map(x => x.entry.aiId).filter(Boolean)) })];
     this.sendParkGame(c, sides, { streaks: [Math.max(ct?.kings?.streak || 0, this.myStreak()), 0], names: [`${net.you.username}'s squad`, nm] });
   }
-  // AI who were going to play walk back into the park instead
+  // AI who were going to play walk back into the park instead (v0.4.8.6: the ICON Squad as one)
   walkOff(c, entries) {
-    for (const e of entries || []) if (this.walkers.length < 16 && e?.aiId) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
+    for (const e of this.unitOff(c, entries || [])) if (this.walkers.length < 16 && e?.aiId) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
   }
   // sides: [[{entry, person?}], [..]] (team 0 first). The game starts on everyone's screen when the hosted game says so
   sendParkGame(c, sides, { streaks = [0, 0], names = ['Squad', 'Court Kings'] } = {}) {
@@ -1458,7 +1692,8 @@ export class ParkHub {
     const humans = [...people.values()];
     const hum = rosters.map(ro => ro.some(e => e.human));
     const abbr = s => s.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SQD';
-    const teams = names.map((n, t) => ({ name: hum[t] ? n : t ? 'Court Kings' : n, abbr: hum[t] ? abbr(n) : t ? 'KNG' : abbr(n), color: hum[0] && hum[1] ? (t ? '#4ac8ff' : '#ffd84a') : t ? '#e8e3d8' : this.aff.color }));
+    const unit = sides.map((side, t) => !hum[t] && this.isUnit(side.map(x => x.entry))); // (v0.4.8.6: the ICON Squad plays under its own name)
+    const teams = names.map((n, t) => ({ name: hum[t] ? n : unit[t] ? ICON_TEAM.name : t ? 'Court Kings' : n, abbr: hum[t] ? abbr(n) : unit[t] ? ICON_TEAM.abbr : t ? 'KNG' : abbr(n), color: hum[0] && hum[1] ? (t ? '#4ac8ff' : '#ffd84a') : t ? '#e8e3d8' : this.aff.color }));
     const setup = {
       kind: 'park', where: this.themeId, court: ci, format: c.format, full: !!c.full, seed: newSeed(), rosters, teams, slots, names: seatNames, meter,
       delay: humans.length > 1 ? inputDelay(humans.map(p => p.rtt)) : 1, target: app.settings.parkTarget || 21, difficulty: app.settings.difficulty ?? 0.6,

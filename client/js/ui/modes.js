@@ -27,6 +27,7 @@ import * as Online from './online.js';
 import { endWinStreak } from '../game/iconfx.js';
 import { syncEvent } from './events.js';
 import { slotOpenedText } from '../sim/builds.js';
+import * as Squad from './squadwatch.js';
 
 // Tear down whatever 3D world is running (park hub / standalone match)
 export function leaveWorld(app) {
@@ -65,6 +66,8 @@ export function parkEntry(app, root) {
     <div class="row gap end"><button class="btn primary big" data-park="${c.affiliation}">Enter ${esc(home.park)}</button></div></section>`;
   $('[data-target]', root).onchange = e => { settings.parkTarget = +e.target.value; saveSettings(); };
   $$('[data-park]', root).forEach(b => b.onclick = () => enterPark(app, b.dataset.park));
+  // v0.4.8.6 qp: an ICON squad at one of the parks: its card says so (kept current every minute; ui/squadwatch.js)
+  root._squadStop?.(); root._squadStop = Squad.mountSquadTags(app, root);
   const bb = $('[data-cup-board]', root); if (bb) bb.onclick = () => openCupBoard(app);
   // v0.4.5: time left and your place in the running Cup (and a nudge when last Cup's prizes are waiting)
   app.api.get('/api/cup').then(st => {

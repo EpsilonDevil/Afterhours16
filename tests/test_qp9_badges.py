@@ -28,10 +28,14 @@ class Qp9Badges(unittest.TestCase):
     def test_every_tier_30_percent_lower(self):
         for bid, old in BEFORE.items():
             new = progression.BADGES[bid]["tiers"]
-            self.assertEqual(new, tuple(jsround(t * 0.7) for t in old), bid)
+            # (v0.4.8.6 qp: Brick Wall's Hall of Fame came down another 45% since: tests/test_v0486_badges.py)
+            want = tuple(jsround(t * 0.7) for t in old)
+            if bid == "brick_wall":
+                want = want[:3] + (jsround(want[3] * 0.55),)
+            self.assertEqual(new, want, bid)
             self.assertEqual(list(new), sorted(set(new)), bid)
         self.assertEqual(progression.BADGES["dimer"]["tiers"], (9, 28, 70, 147))
-        self.assertEqual(progression.BADGES["brick_wall"]["tiers"], (18, 63, 154, 315))
+        self.assertEqual(progression.BADGES["brick_wall"]["tiers"], (18, 63, 154, 173))
         # nothing else moved
         self.assertEqual(progression.BADGES["chasedown"]["tiers"], (8, 25, 60, 125))
         self.assertEqual(progression.BADGES["rebound_chaser"]["tiers"], (16, 56, 140, 280))
