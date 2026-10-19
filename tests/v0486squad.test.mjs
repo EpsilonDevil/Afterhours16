@@ -1,4 +1,4 @@
-// v0.4.8.6 quick patch: the ICON Squad (sim/iconsquad.js, sim/world.js AIWorld.iconSquad). Every 12 hours plus 10-30
+// v0.4.8.6 quick patch: the ICON Squad (sim/iconsquad.js, sim/world.js AIWorld.iconSquad). Every 9 hours, give or take 10-30
 // minutes, a full squad of three real AI 99 OVR ICONs of your world shows up at one of the three parks for an hour, in
 // one outfit, on builds that fit together; only ever one squad at a time. (The park side: v0486squadpark.test.mjs; the
 // menus: v0486squadui.test.mjs.)
@@ -15,24 +15,30 @@ const DAY = 86400000, MIN = 60000, H = 3600000;
 const worldAt = (seed, t, days) => new AIWorld({ seed, born: t - days * DAY }, CATALOG);
 const CLOTHES = ['top', 'bottom', 'shoes', 'socks', 'headband', 'sleeve', 'wristband', 'leg_sleeve', 'knee_pad', 'chain'];
 
-test('the schedule: 12 hours plus 10-30 minutes apart (never sooner), an hour long, never the same park twice running', () => {
+test('the schedule: 9 hours apart give or take 10-30 minutes (early or late), an hour long, never the same park twice running', () => {
   assert.equal(ICON_SQUAD.first, Date.parse('2026-10-19T02:00:00Z')); // (Sun Oct 18 2026, 7 PM Pacific)
   assert.deepEqual(ICON_SQUAD.parks, PARKS);
-  const n = 2200, count = { harbor: 0, brick: 0, foundry: 0 }, lates = new Set();
+  assert.equal(ICON_SQUAD.every, 9 * H);
+  const n = 2200, count = { harbor: 0, brick: 0, foundry: 0 }, offs = new Set();
+  let early = 0;
   let prev = squadWindow(0);
   count[prev.park]++;
   for (let k = 1; k < n; k++) {
     const w = squadWindow(k), gap = w.start - prev.start;
-    assert.ok(gap >= 12 * H + 10 * MIN && gap <= 12 * H + 30 * MIN, `window ${k}: ${gap / MIN} min after the last`);
+    const off = Math.abs(gap - 9 * H);
+    assert.ok(off >= 10 * MIN && off <= 30 * MIN, `window ${k}: ${gap / MIN} min after the last`);
+    assert.equal(w.shift, gap - 9 * H);
+    if (gap < 9 * H) early++;
     assert.equal(w.end - w.start, 60 * MIN);
-    assert.ok(w.start >= prev.end + 11 * H, 'windows never overlap');
+    assert.ok(w.start >= prev.end + 7.5 * H, 'windows never overlap');
     assert.notEqual(w.park, prev.park, `window ${k} at the same park as ${k - 1}`);
-    count[w.park]++; lates.add(Math.round(w.late / MIN));
+    count[w.park]++; offs.add(Math.round(w.shift / MIN));
     prev = w;
   }
-  // every park gets its share (about a third each), and the stagger takes every minute from 10 to 30
+  // every park gets its share (about a third each); early and late about half each; every minute from 10 to 30 either way
   for (const p of PARKS) assert.ok(count[p] > n * 0.28 && count[p] < n * 0.39, `${p}: ${count[p]}`);
-  assert.equal(lates.size, 21);
+  assert.ok(early > n * 0.45 && early < n * 0.55, `${early} early`);
+  assert.equal(offs.size, 42);
   // it walks round the clock: the hour of day (Pacific) of its arrivals over two months covers the whole day
   const hours = new Set();
   for (let k = 0; k < 120; k++) hours.add(new Date(squadWindow(k).start).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false }));
@@ -51,13 +57,13 @@ test('the window on at a moment, and the next one: one at a time, the same answe
     assert.equal(nextSquadWindow(w.start).k, k + 1);
     assert.equal(nextSquadWindow(w.start - 1).k, k);
   }
-  // random moments over a year: on in about 1/12.3 of them, and then inside the window it names
+  // random moments over a year: on in about 1/9 of them, and then inside the window it names
   let on = 0;
   for (let i = 0; i < 4000; i++) {
     const t = ICON_SQUAD.first + Math.random() * 365 * DAY, w = squadWindowAt(t);
     if (w) { on++; assert.ok(t >= w.start && t < w.end); }
   }
-  assert.ok(on > 4000 * 0.065 && on < 4000 * 0.1, `${on}`);
+  assert.ok(on > 4000 * 0.09 && on < 4000 * 0.135, `${on}`);
   // the server's clock: a PC 3 minutes slow still sees the squad arrive when the server says (3 minutes earlier on its clock)
   const w = squadWindow(5);
   setSquadClock(3 * MIN);

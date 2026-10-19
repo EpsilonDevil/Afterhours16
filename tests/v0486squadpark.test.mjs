@@ -1,4 +1,4 @@
-// v0.4.8.6 quick patch: the ICON Squad at the park (game/park.js). About every 12 hours three of the world's 99 OVR ICONs
+// v0.4.8.6 quick patch: the ICON Squad at the park (game/park.js). About every 9 hours three of the world's 99 OVR ICONs
 // run together at one park for an hour, in one outfit. At the park they are one unit: never pulled one at a time, in
 // together, holding a 3v3 court or on a Got Next spot as a group, winners stay and beaten they line up again until the
 // hour is up, then out together; and no other AI team anywhere ever has three ICONs (MAX_ICONS_PER_AI_TEAM).

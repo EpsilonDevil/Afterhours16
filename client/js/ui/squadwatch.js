@@ -1,4 +1,4 @@
-// v0.4.8.6 qp: the ICON Squad park event, the menus' side. Every 12 hours and a bit, for an hour, a squad of three 99 OVR
+// v0.4.8.6 qp: the ICON Squad park event, the menus' side. About every 9 hours, for an hour, a squad of three 99 OVR
 // ICONs from your AI world turns up at one of the three parks (sim/iconsquad.js and sim/world.js decide who, where and
 // when; app.ai.iconSquad(t) → {k, park, start, end, ids, leader, outfit, roles} or null). There's no countdown to it: the
 // game only says so once it's there.

@@ -738,7 +738,7 @@ export class ParkHub {
   }
 
   // ---------- v0.4.8.6 the ICON Squad (sim/iconsquad.js, AIWorld.iconSquad) ----------
-  // About every 12 hours three of this world's 99 OVR ICONs run together for an hour at one park, in one outfit, with
+  // About every 9 hours three of this world's 99 OVR ICONs run together for an hour at one park, in one outfit, with
   // builds that fit (a handler, a wing and a big); there is only ever one such squad. Here they're one unit: nobody pulls
   // one of them on his own (availableHere, takeEntries, the free walkers, formAILine); they walk in together, hold a free
   // 3v3 court or line up for one as a group, stay on while they win and get back in line when they lose; when the hour

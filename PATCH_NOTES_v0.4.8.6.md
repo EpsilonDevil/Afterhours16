@@ -61,10 +61,10 @@ Everyone has to be on v0.4.8.6 to play online together. Pull the update before y
 
 ## Quick patch (Oct 18): The ICON Squad, Brick Wall and Posterizer
 
-The rarest thing in the park. About every 12 hours, a full squad of three AI ICONs (99 OVR) shows up at one of the three parks and runs there for an hour.
+The rarest thing in the park. About every 9 hours, a full squad of three AI ICONs (99 OVR) shows up at one of the three parks and runs there for an hour.
 
 ### When and where
-- **Every 12 hours plus 10 to 30 minutes.** Each squad arrives 12 hours and 10 to 30 minutes after the last one did, a different amount every time. It never comes sooner than 12 hours, and it lands about 40 minutes later each day, so over a few weeks it visits every hour of the day.
+- **Every 9 hours, give or take 10 to 30 minutes.** Each squad arrives about 9 hours after the last one did, 10 to 30 minutes early or late, a different amount every time. Nine hours doesn't divide a day, so it comes round at every hour of the day.
 - **Harbor Point, Old Brick Yard or Foundry Works,** never the same park twice in a row.
 - **Only ever one.** There is one ICON Squad at a time across the three parks, and no other AI team in the parks ever has three ICONs on it.
 - **The same schedule for everyone.** It runs on the server's clock, so every copy of the game sees the squad arrive at the same moment, at the same park.

@@ -1,9 +1,11 @@
 // v0.4.8.6 quick patch: the ICON Squad, the rarest thing in the park. A full squad of three AI 99 OVR ICONs from your own
 // AI world shows up at one of the three parks and plays there for an hour: all three in the same outfit, on builds that
-// fit together (a ball handler, a wing and a big, three different archetypes). Then it's gone for at least 12 hours.
-//  * When: each squad arrives 12 hours plus 10 to 30 minutes (a different amount every time) after the last one arrived,
-//    so it never comes sooner than 12 hours and it walks round the clock (about 40 minutes later each day). The series
-//    is the same for everyone (the server's clock: setSquadClock), starting Sunday Oct 18 2026, 7 PM Pacific.
+// fit together (a ball handler, a wing and a big, three different archetypes). Then it's gone for about 9 hours.
+//  * When: each squad arrives 9 hours after the last one did, give or take 10 to 30 minutes: a different amount every
+//    time, early or late (even odds). 9 hours doesn't divide a day, so it comes round at every hour of the day. The
+//    series is the same for everyone (the server's clock: setSquadClock), starting Sunday Oct 18 2026, 7 PM Pacific.
+//    (v0.4.8.6 qp first shipped as 12 hours plus 10-30 minutes, never sooner; David: "allow it to sometimes be sooner,
+//    that's what I meant by stagger; and let's do every 9 hours instead")
 //  * Where: Harbor Point, Old Brick Yard or Foundry Works, never the same park twice running. One window at a time and
 //    the windows never overlap, so there is only ever one ICON Squad in the three parks. (The park makes sure no other
 //    AI team anywhere has three ICONs: MAX_ICONS_PER_AI_TEAM.)
@@ -17,7 +19,7 @@ import { canEquip } from './bots.js';
 
 export const ICON_SQUAD = {
   first: Date.UTC(2026, 9, 19, 2, 0), // (the first squad: Sun Oct 18 2026, 7:00 PM Pacific)
-  every: 12 * 3600000, jitter: [10, 30], // (the next one comes every + 10-30 min later: minutes, drawn to the second)
+  every: 9 * 3600000, jitter: [10, 30], // (the next one comes every ± 10-30 min after the last: minutes, drawn to the second)
   length: 60 * 60000, size: 3,
   parks: ['harbor', 'brick', 'foundry'],
 };
@@ -34,25 +36,27 @@ const SERIES = [];
 const hk = k => hashString(`icon-squad|${k}`);
 function grow(k) {
   const S = ICON_SQUAD;
-  if (!SERIES.length) { const r = new RNG(hk(0)); SERIES.push({ k: 0, start: S.first, park: S.parks[Math.floor(r.next() * S.parks.length)], late: 0 }); }
+  if (!SERIES.length) { const r = new RNG(hk(0)); SERIES.push({ k: 0, start: S.first, park: S.parks[Math.floor(r.next() * S.parks.length)], shift: 0 }); }
   while (SERIES.length <= k) {
     const p = SERIES[SERIES.length - 1], n = p.k + 1, r = new RNG(hk(n));
-    const lo = S.jitter[0] * 60, span = (S.jitter[1] - S.jitter[0]) * 60, late = (lo + Math.floor(r.next() * (span + 1))) * 1000;
+    const lo = S.jitter[0] * 60, span = (S.jitter[1] - S.jitter[0]) * 60, by = (lo + Math.floor(r.next() * (span + 1))) * 1000;
+    const shift = r.next() < 0.5 ? -by : by; // (early or late)
     const others = S.parks.filter(x => x !== p.park);
-    SERIES.push({ k: n, start: p.start + S.every + late, park: others[Math.floor(r.next() * others.length)], late });
+    SERIES.push({ k: n, start: p.start + S.every + shift, park: others[Math.floor(r.next() * others.length)], shift });
   }
   return SERIES[k];
 }
-// window k (0 is the first): {k, start, end, park, late: how far past 12 hours it came (ms)} on the local clock
+// window k (0 is the first): {k, start, end, park, shift: how far off 9 hours after the last it came (ms; < 0 early)} on
+// the local clock
 export function squadWindow(k) {
   if (!(k >= 0)) return null;
   const w = grow(k | 0);
-  return { k: w.k, start: w.start - SKEW, end: w.start + ICON_SQUAD.length - SKEW, park: w.park, late: w.late };
+  return { k: w.k, start: w.start - SKEW, end: w.start + ICON_SQUAD.length - SKEW, park: w.park, shift: w.shift };
 }
 // the last window to start at or before t (server time), or -1
 function lastK(st) {
   if (st < ICON_SQUAD.first) return -1;
-  let hi = Math.ceil((st - ICON_SQUAD.first) / (ICON_SQUAD.every + ICON_SQUAD.jitter[0] * 60000)) + 1;
+  let hi = Math.ceil((st - ICON_SQUAD.first) / (ICON_SQUAD.every - ICON_SQUAD.jitter[1] * 60000)) + 1; // (the shortest gap: never past k)
   grow(hi);
   let lo = 0;
   while (lo < hi) { const m = (lo + hi + 1) >> 1; if (SERIES[m].start <= st) lo = m; else hi = m - 1; }
