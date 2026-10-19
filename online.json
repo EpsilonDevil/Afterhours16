@@ -1,5 +1,5 @@
 {
   "_": "The online server every copy of RIMRIFT connects to by itself, and its join code (README: Play online). Leave server empty to have none.",
-  "server": "",
-  "joinCode": ""
+  "server": "https://162-243-206-119.sslip.io",
+  "joinCode": "7777"
 }
