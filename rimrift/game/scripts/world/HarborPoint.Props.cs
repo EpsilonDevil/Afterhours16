@@ -40,7 +40,7 @@ public partial class HarborPoint
         Place(frame, "FenceFrames", Matte(0.42f, 0.65f), this, "fences");
         var chain = new StandardMaterial3D
         {
-            AlbedoTexture = Tex("chainlink"), VertexColorUseAsAlbedo = true, Roughness = 0.4f, Metallic = 0.6f,
+            AlbedoTexture = Tex("chainlink"), VertexColorUseAsAlbedo = true, VertexColorIsSrgb = true, Roughness = 0.5f, Metallic = 0.5f,
             Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, AlphaScissorThreshold = 0.42f, AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.AlphaToCoverageAndToOne,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled, TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
         };
@@ -54,7 +54,7 @@ public partial class HarborPoint
         var matte = new MeshKit(); var metal = new MeshKit(); var glow = new MeshKit();
         foreach (var c in Layout.courts)
         {
-            foreach (var b in c.benches) Bench(matte, b.x, b.z, b.yaw, C(b.wood), C(b.metal));
+            foreach (var b in c.benches) Bench(matte, b.x, b.z, b.yaw, C(b.wood) * new Color(0.72f, 0.66f, 0.6f), C(b.metal)); // the wood darker than the JS hex (the target's benches are dark brown)
             TrashCan(matte, c.trash.x, c.trash.z);
         }
         // the plaza: kiosks (VC store, Boosts), the Daily Spin wheel's frame, the Crew HQ and the Event hall

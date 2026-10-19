@@ -1,5 +1,7 @@
 # RIMRIFT Stage 0.5 spike — working contract for the agent team
 
+> **Oct 19, 2026: Stage 1 direction is set. Read `STAGE1-DIRECTION.md` (next to this file) before any port work.** The toolchain, layout and rules below still apply.
+
 Goal (G0 gate, from the roadmap): C# ball/shots/ratings/constants with a parity harness; Jolt ball-on-rim; Harbor
 Point at sunset; one target-quality athlete driven by the ported procedural animator. Gate = ball parity exact
 over 1,000 shots, no tunnelling at 20 m/s, 60 fps with 10 athletes on David's GPU, athlete sign-off.

@@ -12,3 +12,9 @@ only hand-off artefact. Rebuild: see the docstrings in those scripts.
 | renders/*.png, contact_sheet_vs_target.png, motion_sheet.png | Godot 4.7 Forward+ captures (lavapipe) from AthleteShowroom.tscn | project's own |
 
 Nothing from Mixamo, MakeHuman or any asset store. Bundle download kept only in scratch (/tmp/claude-0/character/dl).
+
+## meshy/athlete_v1 (evaluation only)
+| file | what | source | licence |
+|---|---|---|---|
+| meshy/athlete_v1/athlete_meshy.glb (21.0 MB) | David's Meshy.ai image-to-3D athlete (auto-rig, Unity Humanoid), decimated 72,774 → 44,999 tris, retargeted and re-rigged to our 21 bones by tools/athlete/build_meshy.py; one PBR material (4096² albedo + ORM from Meshy's metallic/roughness) | David's Meshy generation from the character sheet (inputs in the same folder) | per David's Meshy.ai plan terms — not CC0; keep out of any public build until confirmed |
+| meshy/athlete_v1/meshy_*_sheet.png, renders/ | Godot captures of it in AthleteShowroomMeshy.tscn | project's own | |

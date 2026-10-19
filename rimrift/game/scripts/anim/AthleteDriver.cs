@@ -39,6 +39,8 @@ public partial class AthleteDriver : Node3D
 
     public override void _Ready()
     {
+        var envGlb = OS.GetEnvironment("RIMRIFT_GLB");
+        if (!string.IsNullOrEmpty(envGlb)) GlbPath = envGlb; // (the showroom can be pointed at another athlete without touching the scenes)
         var scene = ResourceLoader.Load<PackedScene>(GlbPath);
         _model = scene.Instantiate<Node3D>();
         AddChild(_model);

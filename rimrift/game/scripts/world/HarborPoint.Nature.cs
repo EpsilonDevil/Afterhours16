@@ -11,7 +11,7 @@ public partial class HarborPoint
     {
         var sh = Layout.shore;
         var noise = new FastNoiseLite { Seed = 73, NoiseType = FastNoiseLite.NoiseTypeEnum.Value, Frequency = 1f, FractalOctaves = 3 };
-        var tint = C(Layout.theme.ground) * new Color(0.52f, 0.5f, 0.47f); // the theme's near-white sand is an albedo for the JS lighting; real sand is darker
+        var tint = C(Layout.theme.ground) * new Color(0.52f, 0.48f, 0.38f); // the theme's near-white sand is an albedo for the JS lighting; the target's sand is khaki (sRGB, see VertexColorIsSrgb)
         const float TILE = 12f; // metres per sand texture tile
         Color Shade(float x, float z)
         {
@@ -27,8 +27,8 @@ public partial class HarborPoint
         sand.Plane(x1 - x0, z1 - z0, 60, Mathf.RoundToInt((z1 - z0) / 10), MeshKit.At((x0 + x1) / 2, -0.005f, (z0 + z1) / 2), tint, shade: Shade, uvFn: (x, z) => new Vector2(x / TILE, z / TILE));
         var sandMat = new StandardMaterial3D
         {
-            VertexColorUseAsAlbedo = true, AlbedoTexture = Tex("sand_c"), NormalEnabled = true, NormalTexture = Tex("sand_n"), NormalScale = 0.22f,
-            Roughness = 0.95f, TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
+            VertexColorUseAsAlbedo = true, VertexColorIsSrgb = true, AlbedoTexture = Tex("sand_c"), NormalEnabled = true, NormalTexture = Tex("sand_n"), NormalScale = 0.3f,
+            Roughness = 1.0f, TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
         };
         Place(sand, "Sand", sandMat, this, "terrain", castShadow: false);
         // the wet slope: darker, glossy, running from the dry edge (y -0.005) down to SHORE.y under the water
@@ -37,7 +37,7 @@ public partial class HarborPoint
         wet.Plane(x1 - x0, sh.wet - sh.z, 60, 3, MeshKit.At(0, 0, (sh.z + sh.wet) / 2), tint, height: (x, z) => -0.005f + (z - sh.z) / (sh.wet - sh.z) * (sh.y + 0.005f), shade: WetShade, uvFn: (x, z) => new Vector2(x / TILE, z / TILE));
         var wetMat = new StandardMaterial3D
         {
-            VertexColorUseAsAlbedo = true, AlbedoTexture = Tex("sand_c"), NormalEnabled = true, NormalTexture = Tex("sand_n"), NormalScale = 0.5f,
+            VertexColorUseAsAlbedo = true, VertexColorIsSrgb = true, AlbedoTexture = Tex("sand_c"), NormalEnabled = true, NormalTexture = Tex("sand_n"), NormalScale = 0.5f,
             Roughness = 0.22f, Metallic = 0.0f, MetallicSpecular = 0.9f, TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
         };
         Place(wet, "WetSand", wetMat, this, "terrain", castShadow: false);
@@ -73,7 +73,12 @@ public partial class HarborPoint
         var trunksFar = new MeshKit(); var frondsFar = new MeshKit();
         var rng = new Rng(4242);
         int nFull = 0, nMid = 0, nLite = 0;
-        foreach (var p in Layout.palms)
+        // dressing for the poster's background band (the beach between the far fences and the water), not part of the
+        // JS layout: the concept art has a dense palm line there
+        var extra = new List<HarborLayout.Palm>();
+        if (ExtraPalms) foreach (var (x, z, h, lx, lz) in new[] { (-36f, 35f, 9.5f, 1.2f, -0.6f), (-24f, 38f, 8f, -0.8f, 0.5f), (-18f, 33f, 10.5f, 0.6f, 1.0f), (-6f, 37f, 9f, -1.1f, -0.3f), (3f, 33f, 11f, 0.9f, 0.7f), (9f, 39f, 8.5f, -0.5f, -1.0f), (21f, 35f, 10f, 1.0f, 0.4f), (30f, 38f, 9f, -0.9f, 0.8f), (36f, 33f, 11.5f, 0.4f, -0.9f), (-45f, 37f, 8.5f, 1.1f, 0.2f) })
+            extra.Add(new HarborLayout.Palm { x = x, z = z, s = 1, height = h, lean = new[] { lx, lz }, tier = "mid" });
+        foreach (var p in System.Linq.Enumerable.Concat(Layout.palms, extra))
         {
             bool full = p.tier == "full", mid = p.tier == "mid", lite = p.tier == "lite";
             if (mid && PalmTiers < 2) continue; if (lite && PalmTiers < 3) continue;
@@ -83,10 +88,10 @@ public partial class HarborPoint
         var trunkMat = Matte(0.9f);
         var frondMat = new StandardMaterial3D
         {
-            AlbedoTexture = Tex("frond"), VertexColorUseAsAlbedo = true, Roughness = 0.85f,
+            AlbedoTexture = Tex("frond"), VertexColorUseAsAlbedo = true, VertexColorIsSrgb = true, Roughness = 0.85f,
             Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, AlphaScissorThreshold = 0.5f, AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.AlphaToCoverageAndToOne,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled, TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
-            BacklightEnabled = true, Backlight = new Color(0.35f, 0.45f, 0.2f),
+            BacklightEnabled = true, Backlight = new Color(0.30f, 0.30f, 0.10f), // a warm glow through the sun-lit fronds; the fronds themselves read dark against the sky
         };
         Place(trunksFull, "PalmTrunks", trunkMat, this, "palms");
         Place(frondsFull, "PalmFronds", frondMat, this, "palms");
@@ -108,7 +113,7 @@ public partial class HarborPoint
         var top = path[n];
         trunks.Cylinder(0.19f * s, 0.13f * s, 0.6f * s, seg, MeshKit.At(top.X, top.Y - 0.2f * s, top.Z), C("#6f7d45"), y0: true, open: true);
         int nf = detail == 0 ? 7 : detail == 1 ? 9 : 11;
-        var greens = new[] { C("#3f7a3a"), C("#4f8a42"), C("#5f9a4a"), C("#4a8240") };
+        var greens = new[] { C("#2f6230"), C("#3a7238"), C("#447c3c"), C("#356a33") }; // darker, greener (look pass 2)
         for (int k = 0; k < nf; k++)
         {
             float a = (float)k / nf * Mathf.Tau + rng.Range(0, 0.35f);

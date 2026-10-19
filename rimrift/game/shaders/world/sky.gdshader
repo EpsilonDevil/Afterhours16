@@ -1,20 +1,25 @@
-// RIMRIFT Harbor Point sunset sky: the themes.js three-colour gradient (top / horizon / ground), a warm band that
-// widens toward the sun, the sun disc and its glow. The disc and glow are dimmed in the cubemap (radiance) pass so
-// the ambient light is the theme's dim cool sky, not the sun's corona.
+// RIMRIFT Harbor Point sunset sky. themes.js gives three colours (top / horizon / ground); the look pass against the
+// concept art adds an amber band above the horizon (the poster camera sees only the lowest ~10° of sky, so the
+// zenith blue must not leak into the frame), a dusky horizon away from the sun, a wide hot corridor around the
+// sun on the waterline, and the disc. The disc and glow are dimmed in the cubemap (radiance) pass so the ambient
+// light is the dim sky, not the sun's corona.
 shader_type sky;
 render_mode use_debanding;
 
-uniform vec3 top_color : source_color = vec3(0.18, 0.23, 0.48);
-uniform vec3 horizon_color : source_color = vec3(1.0, 0.56, 0.32);
+uniform vec3 top_color : source_color = vec3(0.30, 0.36, 0.50);      // zenith: dim desaturated blue-grey (out of the poster frame)
+uniform vec3 upper_color : source_color = vec3(0.50, 0.24, 0.12);    // 6..25° up: the deep amber-brown band of the target
+uniform vec3 horizon_color : source_color = vec3(1.0, 0.50, 0.16);   // the horizon under the sun: saturated orange
+uniform vec3 horizon_away : source_color = vec3(0.56, 0.34, 0.30);   // the horizon opposite the sun: dusky
 uniform vec3 ground_color : source_color = vec3(0.35, 0.25, 0.2);
-uniform vec3 ground_horizon : source_color = vec3(0.62, 0.42, 0.34);
-uniform vec3 sun_dir = vec3(-0.24, 0.14, 0.96);
-uniform vec3 sun_color : source_color = vec3(1.0, 0.78, 0.5);
-uniform float sun_size_deg = 1.6;      // apparent diameter (the real sun is 0.53°; bigger reads as the poster)
-uniform float sun_energy = 12.0;       // HDR value of the disc (AgX rolls it off)
-uniform float glow_energy = 1.6;       // the corona
-uniform float band_energy = 1.2;       // the warm band along the horizon toward the sun
-uniform float sky_curve = 0.22;        // how fast the horizon colour gives way to the top colour
+uniform vec3 ground_horizon : source_color = vec3(0.55, 0.36, 0.28);
+uniform vec3 sun_dir = vec3(-0.24, 0.05, 0.97);
+uniform vec3 sun_color : source_color = vec3(1.0, 0.84, 0.50);
+uniform float band_height = 0.10;      // sin(elevation) where the horizon colour has given way to the upper band (~6°)
+uniform float upper_height = 0.55;     // sin(elevation) where the upper band has given way to the zenith (~33°)
+uniform float sun_size_deg = 2.2;      // apparent diameter (the real sun is 0.53°; bigger reads as the poster)
+uniform float sun_energy = 14.0;       // HDR value of the disc (AgX rolls it off)
+uniform float glow_energy = 2.2;       // the corona
+uniform float corridor_energy = 1.5;   // the wide hot band along the horizon around the sun
 uniform float radiance_sun = 0.08;     // sun disc + glow scale in the cubemap pass (ambient / reflections)
 
 void sky() {
@@ -22,20 +27,23 @@ void sky() {
 	vec3 s = normalize(sun_dir);
 	float up = clamp(d.y, 0.0, 1.0);
 	float cosang = dot(d, s);
-	// gradient
+	// how far round the horizon we are from the sun (1 = under it, 0 = opposite)
+	vec2 dh = normalize(d.xz + vec2(1e-5, 0.0)), sh = normalize(s.xz);
+	float toward = dot(dh, sh) * 0.5 + 0.5;
+	vec3 hor = mix(horizon_away, horizon_color, pow(toward, 1.6));
 	vec3 col;
 	if (d.y >= 0.0) {
-		col = mix(horizon_color, top_color, pow(up, sky_curve));
+		col = mix(hor, upper_color, smoothstep(0.0, band_height, up));
+		col = mix(col, top_color, smoothstep(band_height * 0.8, upper_height, up));
 	} else {
-		col = mix(ground_horizon, ground_color, clamp(-d.y * 6.0, 0.0, 1.0));
+		col = mix(mix(ground_horizon, hor, 0.5), ground_color, clamp(-d.y * 6.0, 0.0, 1.0));
 	}
-	// the warm band: strongest on the horizon under the sun, fading up and away from it
-	float toward = pow(max(cosang, 0.0), 2.0);
-	float low = exp(-max(d.y, 0.0) * 7.0);
-	col += horizon_color * band_energy * toward * low * (d.y >= 0.0 ? 1.0 : 0.4);
+	// the hot corridor: wide around the sun, hugging the horizon
+	float low = exp(-up * 9.0);
+	col += sun_color * corridor_energy * pow(max(cosang, 0.0), 9.0) * low * (d.y >= 0.0 ? 1.0 : 0.5);
 	// corona + disc
 	float k = AT_CUBEMAP_PASS ? radiance_sun : 1.0;
-	float glow = pow(max(cosang, 0.0), 40.0) * 0.25 + pow(max(cosang, 0.0), 160.0) * 0.6 + pow(max(cosang, 0.0), 700.0) * 1.2;
+	float glow = pow(max(cosang, 0.0), 30.0) * 0.15 + pow(max(cosang, 0.0), 200.0) * 0.5 + pow(max(cosang, 0.0), 1200.0) * 1.0;
 	col += sun_color * glow * glow_energy * k;
 	float r = radians(sun_size_deg * 0.5);
 	float disc = smoothstep(cos(r * 1.25), cos(r), cosang);

@@ -15,16 +15,19 @@ namespace Rimrift.World;
 public partial class HarborPoint : Node3D
 {
     [Export] public bool BuildEnvironment = true;
-    [Export] public float SunElevationDeg = 22.0f;  // the key light (the theme's sun vector sits at 19°): long shadows, the court still lit
-    [Export] public float SunDiscElevationDeg = 5.0f; // where the disc sits in the sky and the glitter on the water (the poster: on the horizon)
+    [Export] public float SunElevationDeg = 17.0f;  // the key light (the theme's sun vector sits at 19°): long shadows, the court still lit, poles and fences silhouetted
+    [Export] public float SunDiscElevationDeg = 2.6f; // where the disc sits in the sky and the glitter on the water (the poster: on the waterline)
     [Export] public float SunBearingDeg = 14f;      // bearing from +Z (the sea) toward -X; the theme's own vector is 54°, the poster wants it in view
-    [Export] public float SunEnergy = 3.6f;
-    [Export] public float Exposure = 0.78f;
+    [Export] public float SunEnergy = 4.8f;          // hot on the sun-facing sides; the shadow sides fall dark (look pass 2)
+    [Export] public float Exposure = 0.68f;          // look pass 2: the target is a dark golden-hour frame (mean luma 0.35, ours was 0.53 at 0.78)
+    [Export] public float Vignette = 0.42f;         // themes.js grade.vignette 0.55; a full-screen multiply before AgX (shaders/world/vignette.gdshader)
     [Export] public float HazeDensity = 0.0f;       // volumetric haze: even 0.0007 veils the whole park salmon under the sun, so it is off (0) by default
-    [Export] public float FogBegin = 45f, FogEnd = 520f; // depth fog, from past the far fence out to the horizon
+    [Export] public float FogBegin = 95f, FogEnd = 650f; // depth fog from beyond the far fence and the shore (the poster camera is 42 m from the far fence, 70 m from the water) out to the horizon
+    [Export] public float FogMax = 0.8f;                   // the horizon keeps a little of the sea through the haze
     [Export] public bool Shadows = true;
     [Export] public bool Ssao = true, Ssil = false, Ssr = true;
     [Export] public int PalmTiers = 3; // 1 = only the park's shadow-casting palms, 2 = + mid, 3 = + far groves
+    [Export] public bool ExtraPalms = true; // look pass 2: a few more palms in the beach band behind the main court (dressing only, not in the layout)
 
     public HarborLayout Layout { get; private set; } = null!;
     public readonly Dictionary<string, int> Triangles = new();
@@ -75,9 +78,11 @@ public partial class HarborPoint : Node3D
     }
     public static Color C(string hex) => MeshKit.Hex(hex);
 
+    // VertexColorIsSrgb: the JS hexes are sRGB (hexLinear in the JS game); Forward+ treats vertex colours as linear
+    // unless told, which rendered every prop, pole, palm and the sand tint about one gamma too light (the pastel look)
     public StandardMaterial3D Matte(float rough = 0.82f, float metal = 0f) => new()
     {
-        VertexColorUseAsAlbedo = true, Roughness = rough, Metallic = metal,
+        VertexColorUseAsAlbedo = true, VertexColorIsSrgb = true, Roughness = rough, Metallic = metal,
         TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
     };
     public StandardMaterial3D Unlit(Color c, float energy = 1) => new()
@@ -106,7 +111,7 @@ public partial class HarborPoint : Node3D
         float eld = Mathf.DegToRad(SunDiscElevationDeg);
         SunDiscDir = (flat * Mathf.Cos(eld) + Vector3.Up * Mathf.Sin(eld)).Normalized(); // toward the disc
         var sun = new DirectionalLight3D { Name = "Sun" };
-        sun.LightColor = new Color(th.sun.color[0], th.sun.color[1], th.sun.color[2]); // the theme's [1, 0.68, 0.42]
+        sun.LightColor = new Color(1.0f, 0.70f, 0.42f); // the theme's [1, 0.68, 0.42]: warmer than this and the blue channel crushes, the teal goes green
         sun.LightEnergy = SunEnergy;
         sun.LightAngularDistance = 0.9f; // soft edges on the long shadows, and the size of the sun disc in the sky
         sun.ShadowEnabled = Shadows;
@@ -124,20 +129,18 @@ public partial class HarborPoint : Node3D
 
         // the graded sunset sky from themes.js (top / horizon / ground) with the sun disc + glow, see shaders/world/sky.gdshader
         var sky = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/world/sky.gdshader") };
-        sky.SetShaderParameter("top_color", new Color(0.40f, 0.47f, 0.66f)); // the poster sees only the lowest 15° of sky: a blue-grey there (the theme's deep zenith blue would read mauve)
-        sky.SetShaderParameter("horizon_color", new Color(1.0f, 0.5f, 0.22f)); // the theme's (1, 0.56, 0.32) pushed to the poster's gold-orange
+        // the gradient lives in the shader's defaults (look pass 2 against the concept art); the theme's ground stays
         sky.SetShaderParameter("ground_color", new Color(th.sky.ground[0], th.sky.ground[1], th.sky.ground[2]));
         sky.SetShaderParameter("sun_dir", SunDiscDir);
-        sky.SetShaderParameter("sun_color", new Color(1.0f, 0.74f, 0.48f));
         sun.SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly; // the shader draws the disc
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = sky, RadianceSize = Sky.RadianceSizeEnum.Size256, ProcessMode = Sky.ProcessModeEnum.Realtime },
             // the theme's ambient is a dim cool sky [0.42, 0.36, 0.48]: keep the shadows readable, not filled
-            AmbientLightSource = Godot.Environment.AmbientSource.Sky, AmbientLightSkyContribution = 1.0f, AmbientLightEnergy = 0.45f,
+            AmbientLightSource = Godot.Environment.AmbientSource.Sky, AmbientLightSkyContribution = 1.0f, AmbientLightEnergy = 0.26f,
             ReflectedLightSource = Godot.Environment.ReflectionSource.Sky,
-            TonemapMode = Godot.Environment.ToneMapper.Agx, TonemapExposure = Exposure, TonemapWhite = 4.0f,
+            TonemapMode = Godot.Environment.ToneMapper.Agx, TonemapExposure = Exposure, TonemapWhite = 6.0f,
             GlowEnabled = true, GlowIntensity = 0.35f, GlowBloom = 0.04f, GlowHdrThreshold = 1.5f, GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Softlight,
             SsaoEnabled = Ssao, SsaoRadius = 1.0f, SsaoIntensity = 1.8f,
             SsilEnabled = Ssil,
@@ -147,9 +150,11 @@ public partial class HarborPoint : Node3D
             VolumetricFogEmission = new Color(0.86f, 0.6f, 0.48f), VolumetricFogEmissionEnergy = 0.0f,
             VolumetricFogLength = 180f, VolumetricFogDetailSpread = 2.0f, VolumetricFogSkyAffect = 0.1f, VolumetricFogAnisotropy = 0.45f,
             // depth fog: nothing until FogBegin, the horizon fully hazed at FogEnd (the theme's fog colour)
-            FogEnabled = true, FogMode = Godot.Environment.FogModeEnum.Depth, FogLightColor = new Color(th.fog.color[0], th.fog.color[1], th.fog.color[2]), FogLightEnergy = 1.0f,
-            FogDepthBegin = FogBegin, FogDepthEnd = FogEnd, FogDepthCurve = 1.3f, FogAerialPerspective = 0.12f, FogSkyAffect = 0.08f, FogSunScatter = 0.08f,
-            AdjustmentEnabled = true, AdjustmentSaturation = 1.2f, AdjustmentContrast = 1.15f,
+            // its colour is the sky's own horizon in that direction (aerial perspective), so it is orange under the sun and dusky away from it
+            FogEnabled = true, FogMode = Godot.Environment.FogModeEnum.Depth, FogLightColor = new Color(0.80f, 0.42f, 0.20f), FogLightEnergy = 1.0f, FogDensity = FogMax,
+            FogDepthBegin = FogBegin, FogDepthEnd = FogEnd, FogDepthCurve = 1.5f, FogAerialPerspective = 0.7f, FogSkyAffect = 0.0f, FogSunScatter = 0.12f,
+            // the graded-photograph look: themes.js grade (1.1 / 1.05) pushed; the target measures sat 0.61 vs our 0.47
+            AdjustmentEnabled = true, AdjustmentSaturation = 1.05f, AdjustmentContrast = 1.15f,
         };
         if (_look.Contains("novol")) env.VolumetricFogEnabled = false; if (_look.Contains("nofog")) env.FogEnabled = false;
         if (_look.Contains("noglow")) env.GlowEnabled = false; if (_look.Contains("noamb")) env.AmbientLightEnergy = 0; if (_look.Contains("noadj")) env.AdjustmentEnabled = false;
@@ -158,8 +163,24 @@ public partial class HarborPoint : Node3D
         AddChild(Env);
         // a cool fill from the sky side so the shadows are not black (the theme's ambient sky [0.42, 0.36, 0.48]).
         // SkyMode LightOnly: it must not draw a second sun in the procedural sky.
-        var fill = new DirectionalLight3D { Name = "SkyFill", LightColor = new Color(0.5f, 0.56f, 0.8f), LightEnergy = 0.22f, ShadowEnabled = false, LightSpecular = 0.0f, SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly };
+        var fill = new DirectionalLight3D { Name = "SkyFill", LightColor = new Color(0.45f, 0.55f, 0.85f), LightEnergy = 0.24f, ShadowEnabled = false, LightSpecular = 0.0f, SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly };
         if (!_look.Contains("nofill")) { AddChild(fill); fill.LookAtFromPosition(new Vector3(40, 60, -30), Vector3.Zero, Vector3.Up); }
+        if (Vignette > 0 && !_look.Contains("novig")) BuildVignette();
+    }
+
+    /// a 2 x 2 quad the vignette shader pins to the screen (clip-space vertex), drawn last in the transparent pass with
+    /// multiply blending: it darkens the HDR frame before glow and tonemapping. One quad, one tiny shader: ~0 ms.
+    private void BuildVignette()
+    {
+        var mat = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/world/vignette.gdshader"), RenderPriority = 127 };
+        mat.SetShaderParameter("strength", Vignette);
+        var mi = new MeshInstance3D
+        {
+            Name = "Vignette", Mesh = new QuadMesh { Size = new Vector2(2, 2) }, MaterialOverride = mat,
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            CustomAabb = new Aabb(new Vector3(-4000, -4000, -4000), new Vector3(8000, 8000, 8000)), // never culled
+        };
+        AddChild(mi);
     }
 }
 
