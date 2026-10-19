@@ -82,6 +82,12 @@ Every account starts over at midnight Eastern going into Monday, October 19 (9:0
   - The online server resets at the same moment.
 - **Update before midnight Eastern.** You need this update to reset with everyone and to keep playing online.
 - **A copy of your old save** is kept in the game folder, in data\backups.
+- **Fixed (Oct 19): AI friends now reset too.** A game left open over midnight saved its old AI world (your AI friends and squad, and every AI hooper's progress) back after the reset, before it reloaded. A game in the middle of a match didn't reload at all. Now:
+  - the old world can't be saved back;
+  - any that got back in is cleared the next time the game starts;
+  - an open game stops saving and reloads even mid-match.
+
+  Update and restart, and your AI world starts fresh like everything else.
 
 ### The ICON Squad
 The rarest thing in the park. About every 9 hours, a full squad of three AI ICONs (99 OVR) shows up at one of the three parks and runs there for an hour.

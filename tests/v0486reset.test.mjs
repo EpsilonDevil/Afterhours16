@@ -16,12 +16,15 @@ test('warns 10 minutes and 1 minute ahead, then reloads a few seconds after the 
   const app = { config: { season_reset: { id: 'season-2026-10-19', at, vc: 250000, done: false }, server_time: T0 / 1000 } };
   const w = watchSeasonReset(app, { now: () => T0, setT, say: t => said.push(t), reload: () => reloads.push(1) });
   assert.equal(w.at, at * 1000);
-  assert.deepEqual(q.map(x => x.ms), [90 * 60000 - RESET_WARN[0], 90 * 60000 - RESET_WARN[1], 90 * 60000 + RESET_RELOAD]);
-  q.slice(0, 3).forEach(x => x.f());
+  assert.deepEqual(q.map(x => x.ms), [90 * 60000 - RESET_WARN[0], 90 * 60000 - RESET_WARN[1], 90 * 60000, 90 * 60000 + RESET_RELOAD]);
+  q.slice(0, 2).forEach(x => x.f());
+  // at the moment itself the page stops saving its (old) AI world, and lets its reload through, mid-game or not
+  assert.equal(app.seasonResetting, undefined); q[2].f(); assert.equal(app.seasonResetting, true);
+  q[3].f();
   assert.deepEqual(said.slice(0, 2), ['Season reset in 10 minutes: every account starts over with 250,000 VC. Builds, VC and items are wiped.',
     'Season reset in 1 minute: every account starts over with 250,000 VC. Builds, VC and items are wiped.']);
   assert.equal(said[2], 'Season reset: starting over…');
-  q[3].f();
+  q[4].f();
   assert.equal(reloads.length, 1);
   assert.equal(warnText(600000, 250000), said[0]);
 });
@@ -40,7 +43,7 @@ test('on the server\'s clock, and nothing when it\'s done, long past or days awa
   // opened in the last few seconds before it: just the reload
   ({ q, setT } = fake());
   watchSeasonReset({ config: { season_reset: { at, vc: 250000 }, server_time: at - 30 } }, { now: () => (at - 30) * 1000, setT });
-  assert.deepEqual(q.map(x => x.ms), [30000 + RESET_RELOAD]);
+  assert.deepEqual(q.map(x => x.ms), [30000, 30000 + RESET_RELOAD]);
 });
 
 test('main.js starts the watch as soon as the config is in, on every screen', () => {
@@ -48,4 +51,12 @@ test('main.js starts the watch as soon as the config is in, on every screen', ()
   assert.ok(main.includes("import { watchSeasonReset } from './ui/seasonreset.js';"));
   assert.ok(main.indexOf('watchSeasonReset(app') > main.indexOf("app.config = await app.api.get('/api/config')"));
   assert.ok(main.indexOf('watchSeasonReset(app') < main.indexOf('Checking your account'));
+});
+
+test('the AI world starts over too: a page open across the reset never saves its old world back; an old one that got back is set aside', () => {
+  const world = fs.readFileSync(new URL('../client/js/sim/world.js', import.meta.url), 'utf8');
+  assert.match(world, /const stale = !!\(r\?\.done && saved && !\(Number\(saved\.born\) >= \(r\.at - 3600\) \* 1000\)\);\s*const w = new AIWorld\(stale \? null : saved, app\.catalog\);/);
+  assert.match(world, /clearTimeout\(timer\);\s*if \(app\.seasonResetting\) return;/);
+  const main = fs.readFileSync(new URL('../client/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /window\.addEventListener\('beforeunload', e => \{ if \(app\.seasonResetting\) return;/);
 });

@@ -6,6 +6,8 @@ node_modules/
 data/browser-profile/
 data/*.log
 data/launcher.json
+# v0.4.8.6: the season reset's copy of the save, kept on your PC only (it's hundreds of MB: GitHub refuses files over 100 MB)
+data/backups/
 
 # Save backup made before the v0.4.4 install (local only)
 /data_backup_before_v0.4.4/

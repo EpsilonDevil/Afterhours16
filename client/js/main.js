@@ -193,7 +193,7 @@ function loop(now) {
 // keep the local service alive while the game window is open (it exits on its own after the window closes)
 const LAUNCHER = new URLSearchParams(location.search).has('launcher');
 if (LAUNCHER) setInterval(() => { fetch('/api/ping', { cache: 'no-store' }).catch(() => {}); }, 5000);
-window.addEventListener('beforeunload', e => { if (app.mode === 'match' || (app.mode === 'park' && app.world?.mode === 'match')) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (app.seasonResetting) return; if (app.mode === 'match' || (app.mode === 'park' && app.world?.mode === 'match')) { e.preventDefault(); e.returnValue = ''; } });
 
 window.addEventListener('error', e => { if (!app._errShown && e.message) { app._errShown = true; console.error(e.error || e.message); } });
 boot();

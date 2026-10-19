@@ -63,6 +63,45 @@ def backup(db, reset=SEASON_RESET):
         return None
 
 
+# a game left open across the reset still holds the old AI world (friends, squad, every AI's games) and saves it back
+# whenever it changes, until it reloads (and a game in progress holds the reload up): a world born before the reset (with
+# an hour's grace for a PC clock that's off) is the old one. The service refuses to save one (save_ai_world: is_stale),
+# and sweep_ai clears any that got written back before that fix, once per save (resets row "<id>:ai")
+STALE_GRACE = 3600
+
+
+def stale_world(world, reset=SEASON_RESET):
+    born = world.get("born") if isinstance(world, dict) else None
+    return not (isinstance(born, (int, float)) and not isinstance(born, bool) and born >= (reset["at"] - STALE_GRACE) * 1000)
+
+
+def sweep_ai(db, now=None, reset=SEASON_RESET):
+    """Once per save, after the reset: delete the AI worlds saved back from before it (the next sign-in builds a new
+    one). Returns how many went, or None when it has run here already (or the reset hasn't happened)."""
+    import json
+    now = time.time() if now is None else now
+    key = reset["id"] + ":ai"
+    if not done(db, reset) or db.query("SELECT 1 FROM resets WHERE id=?", (key,)):
+        return None
+    with db.transaction() as c:
+        if c.execute("SELECT 1 FROM resets WHERE id=?", (key,)).fetchone():
+            return None
+        gone = []
+        for aid, data in c.execute("SELECT account_id, data FROM ai_world").fetchall():
+            try:
+                world = json.loads(data)
+            except ValueError:
+                world = None
+            if stale_world(world, reset):
+                gone.append(aid)
+        for aid in gone:
+            c.execute("DELETE FROM ai_world WHERE account_id=?", (aid,))
+        c.execute("INSERT INTO resets VALUES(?,?,?,?)", (key, now, None, len(gone)))
+    if gone:
+        print(f"Season reset {reset['id']}: {len(gone)} AI world(s) saved back from before it cleared", flush=True)
+    return len(gone)
+
+
 def run(db, starter_items=(), now=None, reset=SEASON_RESET):
     """Reset every account on this save if the reset is due and hasn't happened here. Returns a summary dict, or None
     when there was nothing to do."""

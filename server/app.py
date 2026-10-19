@@ -194,6 +194,7 @@ class Service:
             if self.reset_done:
                 return None
             out = season.run(self.db, [i for i in CATALOG if CATALOG[i]["price"] == 0 and not CATALOG[i].get("exclusive")], now, self.season)
+            season.sweep_ai(self.db, now, self.season)  # (an old AI world a game left open saved back after it: cleared, once)
             self.reset_done = True
             return out
 
@@ -1325,6 +1326,9 @@ class Handler(BaseHTTPRequestHandler):
     def save_ai_world(self, aid, data):
         s, db = self.service, self.service.db
         builds.strict_keys(data, ("key", "world"))
+        # (v0.4.8.6 qp: after the season reset, a game left open from before it can't save its old AI world back)
+        if s.season and s.reset_done and season.stale_world(data.get("world"), s.season):
+            raise HTTPError(409, "The season reset started a new AI world. Restart the game to play in it.")
         world = progression.ai_world(data.get("world"))
 
         def save(c):

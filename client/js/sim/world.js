@@ -616,13 +616,17 @@ export const cupEntrant = (id, w) => hashString(`${id}|cup|${w}`) % 100 < 22;
 // app-level helpers: one world per account, saved to the server (debounced) whenever it changes
 let squadLeft = false; // (once per launch of the game)
 export function initWorld(app) {
-  const w = new AIWorld(app.profile?.ai_world, app.catalog);
+  // (v0.4.8.6 qp: after the season reset, an AI world from before it is the old one, whatever got it saved: a new one instead)
+  const r = app.config?.season_reset, saved = app.profile?.ai_world;
+  const stale = !!(r?.done && saved && !(Number(saved.born) >= (r.at - 3600) * 1000));
+  const w = new AIWorld(stale ? null : saved, app.catalog);
   app.ai = w;
   // v0.4.7.5: you left your squad when you closed the game (the AI who want to keep running together still do)
   if (!squadLeft) { squadLeft = true; if (w.leaveSquadOnStart()) app.squadNote = w.exSquad; }
   let timer = 0;
   const save = () => {
     clearTimeout(timer);
+    if (app.seasonResetting) return; // (v0.4.8.6 qp: the reset is happening: this page's world is the old one, never saved again)
     timer = setTimeout(async () => {
       try { const r = await app.api.mutate('/api/ai-world', { world: w.toJSON() }); w.dirty = false; if (app.profile) app.profile.ai_world = r.world; } catch (e) { console.warn('AI world not saved', e.message); }
     }, 800);

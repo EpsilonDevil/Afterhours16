@@ -185,5 +185,80 @@ class SeasonResetOverHttp(unittest.TestCase):
             tmp.cleanup()
 
 
+class SeasonResetAiWorlds(unittest.TestCase):
+    """The AI world starts over too: a game left open across the reset saved its old world back (friends and all) before it
+    reloaded. The service now refuses a world born before the reset, and clears any that got back in, once per save."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "save.sqlite3"
+        self.reset = {"id": "ai-reset", "at": time.time() - 600, "vc": 250_000}  # (ten minutes ago)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_stale_world(self):
+        at = self.reset["at"]
+        self.assertTrue(season.stale_world({"born": (at - 30 * 86400) * 1000}, self.reset))  # (weeks old: the old world)
+        self.assertTrue(season.stale_world({"born": (at - 2 * 3600) * 1000}, self.reset))
+        self.assertFalse(season.stale_world({"born": (at - 1800) * 1000}, self.reset))  # (a clock a little behind: fine)
+        self.assertFalse(season.stale_world({"born": time.time() * 1000}, self.reset))
+        for w in ({}, {"born": "x"}, {"born": True}, None, []):
+            self.assertTrue(season.stale_world(w, self.reset), w)
+
+    def test_an_old_world_saved_back_after_the_reset_is_cleared_once(self):
+        # (the reset ran; then a game left open wrote its old world back, friends and all)
+        s = server_app.Service(self.path, dev_accounts=False, season_reset=self.reset)
+        a = s.db.create_account("alpha", "password123", [])
+        b = s.db.create_account("bravo", "password123", [])
+        self.assertTrue(season.done(s.db, self.reset))
+        old = {"seed": 4242, "born": (self.reset["at"] - 40 * 86400) * 1000, "friends": ["ai-7", "ai-12"], "squad": ["ai-7"], "met": {}, "prog": {}}
+        new = {"seed": 99, "born": time.time() * 1000, "friends": [], "squad": [], "met": {}, "prog": {}}
+        with s.db.transaction() as c:
+            c.execute("DELETE FROM resets WHERE id=?", ("ai-reset:ai",))  # (as on a save from before this fix)
+            c.execute("INSERT OR REPLACE INTO ai_world VALUES(?,?,?)", (a, json.dumps(old), time.time()))
+            c.execute("INSERT OR REPLACE INTO ai_world VALUES(?,?,?)", (b, json.dumps(new), time.time()))
+        s.close()
+        s = server_app.Service(self.path, dev_accounts=False, season_reset=self.reset)  # (the updated game starts)
+        self.assertEqual([r[0] for r in s.db.query("SELECT account_id FROM ai_world")], [b])  # (the old one gone, the new one kept)
+        self.assertEqual(s.db.query("SELECT accounts FROM resets WHERE id=?", ("ai-reset:ai",))[0][0], 1)
+        self.assertIsNone(season.sweep_ai(s.db, reset=self.reset))  # (once)
+        s.close()
+
+    def test_a_game_left_open_cant_save_its_old_world_back(self):
+        svc = server_app.Service(self.path, season_reset=self.reset)
+        handler = type("QuietHandler", (server_app.Handler,), {"log_message": lambda *a: None})
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        srv.daemon_threads = True
+        srv.service = svc
+        threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+        def call(path, body=None):
+            req = urllib.request.Request(base + path, method="GET" if body is None else "POST", data=None if body is None else json.dumps(body).encode(),
+                                         headers={} if body is None else {"Content-Type": "application/json"})
+            try:
+                with opener.open(req, timeout=20) as r:
+                    return r.status, json.loads(r.read() or b"null")
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"null")
+        try:
+            call("/api/dev-account", {})
+            old = {"seed": 4242, "born": (self.reset["at"] - 40 * 86400) * 1000, "friends": ["ai-7"], "squad": [], "met": {}}
+            st, out = call("/api/ai-world", {"key": uuid.uuid4().hex, "world": old})
+            self.assertEqual(st, 409)
+            self.assertIn("season reset", out["error"])
+            self.assertIsNone(call("/api/me")[1]["ai_world"])
+            fresh = {"seed": 77, "born": time.time() * 1000, "friends": ["ai-3"], "squad": [], "met": {}}
+            st, out = call("/api/ai-world", {"key": uuid.uuid4().hex, "world": fresh})
+            self.assertEqual(st, 200)
+            self.assertEqual(call("/api/me")[1]["ai_world"]["friends"], ["ai-3"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            svc.close()
+
+
 if __name__ == "__main__":
     unittest.main()

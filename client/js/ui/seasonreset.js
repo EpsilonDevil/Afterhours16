@@ -18,6 +18,9 @@ export function watchSeasonReset(app, { now = () => Date.now(), say, reload = ()
   if (left < -60000 || left > 2 * 86400000) return null; // (long past: the service has reset already; days away: a later load sets it up)
   const timers = [];
   for (const w of RESET_WARN) if (left > w) timers.push(setT(() => say?.(warnText(w, r.vc)), left - w));
+  // (at the moment itself this page stops saving its AI world: the old one must not go back after the reset; main.js lets
+  // the reload through even in the middle of a game)
+  timers.push(setT(() => { app.seasonResetting = true; }, Math.max(0, left)));
   timers.push(setT(() => { say?.('Season reset: starting over…'); setT(reload, 1500); }, Math.max(0, left) + RESET_RELOAD));
   return { at, timers };
 }
