@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from . import builds, progression, cup, crew, bugs, online, upnp
+from . import reset as season
 from .database import Database, encode
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,7 +37,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8.6"  # (v0.4.8.6: the RIMRIFT identity patch)
+VERSION = "0.4.8.6"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
@@ -150,7 +151,7 @@ class HTTPError(Exception):
 
 
 class Service:
-    def __init__(self, db_path, dev_accounts=True, secure_cookies=False, welcome_vc=1_000_000):
+    def __init__(self, db_path, dev_accounts=True, secure_cookies=False, welcome_vc=1_000_000, season_reset=None):
         self.db = Database(db_path, welcome_vc)
         self.dev_accounts, self.secure_cookies = dev_accounts, secure_cookies
         self.attempts = collections.defaultdict(collections.deque)
@@ -174,6 +175,26 @@ class Service:
         if self.default_hub:
             self.hub_hosts.add(self.default_hub)
         self.upgrade_characters()
+        # v0.4.8.6 qp: the season reset (server/reset.py): due at start-up, or on the first request after its time. The
+        # game's service (main) passes reset.SEASON_RESET; a Service made without one (the tests) never resets
+        self.season, self.reset_lock, self.reset_done = season_reset, threading.Lock(), False
+        self.maybe_reset()
+
+    def maybe_reset(self, now=None):
+        """v0.4.8.6 qp: the season reset, once per save, the first moment the service is asked anything at or after its
+        time (every request comes through here first, so nothing is served from the old save after it). None, or the
+        reset's summary."""
+        if self.reset_done or not self.season:
+            return None
+        now = time.time() if now is None else now
+        if now < self.season["at"]:
+            return None
+        with self.reset_lock:
+            if self.reset_done:
+                return None
+            out = season.run(self.db, [i for i in CATALOG if CATALOG[i]["price"] == 0 and not CATALOG[i].get("exclusive")], now, self.season)
+            self.reset_done = True
+            return out
 
     def online_default(self):
         """The server this copy connects to by itself, and its join code: online.json's, unless this copy hosts."""
@@ -307,8 +328,8 @@ class Service:
                     "proam_team": json.loads(team[0]) if team else None,
                     "badge_updates": badge_updates,
                     "daily_spin": self.spin_status(conn, account_id),
-                    "locker_codes": [{"code": r["code"], "used": r["count"], "max": progression.LOCKER_CODES.get(r["code"], {}).get("max_per_account", r["count"]),
-                                      "label": progression.LOCKER_CODES.get(r["code"], {}).get("label", "")}
+                    "locker_codes": [{"code": r["code"], "used": r["count"], "max": progression.locker_code_info(r["code"]).get("max_per_account", r["count"]),
+                                      "label": progression.locker_code_info(r["code"]).get("label", "")}
                                      for r in conn.execute("SELECT code, count FROM locker_redemptions WHERE account_id=? ORDER BY last_at DESC", (account_id,))],
                     "ai_world": self.load_ai_world(conn, account_id),
                     "recent_matches": [{"id": r["id"], "mode": r["mode"], "status": r["status"], "result": json.loads(r["result"] or "null")}
@@ -683,6 +704,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             path = urlsplit(self.path).path
             s = self.service
+            s.maybe_reset()  # (v0.4.8.6 qp: the season reset, the moment it's due)
             if path == "/api/health":
                 return self.respond(200, {"ready": True, "schema_version": SCHEMA_VERSION, "version": VERSION, "app": "afterhours16"})
             if path == "/api/ping":
@@ -705,6 +727,9 @@ class Handler(BaseHTTPRequestHandler):
                     "boosts": {"categories": {k: {"name": v["name"], "attrs": v["attrs"]} for k, v in progression.BOOSTS.items()}, "amount": progression.BOOST_AMOUNT, "packs": progression.BOOST_PACKS, "max_games": progression.BOOST_MAX_GAMES},
                     "signed_in": bool(s.db.authenticate(self.token())),
                     # (qp3, Oct 12: the server this copy plays on by itself, and its join code, for this PC's own page only)
+                    # (v0.4.8.6 qp: the season reset: when it happens, so an open game can warn and reload; done on this save?)
+                    "season_reset": {"id": s.season["id"], "at": s.season["at"], "vc": s.season["vc"],
+                                     "done": s.reset_done or season.done(s.db, s.season)} if s.season else None,
                     "online": {"hosting": s.hosting, "join_code": bool(s.join_code), "server": s.online_default()[0],
                                "server_code": s.online_default()[1] if self.is_local() else None}, "build": s.build,
                 })
@@ -853,6 +878,7 @@ class Handler(BaseHTTPRequestHandler):
             data = self.body()
             path = urlsplit(self.path).path
             s, db = self.service, self.service.db
+            s.maybe_reset()  # (v0.4.8.6 qp: the season reset, the moment it's due)
             if path == "/api/quit":
                 builds.strict_keys(data, ())
                 if not s.quit_allowed or not self.is_local():
@@ -1280,7 +1306,8 @@ class Handler(BaseHTTPRequestHandler):
         code = progression.normalize_code(data.get("code"))
         reward = progression.LOCKER_CODES.get(code)
         if not reward:
-            raise builds.Invalid("That locker code isn't valid.")
+            # (v0.4.8.6 qp: every code so far was retired with the season reset)
+            raise builds.Invalid("That locker code has expired." if code in progression.RETIRED_LOCKER_CODES else "That locker code isn't valid.")
 
         def redeem(c):
             row = c.execute("SELECT count FROM locker_redemptions WHERE account_id=? AND code=?", (aid, code)).fetchone()
@@ -1582,7 +1609,8 @@ def main():
     p.add_argument("--no-dev-account", action="store_true")
     p.add_argument("--secure-cookies", action="store_true")
     p.add_argument("--open", action="store_true", help="Open the game in the default browser")
-    p.add_argument("--welcome-vc", type=int, default=1_000_000, help="One-time fictional VC granted to each NEW account (0 to grind from scratch)")
+    # (v0.4.8.6 qp: 250,000 from the season reset on, what every reset account starts with; was 1,000,000)
+    p.add_argument("--welcome-vc", type=int, default=250_000, help="One-time fictional VC granted to each NEW account (0 to grind from scratch)")
     p.add_argument("--exit-when-idle", type=float, default=0, metavar="SECONDS",
                    help="Used by Afterhours16.exe: stop once the game window has stopped checking in for this long")
     p.add_argument("--online", action="store_true", help="Host for friends: listen on every network interface (unless --host is given)")
@@ -1616,7 +1644,7 @@ def main():
         # that comes in while another thread is busy waits less to be passed on (the slowest 1% of relays: ~40% quicker
         # in tests/load_hub.py at 20 players and 40 watchers, for the same CPU)
         sys.setswitchinterval(0.001)
-    service = Service(args.db, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc))
+    service = Service(args.db, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc), season.SEASON_RESET)
     service.hosting = bool(args.online)
     service.join_code = (args.join_code or "").strip() or None
     service.behind_proxy = bool(args.server)

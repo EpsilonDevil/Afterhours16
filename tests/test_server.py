@@ -389,7 +389,7 @@ class LegacySaveTests(unittest.TestCase):
             svc = server_app.Service(p, dev_accounts=False)
             try:
                 db = svc.db
-                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 13)  # (v0.4.8.5 qp8: 013 icon_slots)
+                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 14)  # (v0.4.8.5 qp8: 013 icon_slots; v0.4.8.6 qp: 014 resets)
                 self.assertEqual(db.query("SELECT balance FROM wallets")[0][0], 996500)
                 self.assertEqual(len(db.query("SELECT * FROM ledger WHERE kind='welcome_grant'")), 1)
                 self.assertEqual(db.query("SELECT item_id FROM inventory")[0][0], "jersey_coral")
@@ -403,7 +403,7 @@ class LegacySaveTests(unittest.TestCase):
             # reopening is a no-op
             svc = server_app.Service(p, dev_accounts=False)
             try:
-                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 13)
+                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 14)  # (v0.4.8.6 qp: 014 resets)
             finally:
                 svc.close()
 
@@ -712,18 +712,17 @@ class ApiTests(unittest.TestCase):
             prof = self.call("/api/register", {"username": "locker_" + uuid.uuid4().hex[:6], "password": "longpassword1"})
             bal = prof["balance"]
             self.assertEqual(prof["locker_codes"], [])
-            self.call("/api/locker-codes/redeem", {"key": self.key(), "code": "NOT-A-CODE"}, expect=400)
-            vc = progression.LOCKER_CODES["HELP-I-NEED-VC"]["vc"]
-            k = self.key()
-            r = self.call("/api/locker-codes/redeem", {"key": k, "code": " help-i-need-vc "})  # case and spaces don't matter
-            self.assertEqual(self.call("/api/locker-codes/redeem", {"key": k, "code": "HELP-I-NEED-VC"}), r)  # idempotent replay
-            self.assertEqual((r["used"], r["max"], r["balance"]), (1, 3, bal + vc))
-            for i in (2, 3):
-                self.assertEqual(self.call("/api/locker-codes/redeem", {"key": self.key(), "code": "HELP-I-NEED-VC"})["used"], i)
-            self.call("/api/locker-codes/redeem", {"key": self.key(), "code": "HELP-I-NEED-VC"}, expect=400)  # 3 per account
+            self.assertEqual(self.call("/api/locker-codes/redeem", {"key": self.key(), "code": "NOT-A-CODE"}, expect=400)["error"], "That locker code isn't valid.")
+            # v0.4.8.6 qp: every locker code was retired with the season reset: none pays out, a retired one says it expired
+            self.assertEqual(progression.LOCKER_CODES, {})
+            self.assertIn("HELP-I-NEED-VC", progression.RETIRED_LOCKER_CODES)
+            r = self.call("/api/locker-codes/redeem", {"key": self.key(), "code": " help-i-need-vc "}, expect=400)  # (case and spaces still don't matter)
+            self.assertEqual(r["error"], "That locker code has expired.")
             prof = self.call("/api/me")
-            self.assertEqual(prof["balance"], bal + 3 * vc)
-            self.assertEqual(prof["locker_codes"][0]["used"], 3)
+            self.assertEqual(prof["balance"], bal)
+            self.assertEqual(prof["locker_codes"], [])
+            # (a code redeemed before it was retired still shows its label in the redeemed list)
+            self.assertEqual(progression.locker_code_info("HELP-I-NEED-VC")["label"], "250,000 VC")
             # social: friends and squad persist; junk is dropped; the squad must be friends
             self.assertIsNone(prof["ai_world"])
             w = self.call("/api/ai-world", {"key": self.key(), "world": {"seed": 1234, "born": 1.7e12, "friends": ["ai-7", "ai-12", "nope", 5], "squad": ["ai-7", "ai-99"], "met": {"ai-7": {"games": 3, "with": 2, "vs": 1, "wins": True, "last": 1.5}, "x": 1}}})["world"]

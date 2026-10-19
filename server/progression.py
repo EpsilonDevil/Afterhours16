@@ -535,9 +535,16 @@ def proam_team(data):
 
 # ---------------- v0.4.4: locker codes ----------------
 # code -> reward. Codes are matched case-insensitively with spaces removed. Each has a per-account limit.
-LOCKER_CODES = {
+# v0.4.8.6 qp: every code retired with the season reset (David: "clear all locker codes so that they are no longer
+# usable"). None can be redeemed; a retired one is kept below so it says it has expired (and redeemed lists keep its label)
+LOCKER_CODES = {}
+RETIRED_LOCKER_CODES = {
     "HELP-I-NEED-VC": {"vc": 250000, "max_per_account": 3, "label": "250,000 VC"},
 }
+
+
+def locker_code_info(code):
+    return LOCKER_CODES.get(code) or RETIRED_LOCKER_CODES.get(code) or {}
 
 
 def normalize_code(code):

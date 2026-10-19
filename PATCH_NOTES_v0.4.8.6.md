@@ -59,8 +59,31 @@ Everyone has to be on v0.4.8.6 to play online together. Pull the update before y
 
 ---
 
-## Quick patch (Oct 18): The ICON Squad, Brick Wall and Posterizer
+## Quick patch (Oct 18): The season reset, the ICON Squad, Brick Wall and Posterizer
 
+### The season reset: Monday Oct 19, 12:00 AM Eastern
+Every account starts over at midnight Eastern going into Monday, October 19 (9:00 PM Pacific on Sunday, 04:00 UTC).
+- **Wiped:**
+  - every build, with its games, its Pro Run career and its Pro-Am team;
+  - all your VC;
+  - every item: store, Daily Spin and event items;
+  - crews, which are disbanded and start over with no XP;
+  - event leaderboard entries, Daily Spin timers and ICON build slots.
+- **Locker codes are retired.** Every code, HELP-I-NEED-VC included, stops working as soon as you update (it says the code has expired).
+- **A new AI world:** every account gets a brand-new world of AI hoopers, all starting from scratch. AI ICONs, and with them the ICON Squad, come back as the world grows, in about six to eight weeks.
+- **Kept:**
+  - your account (username and password), so you sign in as before, and you stay signed in;
+  - your friends list of real players;
+  - your link to the online server.
+- **You start with 250,000 VC** and the free basics every new account gets. New accounts made from now on start with 250,000 VC too (it was 1,000,000).
+- **When it happens:**
+  - If the game is open, it warns you 10 minutes and 1 minute ahead, then reloads onto your fresh account.
+  - Otherwise your copy resets the first time it runs after midnight. A copy updated later resets the first time it starts.
+  - The online server resets at the same moment.
+- **Update before midnight Eastern.** You need this update to reset with everyone and to keep playing online.
+- **A copy of your old save** is kept in the game folder, in data\backups.
+
+### The ICON Squad
 The rarest thing in the park. About every 9 hours, a full squad of three AI ICONs (99 OVR) shows up at one of the three parks and runs there for an hour.
 
 ### When and where
@@ -94,4 +117,4 @@ The rarest thing in the park. About every 9 hours, a full squad of three AI ICON
 - **Posterizer:** Hall of Fame takes **126 dunks** (was 180, 30% fewer). Bronze, Silver and Gold are unchanged (8, 30 and 80).
 - **Progress you've already made counts.** A build already past the new mark moves up to Hall of Fame as soon as you log in, if the badge can reach Hall of Fame on that build and it has a Hall of Fame slot free.
 
-*(Tests: 181 Python and 487 node tests. A browser check covered a year-old world with the clock moved into a squad's hour at the Old Brick Yard: the real pick, the toast, the Park screen tag, the squad holding a court in one outfit and the phone list, with no page errors. The one-squad rule was checked over 3,200 random park steps with half the AI as ICONs: no other team ever had more than two.)*
+*(Tests: 186 Python and 490 node tests. The reset was checked on a real save through the game's own service, with the time moved up: builds, VC and items wiped, 250,000 VC, still signed in, a new AI world and the backup written. A browser check covered a year-old world with the clock moved into a squad's hour at the Old Brick Yard: the real pick, the toast, the Park screen tag, the squad holding a court in one outfit and the phone list, with no page errors. The one-squad rule was checked over 3,200 random park steps with half the AI as ICONs: no other team ever had more than two.)*

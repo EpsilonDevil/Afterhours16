@@ -20,6 +20,7 @@ import { togglePhone, phoneOpen } from './ui/phone.js';
 import { installErrorCapture, reportBug } from './ui/bugreport.js';
 import { initOnline } from './ui/online.js';
 import { watchSquads } from './ui/squadwatch.js';
+import { watchSeasonReset } from './ui/seasonreset.js';
 
 installErrorCapture(); // v0.4.7.5: errors go along with bug reports
 
@@ -73,6 +74,7 @@ async function boot() {
   // v0.4.8.5 qp4: and the whole schedule, so a game left running across a handover follows it (ui/events.js)
   setEventSchedule(app.config.event_schedule, app.config.server_time);
   app.eventWatch = watchEvents(app);
+  app.resetWatch = watchSeasonReset(app, { say: text => toast(text, 'error') }); // (v0.4.8.6 qp: the season reset: warn, then reload onto the fresh account)
   bootMsg('Building the studio…', 0.6);
   app.showroom = new Showroom(app);
   app.scene = app.showroom.scene;
