@@ -9,6 +9,7 @@
 // v0.4.8.5 quick patch 3: The Monster Mash brings its own the same way: the tracks in client/audio/monster (a Halloween
 // party mix split into cuts), only at its park, never mixed with the Beat's list or the main one.
 import { settings, volumeGain } from './settings.js';
+import { titleMusic } from './titlemusic.js';
 
 export const PLAYLISTS = {
   main: { dir: 'audio/music/', album: 'RIMRIFT Soundtrack', recent: 'ah16.music.recent' }, // (v0.4.8.6: the game's new name; the storage key stays)
@@ -84,6 +85,8 @@ export class Soundtrack {
   async start() {
     if (!settings.music) return;
     this.wanted = true;
+    // (v0.4.8.6 qp: the title song first, core/titlemusic.js: the soundtrack starts when it's over)
+    if (titleMusic.active) { titleMusic.whenDone(this.afterTitle ||= () => this.start()); return; }
     await this.load();
     if (!this.tracks.length) return;
     const el = this.element();

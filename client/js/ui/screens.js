@@ -19,6 +19,7 @@ import * as Codes from './codes.js';
 import * as ProRun from './prorun.js';
 import { reportBug } from './bugreport.js';
 import { mountBrandIntro } from './brandintro.js';
+import { titleMusic } from '../core/titlemusic.js';
 
 // v0.4.7.5: the modes and your player across the top; Stats and Locker Codes are icon buttons on the right (and tiles
 // on Home), so the bar never runs into itself
@@ -260,7 +261,9 @@ export function openSettings(app) {
 export function showTitle(app) {
   closeModal();
   if (app.input) app.input.capturing = true;
-  mountBrandIntro({ onEnter: () => { if (app.input) app.input.capturing = false; } });
+  // (v0.4.8.6 qp: with its song from the top, the soundtrack paused under it, back where it was once entered)
+  const song = titleMusic.play() && (music.setSuppressed(true), true);
+  mountBrandIntro({ onEnter: () => { if (app.input) app.input.capturing = false; if (song) titleMusic.stop().then(() => music.setSuppressed(false)); } });
 }
 
 export function controlsTable(app) {

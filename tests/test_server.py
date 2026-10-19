@@ -705,6 +705,14 @@ class ApiTests(unittest.TestCase):
         self.call("/api/bug-report", {"key": self.key(), "what": ""}, expect=400)
         self.call("/api/bug-report", {"key": self.key(), "what": "x" * 10, "hack": 1}, expect=400)
 
+    def test_opening_media_streams_with_ranges(self):
+        # v0.4.8.6 qp: the opening's cinematic and title song stream with byte ranges, with their own types
+        for path, ctype in (("/brand/intro-cinematic.webm", "video/webm"), ("/brand/intro-cinematic.mp4", "video/mp4"), ("/audio/title/tusk.mp3", "audio/mpeg"), ("/audio/title/ding.mp3", "audio/mpeg")):
+            req = urllib.request.Request(self.base + path, headers={"Range": "bytes=0-99"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                self.assertEqual((r.status, r.headers["Content-Type"], r.headers["Accept-Ranges"], len(r.read())), (206, ctype, "bytes", 100), path)
+                self.assertTrue(r.headers["Content-Range"].startswith("bytes 0-99/"))
+
     def test_locker_codes_and_ai_world(self):
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         prev, self.opener = self.opener, opener

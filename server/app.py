@@ -47,7 +47,8 @@ GAME_OPEN_SECS = 4 * 3600
 # Explicit types: Windows registry MIME entries are often wrong (e.g. .js as text/plain), which breaks ES modules.
 STATIC_EXT = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
               ".svg": "image/svg+xml", ".json": "application/json", ".ico": "image/x-icon", ".txt": "text/plain", ".woff2": "font/woff2",
-              ".mp3": "audio/mpeg"}
+              ".mp3": "audio/mpeg", ".webm": "video/webm", ".mp4": "video/mp4"}  # (v0.4.8.6 qp: the opening cinematic)
+STATIC_MEDIA = (".mp3", ".webm", ".mp4")  # (streamed with byte ranges: static_media)
 # v0.4.7.5 qp3 perf: the game's files come from memory (read and hashed once, again only when one changes), and the
 # text ones gzipped for browsers that take it: a friend loading the game from a home PC's upload gets a quarter of it
 STATIC_CACHE = {}
@@ -810,7 +811,7 @@ class Handler(BaseHTTPRequestHandler):
         file = (CLIENT / relative).resolve()
         if CLIENT.resolve() not in file.parents or not file.is_file() or file.suffix.lower() not in STATIC_EXT:
             raise HTTPError(404, "File not found.")
-        if file.suffix.lower() == ".mp3":
+        if file.suffix.lower() in STATIC_MEDIA:
             return self.static_media(file)
         etag, content, gz = static_entry(file)
         if gz is not None and "gzip" in (self.headers.get("Accept-Encoding") or "").lower():
@@ -863,7 +864,7 @@ class Handler(BaseHTTPRequestHandler):
             content = f.read(end - start + 1)
         self.send_response(206 if rng else 200)
         self.headers_common()
-        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Content-Type", STATIC_EXT[file.suffix.lower()])
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "max-age=86400")
         if rng:

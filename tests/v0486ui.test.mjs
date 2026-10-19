@@ -92,24 +92,28 @@ test('a controller: only a fresh ✕ / A or Start enters (one held as it shows h
   step(); key('keydown', 'Enter'); assert.deepEqual(got, ['key']);
 });
 
-test('brandboot.js: the title screen first, then main.js; the launcher heartbeat while it is up, and lock-in on the entering click or key', () => {
+test('brandboot.js: (v0.4.8.6 qp: after the opening and the loading screen) the title screen; the launcher heartbeat until the game is up, and lock-in on the entering click or key', () => {
   const boot = src('client/js/brandboot.js'), html = src('client/index.html');
   assert.ok(html.includes('<script type="module" src="js/brandboot.js"></script>') && !html.includes('src="js/main.js"></script>'), 'the page starts with brandboot.js');
-  assert.ok(html.includes('<link rel="modulepreload" href="js/main.js">'), 'main.js loads while the title screen is up');
+  assert.ok(html.includes('<link rel="modulepreload" href="js/main.js">'), 'main.js loads while the opening plays');
   assert.ok(html.includes('<link rel="stylesheet" href="css/brandintro.css">'));
   assert.match(boot, /import \{ mountBrandIntro \} from '\.\/ui\/brandintro\.js';/);
   assert.match(boot, /const query = new URLSearchParams\(location\.search\), launcher = query\.has\('launcher'\);/);
-  assert.match(boot, /if \(!query\.has\('nointro'\)\) await new Promise\(resolve => mountBrandIntro\(\{/, '?nointro skips it (automated checks)');
+  assert.match(boot, /const intro = !query\.has\('nointro'\);/, '?nointro skips it all (automated checks)');
   assert.match(boot, /fetch\('\/api\/ping', \{ cache: 'no-store' \}\)/);
   assert.match(boot, /const keepAlive = launcher \? setInterval\(ping, 5000\) : null;/);
-  assert.match(boot, /if \(how !== 'pad' && settings\.lockIn && \(launcher \|\| window\.matchMedia\('\(display-mode: fullscreen\)'\)\.matches\) && !document\.fullscreenElement\) lockin\.enter\(\);\s*resolve\(\);/);
-  assert.ok(boot.indexOf("await import('./main.js')") > boot.indexOf('await new Promise(resolve => mountBrandIntro('), 'main.js only after it is entered');
+  assert.match(boot, /const lock = how => \{ if \(how !== 'pad' && how !== 'end' && how !== 'error' && settings\.lockIn && \(launcher \|\| window\.matchMedia\('\(display-mode: fullscreen\)'\)\.matches\) && !document\.fullscreenElement\) lockin\.enter\(\); \};/);
+  // the title screen once the game is up (main.js bootDone: rimrift:booted), the game's input waiting under it
+  assert.ok(boot.indexOf("window.addEventListener('rimrift:booted'") < boot.indexOf("await import('./main.js')"), 'listening before main.js starts');
+  assert.ok(boot.indexOf('mountBrandIntro({') > boot.indexOf('await booted;'));
+  assert.match(boot, /if \(app\?\.input\) app\.input\.capturing = true;\s*mountBrandIntro\(\{\s*base: brand,\s*onEnter: how => \{\s*lock\(how\);\s*if \(app\?\.input\) app\.input\.capturing = false;/);
   assert.match(boot, /finally \{ if \(keepAlive !== null\) clearInterval\(keepAlive\); \}/, 'main.js takes the heartbeat over');
   assert.match(src('client/js/main.js'), /if \(LAUNCHER\) setInterval\(\(\) => \{ fetch\('\/api\/ping'/);
-  // again from Settings → Title screen (in the menus): the game's input waits under it
+  // again from Settings → Title screen (in the menus): the game's input waits under it (and its song plays: v0486opening)
   const scr = src('client/js/ui/screens.js');
   assert.ok(scr.includes("app.mode === 'menu' ? '<button class=\"btn ghost small\" data-title title=\"See the title screen again\">Title screen</button>' : ''"));
-  assert.match(scr, /export function showTitle\(app\) \{\s*closeModal\(\);\s*if \(app\.input\) app\.input\.capturing = true;\s*mountBrandIntro\(\{ onEnter: \(\) => \{ if \(app\.input\) app\.input\.capturing = false; \} \}\);/);
+  assert.match(scr, /export function showTitle\(app\) \{\s*closeModal\(\);\s*if \(app\.input\) app\.input\.capturing = true;/);
+  assert.match(scr, /mountBrandIntro\(\{ onEnter: \(\) => \{ if \(app\.input\) app\.input\.capturing = false;/);
   for (const f of ['client/brand/gravity-keyart.jpg', 'client/brand/rimrift-logo.svg', 'client/brand/rimrift-wordmark.svg']) assert.ok(fs.existsSync(new URL(f, root)), f);
 });
 

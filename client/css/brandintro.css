@@ -37,3 +37,35 @@
   #rimrift-intro h1 { font-size: 40px; margin-bottom: 10px; } #rimrift-intro .rr-intro-copy { margin-bottom: 16px; } #rimrift-intro .rr-hint { margin-top: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { #rimrift-intro, #rimrift-intro * { animation: none !important; transition: none !important; } }
+
+/* v0.4.8.6 quick patch: the opening (js/ui/opening.js), before everything every time the game starts: the Silverback
+   Studios logo (a gleam crosses the silver, a flash with the ding, a slow push in to black), then the RIMRIFT cinematic.
+   Then the loading screen (#boot) underneath shows through, then the title screen. */
+.rr-opening { position: fixed; inset: 0; z-index: 2147483100; overflow: hidden; background: #000; cursor: none; user-select: none; }
+.rr-studio-stage { position: absolute; left: 50%; top: 50%; width: min(62vw, 1180px); aspect-ratio: 2920 / 580; transform: translate(-50%, -50%); opacity: 0; will-change: transform, opacity; }
+.rr-studio-logo { display: block; width: 100%; height: 100%; filter: brightness(var(--rr-lit, .72)) drop-shadow(0 0 1px rgba(255,255,255,.22)); }
+.rr-studio-gleam, .rr-studio-flash { position: absolute; inset: 0; pointer-events: none; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+/* the glare: a hard bright band and a warm soft halo around it, slid across with background-position (100% → 16.67% puts
+   the band's centre from a quarter-width left of the logo onto its right edge) */
+.rr-studio-gleam { mix-blend-mode: screen; background-repeat: no-repeat; background-size: 250% 100%, 250% 100%; background-position: 100% 0, 100% 0;
+  background-image: linear-gradient(100deg, transparent 0%, transparent 43.2%, rgba(255,255,255,.45) 47%, #fff 50%, rgba(255,255,255,.45) 53%, transparent 56.8%, transparent 100%),
+    linear-gradient(100deg, transparent 0%, transparent 35%, rgba(255,244,222,.5) 50%, transparent 65%, transparent 100%); }
+/* the glare's soft halo, past the edges of the metal: its box reaches 15% past each side, so its image is 215.38% wide
+   to keep the same positions as the band (100% → a quarter-width left of the logo, 16.67% → its right edge) */
+.rr-studio-glare { position: absolute; left: -15%; right: -15%; top: -40%; bottom: -40%; opacity: 0; mix-blend-mode: screen; pointer-events: none; background-repeat: no-repeat; background-size: 215.38% 100%; background-position: 100% 0;
+  background-image: radial-gradient(ellipse 3.75% 34% at 50% 50%, rgba(255,250,238,.5), rgba(255,250,238,.1) 55%, transparent 75%); }
+.rr-studio-flash { background: #fff; opacity: 0; }
+/* a thin anamorphic light streak travelling with the glare, and the bloom of the flash */
+.rr-studio-streak { position: absolute; left: -6%; right: -6%; top: 50%; height: 4px; margin-top: -2px; opacity: 0; filter: blur(1.6px); mix-blend-mode: screen; pointer-events: none;
+  background-repeat: no-repeat; background-size: 233.9% 100%; background-position: 100% 50%; background-image: linear-gradient(90deg, transparent 0%, transparent 42%, rgba(220,232,255,.9) 50%, transparent 58%, transparent 100%); } /* (6% past each side: 233.9% keeps it on the band) */
+.rr-studio-bloom { position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 42% 20% at 50% 50%, rgba(255,255,255,.8), rgba(235,240,255,.18) 48%, transparent 72%); }
+.rr-cutscene { animation: rrCutIn .55s ease-out both; transition: opacity .45s ease; }
+.rr-cutscene.rr-out { opacity: 0; }
+.rr-cut-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.rr-cut-label, .rr-cut-skip { position: absolute; bottom: 22px; font: 700 10px "Bahnschrift", "DIN Alternate", Arial, sans-serif; letter-spacing: .22em; }
+.rr-cut-label { left: 28px; color: rgba(243,238,228,.5); }
+.rr-cut-skip { right: 30px; font-size: 11px; color: rgba(243,238,228,.72); opacity: 0; transition: opacity .6s ease; }
+.rr-cut-skip.rr-on { opacity: 1; }
+.rr-cut-skip b { color: #ff4d24; }
+@keyframes rrCutIn { from { opacity: 0; } }

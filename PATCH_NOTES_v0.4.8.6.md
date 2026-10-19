@@ -118,3 +118,19 @@ The rarest thing in the park. About every 9 hours, a full squad of three AI ICON
 - **Progress you've already made counts.** A build already past the new mark moves up to Hall of Fame as soon as you log in, if the badge can reach Hall of Fame on that build and it has a Hall of Fame slot free.
 
 *(Tests: 186 Python and 490 node tests. The reset was checked on a real save through the game's own service, with the time moved up: builds, VC and items wiped, 250,000 VC, still signed in, a new AI world and the backup written. A browser check covered a year-old world with the clock moved into a squad's hour at the Old Brick Yard: the real pick, the toast, the Park screen tag, the squad holding a court in one outfit and the phone list, with no page errors. The one-squad rule was checked over 3,200 random park steps with half the AI as ICONs: no other team ever had more than two.)*
+
+---
+
+## Quick patch 2 (Oct 18): The opening
+
+Every time you start the game, it now opens like this:
+
+1. **Silverback Studios.** The studio's silver logo on black. A gleam crosses it from left to right, like sunlight off metal. When it reaches the far edge, a deep cinematic ding plays and the logo flashes once. Then it slowly pushes in as it fades to black.
+2. **The cinematic.** "Tusk" starts from the top, over the RIMRIFT cinematic from the media kit: a player drives and dunks on a night court, with a close-up at the rim. It's labeled CONCEPT CINEMATIC, because it shows where the game is heading, not today's graphics.
+3. **The loading screen,** while the game starts.
+4. **The title screen,** with Tusk still playing. When you enter the court, it fades out and the soundtrack takes over.
+
+- **Skipping:** a click, Enter, Space, Esc, or A / Start skips the logo and the cinematic. A button you were already holding doesn't count.
+- **Settings → Title screen** plays Tusk again from the start, with the soundtrack paused underneath.
+- **Volume:** Tusk follows the music slider, and turning music off silences it. The ding follows the sound effects slider.
+- **From Afterhours16.exe** the sound starts right away. In an ordinary browser tab, the browser may hold all sound until your first click or key.

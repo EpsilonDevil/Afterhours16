@@ -34,7 +34,8 @@ window.addEventListener('keydown', e => { if (e.code === 'F8' && app.config) { e
 window.__audio = audio; // debug handle (headless tests check the crowd bed)
 
 function bootMsg(t, p) { const b = $('#boot'); if (!b) return; $('.boot-msg', b).textContent = t; if (p != null) $('.boot-bar i', b).style.width = `${p * 100}%`; }
-function bootDone() { const b = $('#boot'); if (b) { b.classList.add('done'); setTimeout(() => b.remove(), 600); } }
+// (v0.4.8.6 qp: rimrift:booted first, so brandboot.js puts the title screen up over the menus before the loading screen fades)
+function bootDone() { window.dispatchEvent(new CustomEvent('rimrift:booted')); const b = $('#boot'); if (b) { b.classList.add('done'); setTimeout(() => b.remove(), 600); } }
 
 async function boot() {
   bootMsg('Starting renderer…', 0.1);
