@@ -1,4 +1,4 @@
-# Afterhours 16 — v0.4.7.5 Patch Notes
+# RIMRIFT — v0.4.7.5 Patch Notes
 
 v0.4.7.5 is the clean-up before the v0.5 graphics and physics overhaul. Limbs collide with the body, poses move on springs and the jersey straps always show. Badges are restricted by build, contests mean more and your max OVR now grows through The Pro Run. Animations are doubled, the stick has a full move set and the AI plays smarter. The park gets two Got Next spots, a live court overview with streak bounties and a score ticker. Green releases now come with sounds and effects you can buy. There's a new Inventory, 19 new soundtrack tracks and an in-game bug reporter.
 
@@ -218,7 +218,7 @@ v0.4.7.5 is the clean-up before the v0.5 graphics and physics overhaul. Limbs co
 
 - **Press F8 anywhere** (or use **Report a bug** in Settings or the pause menus).
 - **Say what happened.** A game in progress pauses while you write.
-- **The report is saved to `Afterhours16_Bug_Reports.txt` in your Afterhours16 folder** (next to Afterhours16.exe). It includes:
+- **The report is saved to `RIMRIFT_Bug_Reports.txt` in your game folder** (next to RIMRIFT.exe). It includes:
   - where you were and the game state;
   - the last 25 errors and 40 game events;
   - your system and settings.
@@ -603,7 +603,7 @@ Everything below came after the first v0.4.7.5 build. Your save, players, VC and
 
 ## Play online with friends (Oct 12)
 - **Friends play together in the game itself (no rooms):** one PC hosts and connects everyone; each friend plays from his own copy and save. Everyone at the same park sees the others walk around, call Got Next, hold courts and play; friends make **squads** that go everywhere together, run **Pro-Am** as one team or challenge each other's squads, play in each other's **crews** and run 5-on-5 in the Crew HQ, and **watch** each other's games from the sideline. README → *Play online with friends* has the step-by-step.
-- **Hosting:** `host.cmd` runs the one service everybody plays on (TCP port **8765**, every network interface) with a **join code** that new accounts need, and opens your game window (`Afterhours16.exe` also plays on it while it's running). Allow Python through the Windows Firewall the first time.
+- **Hosting:** `host.cmd` runs the one service everybody plays on (TCP port **8765**, every network interface) with a **join code** that new accounts need, and opens your game window (`RIMRIFT.exe` also plays on it while it's running). Allow Python through the Windows Firewall the first time.
 - **The port opens itself:** the service asks your router to forward TCP 8765 to this PC (UPnP), with a one-hour lease it renews every half hour while you host, and takes it down when you stop (also when you just close the service window). A router that only takes permanent forwards gets one. It reads your public address from the router for host.cmd's "friends open http://…" line and your Online tab. When it can't — UPnP switched off, the port already forwarded to another device (left alone), or another router or the internet provider's network in front of yours — host.cmd and the Online tab say which in plain words, and port forwarding by hand still works. `--no-upnp` turns it off. Friends need only Chrome or Edge: `join.cmd` asks for your address once and opens the game in its own window, or they open `http://YOUR-IP:8765/`. The local session stays available only on the host PC.
 - **Play from your own copy, keep your own save:** a friend with his own copy of the game opens the Online tab, types your address and connects. He makes an online account on your game (or signs in), and that's only his name for playing online: his players, VC, Rep, badges and every game he plays online stay in **his own save**, recorded by his own game like any other game. Only the host opens a port; his game remembers the link and reconnects by itself next time, and **Disconnect** takes him back to playing alone. Friends without a copy still come in through `join.cmd` and play on the host's PC.
 - **The version check:** every screen runs the same simulation, so everyone needs the same game. Each copy works out a fingerprint of its game files (the client code, the catalog, the venues and the event schedule; Windows and Linux line endings hash the same). The host's game refuses a different one as soon as it connects, and his Online tab says so with both versions. host.cmd prints the host's version to hand out.

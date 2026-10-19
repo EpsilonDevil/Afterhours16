@@ -91,7 +91,7 @@ function bindTopbar(app) {
   const q = $('[data-quit]'); if (q) q.onclick = () => confirmQuit();
 }
 
-// Launched from Afterhours16.exe: a real "quit to desktop" (Esc is captured while the window is locked in)
+// Launched from RIMRIFT.exe: a real "quit to desktop" (Esc is captured while the window is locked in)
 export const LAUNCHED = new URLSearchParams(location.search).has('launcher');
 export function confirmQuit() {
   if (!LAUNCHED) return;
@@ -114,7 +114,7 @@ export function showAuth(app, mode = 'login') {
     <div class="auth">
       <div class="eyebrow">WELCOME TO</div>
       <h1 class="logo-big"><img src="brand/rimrift-logo.svg" alt="RIMRIFT" width="1270" height="810"></h1>
-      <p class="muted">An original basketball game: run The Park, build a Pro-Am squad, and spend your VC. New accounts get <b>1,000,000 fictional VC</b> once.</p>
+      <p class="muted">An original basketball game: run The Park, build a Pro-Am squad, and spend your VC. New accounts get <b>250,000 fictional VC</b> once.</p>
       ${app.config.dev_accounts ? `<button class="btn primary wide" data-local>Start local session</button><div class="divider">or use an account</div>` : ''}
       <div class="seg"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Sign in</button><button data-mode="register" class="${mode === 'register' ? 'on' : ''}">Create account</button></div>
       <form id="auth-form" class="form">

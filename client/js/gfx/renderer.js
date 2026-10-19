@@ -128,7 +128,8 @@ export const QUALITY = {
   ultra: { scale: 1, dpr: 2, msaa: 4, shadow: 4096, bloom: true, reflections: true, fxaa: false, lod: 26, label: 'Ultra' },
 };
 
-const PROGRAM_LOG = 'afterhours16.programs.v1';
+// (v0.4.8.6 RIMRIFT: the game's new name; the log kept before the rename is read until the new one is saved)
+const PROGRAM_LOG = 'rimrift.programs.v1', OLD_PROGRAM_LOG = 'afterhours16.programs.v1';
 const OPAQUE_ORDER = (a, b) => (a.order - b.order) || (a.material.alphaTest - b.material.alphaTest) || (a.material.id - b.material.id);
 const CASTS_SHADOW = m => m.castShadow;
 const REFLECTS = m => m.reflect && !m.material.floor;
@@ -155,7 +156,7 @@ export class Renderer {
     // v0.4.5 stage 7: remember every shader variant the game has needed, and start compiling them all in the
     // background at the next launch, so they're ready long before they first show up on screen
     this.known = new Map();
-    try { for (const e of JSON.parse(localStorage.getItem(PROGRAM_LOG) || '[]')) this.known.set(GLContext.key(e.n, e.d), e); } catch { /* private mode */ }
+    try { for (const e of JSON.parse(localStorage.getItem(PROGRAM_LOG) ?? localStorage.getItem(OLD_PROGRAM_LOG) ?? '[]')) this.known.set(GLContext.key(e.n, e.d), e); } catch { /* private mode */ }
     this.ctx.onNewProgram = (name, defines, key) => {
       if ((name !== 'std' && name !== 'shadow') || this.known.has(key)) return;
       this.known.set(key, { n: name, d: defines });

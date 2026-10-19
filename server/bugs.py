@@ -1,12 +1,14 @@
 """v0.4.7.5 bug reports: the in-game "Report a bug" form (F8, Settings, the pause menus) writes each report to
-Afterhours16_Bug_Reports.txt in the game's folder (next to Afterhours16.exe), as plain text you can open, read and
+RIMRIFT_Bug_Reports.txt in the game's folder (next to RIMRIFT.exe), as plain text you can open, read and
 send along. Each report has what the player wrote, where they were in the game, recent errors and game events, the
-system and settings, and a JSON block with the full context for whoever fixes it."""
+system and settings, and a JSON block with the full context for whoever fixes it.
+(v0.4.8.6 RIMRIFT: the file has the game's new name; a reports file from before the rename is left where it is, as it
+was, and the numbering starts again in the new one.)"""
 import datetime
 import json
 import threading
 
-BUG_FILE = "Afterhours16_Bug_Reports.txt"
+BUG_FILE = "RIMRIFT_Bug_Reports.txt"
 CATEGORIES = {
     "gameplay": "Gameplay",
     "animation": "Animation / visuals",
@@ -50,7 +52,7 @@ def _lines(ctx, key, limit):
 
 
 def write_report(root, data, version, now=None):
-    """Append one report to <root>/Afterhours16_Bug_Reports.txt. Returns {number, file, path}."""
+    """Append one report to <root>/RIMRIFT_Bug_Reports.txt. Returns {number, file, path}."""
     if not isinstance(data, dict):
         raise BadReport("Invalid report.")
     category = data.get("category") if data.get("category") in CATEGORIES else "other"
@@ -76,7 +78,7 @@ def write_report(root, data, version, now=None):
                 n = sum(1 for line in f if line.startswith("BUG REPORT #")) + 1
         out = [
             "=" * 96,
-            f"BUG REPORT #{n} · {now.strftime('%Y-%m-%d %H:%M:%S')} · Afterhours16 v{version} · {CATEGORIES[category]}",
+            f"BUG REPORT #{n} · {now.strftime('%Y-%m-%d %H:%M:%S')} · RIMRIFT v{version} · {CATEGORIES[category]}",
             "=" * 96,
             f"Where: {where}",
             "",
@@ -105,7 +107,7 @@ def write_report(root, data, version, now=None):
         new = not path.exists()
         with open(path, "a", encoding="utf-8", newline="\r\n") as f:
             if new:
-                f.write("Afterhours16 bug reports. Each report below was written from the game (Report a bug: F8, Settings or the\n"
+                f.write("RIMRIFT bug reports. Each report below was written from the game (Report a bug: F8, Settings or the\n"
                         "pause menu). Send this file along with the version you were playing to get the bugs in it fixed.\n\n")
             f.write("\n".join(out))
     return {"number": n, "file": BUG_FILE, "path": str(path)}

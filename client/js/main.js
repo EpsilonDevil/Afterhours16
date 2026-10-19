@@ -1,4 +1,4 @@
-// Afterhours 16 v0.4.7.5 — app bootstrap, account/session, screen router and the render loop.
+// RIMRIFT — app bootstrap, account/session, screen router and the render loop.
 import { Renderer, Camera } from './gfx/renderer.js';
 import { Input, PAD } from './core/input.js';
 import { lockin } from './core/lockin.js';
@@ -6,7 +6,7 @@ import { PadNav, modalOpen } from './ui/padnav.js';
 import { audio } from './core/audio.js';
 import { music } from './core/music.js';
 import { API } from './core/api.js';
-import { settings, saveSettings, autoQuality, volumeGain } from './core/settings.js';
+import { settings, saveSettings, autoQuality, volumeGain, SETTINGS_KEY } from './core/settings.js';
 import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
@@ -45,7 +45,7 @@ async function boot() {
     bootMsg(e.message || 'WebGL2 is required.');
     throw e;
   }
-  if (!localStorage.getItem('afterhours16.settings.v3')) { settings.quality = autoQuality(app.renderer); app.renderer.setQuality(settings.quality); saveSettings(); }
+  if (!localStorage.getItem(SETTINGS_KEY)) { settings.quality = autoQuality(app.renderer); app.renderer.setQuality(settings.quality); saveSettings(); }
   app.camera = new Camera();
   app.cameraRig = new CameraRig(app.camera);
   app.cameraRig.mode = settings.camera;
@@ -56,7 +56,7 @@ async function boot() {
   app.input.onPadChange = (on, gp) => toast(on ? `Controller connected (${gp.family === 'ps' ? 'PlayStation' : gp.family === 'switch' ? 'Switch Pro' : 'Xbox'} layout)` : 'Controller disconnected');
   // F11 = our own fullscreen + keyboard lock (the browser's F11 can't lock keys)
   window.addEventListener('keydown', e => { if (e.code === 'F11') { e.preventDefault(); lockin.toggle(); } });
-  // launched from Afterhours16.exe (or lock-in enabled): go fullscreen + lock keys on the first click/key
+  // launched from RIMRIFT.exe (or lock-in enabled): go fullscreen + lock keys on the first click/key
   const wantLock = () => settings.lockIn && (LAUNCHER || window.matchMedia('(display-mode: fullscreen)').matches);
   const firstGesture = () => { if (wantLock() && !document.fullscreenElement) lockin.enter(); window.removeEventListener('pointerdown', firstGesture, true); window.removeEventListener('keydown', firstGesture, true); };
   window.addEventListener('pointerdown', firstGesture, true);

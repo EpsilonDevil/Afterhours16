@@ -1,6 +1,6 @@
 # RIMRIFT — v0.4.8.6 Patch Notes
 
-v0.4.8.6 is the identity patch: Afterhours 16 is now **RIMRIFT**. The game opens on a new title screen, the menus wear the new Ember, Bone and Carbon colors, and the name and logo change everywhere you see them. Nothing about how the game plays has changed. Your account, players, VC and items carry over untouched.
+v0.4.8.6 is the identity patch: the game is now **RIMRIFT**. The game opens on a new title screen, the menus wear the new Ember, Bone and Carbon colors, and the name and logo change everywhere you see them. Nothing about how the game plays has changed. Your account, players, VC and items carry over untouched.
 
 Everyone has to be on v0.4.8.6 to play online together. Pull the update before you connect.
 
@@ -10,7 +10,7 @@ Everyone has to be on v0.4.8.6 to play online together. Pull the update before y
 - **Before the game loads,** RIMRIFT opens on its own title screen: the key art, the logo and MAKE YOUR OWN GRAVITY.
 - **To enter,** use ENTER THE COURT, click, press Enter, Space or Esc, or press A or Start on a controller.
 - **A button already held when the screen appears doesn't count.** Let go and press it again.
-- **Launched from Afterhours16.exe,** the click or key that enters the game also locks the window in (fullscreen and keyboard), the way your first click used to. A controller press can't do that (a browser rule), so then your first click or key in the game still does it.
+- **Launched from RIMRIFT.exe,** the click or key that enters the game also locks the window in (fullscreen and keyboard), the way your first click used to. A controller press can't do that (a browser rule), so then your first click or key in the game still does it.
 - **Settings → Title screen** brings it back any time.
 - **No music** plays on the title screen.
 
@@ -39,17 +39,14 @@ Everyone has to be on v0.4.8.6 to play online together. Pull the update before y
 - **The Pro Run league** is now the **RIMRIFT Pro League** (RPL). Saved careers carry on.
 - **The soundtrack** is now the RIMRIFT Soundtrack.
 - **Branded gear in the store:**
-  - The Afterhours jerseys, pullover and tees now carry the RIMRIFT name and lettering. A/H becomes R/R and AH16 becomes RR.
+  - The branded jerseys, pullover and tees now carry the RIMRIFT name and the RR lettering.
   - If you own one, you keep it; it just wears the new name.
-  - The AH on every shoe heel is now RR.
+  - Every shoe heel says RR.
 - **Hosting online:** the router port mapping is labeled RIMRIFT.
 
-## What stays the same for now
-- **Folder, launcher and files:**
-  - The game folder (C:\Afterhours16), Afterhours16.exe and its icon, and start/host/join.cmd keep their names. They change when RIMRIFT moves to its new engine (Stage 1 of the v0.5 roadmap).
-  - The launcher's own setup messages still say Afterhours 16.
-  - Your saves are untouched.
-- **Bug reports** still go to Afterhours16_Bug_Reports.txt in the game folder.
+## What stays the same
+- **Your saves** are untouched.
+- *(The launcher, its icon and the game's files took the RIMRIFT name in quick patch 3, below.)*
 - **Mode names** (Pro-Am, badges, the player builder) stay as they are. The proposed renames come with the menu rebuild.
 - **The title screen's key art is labeled GENERATED CONCEPT ART.** It shows where the game is heading, not today's graphics.
 
@@ -139,4 +136,19 @@ Every time you start the game, it now opens like this:
 - **Skipping:** a click, Enter, Space, Esc, or A / Start skips the logo and the cinematic. A button you were already holding doesn't count.
 - **Settings → Title screen** plays Tusk again from the start, with the soundtrack paused underneath.
 - **Volume:** Tusk follows the music slider, and turning music off silences it. The ding follows the sound effects slider.
-- **From Afterhours16.exe** the sound starts right away. In an ordinary browser tab, the browser may hold all sound until your first click or key.
+- **From RIMRIFT.exe** the sound starts right away. In an ordinary browser tab, the browser may hold all sound until your first click or key.
+
+---
+
+## Quick patch 3 (Oct 19): RIMRIFT everywhere
+
+The last of the old name is gone. Everything you see, and every file the game makes, now says RIMRIFT.
+
+- **RIMRIFT.exe starts the game.** It has the RIMRIFT icon: the mark on a Carbon tile, sharp from the taskbar to the desktop. Its window, its one-time Python setup and its file properties all say RIMRIFT (by Silverback Studios).
+  - Delete the old launcher .exe, the one with the old name.
+  - Remake any desktop or taskbar shortcut so it points at RIMRIFT.exe.
+- **Your save moves over by itself.** The first time RIMRIFT starts, the save becomes data\rimrift.sqlite3, with nothing lost. Your settings carry over too.
+- **Bug reports** go to RIMRIFT_Bug_Reports.txt in the game folder. The old reports file can be deleted.
+- **host.cmd, join.cmd and start.cmd:** their windows and messages say RIMRIFT. Hosting still remembers your join code, and nobody has to sign in again.
+- **The arena** is the RIMRIFT Arena, and the game service's own window says RIMRIFT.
+- **The welcome card** says new accounts get 250,000 VC, the amount since the season reset.

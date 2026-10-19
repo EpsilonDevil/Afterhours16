@@ -9,8 +9,8 @@
 import { RNG, hashString } from '../core/rng.js';
 import { makeBot } from './bots.js';
 
-// (v0.4.8.6 RIMRIFT: was the Afterhours Pro League, APL. A saved career never stores the name, so every career carries on
-// under the new one)
+// (v0.4.8.6 RIMRIFT: the league's name and abbreviation came with the game's. A saved career never stores the name, so
+// every career carries on under the new one)
 export const LEAGUE = { name: 'RIMRIFT Pro League', abbr: 'RPL' };
 export const SEASON_GAMES = 82;
 export const ROSTER = 15;

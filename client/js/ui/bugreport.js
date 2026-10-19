@@ -1,5 +1,5 @@
 // v0.4.7.5 Report a bug (F8, Settings, the pause menus): a short form that the local server writes to
-// Afterhours16_Bug_Reports.txt next to Afterhours16.exe, with where you were, what the game was doing, recent errors
+// RIMRIFT_Bug_Reports.txt next to RIMRIFT.exe, with where you were, what the game was doing, recent errors
 // and game events, and your system and settings attached automatically.
 import { $, esc, toast, modal, closeModal } from './common.js';
 import { settings } from '../core/settings.js';
@@ -62,7 +62,7 @@ export function openBugReport(app, opts = {}) {
   if ($('.bug-report')) return;
   const ctx = bugContext(app); // (captured now: what you were doing when you opened it)
   const card = modal(`<div class="bug-report"><div class="eyebrow">REPORT A BUG</div><h2>What went wrong?</h2>
-    <p class="muted small">It's saved to <b>Afterhours16_Bug_Reports.txt</b> in the game's folder (next to the launcher, Afterhours16.exe), with where you were and what the game was doing attached. Send that file along to get it fixed.</p>
+    <p class="muted small">It's saved to <b>RIMRIFT_Bug_Reports.txt</b> in the game's folder (next to the launcher, RIMRIFT.exe), with where you were and what the game was doing attached. Send that file along to get it fixed.</p>
     <label>Kind of bug<select data-cat>${CATS.map(([k, l]) => `<option value="${k}" ${k === (opts.category || (ctx.errors.length ? 'crash' : 'gameplay')) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label>What happened<textarea data-what rows="4" maxlength="4000" placeholder="e.g. My player's arm went through his chest on a step-back jumper on Court 2."></textarea></label>
     <label>What should have happened <small>(optional)</small><textarea data-expected rows="2" maxlength="4000"></textarea></label>

@@ -161,12 +161,16 @@ function walk(dir, out = []) {
 }
 const noComments = t => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;{}(),])\/\/.*$/gm, '$1');
 
-test('no "Afterhours 16" left in anything the player sees (the save keys, the bug-report file and the exe keep their names)', () => {
+// v0.4.8.6 (the identity finished): the old name is nowhere in the client, comments included, but for the storage keys
+// from before the rename that are still read once (tests/v0486rename.test.mjs: nothing saved is lost)
+const OLD_KEYS = ["'afterhours16.settings.v3'", "'afterhours16.programs.v1'", "'ah16.iconsquad.seen'", "'ah16.music.recent*'", "'ah16.'"];
+test('no "Afterhours" left anywhere in the client: not what the player sees, not the code, not the comments', () => {
   const files = [...walk('client/js/'), ...walk('client/css/'), 'client/index.html'];
   assert.ok(files.length > 60);
   for (const f of files) {
-    const t = noComments(src(f));
-    assert.ok(!/Afterhours 16|AFTERHOURS<b>16|AFTERHOURS ARENA|Afterhours16 folder/i.test(t) && !/AH16/.test(t), `${f}: the old name`); // (the 'ah16.' storage keys stay)
+    assert.ok(!/Afterhours 16|AFTERHOURS<b>16|AFTERHOURS ARENA|Afterhours16 folder/i.test(noComments(src(f))), `${f}: the old name`);
+    const t = OLD_KEYS.reduce((t, k) => t.split(k).join(''), src(f));
+    assert.ok(!/afterhours|ah16/i.test(t), `${f}: the old name (${(t.match(/.{0,40}(afterhours|ah16).{0,40}/i) || [''])[0]})`);
   }
   const html = src('client/index.html');
   assert.ok(html.includes('<title>RIMRIFT</title>') && html.includes('RIMRIFT — Make your own gravity.') && html.includes('RIMRIFT needs JavaScript and WebGL2.'));
@@ -178,8 +182,8 @@ test('no "Afterhours 16" left in anything the player sees (the save keys, the bu
   assert.ok(src('client/js/ui/modes.js').includes('PRO-AM · 5V5 · RIMRIFT ARENA'));
   assert.ok(src('client/js/core/music.js').includes("album: 'RIMRIFT Soundtrack'"));
   const bug = src('client/js/ui/bugreport.js');
-  assert.ok(bug.includes('<b>Afterhours16_Bug_Reports.txt</b> in the game\'s folder (next to the launcher, Afterhours16.exe)'), 'the file and the exe keep their names');
-  assert.ok(src('client/js/core/settings.js').includes("const KEY = 'afterhours16.settings.v3';"), 'settings are not lost');
+  assert.ok(bug.includes('<b>RIMRIFT_Bug_Reports.txt</b> in the game\'s folder (next to the launcher, RIMRIFT.exe)'), 'the file and the exe have the new name');
+  assert.ok(src('client/js/core/settings.js').includes("export const SETTINGS_KEY = 'rimrift.settings.v3', OLD_SETTINGS_KEY = 'afterhours16.settings.v3';"), 'settings are not lost');
 });
 
 test('the favicon and the home-screen icon', () => {

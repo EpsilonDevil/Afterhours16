@@ -1,0 +1,12 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rimrift</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../sim/Rimrift.Sim/Rimrift.Sim.csproj" />
+    <ProjectReference Include="../sim/Rimrift.Anim/Rimrift.Anim.csproj" />
+  </ItemGroup>
+</Project>

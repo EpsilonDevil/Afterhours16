@@ -1,8 +1,9 @@
 @echo off
-rem Afterhours 16 v0.4.7.5 qp3: host the game for a few friends (README: "Play online with friends").
+rem RIMRIFT: host the game for a few friends (README: "Play online with friends").
 rem Runs the one game service everybody plays on (TCP port 8765, on every network interface) and opens your game.
 rem Your friends need only a browser: they open http://YOUR-ADDRESS:8765/ (or double-click join.cmd).
 setlocal
+title RIMRIFT - hosting for friends
 cd /d "%~dp0"
 set "PORT=8765"
 set "URL=http://127.0.0.1:%PORT%/"
@@ -22,26 +23,30 @@ if not defined PY (
 rem The game can't already be running: the hosted service is the one your own game uses too.
 curl -s --max-time 2 "%URL%api/health" >nul 2>nul
 if not errorlevel 1 (
-  echo Afterhours 16 is already running on port %PORT%. Quit it first ^(Menu, Quit to desktop^), then run host.cmd again.
+  echo RIMRIFT is already running on port %PORT%. Quit it first ^(Menu, Quit to desktop^), then run host.cmd again.
   pause
   exit /b 1
 )
 
-rem The join code: your friends type it once, when they make their account. Remembered for next time.
-set "CFG=%LocalAppData%\Afterhours16"
+rem The join code: your friends type it once, when they make their account. Remembered for next time, in
+rem %LocalAppData%\RIMRIFT (the folder from before the rename moves over the first time; if it can't, it's used as it is)
+set "OLDCFG=%LocalAppData%\Afterhours16"
+set "CFG=%LocalAppData%\RIMRIFT"
+if not exist "%CFG%" if exist "%OLDCFG%" move "%OLDCFG%" "%CFG%" >nul 2>nul
+if not exist "%CFG%" if exist "%OLDCFG%" set "CFG=%OLDCFG%"
 if not exist "%CFG%" mkdir "%CFG%"
 set "CODE="
 if exist "%CFG%\join_code.txt" set /p CODE=<"%CFG%\join_code.txt"
 if not defined CODE set /p "CODE=Pick a join code for your friends (they type it once, to make an account): "
 if not defined CODE set "CODE=hoops16"
 >"%CFG%\join_code.txt" echo %CODE%
-set "AFTERHOURS16_JOIN_CODE=%CODE%"
+set "RIMRIFT_JOIN_CODE=%CODE%"
 
-start "Afterhours 16 online service" /min cmd /c "%PY% -m server.app --online --port %PORT% || pause"
+start "RIMRIFT online service" /min cmd /c "%PY% -m server.app --online --port %PORT% || pause"
 timeout /t 2 /nobreak >nul
 
 echo.
-echo  Afterhours 16 is hosted on port %PORT%.   Join code for new accounts: %CODE%
+echo  RIMRIFT is hosted on port %PORT%.   Join code for new accounts: %CODE%
 echo  Asking your router to open port %PORT% for your friends (UPnP)...
 echo.
 rem The service asks the router to forward the port to this PC by itself, and reads the public address from it
@@ -80,7 +85,7 @@ if defined GAMEBUILD echo     %GAMEBUILD%   ^(the same files you have; their Onl
 echo  Friends without a copy double-click join.cmd instead ^(they make a new player on your PC^).
 echo.
 echo  Everyone adds each other on the social phone, Online tab. Your username there is localplayer
-echo  if you use the local session. Close the "Afterhours 16 online service" window to stop hosting
+echo  if you use the local session. Close the "RIMRIFT online service" window to stop hosting
 echo  ^(that also closes the port on your router again^).
 echo.
 

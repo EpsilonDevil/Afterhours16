@@ -1,0 +1,92 @@
+[gd_scene load_steps=9 format=3 uid="uid://rimrift_athlete_showroom"]
+
+[ext_resource type="Script" path="res://scripts/anim/AthleteShowroom.cs" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/athlete/Athlete.tscn" id="2"]
+[ext_resource type="Texture2D" path="res://assets/athlete/ball_albedo.png" id="3"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.075, 0.075, 0.082, 1)
+ambient_light_source = 1
+ambient_light_color = Color(0.42, 0.44, 0.48, 1)
+ambient_light_energy = 1.2
+tonemap_mode = 3
+tonemap_exposure = 1.0
+ssao_enabled = true
+ssao_radius = 0.5
+ssao_intensity = 1.5
+
+[sub_resource type="BoxMesh" id="floor"]
+size = Vector3(24, 0.1, 24)
+
+[sub_resource type="StandardMaterial3D" id="carbon"]
+albedo_color = Color(0.055, 0.055, 0.06, 1)
+metallic = 0.15
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="ballmesh"]
+radius = 0.1194
+height = 0.2388
+radial_segments = 32
+rings = 16
+
+[sub_resource type="StandardMaterial3D" id="ballmat"]
+albedo_texture = ExtResource("3")
+roughness = 0.75
+
+[node name="AthleteShowroom" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Env" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Key" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.75258, 0.39597, -0.52615, -0.00000, 0.79901, 0.60132, 0.65850, -0.45254, 0.60132, -3.5000, 5.0000, 4.0000)
+light_color = Color(1, 0.96, 0.9, 1)
+light_energy = 3.2
+shadow_enabled = true
+directional_shadow_mode = 0
+directional_shadow_max_distance = 20.0
+
+[node name="Fill" type="OmniLight3D" parent="."]
+transform = Transform3D(0.55470, -0.22237, 0.80178, 0.00000, 0.96362, 0.26726, -0.83205, -0.14825, 0.53452, 4.5000, 2.5000, 3.0000)
+light_color = Color(0.85, 0.9, 1, 1)
+light_energy = 2.5
+omni_range = 14.0
+omni_attenuation = 1.2
+
+[node name="Rim" type="SpotLight3D" parent="."]
+transform = Transform3D(-0.94868, -0.16075, 0.27232, 0.00000, 0.86116, 0.50834, -0.31623, 0.48225, -0.81697, 1.5000, 4.0000, -4.5000)
+light_color = Color(1, 0.85, 0.7, 1)
+light_energy = 6.0
+spot_range = 14.0
+spot_angle = 35.0
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+mesh = SubResource("floor")
+surface_material_override/0 = SubResource("carbon")
+
+[node name="Athlete" parent="." instance=ExtResource("2")]
+
+[node name="Ball" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.12, 1.2)
+mesh = SubResource("ballmesh")
+surface_material_override/0 = SubResource("ballmat")
+
+[node name="Cam_front" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 4.5)
+fov = 30.0
+current = true
+
+[node name="Cam_back" type="Camera3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 1.0, -4.5)
+fov = 30.0
+
+[node name="Cam_face" type="Camera3D" parent="."]
+transform = Transform3D(0.98936, -0.00508, 0.14541, 0.00000, 0.99939, 0.03490, -0.14549, -0.03453, 0.98876, 0.2500, 1.7800, 1.7000)
+fov = 22.0
+
+[node name="Cam_motion" type="Camera3D" parent="."]
+transform = Transform3D(0.74524, -0.07792, 0.66223, 0.00000, 0.99315, 0.11686, -0.66679, -0.08709, 0.74013, 3.4000, 1.7000, 3.8000)
+fov = 40.0

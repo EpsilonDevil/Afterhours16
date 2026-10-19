@@ -3,7 +3,7 @@
 // screen from the top (looping if you stay there), and fades out as you enter the court, where the soundtrack takes over
 // (core/music.js waits for it: Soundtrack.start while it plays just queues the start). From Settings → Title screen it
 // plays again from the beginning, the soundtrack paused under it (ui/screens.js showTitle).
-// The game's launcher (Afterhours16.exe) opens the browser with autoplay allowed, so it starts at once; a plain browser
+// The game's launcher (RIMRIFT.exe) opens the browser with autoplay allowed, so it starts at once; a plain browser
 // window that blocks sound before the first click or key starts it on that click or key. Music off in Settings: silent.
 // Its level is the music slider's (volumeGain).
 // (A placeholder for private play: a commercial recording, not licensed for a public release.)

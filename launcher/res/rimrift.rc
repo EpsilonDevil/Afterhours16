@@ -1,0 +1,28 @@
+#define RT_MANIFEST 24
+1 ICON "rimrift.ico"
+1 RT_MANIFEST "rimrift.exe.manifest"
+1 VERSIONINFO
+FILEVERSION 0,4,8,6
+PRODUCTVERSION 0,4,8,6
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Silverback Studios"
+      VALUE "FileDescription", "RIMRIFT"
+      VALUE "FileVersion", "0.4.8.6"
+      VALUE "InternalName", "RIMRIFT"
+      VALUE "LegalCopyright", "MIT License"
+      VALUE "OriginalFilename", "RIMRIFT.exe"
+      VALUE "ProductName", "RIMRIFT"
+      VALUE "ProductVersion", "0.4.8.6"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

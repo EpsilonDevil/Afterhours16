@@ -1,4 +1,4 @@
-# Afterhours 16 — v0.4.5 Patch Notes
+# RIMRIFT — v0.4.5 Patch Notes
 
 v0.4.5 is the biggest update yet. It adds a new park event, crews with their own clubhouse and a full career mode, 32 new animation packages, and an overhaul of badges, stamina and defense. It closes with a performance and polish pass.
 
@@ -7,7 +7,7 @@ v0.4.5 is the biggest update yet. It adds a new park event, crews with their own
 ## New modes and places
 
 ### The Pro Run (career mode)
-- **A career in the Afterhours Pro League:** 32 original teams, two conferences and full 15-man rosters.
+- **A career in the RIMRIFT Pro League:** 32 original teams, two conferences and full 15-man rosters.
 - **College and the draft:**
   - Pick one of 12 colleges and play 3 games. How you play sets your draft stock.
   - Draft Night runs two rounds of 32, and the team holding your slot takes you.

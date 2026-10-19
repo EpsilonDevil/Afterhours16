@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rimrift.Sim</RootNamespace>
+    <LangVersion>12</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Determinism: no unsafe fp optimisations exist in RyuJIT (no FMA contraction, no reassociation), but keep
+         the project strict anyway. -->
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+</Project>

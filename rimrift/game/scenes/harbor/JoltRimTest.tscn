@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://rimrift_jolt_rim_test"]
+
+[ext_resource type="Script" path="res://scripts/world/JoltRimTest.cs" id="1"]
+
+[node name="JoltRimTest" type="Node3D"]
+script = ExtResource("1")

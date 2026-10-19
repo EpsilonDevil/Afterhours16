@@ -1,6 +1,6 @@
-# Afterhours 16: back up the database every night (the last 14 are kept in /var/lib/afterhours16/backups)
+# RIMRIFT: back up the database every night (the last 14 are kept in /var/lib/afterhours16/backups)
 [Unit]
-Description=Afterhours 16 online server: nightly database backup
+Description=RIMRIFT online server: nightly database backup
 
 [Timer]
 OnCalendar=*-*-* 04:30:00

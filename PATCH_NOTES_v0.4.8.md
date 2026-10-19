@@ -1,4 +1,4 @@
-# Afterhours 16 — v0.4.8 Patch Notes
+# RIMRIFT — v0.4.8 Patch Notes
 
 v0.4.8 is about playing online. Your copy of the game now connects to the game's own online server by itself, so a player only signs in. Online shot timing is graded on exactly what you saw when you let go: the green window can't shrink after the release and your meter stops where you let go. It also fixes name tags, offensive three seconds, Pro Run games that didn't count and badge progress, and it retunes layups and blocks.
 

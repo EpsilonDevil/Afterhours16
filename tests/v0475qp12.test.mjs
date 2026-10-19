@@ -244,7 +244,7 @@ test('online: the pieces are wired: the phone tab, the session lockstep, the par
   assert.match(src('client/js/ui/modes.js'), /export async function playProAmOnline/);
   assert.match(src('client/js/main.js'), /initOnline\(app\)/);
   const host = src('host.cmd'), join = src('join.cmd');
-  assert.match(host, /--online --port %PORT%/); assert.match(host, /AFTERHOURS16_JOIN_CODE/);
+  assert.match(host, /--online --port %PORT%/); assert.match(host, /RIMRIFT_JOIN_CODE/); // (v0.4.8.6)
   assert.match(join, /--unsafely-treat-insecure-origin-as-secure/);
   assert.match(src('server/app.py'), /"\/api\/ws"/);
   assert.match(src('server/migrations/009_v0475_online.sql'), /CREATE TABLE online_friends/);

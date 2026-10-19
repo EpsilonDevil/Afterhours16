@@ -1,0 +1,53 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift", "Rimrift.csproj", "{2B3A8A1E-0001-4C6B-9A33-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift.Sim", "../sim/Rimrift.Sim/Rimrift.Sim.csproj", "{2B3A8A1E-0002-4C6B-9A33-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift.Sim.Tests", "../sim/Rimrift.Sim.Tests/Rimrift.Sim.Tests.csproj", "{2B3A8A1E-0003-4C6B-9A33-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift.Harness", "../harness/Rimrift.Harness/Rimrift.Harness.csproj", "{2B3A8A1E-0004-4C6B-9A33-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift.Anim", "../sim/Rimrift.Anim/Rimrift.Anim.csproj", "{2B3A8A1E-0005-4C6B-9A33-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rimrift.Anim.Tests", "../sim/Rimrift.Anim.Tests/Rimrift.Anim.Tests.csproj", "{2B3A8A1E-0006-4C6B-9A33-000000000006}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		ExportDebug|Any CPU = ExportDebug|Any CPU
+		ExportRelease|Any CPU = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{2B3A8A1E-0001-4C6B-9A33-000000000001}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{2B3A8A1E-0002-4C6B-9A33-000000000002}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
+		{2B3A8A1E-0003-4C6B-9A33-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0003-4C6B-9A33-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0003-4C6B-9A33-000000000003}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0003-4C6B-9A33-000000000003}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{2B3A8A1E-0004-4C6B-9A33-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0004-4C6B-9A33-000000000004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0004-4C6B-9A33-000000000004}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0004-4C6B-9A33-000000000004}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+		{2B3A8A1E-0005-4C6B-9A33-000000000005}.ExportRelease|Any CPU.Build.0 = Release|Any CPU
+		{2B3A8A1E-0006-4C6B-9A33-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0006-4C6B-9A33-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B3A8A1E-0006-4C6B-9A33-000000000006}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B3A8A1E-0006-4C6B-9A33-000000000006}.ExportRelease|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+EndGlobal

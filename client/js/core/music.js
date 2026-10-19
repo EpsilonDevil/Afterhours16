@@ -12,9 +12,9 @@ import { settings, volumeGain } from './settings.js';
 import { titleMusic } from './titlemusic.js';
 
 export const PLAYLISTS = {
-  main: { dir: 'audio/music/', album: 'RIMRIFT Soundtrack', recent: 'ah16.music.recent' }, // (v0.4.8.6: the game's new name; the storage key stays)
-  beat: { dir: 'audio/beat/', album: 'And The Beat Goes On · Event Soundtrack', recent: 'ah16.music.recent.beat' },
-  monster: { dir: 'audio/monster/', album: 'The Monster Mash · Event Soundtrack', recent: 'ah16.music.recent.monster' },
+  main: { dir: 'audio/music/', album: 'RIMRIFT Soundtrack', recent: 'rimrift.music.recent' }, // (v0.4.8.6: the game's new name, its storage keys too)
+  beat: { dir: 'audio/beat/', album: 'And The Beat Goes On · Event Soundtrack', recent: 'rimrift.music.recent.beat' },
+  monster: { dir: 'audio/monster/', album: 'The Monster Mash · Event Soundtrack', recent: 'rimrift.music.recent.monster' },
 };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -195,8 +195,10 @@ export class Soundtrack {
 // go to the back of the new order, so a new session never opens with the same songs in the same order.
 // (each playlist remembers its own: an event's list doesn't push the main soundtrack's songs around)
 const recentKey = list => (PLAYLISTS[list] || PLAYLISTS.main).recent;
+// (v0.4.8.6 RIMRIFT: what played before the rename was kept as 'ah16.music.recent*': read until the new one is saved)
+export const oldRecentKey = list => recentKey(list).replace(/^rimrift\./, 'ah16.');
 export function recentTracks(list = 'main') {
-  try { const v = JSON.parse(localStorage.getItem(recentKey(list)) || '[]'); return Array.isArray(v) ? v.filter(f => typeof f === 'string') : []; } catch { return []; }
+  try { const v = JSON.parse(localStorage.getItem(recentKey(list)) ?? localStorage.getItem(oldRecentKey(list)) ?? '[]'); return Array.isArray(v) ? v.filter(f => typeof f === 'string') : []; } catch { return []; }
 }
 function rememberTrack(t, total, list = 'main') {
   try {

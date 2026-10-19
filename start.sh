@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# Afterhours 16 v0.3 launcher (macOS / Linux): starts the local game service and opens an app window.
+# RIMRIFT (macOS / Linux): starts the local game service and opens an app window.
 set -eu
 cd "$(dirname "$0")"
-PORT="${AFTERHOURS16_PORT:-8765}"
+PORT="${RIMRIFT_PORT:-${AFTERHOURS16_PORT:-8765}}"  # (v0.4.8.6: the old variable name still works)
 URL="http://127.0.0.1:$PORT/"
 
 python3 -m server.app --port "$PORT" "$@" &
@@ -27,5 +27,5 @@ if [ -z "$opened" ]; then
   else echo "Open $URL in Chrome, Edge or Firefox."
   fi
 fi
-echo "Afterhours 16 is running at $URL - press Ctrl+C here to stop."
+echo "RIMRIFT is running at $URL - press Ctrl+C here to stop."
 wait "$SERVER"

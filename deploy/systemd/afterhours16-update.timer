@@ -1,6 +1,6 @@
-# Afterhours 16: look for a new version on GitHub every 10 minutes (turn off: afterhours16 autoupdate off)
+# RIMRIFT: look for a new version on GitHub every 10 minutes (turn off: afterhours16 autoupdate off)
 [Unit]
-Description=Afterhours 16 online server: look for updates every 10 minutes
+Description=RIMRIFT online server: look for updates every 10 minutes
 
 [Timer]
 OnBootSec=3min

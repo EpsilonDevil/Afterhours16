@@ -9,7 +9,7 @@
 //     takes over (core/music.js).
 // The logo and the cinematic can be skipped (a click, Enter / Space / Esc, ✕ / A or Start); ?nointro skips all of it,
 // straight into the game (automated browser checks, quick restarts while working on it).
-// Launched from Afterhours16.exe (?launcher): the local service's heartbeat (/api/ping every 5 s, which main.js takes over)
+// Launched from RIMRIFT.exe (?launcher): the local service's heartbeat (/api/ping every 5 s, which main.js takes over)
 // keeps going until the game is up, or the service would think the window was gone. And the first click or key (skipping,
 // or entering) is the window's first gesture, the one the browser allows to go fullscreen: lock-in (fullscreen and
 // keyboard lock, core/lockin.js, as main.js does on the first click or key) starts right there. A pad press is no gesture

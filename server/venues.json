@@ -6,6 +6,6 @@
   {"id":"jungle","kind":"park","name":"The Jungle Ballers","affiliation":null,"event":true},
   {"id":"beat","kind":"park","name":"And The Beat Goes On","affiliation":null,"event":true},
   {"id":"monster","kind":"park","name":"The Monster Mash","affiliation":null,"event":true},
-  {"id":"arena","kind":"arena","name":"Afterhours Arena","affiliation":null},
+  {"id":"arena","kind":"arena","name":"RIMRIFT Arena","affiliation":null},
   {"id":"gym","kind":"gym","name":"Union Fieldhouse","affiliation":null}
 ]

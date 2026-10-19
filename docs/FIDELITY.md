@@ -1,6 +1,6 @@
 # What v0.4.2 is (and isn't)
 
-Afterhours 16 is an independent, original game built to capture the *feel* of 2015-era sim/arcade basketball: MyPARK-style social courts, Pro-Am 5v5 with a branded team, a VC economy and a timing-based shot meter. It is not a port, mod or recreation of NBA 2K16 and contains none of its code, assets, names or data.
+RIMRIFT is an independent, original game built to capture the *feel* of 2015-era sim/arcade basketball: MyPARK-style social courts, Pro-Am 5v5 with a branded team, a VC economy and a timing-based shot meter. It is not a port, mod or recreation of NBA 2K16 and contains none of its code, assets, names or data.
 
 | Area | What v0.4.2 does | Honest limit |
 |---|---|---|
@@ -19,7 +19,7 @@ Afterhours 16 is an independent, original game built to capture the *feel* of 20
 
 These ranges come from published jump-shot, running and landing biomechanics studies. The game uses values in or close to them.
 
-| Motion | Measured range | Afterhours 16 |
+| Motion | Measured range | RIMRIFT |
 |---|---|---|
 | Jump shot: knee angle at the bottom of the dip | ~112–122° | ~115–118° (a little deeper from three) |
 | Jump shot: centre-of-mass rise | ~15–31 cm | 52% of max vertical × the jumpshot base's jump factor (≈12–35 cm), ×0.9 beyond 7 m |

@@ -1,0 +1,21 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="RIMRIFT"
+run/main_scene="res://scenes/Demo.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[dotnet]
+
+project/assembly_name="Rimrift"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+anti_aliasing/quality/use_taa=true

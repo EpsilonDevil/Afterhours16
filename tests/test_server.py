@@ -1015,7 +1015,7 @@ class ApiTests(unittest.TestCase):
     def test_quit_and_ping_are_launcher_only(self):
         self.assertEqual(self.call("/api/ping"), {"ok": True})
         self.assertIsNotNone(self.service.last_ping)
-        # a server started by hand (not by Afterhours16.exe) can't be stopped from a web page
+        # a server started by hand (not by RIMRIFT.exe) can't be stopped from a web page
         self.call("/api/quit", {}, expect=403)
         self.assertFalse(self.service.quit_requested)
         req = urllib.request.Request(self.base + "/api/quit", method="POST", data=b"{}",
@@ -1029,7 +1029,8 @@ class ApiTests(unittest.TestCase):
             self.assertIn(b"RIMRIFT", r.read().upper())  # (v0.4.8.6: the game's new name)
         with urllib.request.urlopen(self.base + "/js/main.js", timeout=10) as r:
             self.assertIn("javascript", r.headers["Content-Type"])
-        for path in ("/dev/match-test.html", "/../server/app.py", "/js/../../data/afterhours.sqlite3"):
+        # (v0.4.8.6: the save, under its RIMRIFT name and the one from before, which stays where it is if it couldn't move)
+        for path in ("/dev/match-test.html", "/../server/app.py", "/js/../../data/rimrift.sqlite3", "/js/../../data/afterhours.sqlite3"):
             with self.assertRaises(urllib.error.HTTPError, msg=path):
                 urllib.request.urlopen(self.base + path, timeout=10)
 

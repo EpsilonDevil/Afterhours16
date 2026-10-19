@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://rimrift_athlete"]
+
+[ext_resource type="Script" path="res://scripts/anim/AthleteDriver.cs" id="1"]
+
+[node name="Athlete" type="Node3D"]
+script = ExtResource("1")
+GlbPath = "res://assets/athlete/athlete.glb"
+HeightIn = 77.0
+WeightLb = 215.0
+WingspanIn = 80.0

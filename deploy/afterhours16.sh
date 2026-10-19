@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Afterhours 16 online server: the  afterhours16  command (installed to /usr/local/bin by deploy/install.sh).
+# RIMRIFT online server: the  afterhours16  command (installed to /usr/local/bin by deploy/install.sh).
 #   afterhours16 status            the address players use, the join code, the version, who's on, HTTPS
 #   afterhours16 update            get the latest version from GitHub now (restarts the server: games end)
 #   afterhours16 joincode NEWCODE  change the join code new players need
@@ -9,16 +9,20 @@
 #   afterhours16 backup            copy the database now (/var/lib/afterhours16/backups, the last 14 kept)
 #   afterhours16 tune              apply the network settings for games (the service does this when it starts)
 set -uo pipefail
-APP=${AFTERHOURS16_APP:-/opt/afterhours16}
-ENVF=${AFTERHOURS16_ENV:-/etc/afterhours16.env}
-BACKUPS=${AFTERHOURS16_BACKUPS:-/var/lib/afterhours16/backups}
+# v0.4.8.6 RIMRIFT: the settings are RIMRIFT_* now; a server set up before the rename has AFTERHOURS16_* ones in its
+# settings file, and they still work (the new name wins). The box's own names (this command, its services, its
+# folders, the afterhours user) stay as they are
+APP=${RIMRIFT_APP:-${AFTERHOURS16_APP:-/opt/afterhours16}}
+ENVF=${RIMRIFT_ENV:-${AFTERHOURS16_ENV:-/etc/afterhours16.env}}
+BACKUPS=${RIMRIFT_BACKUPS:-${AFTERHOURS16_BACKUPS:-/var/lib/afterhours16/backups}}
 PORT=8765
 if [ -r "$ENVF" ]; then
   # shellcheck disable=SC1090
   . "$ENVF"
 fi
-BRANCH=${AFTERHOURS16_BRANCH:-main}
-URL=${AFTERHOURS16_PUBLIC_URL:-}
+BRANCH=${RIMRIFT_BRANCH:-${AFTERHOURS16_BRANCH:-main}}
+URL=${RIMRIFT_PUBLIC_URL:-${AFTERHOURS16_PUBLIC_URL:-}}
+JOIN=${RIMRIFT_JOIN_CODE:-${AFTERHOURS16_JOIN_CODE:-}}
 
 need_root() { [ "$(id -u)" = 0 ] || { echo "Run it with sudo: sudo afterhours16 $*"; exit 1; }; }
 as_app() { if [ "$(id -u)" = 0 ] && id afterhours >/dev/null 2>&1; then runuser -u afterhours -- "$@"; else "$@"; fi; }
@@ -33,9 +37,9 @@ status() {
   games=$(printf '%s\n' "$h" | awk '$1=="GAMES" {print $2}')
   state=$(systemctl is-active afterhours16 2>/dev/null || true)
   since=$(systemctl show afterhours16 -p ActiveEnterTimestamp --value 2>/dev/null || true)
-  echo "Afterhours 16 online server"
+  echo "RIMRIFT online server"
   line "Address:" "${URL:-?}   (players type this in the Online tab, then Connect)"
-  line "Join code:" "${AFTERHOURS16_JOIN_CODE:-(none)}   (new players type it once, to make their online account)"
+  line "Join code:" "${JOIN:-(none)}   (new players type it once, to make their online account)"
   line "Version:" "${build:-?}   (commit $(git -C "$APP" log -1 --format='%h, %cd' --date=format:'%b %d %H:%M' 2>/dev/null || echo ?))"
   line "Server:" "${state:-?}${since:+ since $since}"
   if [ -n "$h" ]; then line "Online now:" "${online:-0} player(s), ${games:-0} game(s) being played"; fi
@@ -75,19 +79,25 @@ joincode() {
   need_root joincode
   local code=${1:-}
   [[ "$code" =~ ^[A-Za-z0-9._-]{4,64}$ ]] || { echo "Usage: afterhours16 joincode NEWCODE (letters, digits, - _ and ., 4 to 64 of them)"; exit 1; }
-  sed -i "s/^AFTERHOURS16_JOIN_CODE=.*/AFTERHOURS16_JOIN_CODE=$code/" "$ENVF"
+  # (the settings file from before the rename has the old name: whichever is there changes; neither: the new one is added)
+  sed -i -e "s/^RIMRIFT_JOIN_CODE=.*/RIMRIFT_JOIN_CODE=$code/" -e "s/^AFTERHOURS16_JOIN_CODE=.*/AFTERHOURS16_JOIN_CODE=$code/" "$ENVF"
+  grep -qE '^(RIMRIFT|AFTERHOURS16)_JOIN_CODE=' "$ENVF" || echo "RIMRIFT_JOIN_CODE=$code" >> "$ENVF"
   systemctl restart afterhours16
   echo "Join code is now: $code (accounts made before keep working)."
 }
 
+# v0.4.8.6 RIMRIFT: the save is data/rimrift.sqlite3; the service moves one from before the rename (afterhours.sqlite3)
+# over when it starts, and keeps using the old one when it can't, so whichever is there is the save (the new name
+# first, as the service does). The copies are rimrift-*; the last 14 are kept counting the old afterhours-* ones too
 backup() {
-  local db="$APP/data/afterhours.sqlite3" out
+  local db="$APP/data/rimrift.sqlite3" out
+  [ -f "$db" ] || db="$APP/data/afterhours.sqlite3"
   [ -f "$db" ] || { echo "No database yet."; return 0; }
   mkdir -p "$BACKUPS"
-  out="$BACKUPS/afterhours-$(date +%Y%m%d-%H%M).sqlite3"
+  out="$BACKUPS/rimrift-$(date +%Y%m%d-%H%M).sqlite3"
   # (SQLite's own online backup: safe while the server is running)
   as_app python3 -c 'import sqlite3, sys; s = sqlite3.connect(sys.argv[1]); d = sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()' "$db" "$out" || { echo "Backup failed."; return 1; }
-  find "$BACKUPS" -maxdepth 1 -name 'afterhours-*.sqlite3' -printf '%T@ %p\n' | sort -rn | tail -n +15 | cut -d' ' -f2- | xargs -r rm -f
+  find "$BACKUPS" -maxdepth 1 \( -name 'rimrift-*.sqlite3' -o -name 'afterhours-*.sqlite3' \) -printf '%T@ %p\n' | sort -rn | tail -n +15 | cut -d' ' -f2- | xargs -r rm -f
   echo "Backed up to $out"
 }
 

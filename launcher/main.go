@@ -1,6 +1,6 @@
-// Afterhours16 launcher.
+// RIMRIFT launcher.
 //
-// Double-click Afterhours16.exe and the game opens fullscreen in its own window:
+// Double-click RIMRIFT.exe and the game opens fullscreen in its own window:
 //  1. finds Python 3.10+ (offers to install it with winget on Windows if missing),
 //  2. starts the local game service hidden, with --exit-when-idle so it stops by itself
 //     shortly after the game window closes,
@@ -9,7 +9,10 @@
 //  4. waits for the service to stop, then exits.
 //
 // Options (command line or data/launcher.json): -windowed, -kiosk, -port N, -browser PATH, -python PATH.
-// Built from the standard library only: GOOS=windows go build -ldflags "-H windowsgui".
+// Built from the standard library only; the icon, version info and manifest come from res/rimrift.rc, compiled into
+// rsrc_windows_amd64.syso, which go build links in by itself:
+//
+//	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o ../RIMRIFT.exe .
 package main
 
 import (
@@ -28,7 +31,7 @@ import (
 	"time"
 )
 
-const version = "0.4.4"
+const version = "0.4.8.6"
 
 type config struct {
 	Windowed bool   `json:"windowed"`
@@ -48,7 +51,7 @@ func logf(f string, a ...any) {
 func main() {
 	root, err := gameRoot()
 	if err != nil {
-		fatal("Afterhours 16 can't find its files.\n\nKeep Afterhours16.exe inside the Afterhours16 folder (next to the \"server\" and \"client\" folders).")
+		fatal("RIMRIFT can't find its files.\n\nKeep RIMRIFT.exe inside the RIMRIFT game folder (next to the \"server\" and \"client\" folders).")
 	}
 	data := filepath.Join(root, "data")
 	_ = os.MkdirAll(data, 0o755)
@@ -56,7 +59,7 @@ func main() {
 		logw = f
 		defer f.Close()
 	}
-	logf("Afterhours16 launcher %s in %s", version, root)
+	logf("RIMRIFT launcher %s in %s", version, root)
 
 	cfg := config{Port: 8765, IdleExit: 45}
 	if b, err := os.ReadFile(filepath.Join(data, "launcher.json")); err == nil {
@@ -170,7 +173,8 @@ func gameRoot() (string, error) {
 		return "", err
 	}
 	dir := filepath.Dir(exe)
-	for _, d := range []string{dir, filepath.Dir(dir), filepath.Join(dir, "Afterhours16")} {
+	// next to the exe, one folder up, or a game folder beside it: "RIMRIFT", or "Afterhours16" (its name before the rename)
+	for _, d := range []string{dir, filepath.Dir(dir), filepath.Join(dir, "RIMRIFT"), filepath.Join(dir, "Afterhours16")} {
 		if st, err := os.Stat(filepath.Join(d, "server", "app.py")); err == nil && !st.IsDir() {
 			return d, nil
 		}
@@ -194,7 +198,8 @@ func isOurs(port int) bool {
 	if json.NewDecoder(r.Body).Decode(&h) != nil {
 		return false
 	}
-	return h["ready"] == true && (h["app"] == "afterhours16" || h["schema_version"] != nil)
+	// "rimrift" from 0.4.8.6 on; "afterhours16" from a service started before the update that's still running
+	return h["ready"] == true && (h["app"] == "rimrift" || h["app"] == "afterhours16" || h["schema_version"] != nil)
 }
 
 func portFree(port int) bool {

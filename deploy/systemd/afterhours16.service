@@ -1,6 +1,6 @@
-# Afterhours 16 online server: the game service (deploy/install.sh). Players reach it through Caddy (HTTPS).
+# RIMRIFT online server: the game service (deploy/install.sh). Players reach it through Caddy (HTTPS).
 [Unit]
-Description=Afterhours 16 online server
+Description=RIMRIFT online server
 After=network-online.target
 Wants=network-online.target
 

@@ -38,7 +38,7 @@ func msgBox(text, title string, flags uintptr) int {
 
 func fatal(msg string) {
 	logf("fatal: %s", msg)
-	msgBox(msg, "Afterhours 16", mbOK|mbIconError)
+	msgBox(msg, "RIMRIFT", mbOK|mbIconError)
 	os.Exit(1)
 }
 
@@ -92,19 +92,19 @@ func openDefault(url string) {
 
 // offerPython asks to install Python with winget (built into Windows 10/11), or opens python.org.
 func offerPython(root string) (python, error) {
-	r := msgBox("Afterhours 16 runs its game service on Python 3.10 or newer (free, about 30 MB), and it isn't installed yet.\n\n"+
+	r := msgBox("RIMRIFT runs its game service on Python 3.10 or newer (free, about 30 MB), and it isn't installed yet.\n\n"+
 		"Yes  — install it now automatically (Windows Package Manager)\n"+
 		"No   — open the python.org download page\n"+
-		"Cancel — quit", "Afterhours 16 — one-time setup", mbYesNoCancel|mbIconQuest)
+		"Cancel — quit", "RIMRIFT — one-time setup", mbYesNoCancel|mbIconQuest)
 	switch r {
 	case idYes:
 		if _, err := exec.LookPath("winget"); err != nil {
-			msgBox("Windows Package Manager (winget) isn't available on this PC.\n\nThe python.org download page will open instead. Install Python (tick \"Add python.exe to PATH\"), then start Afterhours 16 again.", "Afterhours 16", mbOK|mbIconInfo)
+			msgBox("Windows Package Manager (winget) isn't available on this PC.\n\nThe python.org download page will open instead. Install Python (tick \"Add python.exe to PATH\"), then start RIMRIFT again.", "RIMRIFT", mbOK|mbIconInfo)
 			openDefault("https://www.python.org/downloads/windows/")
 			return python{}, errors.New("no winget")
 		}
 		// "start /wait" gives winget its own visible console so the install progress shows
-		cmd := exec.Command("cmd", "/c", "start", "Installing Python for Afterhours 16", "/wait",
+		cmd := exec.Command("cmd", "/c", "start", "Installing Python for RIMRIFT", "/wait",
 			"winget", "install", "-e", "--id", "Python.Python.3.12", "--scope", "user",
 			"--accept-package-agreements", "--accept-source-agreements")
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -115,7 +115,7 @@ func offerPython(root string) (python, error) {
 		if py, err := findPython(root, ""); err == nil {
 			return py, nil
 		}
-		msgBox("Python was installed. Please start Afterhours 16 again.", "Afterhours 16", mbOK|mbIconInfo)
+		msgBox("Python was installed. Please start RIMRIFT again.", "RIMRIFT", mbOK|mbIconInfo)
 		return python{}, errors.New("restart needed")
 	case idNo:
 		openDefault("https://www.python.org/downloads/windows/")

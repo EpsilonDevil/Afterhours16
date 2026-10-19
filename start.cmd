@@ -1,6 +1,7 @@
 @echo off
-rem Afterhours 16 v0.3 launcher: starts the local game service and opens the game in its own app window.
+rem RIMRIFT without RIMRIFT.exe: starts the local game service and opens the game in its own app window.
 setlocal
+title RIMRIFT
 cd /d "%~dp0"
 set "URL=http://127.0.0.1:8765/"
 
@@ -17,7 +18,7 @@ if not defined PY (
 )
 
 rem Start the service in a minimized window. Close that window to stop the game service.
-start "Afterhours 16 service" /min cmd /c "%PY% -m server.app || pause"
+start "RIMRIFT service" /min cmd /c "%PY% -m server.app || pause"
 timeout /t 2 /nobreak >nul
 
 rem Prefer a chromeless app window (Chrome or Edge); fall back to the default browser.

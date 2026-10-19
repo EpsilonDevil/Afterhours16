@@ -1,0 +1,9 @@
+# Godot / .NET build output
+game/.godot/
+**/bin/
+**/obj/
+*.user
+# parity traces are regenerated (node harness/export_traces.mjs); ~200 MB
+harness/out/
+# exports
+dist/

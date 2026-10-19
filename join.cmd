@@ -1,8 +1,14 @@
 @echo off
-rem Afterhours 16 v0.4.7.5 qp3: join a friend's hosted game (README: "Play online with friends").
+rem RIMRIFT: join a friend's hosted game (README: "Play online with friends").
 rem This file and Chrome or Edge are all you need: the game itself comes from your friend's PC.
 setlocal
-set "CFG=%LocalAppData%\Afterhours16Join"
+title RIMRIFT - join a friend
+rem Its own folder, %LocalAppData%\RIMRIFTJoin (the last address, its own browser profile so you stay signed in). The
+rem folder from before the rename moves over the first time; if it can't (its browser still open), it's used as it is
+set "OLDCFG=%LocalAppData%\Afterhours16Join"
+set "CFG=%LocalAppData%\RIMRIFTJoin"
+if not exist "%CFG%" if exist "%OLDCFG%" move "%OLDCFG%" "%CFG%" >nul 2>nul
+if not exist "%CFG%" if exist "%OLDCFG%" set "CFG=%OLDCFG%"
 if not exist "%CFG%" mkdir "%CFG%"
 set "HOST="
 set "NEW="

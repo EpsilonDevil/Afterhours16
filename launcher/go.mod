@@ -1,3 +1,3 @@
-module afterhours16/launcher
+module rimrift/launcher
 
 go 1.22

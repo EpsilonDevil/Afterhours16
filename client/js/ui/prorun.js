@@ -1,4 +1,4 @@
-// v0.4.5 The Pro Run: a career in the Afterhours Pro League. Pick a college, play three games, get drafted by
+// v0.4.5 The Pro Run: a career in the RIMRIFT Pro League. Pick a college, play three games, get drafted by
 // whoever holds the slot your play earned, then an 82-game season, the play-in, four playoff rounds and the
 // Finals. Play your games in the arena or sim them; every other game is simulated (sim/league.js). Played games
 // go through a server ticket like Pro-Am: VC and badge progress pay 1.5x the park rate, and there's no music.

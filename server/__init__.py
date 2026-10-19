@@ -1,1 +1,1 @@
-"""Afterhours 16: independent local basketball services."""
+"""RIMRIFT: independent local basketball services."""

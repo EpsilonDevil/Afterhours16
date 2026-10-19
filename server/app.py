@@ -1,4 +1,4 @@
-"""Afterhours 16 v0.3 — dependency-free local service: accounts, characters, VC economy, store,
+"""RIMRIFT — dependency-free local service: accounts, characters, VC economy, store,
 progression (Rep, badges), Pro-Am teams, match tickets/results, and the static game client."""
 import argparse
 import collections
@@ -27,6 +27,16 @@ from .database import Database, encode
 
 ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "client"
+
+
+# v0.4.8.6 RIMRIFT: the service's settings from the environment are RIMRIFT_* (RIMRIFT_JOIN_CODE, RIMRIFT_PUBLIC_URL,
+# RIMRIFT_ONLINE_FILE, RIMRIFT_TIME_SLACK); the names from before the rename still work, so a server's env file or a
+# script from before keeps going. The new name wins when both are set
+def env(name, default=None):
+    return os.environ.get("RIMRIFT_" + name) or os.environ.get("AFTERHOURS16_" + name) or default
+
+
+
 CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json").read_text())}
 # v0.4.8.5 qp5: Icon items a build that already held the badge gets put on once, each with its own flag on the
 # character (so one never stands in for another): Sexy Red's Post Move Package, The General's Salute
@@ -40,7 +50,7 @@ PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
 VERSION = "0.4.8.6"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
-TIME_SLACK = float(os.environ.get("AFTERHOURS16_TIME_SLACK", "30"))
+TIME_SLACK = float(env("TIME_SLACK", "30"))
 # v0.4.8.5 qp8: a game started this long ago can still be finished (a result reports up to 4 hours of play), so its build
 # can't be deleted until it's done or left. An older one still marked running was left for good (the page closed)
 GAME_OPEN_SECS = 4 * 3600
@@ -90,7 +100,7 @@ def compute_build(root=ROOT):
 # v0.4.7.5 qp3 (Oct 12): the online server every copy of the game plays on by itself. online.json, at the top of the game
 # folder, holds its address and join code; a copy that isn't hosting connects there when it starts, and its players only
 # sign in (or make their online account: the join code goes with it). Nobody types an address any more.
-ONLINE_FILE = Path(os.environ.get("AFTERHOURS16_ONLINE_FILE") or ROOT / "online.json")  # (the variable: tests)
+ONLINE_FILE = Path(env("ONLINE_FILE") or ROOT / "online.json")  # (the variable: tests)
 
 
 def load_online_default(path=None):
@@ -158,9 +168,9 @@ class Service:
         self.attempts = collections.defaultdict(collections.deque)
         self.attempt_lock = threading.Lock()
         self.last_ping = None  # set by game windows opened from the launcher (see --exit-when-idle)
-        self.quit_allowed = False  # only when started by Afterhours16.exe (--exit-when-idle)
+        self.quit_allowed = False  # only when started by RIMRIFT.exe (--exit-when-idle)
         self.quit_requested = False
-        self.bug_root = ROOT  # v0.4.7.5: bug reports go next to Afterhours16.exe
+        self.bug_root = ROOT  # v0.4.7.5: bug reports go next to RIMRIFT.exe
         # v0.4.7.5 qp3: playing online with friends (online.py). hosting: started with --online (reachable from other
         # machines); join_code: new accounts need it (--join-code)
         self.hosting, self.join_code = False, None
@@ -578,7 +588,7 @@ class Service:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "Afterhours16/" + VERSION
+    server_version = "RIMRIFT/" + VERSION
 
     @property
     def service(self):
@@ -708,7 +718,7 @@ class Handler(BaseHTTPRequestHandler):
             s = self.service
             s.maybe_reset()  # (v0.4.8.6 qp: the season reset, the moment it's due)
             if path == "/api/health":
-                return self.respond(200, {"ready": True, "schema_version": SCHEMA_VERSION, "version": VERSION, "app": "afterhours16"})
+                return self.respond(200, {"ready": True, "schema_version": SCHEMA_VERSION, "version": VERSION, "app": "rimrift"})  # (v0.4.8.6; RIMRIFT.exe takes this or the old name)
             if path == "/api/ping":
                 s.last_ping = time.monotonic()
                 return self.respond(200, {"ok": True})
@@ -807,6 +817,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def static(self, path):
         relative = "index.html" if path in ("/", "") else path.lstrip("/")
+        # (v0.4.8.6 RIMRIFT: a browser that asks the site for its icon without a page that names one, e.g. a tab on
+        # /api/health or a bookmark, gets the RIMRIFT mark too, not a 404 and a blank icon)
+        relative = "brand/favicon.ico" if relative == "favicon.ico" else relative
         if ".." in relative or relative.startswith("dev/") or "\\" in relative:
             raise HTTPError(404, "File not found.")
         file = (CLIENT / relative).resolve()
@@ -884,7 +897,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/quit":
                 builds.strict_keys(data, ())
                 if not s.quit_allowed or not self.is_local():
-                    raise HTTPError(403, "Quit is only available when the game was started from Afterhours16.exe.")
+                    raise HTTPError(403, "Quit is only available when the game was started from RIMRIFT.exe.")
                 s.quit_requested = True
                 threading.Timer(0.4, self.server.shutdown).start()
                 print("Quit from the game window; stopping the service.", flush=True)
@@ -1606,26 +1619,69 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond(200, db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete))
 
 
+# v0.4.8.6 RIMRIFT: the save is data/rimrift.sqlite3. A game folder from before the rename has the old one: the first start
+# with the default path moves it over, in one piece (what its WAL still holds written into it first, and its -wal and -shm
+# gone with it). If that can't be done safely, because something else still has it open (a game left running from before
+# the update, a database viewer), the old file is used where it is, untouched, and it moves over on a later start. Never
+# two saves, never half of one. An explicit --db is used as given and never renamed.
+DB_NAME, OLD_DB_NAME = "rimrift.sqlite3", "afterhours.sqlite3"
+
+
+def default_db(data_dir=None):
+    data_dir = Path(data_dir or ROOT / "data")
+    new, old = data_dir / DB_NAME, data_dir / OLD_DB_NAME
+    if new.exists() or not old.exists():
+        return new
+    return new if migrate_db(old, new) else old
+
+
+def migrate_db(old, new):
+    """Move a save to its new name. True when it moved; False when it couldn't, and then nothing has changed."""
+    try:
+        conn = sqlite3.connect(str(old), timeout=0.2, isolation_level=None)
+        try:
+            busy = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if busy and busy[0]:
+                return False  # (someone else is reading or writing it right now)
+            # leaving WAL mode needs the file to itself: with anyone else holding it open (even idle) this is refused
+            if str(conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0]).lower() != "delete":
+                return False
+        finally:
+            conn.close()
+        for side in ("-wal", "-shm"):  # (SQLite removes them leaving WAL mode; a leftover is empty, else stop)
+            f = old.with_name(old.name + side)
+            if f.exists():
+                if side == "-wal" and f.stat().st_size:
+                    return False
+                f.unlink()
+        if new.exists():
+            return False
+        os.rename(old, new)  # (the same folder: one atomic step)
+        return True
+    except (OSError, sqlite3.Error):
+        return False
+
+
 def main():
     p = argparse.ArgumentParser(description="RIMRIFT local service")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--db", default=str(ROOT / "data/afterhours.sqlite3"))
+    p.add_argument("--db", default=None, help="The save (default: data/rimrift.sqlite3; one from before the rename moves over by itself)")
     p.add_argument("--no-dev-account", action="store_true")
     p.add_argument("--secure-cookies", action="store_true")
     p.add_argument("--open", action="store_true", help="Open the game in the default browser")
     # (v0.4.8.6 qp: 250,000 from the season reset on, what every reset account starts with; was 1,000,000)
     p.add_argument("--welcome-vc", type=int, default=250_000, help="One-time fictional VC granted to each NEW account (0 to grind from scratch)")
     p.add_argument("--exit-when-idle", type=float, default=0, metavar="SECONDS",
-                   help="Used by Afterhours16.exe: stop once the game window has stopped checking in for this long")
+                   help="Used by RIMRIFT.exe: stop once the game window has stopped checking in for this long")
     p.add_argument("--online", action="store_true", help="Host for friends: listen on every network interface (unless --host is given)")
-    p.add_argument("--join-code", default=os.environ.get("AFTERHOURS16_JOIN_CODE") or None, metavar="CODE",
+    p.add_argument("--join-code", default=env("JOIN_CODE"), metavar="CODE",
                    help="New accounts need this code (share it with your friends)")
     p.add_argument("--no-upnp", action="store_true", help="With --online: don't ask the router to forward the port (UPnP)")
     p.add_argument("--server", action="store_true",
                    help="An online server (deploy/install.sh): hosts for everyone from behind its own HTTPS proxy on this machine "
                         "(Caddy, which passes each player's address on); no local session, no UPnP, secure cookies")
-    p.add_argument("--public-url", default=os.environ.get("AFTERHOURS16_PUBLIC_URL") or None, metavar="URL",
+    p.add_argument("--public-url", default=env("PUBLIC_URL"), metavar="URL",
                    help="With --server: the address players use, e.g. https://203-0-113-7.sslip.io")
     args = p.parse_args()
     if args.server:
@@ -1638,7 +1694,7 @@ def main():
     # service is still up, your game would talk to one and your friends to the other, and you'd never see each other)
     try:
         with socket.create_connection(("127.0.0.1", args.port), timeout=0.6):
-            print(f"Something is already running on port {args.port} (Afterhours 16 itself?). " + (
+            print(f"Something is already running on port {args.port} (RIMRIFT itself?). " + (
                 "Quit the game (Quit to desktop) and run host.cmd again: the hosted service is the one your game and your friends' games share."
                 if args.online else "The game window can use that one; close it first to start a new service."), flush=True)
             sys.exit(2)
@@ -1649,7 +1705,8 @@ def main():
         # that comes in while another thread is busy waits less to be passed on (the slowest 1% of relays: ~40% quicker
         # in tests/load_hub.py at 20 players and 40 watchers, for the same CPU)
         sys.setswitchinterval(0.001)
-    service = Service(args.db, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc), season.SEASON_RESET)
+    db_path = args.db or default_db()  # (v0.4.8.6: the save under its RIMRIFT name, moved over from the old one if need be)
+    service = Service(db_path, not args.no_dev_account, args.secure_cookies, max(0, args.welcome_vc), season.SEASON_RESET)
     service.hosting = bool(args.online)
     service.join_code = (args.join_code or "").strip() or None
     service.behind_proxy = bool(args.server)
@@ -1658,7 +1715,7 @@ def main():
     server.daemon_threads = True
     server.service = service
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{server.server_address[1]}/"
-    print(f"Afterhours 16 v{VERSION}\nOpen {url}\nPress Ctrl+C to stop.", flush=True)
+    print(f"RIMRIFT v{VERSION}\nOpen {url}\nPress Ctrl+C to stop.", flush=True)
     if args.online and not args.no_upnp:
         # qp3: the router forwards the port to this PC by itself (UPnP), for as long as the service runs
         service.upnp = upnp.PortMapper(server.server_address[1], "RIMRIFT")  # (v0.4.8.6: the router's port-mapping list says RIMRIFT)
@@ -1719,7 +1776,7 @@ def main():
         server.server_close()
         service.close()
     if service.quit_requested:
-        sys.exit(3)  # tells Afterhours16.exe the player quit from the menu, so it closes the game window too
+        sys.exit(3)  # tells RIMRIFT.exe the player quit from the menu, so it closes the game window too
 
 
 if __name__ == "__main__":

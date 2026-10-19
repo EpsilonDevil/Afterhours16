@@ -1,0 +1,41 @@
+[gd_scene load_steps=7 format=3 uid="uid://rimrift_demo"]
+
+[ext_resource type="Script" path="res://scripts/Demo.cs" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/harbor/HarborPoint.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/athlete/Athlete.tscn" id="3"]
+[ext_resource type="Texture2D" path="res://assets/athlete/ball_albedo.png" id="4"]
+
+[sub_resource type="StandardMaterial3D" id="ballmat"]
+albedo_texture = ExtResource("4")
+roughness = 0.7
+
+[sub_resource type="SphereMesh" id="ballmesh"]
+material = SubResource("ballmat")
+radius = 0.1194
+height = 0.2388
+radial_segments = 32
+rings = 16
+
+[node name="Demo" type="Node3D"]
+script = ExtResource("1")
+
+[node name="HarborPoint" parent="." instance=ExtResource("2")]
+
+[node name="Athlete" parent="." instance=ExtResource("3")]
+
+[node name="Ball" type="MeshInstance3D" parent="."]
+mesh = SubResource("ballmesh")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="HUD" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 1200.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(0.953, 0.933, 0.894, 1)
+theme_override_colors/font_shadow_color = Color(0.031, 0.039, 0.051, 0.9)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 18
+text = "RIMRIFT"

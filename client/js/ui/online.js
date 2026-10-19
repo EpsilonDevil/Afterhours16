@@ -80,7 +80,7 @@ export async function initOnline(app) {
   net.configure({ hub: link?.hub || null, token: link?.token || null, build: app.config?.build || null });
   if ((link?.hub && !net.offline) || hosting) net.start();
   // (just linked: the page reloaded so it may reach the host; back to the Online tab)
-  try { if (sessionStorage.getItem('ah16.openOnline')) { sessionStorage.removeItem('ah16.openOnline'); setTimeout(() => import('./phone.js').then(P => P.openPhone(app, { tab: 'online' })), 700); } } catch { /* private mode */ }
+  try { if (sessionStorage.getItem('rimrift.openOnline')) { sessionStorage.removeItem('rimrift.openOnline'); setTimeout(() => import('./phone.js').then(P => P.openPhone(app, { tab: 'online' })), 700); } } catch { /* private mode */ }
   let lastChar = null, lastAI = null;
   setInterval(() => {
     if (!net.connected) { lastChar = null; lastAI = null; return; }
@@ -531,7 +531,7 @@ function bindLink(app, host) {
     try {
       await app.api.post('/api/online-link', { hub });
       // (the page reloads so it's allowed to reach the host's game, and comes back to this tab)
-      try { sessionStorage.setItem('ah16.openOnline', '1'); } catch { /* private mode */ }
+      try { sessionStorage.setItem('rimrift.openOnline', '1'); } catch { /* private mode */ }
       toast('Connecting…'); setTimeout(() => location.reload(), 300);
     } catch (err) { toast(err.message, 'error'); }
   };
@@ -563,14 +563,14 @@ function bindLink(app, host) {
   // (back to the game's own server: forget the other one)
   $$('[data-ohome]', host).forEach(b => b.onclick = async () => {
     try { await app.api.post('/api/online-link', { clear: true }); } catch { /* ignore */ }
-    try { sessionStorage.setItem('ah16.openOnline', '1'); } catch { /* private mode */ }
+    try { sessionStorage.setItem('rimrift.openOnline', '1'); } catch { /* private mode */ }
     net.stop(); setTimeout(() => location.reload(), 200);
   });
   $$('[data-ounlink]', host).forEach(b => b.onclick = async () => {
     // (qp3, Oct 12: with a server of the game's own, changing server goes through the offline view and its address box)
     if (app.config?.online?.server) { await goOffline(app); return; }
     try { await app.api.post('/api/online-link', { clear: true }); } catch { /* ignore */ }
-    try { sessionStorage.setItem('ah16.openOnline', '1'); } catch { /* private mode */ }
+    try { sessionStorage.setItem('rimrift.openOnline', '1'); } catch { /* private mode */ }
     net.stop(); setTimeout(() => location.reload(), 200);
   });
 }

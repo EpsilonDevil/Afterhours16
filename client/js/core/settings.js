@@ -1,5 +1,8 @@
 // Per-browser presentation preferences (never authoritative game data).
-const KEY = 'afterhours16.settings.v3';
+// v0.4.8.6 RIMRIFT: saved under the game's new name. The settings saved before the rename are copied over the first
+// time (the old entry is left as it was): nobody's controls, volumes or camera change with the name
+export const SETTINGS_KEY = 'rimrift.settings.v3', OLD_SETTINGS_KEY = 'afterhours16.settings.v3';
+const KEY = SETTINGS_KEY;
 const DEFAULTS = {
   quality: 'high', music: true, sfx: 0.95, crowd: 0.8, musicVol: 0.65, camera: '2k', difficulty: 0.6, tags: true, showFps: false, parkTarget: 21, quarterLen: 180, lastPark: null, character: null,
   // v0.4: controller & focus
@@ -20,7 +23,11 @@ const DEFAULTS = {
   adaptiveGfx: true,
 };
 export const settings = { ...DEFAULTS };
-try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* private mode */ }
+try {
+  let saved = localStorage.getItem(KEY);
+  if (saved == null && (saved = localStorage.getItem(OLD_SETTINGS_KEY)) != null) try { localStorage.setItem(KEY, saved); } catch { /* full: read again next time */ }
+  Object.assign(settings, JSON.parse(saved || '{}'));
+} catch { /* private mode */ }
 // v0.4.5: the game keeps running when you click out of the window (one-time switch for saved settings; you can
 // turn pause-on-focus-loss back on in Settings)
 if (!settings.v045) { settings.pauseOnBlur = false; settings.v045 = true; try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* ignore */ } }

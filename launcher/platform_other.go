@@ -22,8 +22,11 @@ func platformPythons() []python {
 }
 
 func findBrowser() string {
-	if b := os.Getenv("AFTERHOURS16_BROWSER"); b != "" {
-		return b
+	// RIMRIFT_BROWSER (AFTERHOURS16_BROWSER, its name before the rename, still works)
+	for _, k := range []string{"RIMRIFT_BROWSER", "AFTERHOURS16_BROWSER"} {
+		if b := os.Getenv(k); b != "" {
+			return b
+		}
 	}
 	for _, b := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser",
 		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"} {
@@ -48,6 +51,6 @@ func openDefault(url string) {
 }
 
 func offerPython(root string) (python, error) {
-	fmt.Fprintln(os.Stderr, "Afterhours 16 needs Python 3.10+ (python3). Install it from your package manager or python.org.")
+	fmt.Fprintln(os.Stderr, "RIMRIFT needs Python 3.10+ (python3). Install it from your package manager or python.org.")
 	return python{}, errors.New("python missing")
 }

@@ -3,7 +3,7 @@
 ## Overview
 
 ```
- Afterhours16.exe (Go launcher) ─ starts ─┬─▶ Python service, hidden, --exit-when-idle
+ RIMRIFT.exe (Go launcher) ─ starts ─┬─▶ Python service, hidden, --exit-when-idle
                                          └─▶ Edge/Chrome --app window, fullscreen, own profile
 
  Chrome / Edge app window                          Python service (stdlib only)
@@ -14,7 +14,7 @@
  │ char/ athletes, rig, animator         │        │ database.py SQLite WAL, ledger,  │
  │ world/ parks, arena, gym, hoops, nets │        │             idempotency keys     │
  │ gfx/  WebGL2 renderer                 │        └──────────────────────────────────┘
- └───────────────────────────────────────┘                    data/afterhours.sqlite3
+ └───────────────────────────────────────┘                    data/rimrift.sqlite3
 ```
 
 v0.2 ran the match on the server at 30 Hz and streamed state to the page. v0.3 moves the simulation into the client at a fixed 60 Hz step. Input reaches the sim on the next frame, the ball and players are interpolated, and there's no network jitter. The server still owns everything that matters for progression:
@@ -34,10 +34,24 @@ This is a single-player game against AI on your own machine. The checks stop acc
 
 ## Launcher (`launcher/`)
 
-`Afterhours16.exe` is about 480 lines of Go using only the standard library, cross-compiled with `-H windowsgui`. Icon and version resources come from a prebuilt `.syso`.
+`RIMRIFT.exe` is about 480 lines of Go using only the standard library, cross-compiled with `-H windowsgui`. Icon and version resources (the RIMRIFT icon at 16–256 px; version info: RIMRIFT, Silverback Studios, 0.4.8.6; the manifest) come from a prebuilt `.syso`, made from `launcher/res/rimrift.rc`:
+
+```
+# resources (only when res/ changes; binutils-mingw-w64-x86-64; --preprocessor=cpp because there's no mingw gcc)
+cd launcher/res
+x86_64-w64-mingw32-windres --preprocessor=cpp --input-format=rc --output-format=coff -i rimrift.rc -o ../rsrc_windows_amd64.syso
+# the exe (the .syso is linked in automatically)
+cd launcher
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o ../RIMRIFT.exe .
+# Linux/macOS build, and the tests
+CGO_ENABLED=0 go build -trimpath -o ../rimrift .
+go test ./...            # (and python3 -m unittest tests.test_launcher from the project root)
+```
+
+It finds the game in its own folder, the folder above it, or a `RIMRIFT` (or older `Afterhours16`) folder beside it.
 
 1. **Python:** finds Python 3.10+ in this order: `launcher.json` or `-python`, a bundled `python/` folder next to the game, `py -3`, `python`, `python3`, then the usual install folders. If none is found, it offers a per-user `winget install Python.Python.3.12` (or the python.org page).
-2. **Service:** reuses a running Afterhours service on the port (`/api/health` returns `app: afterhours16`). Otherwise it picks a port, starts `python -m server.app --exit-when-idle 45` with no console window, and waits for it to be healthy. Output goes to `data/server.log`.
+2. **Service:** reuses a running RIMRIFT service on the port (`/api/health` returns `app: rimrift`; a service from before the rename answers `afterhours16`, also accepted). Otherwise it picks a port, starts `python -m server.app --exit-when-idle 45` with no console window, and waits for it to be healthy. Output goes to `data/server.log`.
 3. **Window:** opens Edge (preferred) or Chrome with `--app=<url>?launcher=1 --start-fullscreen` and a dedicated `--user-data-dir=data/browser-profile`, plus flags that stop background throttling.
 4. **Running:** with `?launcher=1` the client pings `/api/ping` every 5 s.
 5. **Shutdown:** the service stops once the pings have stopped for 45 s. A gap of more than 20 s between watchdog ticks counts as the PC sleeping, not as an idle window. **Quit to desktop** posts `/api/quit`, which is only accepted from loopback when the service was started by the launcher. The service then exits with code 3, and the launcher closes the browser window it opened.

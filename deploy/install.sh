@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Afterhours 16: set up an online server on a fresh Ubuntu machine (24.04 LTS), or set it up again (safe to re-run).
+# RIMRIFT: set up an online server on a fresh Ubuntu machine (24.04 LTS), or set it up again (safe to re-run).
 # README: "Host on a server". On DigitalOcean the startup script (deploy/digitalocean-startup.sh) runs this for you.
 #
 #   sudo JOIN_CODE=yourcode bash /opt/afterhours16/deploy/install.sh
@@ -49,9 +49,10 @@ if [ -f "$ENVF" ]; then
   # shellcheck disable=SC1090
   . "$ENVF"
 fi
-JOIN_CODE=${JOIN_CODE:-${AFTERHOURS16_JOIN_CODE:-}}
-DOMAIN=${DOMAIN:-${AFTERHOURS16_DOMAIN:-}}
-EMAIL=${EMAIL:-${AFTERHOURS16_EMAIL:-}}
+# (v0.4.8.6 RIMRIFT: the settings file is written with RIMRIFT_* names; one from before the rename has AFTERHOURS16_*)
+JOIN_CODE=${JOIN_CODE:-${RIMRIFT_JOIN_CODE:-${AFTERHOURS16_JOIN_CODE:-}}}
+DOMAIN=${DOMAIN:-${RIMRIFT_DOMAIN:-${AFTERHOURS16_DOMAIN:-}}}
+EMAIL=${EMAIL:-${RIMRIFT_EMAIL:-${AFTERHOURS16_EMAIL:-}}}
 if [ -z "$JOIN_CODE" ] || [ "$JOIN_CODE" = "change-me" ]; then
   JOIN_CODE="hoops-$(printf '%04d' $((RANDOM % 10000)))"
   say "No join code given: using $JOIN_CODE (change it any time: afterhours16 joincode NEWCODE)"
@@ -68,7 +69,7 @@ IP=${PUBLIC_IP:-}  # (another host: give it, or it's looked up)
 DOMAIN=$(printf '%s' "${DOMAIN:-${IP//./-}.sslip.io}" | tr '[:upper:]' '[:lower:]')
 [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "That domain doesn't look right: $DOMAIN"
 URL="https://$DOMAIN"
-say "Setting up the Afterhours 16 online server at $URL"
+say "Setting up the RIMRIFT online server at $URL"
 
 # ---- packages ----
 say "Packages"
@@ -110,12 +111,12 @@ mkdir -p /var/lib/afterhours16/backups && chown -R afterhours:afterhours /var/li
 
 umask 077
 cat > "$ENVF" <<EOF
-# Afterhours 16 online server settings (deploy/install.sh). Change the join code with: afterhours16 joincode NEWCODE
-AFTERHOURS16_JOIN_CODE=$JOIN_CODE
-AFTERHOURS16_PUBLIC_URL=$URL
-AFTERHOURS16_DOMAIN=$DOMAIN
-AFTERHOURS16_EMAIL=$EMAIL
-AFTERHOURS16_BRANCH=$BRANCH
+# RIMRIFT online server settings (deploy/install.sh). Change the join code with: afterhours16 joincode NEWCODE
+RIMRIFT_JOIN_CODE=$JOIN_CODE
+RIMRIFT_PUBLIC_URL=$URL
+RIMRIFT_DOMAIN=$DOMAIN
+RIMRIFT_EMAIL=$EMAIL
+RIMRIFT_BRANCH=$BRANCH
 EOF
 umask 022
 
@@ -127,7 +128,7 @@ for u in afterhours16.service afterhours16-update.service afterhours16-update.ti
   install -m 644 "$APP/deploy/systemd/$u" "/etc/systemd/system/$u"
 done
 {
-  echo "# Afterhours 16 online server (deploy/install.sh): HTTPS in front of the game service"
+  echo "# RIMRIFT online server (deploy/install.sh): HTTPS in front of the game service"
   if [ -n "$EMAIL" ]; then printf '{\n\temail %s\n}\n\n' "$EMAIL"; fi
   printf '%s {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:%s\n}\n' "$DOMAIN" "$PORT"
 } > /etc/caddy/Caddyfile

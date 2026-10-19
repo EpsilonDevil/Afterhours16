@@ -48,8 +48,9 @@ export function mountSquadTags(app, root, { every = 60000, now = () => Date.now(
 }
 
 // ---- the toast ----
-const SEEN_KEY = 'ah16.iconsquad.seen';
-const loadSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch { return new Set(); } };
+// (v0.4.8.6 RIMRIFT: the game's new name; the windows already seen under the old key still count, until the next one)
+const SEEN_KEY = 'rimrift.iconsquad.seen', OLD_SEEN_KEY = 'ah16.iconsquad.seen';
+const loadSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? localStorage.getItem(OLD_SEEN_KEY) ?? '[]')); } catch { return new Set(); } };
 const saveSeen = seen => { try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-8))); } catch { /* private mode */ } };
 // "just showed up" in its first few minutes; after that (you opened the game mid-hour) it says how long they're on for
 export function arrivalText(sq, t = Date.now()) {

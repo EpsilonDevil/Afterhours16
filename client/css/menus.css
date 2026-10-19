@@ -707,7 +707,7 @@ table.controls tr.sec td { color: var(--accent); font-size: 11px; letter-spacing
 .inventory .item.locked small { color: var(--warn, #f2c14e); }
 .inv-empty { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 18px 4px; }
 
-/* ---------- v0.4.7.5 polish: one bar, calmer panels, cleaner controls (same Afterhours look) ---------- */
+/* ---------- v0.4.7.5 polish: one bar, calmer panels, cleaner controls (same RIMRIFT look) ---------- */
 .topbar { padding: 12px 24px; gap: 16px; background: linear-gradient(180deg, rgba(6,8,11,.94), rgba(6,8,11,.7)); border-bottom: 1px solid rgba(255,255,255,.06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); position: relative; z-index: 2; }
 .tabs { overflow-x: auto; scrollbar-width: none; gap: 2px; }
 .tabs::-webkit-scrollbar { display: none; }

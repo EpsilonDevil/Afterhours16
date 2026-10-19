@@ -745,5 +745,5 @@ test('Report a bug: F8 and the menus, with where you were and what the game was 
   assert.match(src('ui/modes.js'), /Report a bug \(F8\)/);
   assert.match(src('game/session.js'), /logGameEvent\(e, g\)/);
   const py = fs.readFileSync(new URL('../server/bugs.py', import.meta.url), 'utf8');
-  assert.match(py, /BUG_FILE = "Afterhours16_Bug_Reports.txt"/);
+  assert.match(py, /BUG_FILE = "RIMRIFT_Bug_Reports.txt"/); // (v0.4.8.6: the game's new name)
 });

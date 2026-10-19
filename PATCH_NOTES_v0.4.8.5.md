@@ -1,4 +1,4 @@
-# Afterhours 16 — v0.4.8.5 Patch Notes
+# RIMRIFT — v0.4.8.5 Patch Notes
 
 v0.4.8.5 rebuilds the three affiliation parks, adds Pro-Am ranks from Bronze to Grandmaster, keeps a new build at its home park until Pro 1, and lets you set a screen off the ball. It also starts the next Pro-Am and Pro Run game by itself, adds 1-minute Pro Run quarters, retunes seven badges, doubles the Sharp Eye hop and fixes Hall of Fame badges that didn't move up.
 
