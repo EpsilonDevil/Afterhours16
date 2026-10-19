@@ -10,7 +10,9 @@ import { AIWorld, setEventVenue, setEventSchedule, eventVenueAt, nextEventChange
 import { syncEvent, watchEvents } from '../client/js/ui/events.js';
 
 const src = f => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
-const SCHED = JSON.parse(src('server/events.json')).schedule;
+// (v0.4.8.7: the shipped schedule now ends in the park shuffle, which the server sends as plain windows; these tests
+// check the client's handling of a schedule, so they keep the qp4-era rows with an open-ended last event)
+const SCHED = [{ event: 'kingtut', from: null, until: 1791763200 }, { event: 'jungle', from: 1791763200, until: 1791936000 }, { event: 'beat', from: 1791936000, until: 1792108800 }, { event: 'monster', from: 1792108800, until: null }];
 const VENUES = { kingtut: 'kingtut', jungle: 'jungle', beat: 'beat', monster: 'monster' };
 const rows = SCHED.map(r => ({ ...r, venue: VENUES[r.event] }));
 const JUNGLE_TO_BEAT = 1791936000 * 1000; // 2026-10-14 00:00 UTC = 5 PM Pacific, Oct 13

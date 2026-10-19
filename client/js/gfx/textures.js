@@ -128,6 +128,7 @@ export function courtOverlay(spec) {
     g.fillStyle = spec.apron; g.fillRect(-W / 2, -L / 2, W, L);
     if (spec.retro) retroApron(g, spec, W, L, margin); // (v0.4.8.5 quick patch: sunset stripes and Memphis confetti)
     else if (spec.horror) horrorApron(g, spec, W, L, margin); // (v0.4.8.5 quick patch 2: iron spikes, cobwebs, tombstones, bats)
+    else if (spec.favela) favelaApron(g, spec, W, L, margin); // (v0.4.8.7: a frame of painted tiles, kites, suns and flowers)
     g.fillStyle = spec.court; g.fillRect(-COURT.width / 2, -COURT.length / 2, COURT.width, COURT.length);
   } else if (spec.apron) {
     // stained border on wood courts
@@ -220,6 +221,7 @@ export function courtOverlay(spec) {
       g.fillStyle = spec.baselineColor || spec.lines; g.fillText(spec.baselineText, 0, 0); g.restore(); continue;
     }
     if (spec.horror) { horrorLettering(g, spec.baselineText, spec.baselineColor || spec.lines, spec.horror, (spec.seed || 3) + s); g.restore(); continue; } // (v0.4.8.5 quick patch 2)
+    if (spec.favela) { favelaLettering(g, spec.baselineText, spec.baselineColor || spec.lines, spec.favela); g.restore(); continue; } // (v0.4.8.7)
     g.fillText(spec.baselineText, 0, 0); g.restore();
   }
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -430,6 +432,7 @@ export function drawLogo(g, logo, x, y, size) {
   if (shape === 'toucan') { if (logo.rotate) g.rotate(logo.rotate); drawToucan(g, logo, size); g.restore(); return; }
   if (shape === 'sunset') { if (logo.rotate) g.rotate(logo.rotate); drawSunsetLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch)
   if (shape === 'jack') { if (logo.rotate) g.rotate(logo.rotate); drawJackLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch 2)
+  if (shape === 'pipa') { if (logo.rotate) g.rotate(logo.rotate); drawPipaLogo(g, logo, size); g.restore(); return; } // (v0.4.8.7 The Favelas)
   if (shape === 'rimrift') { if (logo.rotate) g.rotate(logo.rotate); drawRimriftLogo(g, logo, size); g.restore(); return; } // (v0.4.8.6)
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
@@ -1902,4 +1905,210 @@ export function iconFireTexture(S = 256) {
     set(x, y, Math.round(Math.min(255, r)), Math.round(Math.max(0, Math.min(255, g))), Math.round(b), Math.round(a * 255));
   }
   return { width: W, height: H, data: d };
+}
+
+// ---------------- v0.4.8.7 The Favelas ----------------
+// painted plaster (512 x 512, one tile = 1 m on the houses' walls): near white so the vertex colour paints it, with
+// trowel marks, damp stains rising from the bottom, chips showing grey render, rain streaks
+export function plaster(opts = {}) {
+  const S = 512, seed = opts.seed || 5, c = canvas(S, S), g = ctx2d(c), rng = new RNG(seed), noise = makeNoise2D(seed);
+  const img = g.createImageData(S, S), d = img.data;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const n = noise.fbm(x / 60, y / 60, 4), f = noise(x / 6, y / 6) * 0.04, v = 0.9 + n * 0.12 + f, streak = Math.max(0, noise(x / 9, 3.3) - 0.25) * (y / S) * 0.25;
+    const o = (y * S + x) * 4, k = Math.max(0, Math.min(1, v - streak)) * 255;
+    d[o] = k; d[o + 1] = k * 0.985; d[o + 2] = k * 0.96; d[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  for (let i = 0; i < 26; i++) { const x = rng.next() * S, y = rng.next() * S, r = rng.range(3, 14); g.fillStyle = 'rgba(120,118,112,0.55)'; g.beginPath(); g.ellipse(x, y, r, r * rng.range(0.4, 1), rng.range(0, 3), 0, Math.PI * 2); g.fill(); }
+  return c;
+}
+
+// the shop signs (1024 x 1024 atlas, eight 1024 x 128 rows: favelaSignUV(key) → [u0, v0, uw, vh]): painted boards, each
+// in its own colours and lettering; generic words only
+export const FAVELA_SIGNS = ['MERCADINHO', 'BAR', 'AÇAÍ', 'BARBEARIA', 'LANCHONETE', 'PADARIA', 'SORVETES', 'THE FAVELAS'];
+export function favelaSignUV(key) { const i = Math.max(0, FAVELA_SIGNS.indexOf(key)); return [0, i / 8, 1, 1 / 8]; }
+export function favelaSigns() {
+  const W = 1024, R = 128, c = canvas(W, R * 8), g = ctx2d(c);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const looks = [['#2f8a4a', '#f4efe4', '#f2c230'], ['#d8302a', '#f4efe4', '#1a1a1a'], ['#5a1a6a', '#f2c230', '#9ad13a'], ['#1f4fb4', '#f4efe4', '#d8302a'], ['#f2c230', '#c8302a', '#2a2a2a'], ['#e8934a', '#4a2a10', '#f4efe4'], ['#e86aa0', '#f4efe4', '#2fb8b0'], ['#2fb8b0', '#f4efe4', '#f2c230']];
+  FAVELA_SIGNS.forEach((text, i) => {
+    const [bg, fg, ac] = looks[i];
+    g.save(); g.translate(0, i * R);
+    g.fillStyle = bg; g.fillRect(0, 0, W, R);
+    g.fillStyle = ac; g.fillRect(0, 0, W, 10); g.fillRect(0, R - 10, W, 10);
+    g.font = `900 ${text.length > 9 ? 70 : 84}px "Arial Black", Impact, sans-serif`;
+    const tw = g.measureText(text).width, sc = Math.min(1, (W - 80) / tw);
+    g.translate(W / 2, R / 2 + 4); g.scale(sc, 1);
+    g.lineWidth = 9; g.strokeStyle = 'rgba(0,0,0,0.45)'; g.strokeText(text, 4, 4);
+    g.fillStyle = fg; g.fillText(text, 0, 0);
+    g.restore();
+  });
+  return c;
+}
+
+// the court crest: a kite (pipa) flying over a hill of little houses with the sun going down behind it, inside a ring of
+// painted tiles. Unit space (radius 1)
+export function drawPipaLogo(g, logo, size) {
+  const bg = logo.color || '#163e5a', sun = logo.sun || '#ffb347', ring = logo.accent || '#f2c230', kite = logo.kite || '#e86aa0', ink = logo.ink || '#f4efe4';
+  g.save(); g.scale(size, size); g.lineJoin = 'round';
+  g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fillStyle = ring; g.globalAlpha = logo.alpha ?? 0.97; g.fill(); g.globalAlpha = 1;
+  // the tile ring: little squares round the rim in turquoise and white
+  for (let k = 0; k < 28; k++) { const a = k / 28 * Math.PI * 2; g.save(); g.rotate(a); g.fillStyle = k % 2 ? '#2fb8b0' : ink; g.fillRect(0.88, -0.07, 0.1, 0.14); g.restore(); }
+  g.save(); g.beginPath(); g.arc(0, 0, 0.84, 0, Math.PI * 2); g.clip();
+  const sky = g.createLinearGradient(0, -0.84, 0, 0.4); sky.addColorStop(0, bg); sky.addColorStop(0.75, '#e86a5a'); sky.addColorStop(1, '#ffb060'); g.fillStyle = sky; g.fillRect(-1, -1, 2, 2);
+  g.fillStyle = sun; g.beginPath(); g.arc(0.32, 0.12, 0.3, 0, Math.PI * 2); g.fill();
+  // the hill and its houses, stacked
+  g.fillStyle = '#2a5a3a'; g.beginPath(); g.moveTo(-1, 0.3); g.quadraticCurveTo(-0.2, -0.05, 1, 0.25); g.lineTo(1, 1); g.lineTo(-1, 1); g.closePath(); g.fill();
+  const cols = ['#d9643a', '#2fb8b0', '#f2c230', '#e86aa0', '#9ad13a', '#f4efe4'];
+  let k = 0;
+  for (let row = 0; row < 4; row++) for (let x = -0.9 + (row % 2) * 0.09; x < 0.9; x += 0.18) {
+    const hillY = 0.3 - 0.35 * (1 - ((x + 0.2) / 1.1) ** 2) * 0.6, y = hillY + row * 0.15 + 0.02, h = 0.13 + ((k * 7) % 3) * 0.03;
+    g.fillStyle = cols[k++ % cols.length]; g.fillRect(x, y - h, 0.16, h + 0.02);
+    g.fillStyle = 'rgba(30,20,10,0.75)'; g.fillRect(x + 0.04, y - h + 0.04, 0.035, 0.04); g.fillRect(x + 0.1, y - h + 0.04, 0.035, 0.04);
+  }
+  // the kite, its string down to the hill, its tail of bows
+  g.strokeStyle = ink; g.lineWidth = 0.012; g.beginPath(); g.moveTo(-0.22, -0.18); g.quadraticCurveTo(-0.5, 0.1, -0.62, 0.32); g.stroke();
+  g.fillStyle = kite; g.beginPath(); g.moveTo(-0.22, -0.62); g.lineTo(0.04, -0.36); g.lineTo(-0.22, -0.12); g.lineTo(-0.48, -0.36); g.closePath(); g.fill();
+  g.fillStyle = ring; g.beginPath(); g.moveTo(-0.22, -0.62); g.lineTo(0.04, -0.36); g.lineTo(-0.22, -0.36); g.closePath(); g.fill(); g.beginPath(); g.moveTo(-0.22, -0.12); g.lineTo(-0.48, -0.36); g.lineTo(-0.22, -0.36); g.closePath(); g.fill();
+  g.strokeStyle = '#1a1a1a'; g.lineWidth = 0.015; g.beginPath(); g.moveTo(-0.22, -0.62); g.lineTo(-0.22, -0.12); g.moveTo(-0.48, -0.36); g.lineTo(0.04, -0.36); g.stroke();
+  for (let i = 1; i <= 5; i++) { const x = -0.22 + Math.sin(i * 1.2) * 0.04, y = -0.12 + i * 0.07; g.fillStyle = i % 2 ? kite : ring; g.beginPath(); g.moveTo(x - 0.04, y - 0.02); g.lineTo(x + 0.04, y + 0.02); g.lineTo(x + 0.04, y - 0.02); g.lineTo(x - 0.04, y + 0.02); g.closePath(); g.fill(); }
+  g.restore(); g.restore();
+}
+
+// the apron: a frame of painted tiles (blue-and-white squares with a little four-petal motif) round its outer edge, and
+// kites, suns and flowers scattered between the frame and the boundary line, clear of the baseline lettering and of the
+// Got Next spots on the east side. spec.favela: {tiles: [colours], ink, count, palette}
+function favelaApron(g, spec, W, L, margin) {
+  const F = spec.favela, rng = new RNG((spec.seed || 3) * 17 + 9), cw = COURT.width / 2, cl = COURT.length / 2, s = 0.36, tc = F.tiles || ['#1f4fb4', '#f4efe4'];
+  const tile = (x, y, k) => {
+    g.fillStyle = tc[k % 2]; g.fillRect(x, y, s, s);
+    g.fillStyle = tc[(k + 1) % 2]; g.beginPath(); g.arc(x + s / 2, y + s / 2, s * 0.16, 0, Math.PI * 2); g.fill();
+    for (let q = 0; q < 4; q++) { const a = q * Math.PI / 2 + Math.PI / 4; g.beginPath(); g.ellipse(x + s / 2 + Math.cos(a) * s * 0.26, y + s / 2 + Math.sin(a) * s * 0.26, s * 0.1, s * 0.05, a, 0, Math.PI * 2); g.fill(); }
+  };
+  let k = 0;
+  for (let x = -W / 2; x < W / 2 - 0.01; x += s) { tile(x, -L / 2, k++); tile(x, L / 2 - s, k++); }
+  for (let y = -L / 2 + s; y < L / 2 - s - 0.01; y += s) { tile(-W / 2, y, k++); tile(W / 2 - s, y, k++); }
+  const inner = 0.3, outer = margin - 0.6, spots = [], pal = F.palette || ['#e86aa0', '#2fb8b0', '#f2c230', '#9ad13a', '#d9643a'];
+  for (let tries = 0, n = 0; n < (F.count || 36) && tries < 3000; tries++) {
+    const side = rng.int(0, 3), dd = inner + rng.next() * (outer - inner);
+    let x, y, nx = 0, ny = 0;
+    if (side < 2) { x = (rng.next() * 2 - 1) * (cw + dd); y = (side ? 1 : -1) * (cl + dd); ny = side ? 1 : -1; } else { y = (rng.next() * 2 - 1) * (cl + dd); x = (side === 2 ? 1 : -1) * (cw + dd); nx = side === 2 ? 1 : -1; }
+    if (Math.abs(y) > cl && Math.abs(x) < 4.9) continue;
+    if (x > cw && y > -10 && y < 12) continue;
+    if (spots.some(([a, b]) => Math.hypot(a - x, b - y) < 0.7)) continue;
+    spots.push([x, y]); n++;
+    g.save(); g.translate(x, y); g.rotate(Math.atan2(nx, -ny) + rng.range(-0.4, 0.4));
+    const kind = rng.int(0, 2), c1 = rng.pick(pal), c2 = rng.pick(pal), r = rng.range(0.18, 0.26);
+    if (kind === 0) { g.fillStyle = c1; g.beginPath(); g.moveTo(0, -r * 1.3); g.lineTo(r, 0); g.lineTo(0, r); g.lineTo(-r, 0); g.closePath(); g.fill(); g.strokeStyle = c2; g.lineWidth = 0.03; g.beginPath(); g.moveTo(0, r); g.quadraticCurveTo(r * 0.6, r * 1.8, 0, r * 2.4); g.stroke(); }
+    else if (kind === 1) { g.fillStyle = '#f2c230'; g.beginPath(); g.arc(0, 0, r * 0.6, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#f2c230'; g.lineWidth = 0.035; for (let q = 0; q < 8; q++) { const a = q / 8 * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8); g.lineTo(Math.cos(a) * r * 1.15, Math.sin(a) * r * 1.15); g.stroke(); } }
+    else { g.fillStyle = c1; for (let q = 0; q < 5; q++) { const a = q / 5 * Math.PI * 2; g.beginPath(); g.ellipse(Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.45, r * 0.4, r * 0.22, a, 0, Math.PI * 2); g.fill(); } g.fillStyle = c2; g.beginPath(); g.arc(0, 0, r * 0.22, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  }
+}
+
+// baseline lettering for the Favelas: chunky letters in white with a dark outline, each with a drop shadow in a
+// different bright colour. Drawn in the baseline's own frame (text centred on 0, 0)
+function favelaLettering(g, text, color, F) {
+  g.globalAlpha = 1; g.font = '900 0.5px "Arial Black", Impact, sans-serif'; g.lineJoin = 'round'; g.textAlign = 'left';
+  const tw = g.measureText(text).width, sc = tw > 8.6 ? 8.6 / tw : 1; g.scale(sc, 1);
+  const pal = F.palette || ['#e86aa0', '#2fb8b0', '#f2c230', '#9ad13a', '#d9643a'];
+  let x = -tw / 2;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], w = g.measureText(ch).width;
+    if (ch !== ' ') {
+      g.fillStyle = pal[i % pal.length]; g.fillText(ch, x + 0.06, 0.06);
+      g.lineWidth = 0.07; g.strokeStyle = F.ink || '#14202a'; g.strokeText(ch, x, 0);
+      g.fillStyle = color; g.fillText(ch, x, 0);
+    }
+    x += w;
+  }
+  g.textAlign = 'center';
+}
+
+// the painted-tile wash for the pipa streak (512 x 512, white motifs on transparent: tinted and scrolled over the floor)
+export function favelaTiles() {
+  const S = 512, c = canvas(S, S), g = ctx2d(c), n = 8, s = S / n;
+  g.clearRect(0, 0, S, S); g.fillStyle = '#ffffff';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const cx = x * s + s / 2, cy = y * s + s / 2;
+    g.globalAlpha = (x + y) % 2 ? 0.85 : 0.5;
+    g.beginPath(); g.arc(cx, cy, s * 0.14, 0, Math.PI * 2); g.fill();
+    for (let q = 0; q < 4; q++) { const a = q * Math.PI / 2 + Math.PI / 4; g.beginPath(); g.ellipse(cx + Math.cos(a) * s * 0.27, cy + Math.sin(a) * s * 0.27, s * 0.13, s * 0.06, a, 0, Math.PI * 2); g.fill(); }
+    g.globalAlpha = 0.6; g.fillRect(x * s, y * s, s, 3); g.fillRect(x * s, y * s, 3, s);
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// the mural on the west wall (1536 x 512): the hillside at sunset, the houses stacked up it in every colour, kites in
+// the sky, THE FAVELAS across it in big painted letters
+export function favelaMural() {
+  const W = 1536, H = 512, c = canvas(W, H), g = ctx2d(c), rng = new RNG(1983);
+  const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#2a3a8a'); sky.addColorStop(0.45, '#e86a7a'); sky.addColorStop(0.75, '#ffb060'); g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#ffd27a'; g.beginPath(); g.arc(W * 0.72, H * 0.55, 90, 0, Math.PI * 2); g.fill();
+  const cols = ['#d9643a', '#2fb8b0', '#f2c230', '#e86aa0', '#9ad13a', '#f4efe4', '#6aa8e0', '#c8452e'];
+  for (let row = 0; row < 7; row++) {
+    const base = H * 0.5 + row * 42;
+    for (let x = -20; x < W + 20;) {
+      const w = rng.range(60, 120), h = rng.range(50, 110), hill = Math.sin(x / W * Math.PI) * 60;
+      const y = base - hill * (1 - row / 7);
+      g.fillStyle = rng.pick(cols); g.fillRect(x, y - h, w - 2, h + 60);
+      g.fillStyle = '#9a948a'; g.fillRect(x - 3, y - h - 6, w + 4, 8);
+      if (rng.next() < 0.5) { g.fillStyle = '#2f6fd0'; g.fillRect(x + w * 0.6, y - h - 22, 18, 16); }
+      g.fillStyle = 'rgba(40,24,12,0.8)'; for (let k = 0; k < 2; k++) for (let f = 0; f < 2; f++) g.fillRect(x + 12 + k * w * 0.45, y - h + 14 + f * 34, 16, 20);
+      if (rng.next() < 0.3) { g.fillStyle = '#ffd890'; g.fillRect(x + 12, y - h + 14, 16, 20); }
+      x += w;
+    }
+  }
+  for (let k = 0; k < 7; k++) { const x = rng.range(80, W - 80), y = rng.range(40, 170), s = rng.range(16, 30); g.fillStyle = rng.pick(['#f2c230', '#e86aa0', '#2fb8b0', '#9ad13a']); g.beginPath(); g.moveTo(x, y - s * 1.3); g.lineTo(x + s, y); g.lineTo(x, y + s); g.lineTo(x - s, y); g.closePath(); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y + s); g.quadraticCurveTo(x + 30, y + 60, x + rng.range(-60, 60), H); g.stroke(); }
+  g.font = '900 150px "Arial Black", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const text = 'THE FAVELAS', tw = g.measureText(text).width; g.save(); g.translate(W / 2, 150); g.scale(Math.min(1, (W - 120) / tw), 1);
+  g.lineWidth = 22; g.strokeStyle = '#14202a'; g.strokeText(text, 0, 0); g.fillStyle = '#f2c230'; g.fillText(text, 0, 0);
+  g.restore();
+  return c;
+}
+
+// v0.4.8.7 polish: the ground between the Favelas' houses (one tile = 8 m): packed red earth, darker where it's trodden
+// and damp, with grit and pebbles in it, and patches of old poured concrete, their edges broken and cracked. Tileable.
+// Returns {color, normal} (the concrete stands a little proud of the earth; the pebbles are bumps)
+export function favelaGround(opts = {}) {
+  const S = opts.size || 512, seed = opts.seed || 41, rng = new RNG(seed), noise = makeNoise2D(seed), n2 = makeNoise2D(seed + 3);
+  const c = canvas(S, S), g = ctx2d(c), img = g.createImageData(S, S), d = img.data, H = new Float32Array(S * S);
+  const earth = [0.6, 0.38, 0.25], conc = [0.62, 0.6, 0.56];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const big = noise.tile(x * 0.01, y * 0.01, S * 0.01, 4), fine = n2.tile(x * 0.09, y * 0.09, S * 0.09, 3), grain = rng.next();
+    const mask = n2.tile(x * 0.006 + 11, y * 0.006, S * 0.006, 4), cz = mask - 0.16, edge = Math.abs(cz) < 0.025;
+    let col, h;
+    if (cz > 0 && !edge) { const v = 0.84 + fine * 0.18 + big * 0.12 + (grain - 0.5) * 0.06; col = [conc[0] * v, conc[1] * v, conc[2] * v]; h = 0.5 + fine * 0.1; }
+    else if (edge) { const v = 0.62 + fine * 0.3; col = cz > 0 ? [conc[0] * v, conc[1] * v, conc[2] * v * 0.98] : [earth[0] * v * 0.8, earth[1] * v * 0.8, earth[2] * v * 0.8]; h = cz > 0 ? 0.2 + fine * 0.4 : -0.2; }
+    else {
+      // (trodden darker in winding streaks, scrubby lighter dust elsewhere)
+      const trod = Math.max(0, 1 - Math.abs(noise.tile(x * 0.02 + 5, y * 0.004, S * 0.02, 2)) * 6) * 0.18, v = 0.82 + big * 0.22 + fine * 0.14 + (grain - 0.5) * 0.12 - trod;
+      col = [earth[0] * v, earth[1] * v * (0.97 + fine * 0.05), earth[2] * v]; h = fine * 0.35 + (grain - 0.5) * 0.25 - trod;
+    }
+    const i = (y * S + x) * 4; d[i] = Math.min(255, col[0] * 255); d[i + 1] = Math.min(255, col[1] * 255); d[i + 2] = Math.min(255, col[2] * 255); d[i + 3] = 255; H[y * S + x] = h;
+  }
+  // pebbles and grit (wrapped round the tile's edges)
+  for (let k = 0; k < 900; k++) {
+    const x0 = rng.next() * S, y0 = rng.next() * S, r = rng.range(0.8, 3.2), v = rng.range(0.55, 1.35);
+    for (let yy = -4; yy <= 4; yy++) for (let xx = -4; xx <= 4; xx++) {
+      const q = Math.hypot(xx, yy); if (q > r) continue;
+      const px = ((Math.floor(x0 + xx) % S) + S) % S, py = ((Math.floor(y0 + yy) % S) + S) % S, i = (py * S + px) * 4, sh = 1 - q / r * 0.25;
+      d[i] = Math.min(255, d[i] * v * sh); d[i + 1] = Math.min(255, d[i + 1] * v * sh); d[i + 2] = Math.min(255, d[i + 2] * v * sh); H[py * S + px] += 0.5 * (1 - q / r);
+    }
+  }
+  // cracks across the concrete
+  for (let k = 0; k < 14; k++) {
+    let x = rng.next() * S, y = rng.next() * S, a = rng.next() * Math.PI * 2;
+    for (let s = 0; s < 60 + rng.next() * 140; s++) {
+      a += (rng.next() - 0.5) * 0.6; x += Math.cos(a); y += Math.sin(a);
+      const px = ((Math.floor(x) % S) + S) % S, py = ((Math.floor(y) % S) + S) % S, i = (py * S + px) * 4;
+      if (H[py * S + px] < 0.35) continue; // (only in the concrete)
+      d[i] *= 0.5; d[i + 1] *= 0.5; d[i + 2] *= 0.5; H[py * S + px] -= 0.8;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // damp stains (soft dark blots)
+  for (let k = 0; k < 6; k++) { const x = rng.next() * S, y = rng.next() * S, r = rng.range(14, 40), gr = g.createRadialGradient?.(x, y, 0, x, y, r); if (!gr) break; gr.addColorStop(0, 'rgba(40,24,14,0.28)'); gr.addColorStop(1, 'rgba(40,24,14,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+  return { color: c, normal: heightToNormal(H, S, S, 1.6) };
 }

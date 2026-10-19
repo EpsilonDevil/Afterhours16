@@ -1,9 +1,11 @@
 // Runtime athlete: GPU meshes + materials + rig. Placed in world by (x, y, z, yaw).
 import { AthleteModel } from './athlete.js';
 import { Rig } from './rig.js';
-import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap, paintGorilla, paintShell, paintBones, paintBoneGlove, paintLantern, paintShoeGlow } from './looks.js';
+import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap, paintGorilla, paintShell, paintBones, paintBoneGlove, paintLantern, paintShoeGlow, paintBandana } from './looks.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
+import { B } from './skeleton.js';
+import { TailSway } from './sway.js'; // (v0.4.8.7: the bandana's swinging ends)
 
 // v0.4.8 the Sharp Eye backflip: the whole body turned head over heels (angle about his own left-right axis; negative
 // is backwards) round a point py up from his feet, then placed and turned to face where he faces
@@ -135,6 +137,22 @@ export class AthleteView {
         color: [1, 1, 1], roughness: 0.5, specular: 0.8, character: true, layer: 4 });
       add(geo.lantern, this.lanternMat, 'lantern');
     }
+    // v0.4.8.7 The Favelas: the Hillside Bandana, printed cotton (matte, a soft sheen, a woven grain)
+    if (geo.bandana) {
+      const hb = look.gear?.headband || {}, bk = 'bandana:' + [hb.color, hb.trim].join('|');
+      const bmat = new Material({ map: sharedTex(ctx, bk, () => paintBandana(hb), { aniso: 8 }), color: [0.92, 0.92, 0.92], roughness: 0.88, specular: 0.4, shading: 'cloth', sheen: [0.18, 0.16, 0.15],
+        detailMap: knitDetail, detail: [24, 6, 0.3], character: true, doubleSided: true, layer: 4 });
+      add(geo.bandana, bmat, 'bandana');
+      // its ends: the same cloth on bones of their own (the rig's, with the head's turned about the knot by the spring:
+      // update() and move())
+      const bt = this.model.bandanaTail;
+      if (geo.bandanaTails && bt) {
+        this.tailBones = new Float32Array(this.rig.skin.length);
+        this.tailSway = new TailSway(bt.pivot, bt.dir, bt.len);
+        const tm = add(geo.bandanaTails, bmat, 'bandana-ends');
+        tm.bones = this.tailBones;
+      }
+    }
     if (geo.shoes) {
       // v0.4.3: textured sneakers (one texture per design, shared by everyone wearing it)
       const sh = look.gear?.shoes || {};
@@ -195,6 +213,7 @@ export class AthleteView {
     if (opts?.flip) placeFlipped(this.world, x, y, z, yaw, opts.flip, (opts.flipY ?? 0.5) * this.H);
     else M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
+    if (this.tailSway) this.swing(); // (v0.4.8.7: the bandana's ends)
     const c = [x, y + this.H * 0.5, z];
     for (const m of this.meshes) { m.boundsOverride.center = c; }
   }
@@ -204,8 +223,16 @@ export class AthleteView {
   move(x, y, z, yaw) {
     M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
+    if (this.tailSway) this.swing(); // (v0.4.8.7: the bandana's ends)
     const c = [x, y + this.H * 0.5, z];
     for (const m of this.meshes) { m.boundsOverride.center = c; }
+  }
+
+  // v0.4.8.7: the bandana's ends hang from its knot and swing (char/sway.js): the rig's skin with the head's matrix turned
+  swing() {
+    const h = B.head * 16, t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    this.tailBones.set(this.rig.skin);
+    this.tailSway.step(this.rig.skin.subarray(h, h + 16), this.tailBones.subarray(h, h + 16), t);
   }
 
   // world position of a bone

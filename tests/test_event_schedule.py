@@ -24,8 +24,9 @@ class PublicSchedule(unittest.TestCase):
     def test_it_mirrors_events_json_with_the_parks(self):
         rows = json.loads((ROOT / "server/events.json").read_text())["schedule"]
         pub = cup.public_schedule()
-        self.assertEqual([(r["event"], r["from"], r["until"]) for r in pub], [(r["event"], r.get("from"), r.get("until")) for r in rows])
-        self.assertEqual([r["venue"] for r in pub], [cup.EVENTS[r["event"]]["venue"] for r in rows])
+        fixed = [r for r in rows if "shuffle" not in r]  # (v0.4.8.7: the shuffle row goes out as plain windows, test_park_shuffle.py)
+        self.assertEqual([(r["event"], r["from"], r["until"]) for r in pub][:len(fixed)], [(r["event"], r.get("from"), r.get("until")) for r in fixed])
+        self.assertEqual([r["venue"] for r in pub][:len(fixed)], [cup.EVENTS[r["event"]]["venue"] for r in fixed])
         # an unknown event in an edited schedule is left out, not sent half-made
         self.assertEqual(cup.public_schedule([{"event": "nope", "from": 1, "until": 2}, {"event": "beat", "from": 2, "until": None}]),
                          [{"event": "beat", "venue": "beat", "from": 2, "until": None}])

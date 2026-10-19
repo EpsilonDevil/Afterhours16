@@ -304,7 +304,7 @@ class CupTests(unittest.TestCase):
     # test_monster_event.py)
     def test_event_schedule_and_the_jungle_prizes(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat", "monster"])
+        self.assertEqual([r.get("event", "shuffle") for r in sched][:4], ["kingtut", "jungle", "beat", "monster"])  # (v0.4.8.7: then the Favelas)
         cut = sched[0]["until"]
         self.assertEqual(sched[1]["from"], cut)
         self.assertEqual((cut - cup.EPOCH) % cup.WINDOW, 0)  # the handover is on a window boundary
@@ -839,7 +839,7 @@ class ApiTests(unittest.TestCase):
             cfg = self.call("/api/config")
             self.assertEqual(cfg["event"]["id"], "jungle")
             self.assertEqual(cfg["event"]["venue"], "jungle")
-            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut", "monster"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "favela", "jungle", "kingtut", "monster"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "jungle")
             self.assertEqual(st["prizes"][0]["label"], "King of the Jungle")

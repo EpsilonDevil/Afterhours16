@@ -29,6 +29,7 @@ export const GREEN_SOUNDS = {
   jb_gsnd_bongos: 'Jungle Bongos',
   bg_gsnd_808: 'Eight-O-Eight', // (v0.4.8.5 quick patch: And The Beat Goes On)
   mm_gsnd_organ: 'Haunted Organ', // (v0.4.8.5 quick patch 2: The Monster Mash)
+  fv_gsnd_cuica: 'Cuíca', // (v0.4.8.7: The Favelas)
   // v0.4.7.5 quick patch
   gsnd_owl: 'Night Owl',
   gsnd_wolf: 'Wolf Howl',
@@ -581,6 +582,29 @@ const RECIPES = {
       D.play(0.95, 0.92, t => lp.lp(o.harm(f.at(t) * (1 + 0.016 * Math.min(1, t / 0.3) * Math.sin(TAU * 6.2 * t)), [1, 0.16, 0.07, 0.025])) * amp.at(t), 0.62, 0.6);
     }
     D.room = { decay: 2.9, damp: 0.35, wet: 0.85, pre: 0.03, size: 1.2, hp: 150 };
+  },
+
+  // v0.4.8.7 The Favelas exclusive: a cuíca, the friction drum that laughs. A stick inside the drum is rubbed with a wet
+  // cloth and the head sings: a nasal, buzzy voice whose pitch follows how hard the thumb presses the head. Three quick
+  // whoops (up, down, up: "oo-ee, ee-oo, oo-ee"), then one long call sliding up high and falling away with a wobble,
+  // the rub's stick-slip rasp in every stroke; a shaker of jingles under it on the beat
+  fv_gsnd_cuica(D) {
+    const strokes = [[0, 0.13, [[0, 380], [0.03, 420], [0.11, 760], [0.13, 720]]], [0.17, 0.12, [[0, 720], [0.02, 690], [0.1, 430], [0.12, 410]]],
+      [0.32, 0.13, [[0, 400], [0.03, 440], [0.11, 790], [0.13, 760]]],
+      [0.5, 0.6, [[0, 360], [0.05, 420], [0.2, 1060], [0.3, 1010], [0.45, 640], [0.6, 520]]]];
+    for (const [t0, len, curve] of strokes) {
+      const f = D.env(curve, true), o = D.osc(), jit = D.drift(140), rub = D.drift(26);
+      const nasal = D.bq('peak', 1250, 2.2, 8), body = D.bq('peak', 560, 1.4, 4), hp = D.bq('hp', 180, 0.7), lp = D.bq('lp', 7500, 0.7), nz = D.svf(1500, 2);
+      D.play(t0, len + 0.05, t => {
+        const a = (t < 0.014 ? t / 0.014 : 1) * (t > len ? Math.max(0, 1 - (t - len) / 0.05) : 1) * (0.85 + 0.15 * rub.next());
+        const fr = f.at(Math.min(t, len)) * (1 + 0.018 * jit.next() + (len > 0.3 ? 0.012 * Math.min(1, t / 0.25) * Math.sin(TAU * 7 * t) : 0));
+        const s = o.harm(fr, [1, 0.75, 0.5, 0.34, 0.22, 0.14, 0.09, 0.05]), n = nz.set(fr * 2, 2).bp(D.white()) * (0.25 + 0.45 * Math.abs(s));
+        return lp.run(hp.run(body.run(nasal.run(0.6 * s + n)))) * a;
+      }, 1, 0.18);
+    }
+    // the jingles: a shaker on the eighths, a light accent on each stroke
+    for (let i = 0; i < 9; i++) { const t = i * 0.125; burst(D, t, { f: 7400, q: 1.2, tau: 0.009, hp: 4000, gain: i % 2 ? 0.14 : 0.22, rev: 0.1 }); }
+    D.room = { decay: 0.9, damp: 0.4, wet: 0.55 };
   },
 
   // ---- v0.4.7.5 quick patch: sixteen more ----

@@ -20,6 +20,8 @@ ap.add_argument('--work', required=True)
 ap.add_argument('--out', required=True)
 ap.add_argument('--no-bake', action='store_true')
 ap.add_argument('--no-export', action='store_true')
+ap.add_argument('--mh', action='store_true', help='MetaHuman body from build_metahuman.py: keep its UVs/materials, no skin bake')
+ap.add_argument('--name', default='athlete', help='glb basename')
 args = ap.parse_args(argv)
 TEX = os.path.join(args.out, 'textures'); os.makedirs(TEX, exist_ok=True)
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +30,9 @@ bpy.ops.wm.open_mainfile(filepath=os.path.join(args.work, 'body_rigged.blend'))
 scene = bpy.context.scene
 body = bpy.data.objects['Body']; rig = bpy.data.objects['Armature']
 eyes = [bpy.data.objects['EyeL'], bpy.data.objects['EyeR']]
+teeth = bpy.data.objects.get('Teeth')
 fit = json.load(open(os.path.join(args.work, 'body_fit.json')))
+MH = args.mh or fit.get('mh', False)
 d = fit['dims']; H = d['H']
 bind = {n: np.array(v) for n, v in fit['bind'].items()}
 
@@ -142,12 +146,16 @@ def sample_table(zs, cents, R, z, th):
 FRONT = np.array([0.0, -1.0, 0.0]); LEFT = np.array([1.0, 0.0, 0.0])
 
 
-def tube(name, P, z_bot, z_top_fn, K, offset, seam=0.25, half=0.016, u_range=(0, 1), v_range=(0, 1), taper=None):
+def tube(name, P, z_bot, z_top_fn, K, offset, seam=0.25, half=0.016, u_range=(0, 1), v_range=(0, 1), taper=None, hang=None):
     """a vertical tube around point set P from z_bot up to z_top_fn(theta) (theta from the front, +left), K rings.
-    Column 0 (u = u_range[0]) sits at angle seam*2pi from the front; the front centre lands at u = (-seam mod 1)."""
+    Column 0 (u = u_range[0]) sits at angle seam*2pi from the front; the front centre lands at u = (-seam mod 1).
+    hang: loose cloth falls from the widest point above (the chest), coming back in by at most `hang` m per m of drop."""
     tops = [z_top_fn(t) for t in np.linspace(-np.pi, np.pi, 33)]
     zs = np.linspace(min(z_bot, min(tops)) - 0.01, max(tops) + 0.01, 40)
     cents, R = hull_table(P, zs, FRONT, LEFT, None, offset, half)
+    if hang is not None:
+        for k in range(len(zs) - 2, -1, -1):
+            R[k] = np.maximum(R[k], R[k + 1] - hang * (zs[k + 1] - zs[k]))
     verts, uvs, faces = [], [], []
     th0 = seam * 2 * np.pi
     for k in range(K + 1):
@@ -215,6 +223,8 @@ JER_HEM = 0.47 * H
 def jersey_top(th):
     f = abs(th) / np.pi
     knots = [(0.0, 0.772), (0.16, 0.786), (0.3, 0.802), (0.5, 0.748), (0.7, 0.808), (0.85, 0.800), (1.0, 0.794)]
+    if MH:  # (the sheet's tank top: a round neckline just under the collarbones, straps over the shoulders, deep armholes)
+        knots = [(0.0, 0.788), (0.16, 0.795), (0.3, 0.806), (0.5, 0.748), (0.7, 0.808), (0.85, 0.806), (1.0, 0.802)]
     xs = [k[0] for k in knots]; ys = [k[1] for k in knots]
     # smooth (cosine) interpolation between knots
     for i in range(1, len(xs)):
@@ -224,7 +234,8 @@ def jersey_top(th):
     return ys[-1] * H
 
 
-jersey = tube('Jersey', torso, JER_HEM, jersey_top, 22, 0.013, seam=0.25, v_range=(0.0, 0.9))
+jersey = tube('Jersey', torso, JER_HEM, jersey_top, 22, 0.013, seam=0.25, v_range=(0.0, 0.9), hang=None if MH else 0.12,
+              taper=(lambda f: 0.9 + 0.1 * min(1.0, f * 2)) if MH else None)  # (MH: fitted like the Meshy run — tapered to the waist, the clearance pass keeps it off the skin)
 # straps: ribbons over the shoulders from the front top edge (f=0.3) to the back top edge (f=0.7)
 strap_objs = []
 for side, sg in (('L', 1), ('R', -1)):
@@ -242,7 +253,7 @@ for side, sg in (('L', 1), ('R', -1)):
     S = np.array([xs, ys_top, zs_top])
     # quadratic bezier through A, S, B: control = 2S - (A+B)/2
     Cc = 2 * S - (A + Bp) / 2
-    Kq = 12; wd = 0.019
+    Kq = 12; wd = 0.03 if MH else 0.019
     verts, uvs, faces = [], [], []
     for k in range(Kq + 1):
         t = k / Kq
@@ -290,8 +301,9 @@ skin_to_body(shorts)
 sol = shorts.modifiers.new('Solidify', 'SOLIDIFY'); sol.thickness = 0.002; sol.offset = 1
 
 # ---------------------------------------------------------------- sleeve (right arm), socks, shoes
-armR = V[is_part(['upperR', 'foreR', 'handR'])]
-sleeve = axis_tube('Sleeve', armR, bind['upperR'] + (bind['foreR'] - bind['upperR']) * 0.35, bind['handR'] - (bind['handR'] - bind['foreR']) * 0.06, 14, 0.006, half=0.014)
+SL = 'L' if MH else 'R'  # (the sheet wears the sleeve on the player's left arm)
+armR = V[is_part(['upper' + SL, 'fore' + SL, 'hand' + SL])]
+sleeve = axis_tube('Sleeve', armR, bind['upper' + SL] + (bind['fore' + SL] - bind['upper' + SL]) * 0.35, bind['hand' + SL] - (bind['hand' + SL] - bind['fore' + SL]) * 0.06, 14, 0.006, half=0.014)
 clearance(sleeve, 0.005)
 skin_to_body(sleeve)
 socks = []
@@ -372,15 +384,26 @@ def hairline(p):
     side = np.clip(np.abs(p[:, 0]) / 0.075, 0, 1)
     front = z_eye + 0.09 - 0.055 * side ** 1.5   # the forehead hairline, dropping to just above the ears at the sides
     back = z_eye - 0.015
+    if MH:  # (the MetaHuman head: eyes 10 cm under the crown, ears at |x| 0.07; the sheet's hairline sits mid-forehead)
+        side = np.clip(np.abs(p[:, 0]) / 0.07, 0, 1)
+        front = z_eye + 0.058 - 0.045 * side ** 1.5
+        back = z_eye - 0.025
     return np.where(fy < 0.42, front, np.where(fy < 0.72, front + (back - front) * smooth(0.42, 0.72, fy), back))
 
 
-hmask = head_mask & (V[:, 2] > hairline(V))
+groom = None
+EPIC_GROOM = MH and bpy.data.objects.get('HairCards') is not None  # (round 3: Epic's card grooms came through build_metahuman.py)
+if MH and not EPIC_GROOM:
+    import mh_groom
+    groom = mh_groom.build(dict(body=body, V=V, N=N, z_eye=z_eye, z_top=z_top, eye_c=eye_c, y_front=y_front, y_back=y_back, smooth=smooth,
+                                new_mesh_object=new_mesh_object, skin_to_body=skin_to_body, rng=rng, print=print, head_mask=head_mask))
+    hair = groom['cap']
+hmask = head_mask & (V[:, 2] > hairline(V)) & (not MH)
 # keep the ears out: ears sit at the sides at eye level +- ; they are already below the side hairline mostly
 idx = np.where(hmask)[0]
 remap = {vi: i for i, vi in enumerate(idx)}
 hp = V[idx]
-lift = 0.005 + 0.038 * smooth(z_eye + 0.02, z_top - 0.04, hp[:, 2]) * (1 - 0.55 * np.clip(np.abs(hp[:, 0]) / 0.095, 0, 1) ** 2)
+lift = 0.005 + (0.03 if MH else 0.038) * smooth(z_eye + 0.02, z_top - 0.04, hp[:, 2]) * (1 - 0.55 * np.clip(np.abs(hp[:, 0]) / 0.095, 0, 1) ** 2)
 curl = 1 + 0.35 * (np.sin(hp[:, 0] * 180) * np.sin(hp[:, 1] * 170 + 1.3) * np.sin(hp[:, 2] * 160 + 0.7))
 hfaces = []
 for p in body.data.polygons:
@@ -396,30 +419,34 @@ taper = np.ones(len(hp)); taper[list(bnd)] = 0.08; taper[list(ring2)] = 0.5
 hverts = hp + N[idx] * (lift * curl * taper)[:, None]
 hc = np.array([0, yc, z_eye + 0.06])
 huv = [(0.5 + np.arctan2(p[0] - hc[0], -(p[1] - hc[1])) / (2 * np.pi), np.clip((p[2] - (z_eye - 0.02)) / (z_top + 0.04 - (z_eye - 0.02)), 0, 1)) for p in hverts]
-hair = new_mesh_object('Hair', hverts, hfaces, huv)
-skin_to_body(hair)
-smo = hair.modifiers.new('Smooth', 'SMOOTH'); smo.factor = 0.6; smo.iterations = 3
-sub = hair.modifiers.new('Subdivision', 'SUBSURF'); sub.levels = 2; sub.render_levels = 2
-sol = hair.modifiers.new('Solidify', 'SOLIDIFY'); sol.thickness = 0.008; sol.offset = -1
+if not MH:
+    hair = new_mesh_object('Hair', hverts, hfaces, huv)
+    skin_to_body(hair)
+    smo = hair.modifiers.new('Smooth', 'SMOOTH'); smo.factor = 0.6; smo.iterations = 3
+    sub = hair.modifiers.new('Subdivision', 'SUBSURF'); sub.levels = 2; sub.render_levels = 2
+    sol = hair.modifiers.new('Solidify', 'SOLIDIFY'); sol.thickness = 0.008; sol.offset = -1
 cards = None  # (hair cards tried and dropped: at this density they read as spikes; the subdivided cap carries the silhouette)
 
 # ---------------------------------------------------------------- body UVs
 # (the base body's UVMap only lays out the head; every other vertex sits on top of that island. The head's island is
 # kept and the rest of the body is smart-projected beside it, then everything is packed into 0..1)
 headish = is_part(['head', 'neck'])
-bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
-bpy.ops.object.mode_set(mode='EDIT')
-bm = bmesh.from_edit_mesh(body.data)
-bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
-for f in bm.faces:
-    f.select = not all(headish[v.index] for v in f.verts)
-bmesh.update_edit_mesh(body.data)
-bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.003, correct_aspect=True, scale_to_bounds=False)
-bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.uv.select_all(action='SELECT')
-bpy.ops.uv.pack_islands(rotate=True, margin=0.004)
-bpy.ops.object.mode_set(mode='OBJECT')
-print('[uv] body re-projected (head island kept), packed')
+if MH:
+    print('[uv] MetaHuman UVs kept (two tiles -> two materials)')
+else:
+  bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
+  bpy.ops.object.mode_set(mode='EDIT')
+  bm = bmesh.from_edit_mesh(body.data)
+  bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
+  for f in bm.faces:
+      f.select = not all(headish[v.index] for v in f.verts)
+  bmesh.update_edit_mesh(body.data)
+  bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.003, correct_aspect=True, scale_to_bounds=False)
+  bpy.ops.mesh.select_all(action='SELECT')
+  bpy.ops.uv.select_all(action='SELECT')
+  bpy.ops.uv.pack_islands(rotate=True, margin=0.004)
+  bpy.ops.object.mode_set(mode='OBJECT')
+  print('[uv] body re-projected (head island kept), packed')
 
 # ---------------------------------------------------------------- skin zones (vertex colours -> baked to the body's UVs)
 zones = np.zeros((NV, 4), dtype=np.float32)
@@ -474,9 +501,11 @@ def bake_attribute(ob, attr, size, path):
 
 
 if not args.no_bake:
-    bake_attribute(body, 'zones', 2048, os.path.join(args.work, 'bake_zones.png'))
-    bake_attribute(body, 'posz', 2048, os.path.join(args.work, 'bake_pos.png'))
-    bake_attribute(eyes[0], 'zones', 256, os.path.join(args.work, 'bake_eye.png'))
+    if not MH:
+        bake_attribute(body, 'zones', 2048, os.path.join(args.work, 'bake_zones.png'))
+        bake_attribute(body, 'posz', 2048, os.path.join(args.work, 'bake_pos.png'))
+    if not (MH and eyes[0].data.materials):  # (a MetaHuman export with Eyes_Color keeps its own eye material)
+        bake_attribute(eyes[0], 'zones', 256, os.path.join(args.work, 'bake_eye.png'))
 
 # ---------------------------------------------------------------- textures (PIL, system python)
 subprocess.run(['python3', os.path.join(HERE, 'textures.py'), '--work', args.work, '--out', TEX], check=True)
@@ -517,8 +546,10 @@ def assign(ob, mat):
     ob.data.materials.clear(); ob.data.materials.append(mat)
 
 
-skin = material('Skin', 'skin_albedo.png', 'skin_orm.png', 'skin_normal.png', 0.6)
-assign(body, skin)
+if MH:
+    print('[mat] MetaHuman materials kept:', [m.name for m in body.data.materials])
+else:
+    assign(body, material('Skin', 'skin_albedo.png', 'skin_orm.png', 'skin_normal.png', 0.6))
 assign(jersey, material('Jersey', 'jersey_albedo.png', 'jersey_orm.png', 'jersey_normal.png', 0.35, double=True))
 assign(shorts, material('Shorts', 'shorts_albedo.png', 'shorts_orm.png', 'jersey_normal.png', 0.3, double=True))
 assign(sleeve, material('Sleeve', 'sleeve_albedo.png', 'sleeve_orm.png', 'knit_normal.png', 0.5, double=True))
@@ -526,10 +557,32 @@ sockm = material('Sock', 'sock_albedo.png', 'sock_orm.png', 'knit_normal.png', 0
 for o in socks: assign(o, sockm)
 shoem = material('Shoe', 'shoe_albedo.png', 'shoe_orm.png', None, double=True)
 for o in shoes: assign(o, shoem)
-hairm = material('Hair', 'hair_albedo.png', 'hair_orm.png', 'hair_normal.png', 1.0, double=True)
-assign(hair, hairm)
-eyem = material('Eye', 'eye_albedo.png', 'eye_orm.png', None)
-for e in eyes: assign(e, eyem)
+if EPIC_GROOM:
+    print('[mat] Epic groom cards kept:', [o.name for o in scene.objects if 'Cards' in o.name])
+elif MH:
+    MHTEX = os.path.join(args.work, 'textures') if not os.path.exists(os.path.join(TEX, 'mh_hair_cards.png')) else TEX
+    def mh_card_material(name, tex_name):
+        m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; bsdf = nt.nodes['Principled BSDF']
+        ta = nt.nodes.new('ShaderNodeTexImage'); ta.image = bpy.data.images.load(os.path.join(MHTEX, tex_name), check_existing=True); ta.image.pack()
+        nt.links.new(ta.outputs['Color'], bsdf.inputs['Base Color']); nt.links.new(ta.outputs['Alpha'], bsdf.inputs['Alpha'])
+        bsdf.inputs['Roughness'].default_value = 0.92; bsdf.inputs['Specular IOR Level'].default_value = 0.15
+        if hasattr(m, 'blend_method'): m.blend_method = 'CLIP'
+        if hasattr(m, 'surface_render_method'): m.surface_render_method = 'DITHERED'
+        m.alpha_threshold = 0.45 if hasattr(m, 'alpha_threshold') else None
+        m.use_backface_culling = False
+        return m
+    capm = bpy.data.materials.new('HairBase'); capm.use_nodes = True; nt = capm.node_tree; bsdf = nt.nodes['Principled BSDF']
+    tb = nt.nodes.new('ShaderNodeTexImage'); tb.image = bpy.data.images.load(os.path.join(MHTEX, 'mh_hair_base.png'), check_existing=True); tb.image.pack()
+    nt.links.new(tb.outputs['Color'], bsdf.inputs['Base Color']); bsdf.inputs['Roughness'].default_value = 0.95; bsdf.inputs['Specular IOR Level'].default_value = 0.1
+    assign(groom['cap'], capm)
+    assign(groom['hair'], mh_card_material('HairCards', 'mh_hair_cards.png'))
+    bm_ = mh_card_material('BeardCards', 'mh_beard_cards.png'); assign(groom['beard'], bm_); assign(groom['brow'], bm_)
+else:
+    hairm = material('Hair', 'hair_albedo.png', 'hair_orm.png', 'hair_normal.png', 1.0, double=True)
+    assign(hair, hairm)
+if not (MH and eyes[0].data.materials):
+    eyem = material('Eye', 'eye_albedo.png', 'eye_orm.png', None)
+    for e in eyes: assign(e, eyem)
 
 # ---------------------------------------------------------------- hide what the kit covers
 # (the standard trick: body faces entirely under the jersey, shorts, socks or shoes are deleted, so no pose can push
@@ -559,8 +612,11 @@ for o in scene.objects:
 print(f'[mesh] total ~{tri} tris')
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.work, 'athlete.blend'))
 if not args.no_export:
-    glb = os.path.join(args.out, 'athlete.glb')
-    bpy.ops.object.select_all(action='SELECT')
-    bpy.ops.export_scene.gltf(filepath=glb, export_format='GLB', export_skins=True, export_yup=True, export_apply=True,
-                              export_animations=False, export_image_format='AUTO', export_texcoords=True, export_normals=True, export_materials='EXPORT')
-    print('[export]', glb, os.path.getsize(glb) / 1e6, 'MB')
+    lod0 = [o for o in scene.objects if o.name.endswith('CardsLOD0')]
+    for suffix, excl in (('', lod0), ('_lod0', [o for o in scene.objects if 'Cards' in o.name and not o.name.endswith('LOD0')])) if lod0 else (('', []),):
+        glb = os.path.join(args.out, args.name + suffix + '.glb')
+        bpy.ops.object.select_all(action='SELECT')
+        for o in excl: o.select_set(False)
+        bpy.ops.export_scene.gltf(filepath=glb, export_format='GLB', export_skins=True, export_yup=True, export_apply=True, use_selection=True,
+                                  export_animations=False, export_image_format='AUTO', export_texcoords=True, export_normals=True, export_materials='EXPORT')
+        print('[export]', glb, os.path.getsize(glb) / 1e6, 'MB', '(card LOD0: showroom)' if suffix else '(game: card LOD1)' if lod0 else '')

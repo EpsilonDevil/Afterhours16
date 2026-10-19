@@ -291,6 +291,22 @@ export function paintHair(look) {
 // Jersey / tee / hoodie texture. spec: {family,color,trim,secondary,pattern,lettering,number,name,keep(yf,phi),hem,neckTop}
 // v0.4.5 stage 7: `spec.res` paints at a lower resolution for far-away players (256 = a quarter of the
 // pixels), and the cut-edge trim reads a precomputed keep-mask instead of calling keep() six times a pixel
+// v0.4.8.7 The Favelas: the Morro Kit's stripes round the body (u 0..1 all the way round: green, a sunflower stripe,
+// green, a sky-blue one, twelve times round), faded by the sun (paler toward the shoulders, and unevenly: n is noise)
+export function morroStripe(u, base, st, yf, n) {
+  const q = ((u * 12) % 1 + 1) % 1, c = q < 0.16 ? st[0] : q > 0.5 && q < 0.62 ? st[1] : base;
+  return mix(c, [0.96, 0.93, 0.85], Math.max(0, 0.1 + 0.14 * (1 - yf) + 0.06 * n));
+}
+// and its painted tiles (lx, ly 0..1 across one): a blue border, a four-petal flower round a cream eye in the middle,
+// quarter rings and a dot in the corners (four tiles meet in a ring round a dot), the rest bare cream glaze
+export function morroTile(lx, ly, glaze, ink) {
+  const dx = lx - 0.5, dy = ly - 0.5, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+  const border = Math.min(lx, 1 - lx, ly, 1 - ly) < 0.05;
+  const petal = r > 0.07 && r < 0.13 + 0.19 * Math.pow(Math.abs(Math.cos(2 * a)), 1.5);
+  const cr = Math.min(Math.hypot(lx, ly), Math.hypot(1 - lx, ly), Math.hypot(lx, 1 - ly), Math.hypot(1 - lx, 1 - ly));
+  return border || petal || (cr > 0.17 && cr < 0.25) || cr < 0.08 ? ink : glaze;
+}
+
 export function paintTop(spec) {
   const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#2a6fdb'), trim = hexToRgb(spec.trim || '#ffffff'), sec = hexToRgb(spec.secondary || spec.trim || '#ffffff');
@@ -299,7 +315,11 @@ export function paintTop(spec) {
   const img = g.createImageData(W, W), d = img.data;
   const TH = Math.round(384 * S), hem = spec.hem, top = spec.neckTop;
   const keep = spec.keep || (() => true);
-  const mesh = fam === 'jersey', E = Math.max(2, Math.round(7 * S)), hole = Math.max(2, Math.round(4 * S));
+  // v0.4.8.7 The Favelas: the Morro Kit (pattern 'morro'): sun-faded stripes and a band of painted tiles round the hem; a
+  // football shirt's open mesh
+  const morro = spec.pattern === 'morro', mst = morro ? (spec.stripes || ['#efc64a', '#2f6fb3']).map(hexToRgb) : null;
+  const cream = hexToRgb(spec.trim || '#f3ead2'), tileInk = hexToRgb(spec.tile || '#2453a6');
+  const mesh = fam === 'jersey' || morro, E = Math.max(2, Math.round(7 * S)), hole = Math.max(2, Math.round(4 * S));
   // keep-mask for rows -E .. TH-1 (the trim looks E pixels up and to either side)
   const K = new Uint8Array((TH + E) * W);
   for (let r = 0; r < TH + E; r++) {
@@ -317,6 +337,7 @@ export function paintTop(spec) {
       if (spec.pattern === 'stripes' && Math.floor(y / (22 * S)) % 2 === 0) col = mix(base, sec, 0.35);
       if (spec.pattern === 'gradient') col = mix(base, sec, Math.pow(y / TH, 1.6) * 0.8);
       if (spec.pattern === 'sash') { const k = (u - 0.18) * 1.6 - (y / TH) * 0.9; if (Math.abs(k) < 0.06 && u < 0.4) col = sec; }
+      if (morro) { col = morroStripe(u, base, mst, y / TH, noise(x * 0.02 / S, y * 0.03 / S)); if (y > TH - 52 * S && y < TH - 8 * S) col = morroTile((u * 24) % 1, ((y - (TH - 52 * S)) / (22 * S)) % 1, cream, tileInk) || col; }
       if (edge) col = trim;
       if (fam === 'jersey' && y > TH - 10 * S) col = trim;
       if (fam === 'hoodie') {
@@ -326,7 +347,7 @@ export function paintTop(spec) {
         if (pv > 0.86 && pv < 0.9) col = shade(base, 0.82);
       }
     } else {
-      col = base;
+      col = morro ? morroStripe(u, base, mst, 0, noise(x * 0.02 / S, y * 0.03 / S)) : base;
       if (fam !== 'jersey') {
         const v = y / W;
         if ((v > 0.86 && v < 0.88) || v > 0.985) col = fam === 'hoodie' ? shade(base, 0.85) : trim;
@@ -351,7 +372,14 @@ export function paintTop(spec) {
   };
   const numFill = fam === 'jersey' ? trim : (spec.printColor ? hexToRgb(spec.printColor) : trim);
   const numStroke = fam === 'jersey' ? sec : null;
-  if (fam === 'jersey') {
+  if (morro) {
+    // (a football shirt: the name across the chest and a small number over the heart; the big number on the back)
+    const num = String(spec.number ?? 0);
+    if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(0.735), 30 * S, trim, sec);
+    outlineText(num, W * 0.33, yOf(0.775), 26 * S, trim, sec);
+    if (spec.name) outlineText(spec.name.toUpperCase().slice(0, 12), W * 0.75, yOf(0.775), 24 * S, trim, sec);
+    outlineText(num, W * 0.75, yOf(0.705), 92 * S, trim, sec);
+  } else if (fam === 'jersey') {
     const num = String(spec.number ?? 0);
     if (spec.lettering) outlineText(spec.lettering, W * 0.25, yOf(0.752), (spec.lettering.length > 7 ? 30 : 38) * S, numFill, numStroke);
     outlineText(num, W * 0.25, yOf(0.69), 74 * S, numFill, numStroke);
@@ -852,15 +880,20 @@ export function paintShorts(spec) {
   const noise = makeNoise2D(9);
   const img = g.createImageData(W, W), d = img.data;
   const jog = spec.family === 'joggers';
+  // v0.4.8.7 The Favelas: the Morro Kit shorts (pattern 'morro'): the jersey's sun-faded stripes, a cream waistband, the
+  // painted tiles round both hems
+  const morro = spec.pattern === 'morro', mst = morro ? (spec.stripes || ['#efc64a', '#2f6fb3']).map(hexToRgb) : null, tileInk = hexToRgb(spec.tile || '#2453a6');
   for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
     const u = x / W, v = y / W;
-    let col = base;
+    let col = morro ? morroStripe(u * 0.5, base, mst, v < 0.5 ? 0.6 : 1, noise(x * 0.02 / S, y * 0.03 / S)) : base;
     if (v < 0.5) {
       if (v < 0.045) col = jog ? shade(base, 0.8) : trim;
       if (spec.stripe && (u < 0.03 || u > 0.97 || Math.abs(u - 0.5) < 0.03)) col = stripe;
     } else {
       const lu = u < 0.5 ? u * 2 : (u - 0.5) * 2; // local leg u
       const lateral = u < 0.5 ? Math.abs(lu - 0.5) : Math.min(lu, 1 - lu);
+      if (morro) col = morroStripe(lu * 0.5, base, mst, 1, noise(x * 0.02 / S, y * 0.03 / S));
+      if (morro && v > 0.875 && v <= 0.955) col = morroTile((lu * 10) % 1, (v - 0.875) / 0.08, trim, tileInk);
       if (spec.stripe && lateral < 0.06 && !jog) col = stripe;
       if (spec.stripe && lateral < 0.03 && jog) col = stripe;
       if (!jog && v > 0.955) col = trim;
@@ -889,7 +922,7 @@ export function paintShoe(spec = {}) {
   const trim = hex(spec.trim, accent), lace = hex(spec.lace, lum(hexToRgb(upper)) > 0.55 ? '#f7f6f2' : '#1c1d21');
   const up = hexToRgb(upper), dark = lum(up) < 0.35;
   const panel = rgbStr(shade(up, dark ? 1.35 : 0.88)), lining = rgbStr(shade(up, dark ? 0.6 : 0.45));
-  const outsole = spec.outsole || (model === 'retro' ? '#b98a4e' : model === 'coffin' ? '#1b181f' : lum(hexToRgb(sole)) > 0.5 ? rgbStr(shade(hexToRgb(sole), 0.62)) : '#141518');
+  const outsole = spec.outsole || (model === 'retro' ? '#b98a4e' : model === 'coffin' ? '#1b181f' : model === 'ladeira' ? rgbStr(shade(hexToRgb(sole), 0.78)) : lum(hexToRgb(sole)) > 0.5 ? rgbStr(shade(hexToRgb(sole), 0.62)) : '#141518');
   const midsole = model === 'coffin' ? '#141116' : sole; // (v0.4.8.5 quick patch 2: the Coffin Hi's black midsole, slime dripping down it)
   // (t, v) on one half → pixel
   const X = (half, t) => (half ? 0.508 : 0.008) * W + t * 0.484 * W, Y = v => (1 - v) * Hh;
@@ -981,6 +1014,7 @@ export function paintShoe(spec = {}) {
         break;
       }
       case 'coffin': coffinShoe(g, X, Y, half, spec, false); break; // (v0.4.8.5 quick patch 2: The Monster Mash)
+      case 'ladeira': ladeiraShoe(g, X, Y, half, spec, poly, line); break; // (v0.4.8.7: The Favelas)
       case 'legend': {
         for (const v of [0.58, 0.61]) line(half, [[0.18, v], [0.8, v + 0.04]], accent, 3);
         const cx = X(half, 0.36), cy = Y(0.72), R = 26 * k; g.fillStyle = accent; g.beginPath();
@@ -1004,6 +1038,37 @@ export function paintShoe(spec = {}) {
   g.putImageData(img, 0, 0);
   return c;
 }
+// v0.4.8.7 The Favelas: the Ladeira hi-top. Down each side a hand-painted panel of azulejo tiles (two rows, blue on
+// cream glaze: a border, a four-petal flower, quarter rings meeting at the corners) framed in the trim colour; a gum
+// sole whose lugs wrap up over the toe and the heel (dark gum blocks climbing the midsole), and a toe bumper
+export const LADEIRA_TILES = { t0: 0.15, t1: 0.75, v0: 0.545, v1: 0.835, cols: 4, rows: 2 };
+function ladeiraShoe(g, X, Y, half, spec, poly, line) {
+  const T = LADEIRA_TILES, ink = spec.accent || '#2453a6', glaze = '#f7f1e2', frame = spec.trim || '#2fb8b0', sole = hexToRgb(spec.sole || '#c98b4b');
+  const lug = rgbStr(shade(sole, 0.62)), dt = (T.t1 - T.t0) / T.cols, dv = (T.v1 - T.v0) / T.rows;
+  poly(half, [[T.t0 - 0.012, T.v0 - 0.016], [T.t1 + 0.012, T.v0 - 0.016], [T.t1 + 0.012, T.v1 + 0.016], [T.t0 - 0.012, T.v1 + 0.016]], frame);
+  for (let i = 0; i < T.cols; i++) for (let j = 0; j < T.rows; j++) {
+    const a = T.t0 + i * dt, b = T.v0 + j * dv, x0 = X(half, a), x1 = X(half, a + dt), y0 = Y(b + dv), y1 = Y(b), w = x1 - x0, h = y1 - y0, cx = x0 + w / 2, cy = y0 + h / 2;
+    g.fillStyle = glaze; g.fillRect(x0 + 1, y0 + 1, w - 2, h - 2);
+    g.save(); g.beginPath(); g.rect(x0 + 1, y0 + 1, w - 2, h - 2); g.clip();
+    g.strokeStyle = ink; g.lineWidth = Math.max(2, w * 0.07); g.strokeRect(x0 + w * 0.06, y0 + h * 0.06, w * 0.88, h * 0.88);
+    g.fillStyle = ink;
+    for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(cx + Math.cos(k * Math.PI / 2) * w * 0.17, cy + Math.sin(k * Math.PI / 2) * h * 0.17, w * 0.13, h * 0.08, k * Math.PI / 2, 0, 7); g.fill(); }
+    g.fillStyle = glaze; g.beginPath(); g.ellipse(cx, cy, w * 0.07, h * 0.07, 0, 0, 7); g.fill();
+    g.strokeStyle = ink; g.lineWidth = Math.max(1.5, w * 0.06);
+    for (const [ex, ey] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) { g.beginPath(); g.ellipse(ex, ey, w * 0.22, h * 0.22, 0, 0, 7); g.stroke(); g.fillStyle = ink; g.beginPath(); g.ellipse(ex, ey, w * 0.07, h * 0.07, 0, 0, 7); g.fill(); }
+    g.restore();
+  }
+  // the gum lugs: chunky blocks all along the sole's sidewall (dark gum, the light gum between them showing as deep
+  // grooves), climbing high up the toe and the heel (big enough to read from across a court), and a stitched toe bumper
+  const deep = rgbStr(shade(sole, 0.34)), lip = rgbStr(shade(sole, 1.25));
+  for (let t = 0.01; t < 0.99; t += 0.05) poly(half, [[t, 0.03], [t + 0.034, 0.03], [t + 0.034, 0.235], [t, 0.235]], deep);
+  for (let k = 0; k < 4; k++) { const t = 0.845 + k * 0.038, h = 0.43 - 0.02 * Math.abs(k - 1.5); poly(half, [[t, 0.235], [t + 0.026, 0.235], [t + 0.026, h], [t, h]], deep); line(half, [[t, h], [t + 0.026, h]], lip, 2); }
+  for (let k = 0; k < 4; k++) { const t = 0.012 + k * 0.034, h = 0.41 - 0.015 * k; poly(half, [[t, 0.235], [t + 0.024, 0.235], [t + 0.024, h], [t, h]], deep); line(half, [[t, h], [t + 0.024, h]], lip, 2); }
+  line(half, [[0, 0.24], [1, 0.24]], lug, 4);
+  poly(half, [[0.84, 0.5], [1, 0.5], [1, 0.6], [0.9, 0.57]], rgbStr(sole));
+  line(half, [[0.84, 0.52], [0.99, 0.585]], 'rgba(0,0,0,0.3)', 1.5, [4, 3]);
+}
+
 function smoothT(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
 
 // v0.4.8.5 quick patch 2 The Monster Mash: the Coffin Hi / Graveyard. On each side a coffin lying heel to toe (deep purple,
@@ -1116,6 +1181,51 @@ export function paintLantern(spec = {}, mask = false) {
   for (const h of holes) { trace(h); g.strokeStyle = 'rgba(150,70,10,0.8)'; g.lineWidth = 1.2; g.stroke(); }
   // the stem's swatch
   g.fillStyle = '#5b6b2b'; g.fillRect(W / 2, 0, 12, 16);
+  return c;
+}
+
+// v0.4.8.7 The Favelas: the Hillside Bandana's print (athlete.js buildBandana: the band u 0 - .8 all the way round, v
+// top to bottom; the knot and the ends u .8 - 1). A dyed cotton ground (the item's colour) printed in its trim colour:
+// a border down each folded edge (a line and a row of dots), and between them a repeat of teardrops (curled at the
+// tip, a dot and a ring inside), little four-petal flowers and scattered dots, the ink a touch uneven
+export function paintBandana(spec = {}) {
+  // (1024 x 96: round the head the band is about ten times as long as it is tall, so a 32 px cell comes out square)
+  const W = 1024, Hh = 96, c = canvas(W, Hh), g = c.getContext('2d');
+  const ground = spec.color || '#c4342b', ink = spec.trim || '#f6eedf', dark = rgbStr(shade(hexToRgb(ground), 0.55));
+  g.fillStyle = ground; g.fillRect(0, 0, W, Hh);
+  const cell = 32, rows = Hh / cell;
+  const tear = (x, y, s, a) => {
+    g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s);
+    g.fillStyle = ink; g.beginPath(); g.moveTo(0, -16); g.bezierCurveTo(14, -12, 15, 8, 0, 14); g.bezierCurveTo(-15, 8, -12, -8, -4, -14); g.quadraticCurveTo(2, -22, 8, -20); g.quadraticCurveTo(2, -18, 0, -16); g.fill();
+    g.fillStyle = ground; g.beginPath(); g.ellipse(0, 3, 6.5, 7.5, 0, 0, 7); g.fill();
+    g.fillStyle = ink; g.beginPath(); g.ellipse(0, 3, 2.6, 3, 0, 0, 7); g.fill();
+    g.fillStyle = dark; g.beginPath(); g.ellipse(-1, -8, 2, 2, 0, 0, 7); g.fill();
+    g.restore();
+  };
+  const flower = (x, y, s) => { g.fillStyle = ink; for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + Math.cos(k * Math.PI / 2) * 5 * s, y + Math.sin(k * Math.PI / 2) * 5 * s, 4 * s, 2.6 * s, k * Math.PI / 2, 0, 7); g.fill(); } g.fillStyle = dark; g.beginPath(); g.arc(x, y, 1.8 * s, 0, 7); g.fill(); };
+  const dot = (x, y, r) => { g.fillStyle = ink; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
+  // the field between the borders (the borders take the top and bottom 18%)
+  g.save(); g.beginPath(); g.rect(0, Hh * 0.18, W, Hh * 0.64); g.clip();
+  for (let x = -cell; x < W + cell; x += cell) for (let r = 0; r < rows + 1; r++) {
+    const y = r * cell + (Math.round(x / cell) % 2 ? cell / 2 : 0), flip = (Math.round(x / cell) + r) % 2;
+    tear(x + cell * 0.5, y + cell * 0.25, 0.55, flip ? 0.6 : -0.6 + Math.PI);
+    flower(x + cell * 0.1, y + cell * 0.75, 0.6);
+    dot(x + cell * 0.82, y + cell * 0.7, 1.3); dot(x + cell * 0.28, y + cell * 0.95, 1); dot(x + cell * 0.9, y + cell * 0.12, 1);
+  }
+  g.restore();
+  // the borders: a solid line, a row of dots, a thin line, on each folded edge
+  for (const [y0, sg] of [[0, 1], [Hh, -1]]) {
+    g.fillStyle = ink; g.fillRect(0, Math.min(y0, y0 + sg * Hh * 0.05), W, Hh * 0.05);
+    for (let x = 4; x < W; x += 9) dot(x, y0 + sg * Hh * 0.1, 1.7);
+    g.fillRect(0, Math.min(y0 + sg * Hh * 0.15, y0 + sg * Hh * 0.165), W, Hh * 0.015);
+  }
+  // the ink a little uneven, the cotton's weave
+  const img = g.getImageData(0, 0, W, Hh), d = img.data, noise = makeNoise2D(29);
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, k = 0.94 + noise(x * 0.05, y * 0.05) * 0.05 + ((x + y) % 3 === 0 ? -0.025 : 0);
+    d[i] = Math.min(255, d[i] * k); d[i + 1] = Math.min(255, d[i + 1] * k); d[i + 2] = Math.min(255, d[i + 2] * k);
+  }
+  g.putImageData(img, 0, 0);
   return c;
 }
 

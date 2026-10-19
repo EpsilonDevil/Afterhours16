@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "unreal": {
+      "command": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\ThirdParty\\Python3\\Win64\\python.exe",
+      "args": ["C:\\Afterhours16\\tools\\unreal_mcp\\unreal_mcp.py"]
+    }
+  }
+}

@@ -28,6 +28,7 @@ export const GREEN_FX = {
   jb_gfx_banana: 'Banana Peel',
   bg_gfx_discoball: 'Disco Ball', // (v0.4.8.5 quick patch: And The Beat Goes On)
   mm_gfx_lantern: "Jack-o'-Lantern", // (v0.4.8.5 quick patch 2: The Monster Mash)
+  fv_gfx_pipa: 'Pipa', // (v0.4.8.7: The Favelas)
   // v0.4.7.5 quick patch
   gfx_phoenix: 'Phoenix',
   gfx_cash: 'Make It Rain',
@@ -58,6 +59,15 @@ const LANTERN_FACE = [
   [[-0.74, -0.24], [-0.5, -0.3], [-0.38, -0.25], [-0.26, -0.33], [-0.16, -0.33], [-0.16, -0.24], [0.02, -0.29], [0.24, -0.34], [0.38, -0.27], [0.52, -0.31], [0.75, -0.23],
     [0.6, -0.48], [0.36, -0.6], [0.16, -0.64], [0.16, -0.54], [0.04, -0.54], [0.04, -0.65], [-0.2, -0.64], [-0.46, -0.56], [-0.64, -0.44]],
 ];
+// (v0.4.8.7 The Favelas: the Pipa's kite papers, bright tissue colours, each kite two of them split down its spine)
+export const PIPA = {
+  // (the kites' points overlap a couple deep: kept well under the bloom's white so each paper keeps its colour)
+  papers: [[1.5, 0.22, 0.7], [1.5, 1.15, 0.12], [0.15, 1.0, 1.5], [0.3, 1.35, 0.25], [1.6, 0.55, 0.08], [0.75, 0.25, 1.55], [1.5, 0.15, 0.12]],
+  spar: [0.22, 0.14, 0.06], bow: [2.3, 2.3, 2.2],
+  // the kite in its own plane (x across, y up its spine, metres): the nose, the wing tips (high, a kite is widest above
+  // its middle), the tail tip
+  shape: [[0, 0.17], [0.13, 0.04], [0, -0.21], [-0.13, 0.04]], tail: 12, life: 1.8,
+};
 const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i][1] > y) !== (P[j][1] > y) && x < (P[j][0] - P[i][0]) * (y - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) c = !c; return c; };
 const G = [0.35, 2.6, 0.9], GW = [1.4, 3.0, 1.5], GD = [0.12, 1.1, 0.35], GOLD = [2.6, 1.9, 0.45], WHITE = [2.2, 2.4, 2.2], ICE = [1.1, 2.6, 2.5], EMBER = [2.2, 2.6, 0.5];
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -533,6 +543,63 @@ const EFFECTS = {
   // ---- v0.4.7.5 quick patch: fourteen more ----
 
   // a phoenix of green fire rises off his head, beating its wings three times and shedding embers, then bursts
+  // v0.4.8.7 The Favelas exclusive: pipas. On the release a few scraps of coloured kite paper flutter up round his head
+  // like a handful being got ready; the moment the shot drops (fx.flight) a whole flight of paper kites launches off his
+  // head with a pop of paper confetti: each a diamond of tissue in two colours split down its spine, its cross spars
+  // dark across it, climbing and fanning out every way across the sky (out fast, then riding the wind: slowing, drifting
+  // up, swaying), nose first, rocking as they go, each with a long tail of little bows streaming behind it and
+  // fluttering in waves; they get smaller as they fly off and are gone in under two seconds.
+  fv_gfx_pipa(fx) {
+    const burstAt = Math.max(0.35, Math.min(1.8, fx.flight || 1.0)), power = fx.power || 1, K = PIPA;
+    // the warm-up: scraps of paper twirling up round his head
+    fx.every(1 / 30, burstAt, k => {
+      const h = fx.head(), a = rnd(0, Math.PI * 2), r = rnd(0.15, 0.35);
+      fx.emit({ x: h[0] + Math.cos(a) * r, y: h[1] + rnd(0.05, 0.3), z: h[2] + Math.sin(a) * r, vx: -Math.sin(a) * 0.6, vy: rnd(0.4, 0.9), vz: Math.cos(a) * 0.6, life: rnd(0.35, 0.6), size: rnd(0.02, 0.032), color: pick(K.papers), flick: 10, gravity: 0.2, drag: 1.2 });
+    });
+    fx.at(burstAt, () => {
+      const c0 = add(fx.head(), 0, 0.3), [r0, u0] = fx.basis(), f0 = toward(fx);
+      // the pop: a puff of paper confetti in every colour, and a flash
+      fx.burst(c0, 16, { color: WHITE, speed: 0.7, life: 0.18, size: 0.07, gravity: 0 });
+      for (let i = 0; i < Math.round(70 * power); i++) { const d = sphereDir(), s = rnd(1.5, 3.4); fx.emit({ x: c0[0], y: c0[1], z: c0[2], vx: d[0] * s, vy: d[1] * s + 1.2, vz: d[2] * s, life: rnd(0.7, 1.2), size: rnd(0.018, 0.03), color: pick(K.papers), flick: rnd(8, 14), gravity: -4, drag: 1.4 }); }
+      // the kites: a fan across the sky (round the upper half of the screen, a little toward you and away), each its own speed
+      const nk = Math.min(14, Math.round(10 * power)), kites = [];
+      for (let i = 0; i < nk; i++) {
+        const a = Math.PI * (0.08 + 0.84 * (i + rnd(0.2, 0.8)) / nk), dep = rnd(-0.45, 0.45), ca = Math.cos(a), sa = Math.sin(a);
+        const d = [r0[0] * ca + u0[0] * sa + f0[0] * dep, r0[1] * ca + u0[1] * sa + f0[1] * dep, r0[2] * ca + u0[2] * sa + f0[2] * dep], l = Math.hypot(...d);
+        const pa = Math.floor(rnd(0, K.papers.length));
+        kites.push({ d: d.map(v => v / l), sp: rnd(3.6, 5.2), tau: rnd(0.45, 0.65), rise: rnd(0.3, 0.6), ph: rnd(0, 6.3), sc: rnd(0.95, 1.25), A: K.papers[pa], B: K.papers[(pa + 1 + Math.floor(rnd(0, K.papers.length - 1))) % K.papers.length], life: rnd(K.life - 0.3, K.life) });
+      }
+      // a kite's points: the paper (a grid over the diamond, each side its colour), the spars down the spine and across,
+      // then the tail (a string of bows off the tail tip)
+      const pts = [];
+      for (let gy = -0.2; gy <= 0.165; gy += 0.03) for (let gx = -0.125; gx <= 0.126; gx += 0.03) if (inPoly(gx, gy, K.shape)) pts.push([gx, gy, gx < 0 ? 'A' : 'B']);
+      for (let s = -0.19; s <= 0.16; s += 0.035) pts.push([0, s, 's']);
+      for (let s = -0.11; s <= 0.111; s += 0.037) pts.push([s, 0.04, 's']);
+      const NP = pts.length, NT = K.tail, N = NP + NT, BL = K.life + 0.05;
+      fx.hold(nk * N, BL, i => { const q = i < nk * N ? pts[i % N] : null; return { size: 0, color: q ? (q[2] === 's' ? K.spar : q[2] === 'A' ? kites[Math.floor(i / N)].A : kites[Math.floor(i / N)].B) : K.bow }; }, (i, k, p) => {
+        const kt = kites[Math.floor(i / N)], j = i % N, tt = k * BL, [r, u] = fx.basis();
+        if (tt > kt.life) { p.size = 0; return; }
+        // its flight: out fast along its line, slowing (riding the wind), drifting up, swaying across
+        const go = kt.sp * kt.tau * (1 - Math.exp(-tt / kt.tau)), sway = 0.18 * Math.sin(2.6 * tt + kt.ph) * Math.min(1, tt * 2);
+        const C = [c0[0] + kt.d[0] * go + r[0] * sway, c0[1] + kt.d[1] * go + kt.rise * tt + r[1] * sway, c0[2] + kt.d[2] * go + r[2] * sway];
+        // nose first along its flight on the screen (its spine along where it's heading), rocking
+        const vx = kt.d[0] * r[0] + kt.d[1] * r[1] + kt.d[2] * r[2], vy = kt.d[0] * u[0] + kt.d[1] * u[1] + kt.d[2] * u[2] + 0.25;
+        const ang = Math.atan2(vy, vx) - Math.PI / 2 + 0.3 * Math.sin(6.5 * tt + kt.ph) * Math.exp(-tt * 0.8), ca = Math.cos(ang), sa = Math.sin(ang);
+        const fade = Math.min(1, (kt.life - tt) / 0.35), s = kt.sc * (1 - 0.35 * Math.min(1, tt / kt.life)) * Math.min(1, tt / 0.08 + 0.3);
+        let lx, ly, size;
+        if (j < NP) { lx = pts[j][0]; ly = pts[j][1]; size = (pts[j][2] === 's' ? 0.016 : 0.03) * s * fade; }
+        else {
+          // the tail off the tail tip, streaming back and waving (the wave runs down it), its bows bigger every third
+          const m = j - NP + 1, along = 0.045 * m;
+          lx = 0.06 * Math.sin(13 * tt - m * 0.85 + kt.ph) * Math.min(1, m / 4); ly = K.shape[2][1] - along; size = (m % 3 === 0 ? 0.026 : 0.014) * s * fade;
+        }
+        const X = (lx * ca - ly * sa) * s, Y = (lx * sa + ly * ca) * s;
+        setP(p, [C[0] + r[0] * X + u[0] * Y, C[1] + r[1] * X + u[1] * Y, C[2] + r[2] * X + u[2] * Y]);
+        p.size = size;
+      });
+    });
+  },
+
   gfx_phoenix(fx) {
     const dur = 1.3, pts = [];
     for (let i = 0; i <= 9; i++) pts.push(['body', 0, -0.16 + i * 0.035, 0.045]);

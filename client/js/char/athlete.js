@@ -1052,7 +1052,7 @@ export class AthleteModel {
   // Gear: socks, shoes, sleeves, bands, pads — colored by vertex color
   buildGear(gear) {
     const gb = new GB(), sgb = new GB(), H = this.d.H;
-    this.shoeGeo = null; this.terryGeo = null; this.lanternGeo = null;
+    this.shoeGeo = null; this.terryGeo = null; this.lanternGeo = null; this.bandanaGeo = null; this.bandanaTailGeo = null; this.bandanaTail = null; // (v0.4.8.7: the Favelas' bandana, its swinging ends)
     const sock = gear.socks ? [...hexLinear(gear.socks.color), 1] : [0.94, 0.94, 0.92, 1];
     // v0.4.4: an arm sleeve under a hoodie or a leg sleeve under joggers is left out (it could only poke through);
     // sleeves and pads worn over compression sleeves or joggers sit on top of the fabric so they stay fully visible
@@ -1096,6 +1096,7 @@ export class AthleteModel {
       const hc = [...hexLinear(gear.headband.color).map(v => v * (gear.headband.glow ? 2.6 : 1)), 1], R = this.d.headR, c = this.headCenter();
       const stripes = gear.headband.stripes;
       if (gear.headband.pattern === 'jackolantern') this.lanternGeo = this.buildLantern(); // (v0.4.8.5 quick patch 2)
+      else if (gear.headband.pattern === 'bandana') this.bandanaGeo = this.buildBandana(); // (v0.4.8.7 The Favelas)
       else if (stripes && stripes.length) {
         // v0.4.8.5 quick patch: a terry-cloth sweatband (the Neon Terry): twice as tall and plush (it bulges out between its
         // edges, so it reads as a thick towelling band, not a ribbon), in stripes round the head (top to bottom), each
@@ -1244,6 +1245,50 @@ export class AthleteModel {
     return gb.finish();
   }
 
+  // v0.4.8.7 The Favelas: the Hillside Bandana. A cotton bandana folded into a band round the head (on top of any
+  // hairstyle; taller than a plain band, its folded edges rolled a little thicker than its middle), knotted at the back
+  // of the head (a squashed knot) with its two ends hanging out of the knot, down and out to either side, wider toward
+  // their tips and cut square. Its own mesh (this.bandanaGeo) and texture (looks.js paintBandana: the band u 0 - .8 all
+  // the way round, v down it; the knot and the ends sample the print at u .8 - 1)
+  buildBandana() {
+    const gb = new GB(), R = this.d.headR, c = this.headCenter(), det = this.detail, w = [[B.head, 1]];
+    const at = (th, y, extra = 0) => {
+      const n = norm([Math.sin(th), y, Math.cos(th)]), s = this.headShape(n, { skullOnly: true }), len = Math.hypot(...s), o = Math.max(0.03, this.hairOffsetAt(n) + 0.02) + extra;
+      return [c[0] + (s[0] + s[0] / len * o) * R, c[1] + (s[1] + s[1] / len * o) * R, c[2] + (s[2] + s[2] / len * o) * R];
+    };
+    const cols = Math.round(64 * det) + 24, rows = 7;
+    gb.grid(rows, cols, (r, k) => {
+      const f = r / (rows - 1), th = k / cols * Math.PI * 2;
+      return { p: at(th, 0.6 - f * 0.25, 0.006 + 0.008 * (1 - Math.sin(Math.PI * f))), uv: [k / cols * 0.8, f], col: [1, 1, 1, 1], w };
+    }, { inward: true });
+    // the knot at the back of the head (th = pi), standing out of the band
+    const K0 = at(Math.PI, 0.47, 0.02), out = norm(sub(K0, c)), side = [1, 0, 0], up = norm(cross(side, out));
+    const kc = addS(K0, out, 0.06 * R), ka = 0.13 * R, kb = 0.09 * R, kd = 0.08 * R, lat = Math.round(6 * det) + 5, lon = Math.round(12 * det) + 8;
+    gb.grid(lat + 1, lon, (r, k) => {
+      const th = -Math.PI / 2 + r / lat * Math.PI, ph = k / lon * Math.PI * 2, rr = Math.cos(th);
+      const p = add(add(addS(kc, side, rr * Math.cos(ph) * ka), scale(up, Math.sin(th) * kb)), scale(out, rr * Math.sin(ph) * kd));
+      return { p, uv: [0.82 + 0.16 * (0.5 + 0.5 * rr * Math.cos(ph)), 0.5 + 0.45 * Math.sin(th)], col: [0.92, 0.92, 0.92, 1], w };
+    });
+    // the two ends: out of the knot, hanging down the back of the head, a little apart, each a flat strip widening to a
+    // square-cut tip. Their own mesh (this.bandanaTailGeo, on the head bone like the rest) so they can swing: view.js
+    // hangs them from the knot (this.bandanaTail: the pivot, their mean direction and length) on a spring (char/sway.js)
+    const tgb = new GB(), tips = [];
+    for (const sg of [1, -1]) {
+      const pts = [], rad = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        pts.push(add(add(addS(kc, side, sg * (0.04 + 0.12 * t) * R), scale(up, -(0.05 + 1.0 * t + 0.1 * t * t) * R)), scale(out, (0.03 + 0.03 * t) * R)));
+        rad.push([0.012 * R, (0.07 + 0.08 * t) * R]);
+      }
+      tips.push(pts[6]);
+      tgb.tube(pts, rad, out, { cols: 8, uv: (t, cc) => [0.82 + 0.16 * cc, 0.05 + 0.9 * t], capUv: () => [0.9, 0.95], w: () => w, capStart: false });
+    }
+    this.bandanaTailGeo = tgb.finish();
+    const mid = scale(add(tips[0], tips[1]), 0.5), dir = sub(mid, kc);
+    this.bandanaTail = { pivot: kc, dir: norm(dir), len: Math.hypot(...dir) };
+    return gb.finish();
+  }
+
   // Basketball shoe: rubber outsole, thick midsole and an upper with a rounded toe box and heel, built as two
   // half shells (lateral / medial) so it can carry a painted texture (v0.4.3: designs come from paintShoe
   // in looks.js; before this the details were vertex colours too fine for the mesh and in the wrong space).
@@ -1356,6 +1401,7 @@ export class AthleteModel {
     out.bottom = this.buildBottom(look.bottom || { family: 'shorts' }); yield;
     out.gear = this.buildGear(look.gear || {}); out.shoes = this.shoeGeo; out.chain = this.chainGeo; out.terry = this.terryGeo; // (v0.4.8.5 quick patch: the Neon Terry band)
     out.lantern = this.lanternGeo; // (v0.4.8.5 quick patch 2: the Jack-o'-Lantern band)
+    out.bandana = this.bandanaGeo; out.bandanaTails = this.bandanaTailGeo; // (v0.4.8.7: the Hillside Bandana and its ends)
     return out;
   }
   buildAll() {
@@ -1373,6 +1419,7 @@ export class AthleteModel {
       chain: this.chainGeo,
       terry: this.terryGeo, // (v0.4.8.5 quick patch)
       gloves: this.gloveGeo, lantern: this.lanternGeo, // (v0.4.8.5 quick patch 2)
+      bandana: this.bandanaGeo, bandanaTails: this.bandanaTailGeo, // (v0.4.8.7)
     };
   }
 }

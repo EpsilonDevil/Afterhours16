@@ -20,14 +20,17 @@ from server import app as server_app, cup, crew
 
 HANDOVER = 1792108800  # 2026-10-16 00:00 UTC (8 pm Oct 15 Eastern)
 BEAT_FROM = 1791936000
+FAVELA_FROM = 1792454400  # 2026-10-20 00:00 UTC: The Favelas (v0.4.8.7)
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ScheduleTests(unittest.TestCase):
     def test_the_mash_follows_the_beat(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat", "monster"])
-        self.assertEqual((sched[2]["from"], sched[2]["until"], sched[3]["from"], sched[3]["until"]), (BEAT_FROM, HANDOVER, HANDOVER, None))
+        # (v0.4.8.7: then The Favelas from the end of the Mash's second window, test_favela_event.py)
+        self.assertEqual([r.get("event", "shuffle") for r in sched][:4], ["kingtut", "jungle", "beat", "monster"])
+        self.assertEqual((sched[2]["from"], sched[2]["until"], sched[3]["from"]), (BEAT_FROM, HANDOVER, HANDOVER))
+        self.assertIn(sched[3]["until"], (None, FAVELA_FROM))
         self.assertEqual(HANDOVER - BEAT_FROM, cup.WINDOW)  # the Beat gets its full 48 hours
         self.assertEqual((HANDOVER - cup.EPOCH) % cup.WINDOW, 0)  # the end of a window, not the middle of one
         self.assertEqual(cup.window_bounds(cup.window_at(HANDOVER - 1))[1], HANDOVER)  # (the Beat's window ends right there)
@@ -35,7 +38,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(cup.active_event(BEAT_FROM, sched)["id"], "beat")
         self.assertEqual(cup.active_event(HANDOVER - 1, sched)["id"], "beat")
         self.assertEqual(cup.active_event(HANDOVER, sched)["id"], "monster")
-        self.assertEqual(cup.active_event(HANDOVER + 365 * 86400, sched)["id"], "monster")
+        self.assertEqual(cup.active_event(FAVELA_FROM - 1, sched)["id"], "monster")  # (two full windows, to the Favelas)
         w = cup.window_at(HANDOVER)
         self.assertEqual(cup.event_for_window(w - 1, sched)["id"], "beat")  # its last window pays the Beat's prizes
         self.assertEqual(cup.event_for_window(w, sched)["id"], "monster")
@@ -48,7 +51,7 @@ class ScheduleTests(unittest.TestCase):
             self.assertTrue(venues[v].get("event"), v)
             self.assertEqual(venues[v]["kind"], "park")
         self.assertEqual(venues["monster"]["name"], "The Monster Mash")
-        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat", "monster"})
+        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat", "monster", "favela"})  # (v0.4.8.7: and The Favelas)
 
     def test_the_mash_prizes(self):
         mash, beat, jungle, tut = (cup.EVENTS[e] for e in ("monster", "beat", "jungle", "kingtut"))
@@ -154,7 +157,7 @@ class ApiTests(unittest.TestCase):
             cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
             cfg = self.call("/api/config")
             self.assertEqual((cfg["event"]["id"], cfg["event"]["venue"], cfg["event"]["name"]), ("monster", "monster", "The Monster Mash"))
-            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut", "monster"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "favela", "jungle", "kingtut", "monster"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "monster")
             self.assertEqual(st["prizes"][0]["label"], "King of the Mash")

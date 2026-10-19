@@ -45,6 +45,7 @@ public partial class AthleteDriver : Node3D
         _model = scene.Instantiate<Node3D>();
         AddChild(_model);
         _skel = FindSkeleton(_model) ?? throw new System.Exception("no Skeleton3D in " + GlbPath);
+        TuneMaterials(_model);
         var build = new Build(HeightIn, WeightLb, WingspanIn);
         Anim = new Animator(build);
         Player.Phys = new AnimPhys { Reach = Anim.Model.D.ReachStanding, H = Anim.H, Radius = 0.3 };
@@ -70,6 +71,37 @@ public partial class AthleteDriver : Node3D
         // start in the neutral stance
         State = new AnimState { X = 0, Y = 0, Z = 0, Facing = 0 };
         Step();
+    }
+
+    /// glTF carries no subsurface scattering: the MetaHuman skin materials (MH_Head, MH_Body) get Godot's skin-mode SSS
+    /// and the glTF-default specular (0.5); the groom cards stay matte. (The imported materials are StandardMaterial3D.)
+    static void TuneMaterials(Node n)
+    {
+        if (n is MeshInstance3D mi && mi.Mesh != null)
+        {
+            for (int i = 0; i < mi.Mesh.GetSurfaceCount(); i++)
+            {
+                if (mi.GetActiveMaterial(i) is not StandardMaterial3D m) continue;
+                var name = m.ResourceName ?? "";
+                if (name.StartsWith("MH_Head") || name.StartsWith("MH_Body"))
+                {
+                    m.SubsurfScatterEnabled = true; m.SubsurfScatterSkinMode = true; m.SubsurfScatterStrength = 0.25f;
+                    m.MetallicSpecular = 0.5f; m.Metallic = 0f;
+                }
+                else if (name.StartsWith("Groom") || name.Contains("Cards") || name == "HairBase")
+                {
+                    m.MetallicSpecular = 0.1f;  // (roughness comes from the glb: 0.75 for the Epic card grooms)
+                    // the beard/brow strands are 1-2 atlas texels wide: at court distance the mip chain averages their
+                    // coverage under the glb's cutoff, so the scissor is relaxed here (the hair's strands are wider)
+                    if (name.StartsWith("Groom"))
+                    {
+                        m.AlphaScissorThreshold = 0.35f;  // (the groom atlases are imported without mipmaps: see their .import files)
+                        if (OS.GetEnvironment("RIMRIFT_GROOM_HASH") == "1") m.Transparency = BaseMaterial3D.TransparencyEnum.AlphaHash;
+                    }
+                }
+            }
+        }
+        foreach (var c in n.GetChildren()) TuneMaterials(c);
     }
 
     static Skeleton3D? FindSkeleton(Node n)

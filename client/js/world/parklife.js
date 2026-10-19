@@ -11,6 +11,7 @@ import * as TX from '../gfx/textures.js';
 import { AVE, EL_Z, STEAM_VENTS } from './street.js';
 import * as RT from './retro.js';
 import * as HR from './horror.js';
+import { favelaLife, favelaEvents } from './favela.js';
 import * as SP from '../core/spooky.js';
 
 const lin = hex => M.hexLinear(hex);
@@ -45,9 +46,11 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
       : theme.style === 'retro' ? [{ z: 34.4, x0: -62, x1: 62, jit: 0.4, y: 0.1 }, { z: -35.0, x0: -62, x1: 62, jit: 0.25, y: 0.02 }, { z: -37.4, x0: -60, x1: 12, jit: 0.3, y: 0.02 }]
         // (v0.4.8.5 quick patch 2: the Monster Mash's sidewalks, fewer people out: the monsters fill the rest)
         : theme.style === 'horror' ? [{ z: 34.5, x0: -62, x1: 62, jit: 0.4 }, { z: -35.6, x0: -60, x1: 60, jit: 0.3 }]
-          : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
+          // (v0.4.8.7: the Favelas' park-side sidewalks; favelaLife fills the stairways and the far sidewalks)
+          : theme.style === 'favela' ? [{ z: 34.6, x0: -62, x1: 62, jit: 0.4 }, { z: -35.8, x0: -60, x1: 60, jit: 0.3 }]
+            : [{ z: -35.5, x0: -70, x1: 70 }, { z: 33, x0: -70, x1: 70 }];
   const people = [];
-  for (let i = 0; i < (theme.style === 'horror' ? 12 : 22); i++) {
+  for (let i = 0; i < (theme.style === 'horror' ? 12 : theme.style === 'favela' ? 10 : 22); i++) {
     const ln = lanes[i % lanes.length], jog = rng.next() < 0.18;
     const p = { ln, x: rng.range(ln.x0, ln.x1), dz: rng.range(-1, 1) * (ln.jit ?? 1), dir: rng.next() < 0.5 ? 1 : -1, v: jog ? rng.range(2.6, 3.4) : rng.range(1.1, 1.6), jog, ph: rng.range(0, 6), stop: 0, s: rng.range(0.92, 1.08) };
     p.mesh = add(personGeo, shirtMats[i % shirtMats.length]);
@@ -74,6 +77,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   const movers = [], updExtra = [];
   let retro = null, lifeT = 0; // (v0.4.8.5 quick patch: the Beat Goes On's park life, and a clock for it)
   let horror = null; // (v0.4.8.5 quick patch 2: the Monster Mash's monsters)
+  let favela = null; // (v0.4.8.7: the Favelas' people, animals and riders)
   const carParts = (body, cabin) => [
     { geo: G.box(1.8, 0.62, 4.3), matrix: T(0, 0.62, 0), color: col(body) },
     { geo: G.box(1.62, 0.55, 2.3), matrix: T(0, 1.2, -0.2), color: col(cabin) },
@@ -258,6 +262,9 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
   } else if (theme.style === 'horror') {
     // v0.4.8.5 quick patch 2: The Monster Mash: monsters on the loose (horrorLife, below)
     horror = horrorLife({ r, ctx, rng, add, geoOf, updExtra, scene, town: opts.town, t: () => lifeT });
+  } else if (theme.style === 'favela') {
+    // v0.4.8.7 The Favelas: people on the stairs, animals, dirtbikes (favela.js favelaLife)
+    favela = favelaLife({ r, ctx, rng, add, geoOf, updExtra, scene, town: opts.town, t: () => lifeT });
   } else {
     // industrial: a forklift shuttling along the container yard, and the crane trolley working
     const fork = add(geoOf([
@@ -494,6 +501,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     tut: [laserShow, laserShow, glowFireworks, () => birds('crow'), plane],
     retro: retro ? retroEvents({ r, rng, add, geoOf, scene, city: opts.city, vmat }, retro) : null,
     horror: horror ? horrorEvents({ r, ctx, rng, add, geoOf, scene, town: opts.town, vmat, theme }, horror) : null,
+    favela: favela ? favelaEvents({ r, ctx, rng, add, geoOf, scene, town: opts.town, vmat, theme }, favela) : null, // (v0.4.8.7)
   }[theme.style] || [() => birds('pigeon')];
   let nextEvt = rng.range(6, 14);
   const start = make => {
@@ -519,6 +527,7 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     get eventCount() { return events.length; },
     get retro() { return retro; }, // (v0.4.8.5 quick patch: the Beat Goes On's cars and dancers, for the tests and the dev views)
     get horror() { return horror; }, // (v0.4.8.5 quick patch 2: the Monster Mash's monsters)
+    get favela() { return favela; }, // (v0.4.8.7: the Favelas' life, for the tests and the dev views)
   };
 }
 

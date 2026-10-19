@@ -152,3 +152,43 @@ The last of the old name is gone. Everything you see, and every file the game ma
 - **host.cmd, join.cmd and start.cmd:** their windows and messages say RIMRIFT. Hosting still remembers your join code, and nobody has to sign in again.
 - **The arena** is the RIMRIFT Arena, and the game service's own window says RIMRIFT.
 - **The welcome card** says new accounts get 250,000 VC, the amount since the season reset.
+
+## Quick patch 4 (Oct 19): The Favelas and the park shuffle
+
+**The Favelas take over from The Monster Mash at 8 PM Eastern on Monday Oct 19 (00:00 UTC Oct 20)** for their own 48-hour window. Ante-ups and the leaderboard work like every event park; the Monster Mash's last window still pays Mash prizes.
+
+**The place.** The same park and courts on a hillside favela at golden hour turning to dusk: more than a thousand brightly painted brick and concrete houses stacked up the slopes, flat roofs with water tanks, satellite dishes, laundry lines and string lights, stairways and narrow alleys between them, overhead wires and small shops with Portuguese signs. Windows light up and go dark, TVs flicker, laundry sways, and doors swing open as neighbours step out to chat and go back in. The ground is packed red earth and broken concrete, with paved streets, kerbs and gutters round the park. The park plays the regular park playlist.
+
+**Life round the park.** People walk the streets and stairways with real walk cycles, neighbours chat at their doors and on the roofs, and kids fly kites from the rooftops. Stray dogs trot and sniff, cats sit on the roofs, chickens peck by a door and a flock of pigeons lifts off and settles. Three dirtbike riders circle the streets, pulling wheelies on the straights, and a police car sits at the edge with its lights on.
+
+**Random events.**
+- **Police chase:** a police bike, lights flashing and siren wailing, chases a dirtbike rider round the streets until the rider cuts up a stairway and gets away.
+- **Foot chase:** two officers chase a lad on foot; he's gone up the steps and they stop, hands on knees.
+- **Kite fight:** two kites duel over the roofs until one string is cut and the loose kite tumbles away across the sky.
+- **Bateria:** a samba drum group with a flag comes down one stairway, along the street and up another, drums playing.
+- **Power cut:** a block's lights flicker out and come back.
+- **Tropical shower:** a quick downpour over the roofs.
+
+Nobody gets hurt and no weapons are shown; the chases always end with the rider getting away. The siren and the drums are synthesized (no recordings) and follow the SFX slider.
+
+**Court and streaks.** A teal community court with a yellow apron framed in blue-and-white tiles with kites, suns and flowers, a terracotta key, a kite-over-the-hill crest at centre court and THE FAVELAS on the baselines. On a streak, kites rise and circle the court at 3 wins; at 6, more kites and bunting across the court; at 9, a painted-tile pattern washes over the floor in changing colours; at 12, confetti falls and the kites spiral higher.
+
+**Rewards** (same tiers as every event park; none can be bought):
+
+| Finish | VC | Items |
+| --- | --- | --- |
+| 1st, King of the Favelas | 150,000 | All seven |
+| Top 3 | 60,000 | Ladeira hi-tops, Passinho, Hillside Bandana, Pipa, Cuíca |
+| Top 10 | 25,000 | Passinho, Hillside Bandana, Cuíca |
+| Top 25 | 10,000 | Hillside Bandana |
+
+- **The Morro Kit** (jersey and shorts): a football-style shirt and shorts in sun-faded green, yellow and blue stripes with a band of painted tiles at the hem; MORRO on the front, your name and number on the back.
+- **Ladeira hi-tops:** cream uppers with a painted-tile panel down each side and grippy gum soles.
+- **The Passinho:** a celebration of quick favela-funk footwork, eight steps a second.
+- **Hillside Bandana:** a red patterned bandana knotted at the back; its ends swing as you move.
+- **Pipa** (green release): a burst of paper kites flies up and out on a made green.
+- **Cuíca** (green sound): a synthesized cuíca's whoops and long sliding call.
+
+Headbands in the store are now tried on at head-and-shoulders distance.
+
+**The park shuffle.** When The Favelas end at 8 PM Eastern on Wednesday Oct 21, the event park starts a shuffle of all five event parks: the King Tut Cup, the Jungle Ballers, And The Beat Goes On, The Monster Mash and The Favelas, 48 hours each. Every park plays once before any park repeats, and no park ever plays twice in a row. The first round is the four parks the Favelas haven't been: the King Tut Cup (from Oct 21), And The Beat Goes On (Oct 23), the Jungle Ballers (Oct 25) and The Monster Mash (Oct 27); then the parks reshuffle for the next round, and so on with no end date. The order is fixed in advance, so every game shows the same park and switches over on time on its own.

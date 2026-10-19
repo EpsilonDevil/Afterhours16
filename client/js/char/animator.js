@@ -6,6 +6,7 @@ import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
 import { BLOCK_BY_ID, blockSpin } from '../sim/blocks.js';
 import { bigBroBlockPose, bigBroLanding } from './bigbro.js';
+import { passinhoPose } from './passinho.js'; // (v0.4.8.7 The Favelas: the Passinho celebration)
 import { clampStealPose, clampOverlay } from './clamp.js';
 import { clampSpin } from '../sim/clamp.js';
 import { isHS, hsHand, hsK } from '../sim/hashsling.js';
@@ -1985,6 +1986,8 @@ const CELEB2 = {
     const claw = lunge, nrm = [0, -1 + claw, claw * 0.9], fin = [0, claw * 0.8, 1 - claw * 0.55];
     an.palm.L = { normal: nrm, fingers: fin, w: k }; an.palm.R = { normal: nrm, fingers: fin, w: k };
   },
+  // v0.4.8.7 The Favelas: the Passinho (char/passinho.js)
+  passinho: (T, t, k, an) => passinhoPose(T, t, k, an),
   // swings a big hammer down overhead, twice
   hammer: (T, t, k) => { const ph = (t * 1.6) % 1, sw = ph < 0.6 ? ph / 0.6 : 1 - (ph - 0.6) / 0.4, y = 2.3 - 1.3 * sw * sw; mix3(T, 'handR', -0.1, y, 0.2 + 0.4 * sw, k); mix3(T, 'handL', -0.02, y - 0.12, 0.2 + 0.4 * sw, k); T[P.spine] = (0.35 * sw - 0.15) * k; T[P.root + 1] = -0.08 * sw * k; },
   // holds up three fingers, shaking them at the crowd

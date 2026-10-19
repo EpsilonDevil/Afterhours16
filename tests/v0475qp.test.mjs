@@ -289,8 +289,9 @@ test('twice the apparel, Daily Spin exclusives too', () => {
   // (qp3: + the Jungle Ballers' gorilla costume top and legs, Toucan shoes and Toucan band, event exclusives)
   // (v0.4.8.5 quick patch: + And The Beat Goes On's windbreaker, track pants, Boombox hi-tops and Neon Terry band)
   // (v0.4.8.5 quick patch 2: + The Monster Mash's Bone Suit top and tights, Coffin hi-tops and Jack-o'-Lantern band)
-  assert.equal(slot('apparel', 'top'), 65); assert.equal(slot('apparel', 'bottom'), 39); assert.equal(by('shoes').length, 39);
-  for (const [s, n] of [['headband', 19], ['sleeve', 12], ['socks', 10], ['wristband', 8], ['leg_sleeve', 4], ['knee_pad', 2], ['chain', 4]]) assert.equal(slot('accessory', s), n, s);
+  // (v0.4.8.7: + The Favelas' Morro Kit jersey and shorts, Ladeira hi-tops and Hillside Bandana)
+  assert.equal(slot('apparel', 'top'), 66); assert.equal(slot('apparel', 'bottom'), 40); assert.equal(by('shoes').length, 40);
+  for (const [s, n] of [['headband', 20], ['sleeve', 12], ['socks', 10], ['wristband', 8], ['leg_sleeve', 4], ['knee_pad', 2], ['chain', 4]]) assert.equal(slot('accessory', s), n, s);
   assert.equal(list.filter(i => i.exclusive === 'wheel' && i.category !== 'animation').length, 12);
   for (const i of list.filter(x => x.v0475qp)) { assert.equal(i.original_2k_asset, false); assert.ok(i.name && i.description && i.color, i.id); }
   assert.equal(new Set(list.map(i => i.id)).size, list.length, 'ids unique');

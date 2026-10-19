@@ -1,0 +1,116 @@
+[mh] imported 132800 verts / 95330 tris, 341 bones, 288 weighted; welded to 48668 verts
+[mh] head from Athlete_v2_Head.fbx: skin slot 0 (48004 faces), eyes [3, 4], teeth 1, lashes 6; 32777 verts appended; bones folded via its armature (874 bones)
+[mh] shells: 216; body 30455 verts, head 24049 (separate shell), teeth 4245, eyes [770, 770], dropped 210 slivers (lashes, eye shells)
+[mh] neck loops: body start [-0.056 -0.134  1.594] dir [ 0.01  0.   -0.  ], head start [-0.069 -0.166  1.629] dir [0.012 0.001 0.   ]; |offset| along the loop (cm): [4.9, 4.4, 5.0, 5.1, 5.0, 5.4, 4.6, 6.2, 7.4, 7.4, 6.8, 5.0, 4.8, 5.3, 5.0, 5.0]
+[mh] neck fit: scale 0.781, residual after the similarity 0.93 cm mean / 1.78 max
+[mh] neck: yoke rim (92 verts) fitted onto the body rim (92 verts): mean offset 5.5 cm (max 7.5), 902 yoke verts moved, rims welded
+[mh] shells after the weld: 215; body+head 54425 verts, teeth 4245, eyes [770, 770]
+[mh] eyelids: left as exported (open-eyed Head FBX)
+[mh] bone fold: {'hips': 2, 'spine': 2, 'chest': 5, 'neck': 1, 'head': 2, 'clavL': 3, 'upperL': 8, 'foreL': 6, 'handL': 94, 'clavR': 3, 'upperR': 8, 'foreR': 6, 'handR': 94, 'thighL': 8, 'shinL': 5, 'footL': 3, 'toeL': 11, 'thighR': 8, 'shinR': 5, 'footR': 3, 'toeR': 11} root-only: []
+[mh] Body: 54425 verts, unweighted 0, weight sum range [1.0000, 1.0000]
+[mh] EyeL: 770 verts, unweighted 0, weight sum range [1.0000, 1.0000]
+[mh] EyeR: 770 verts, unweighted 0, weight sum range [1.0000, 1.0000]
+[mh] Teeth: 4245 verts, unweighted 0, weight sum range [1.0000, 1.0000]
+[mh] Lashes: 2144 verts, unweighted 0, weight sum range [1.0000, 1.0000]
+[mh] UDIM: head tile 48004 tris, body tile 60816 tris
+[groom] archetype head 34642 verts / 48004 skin tris, ours 38543 outward skin tris (9461 cavity faces skipped); inter-pupil 6.39 -> 5.85 cm (offset scale 0.915)
+[groom] archetype skin vertices mapped onto our head: 20127 of 24412
+[groom] HairCardsLOD0: 36857 verts / 30617 tris wrapped (30 UV misses -> nearest head vertex)
+[groom] HairCards: 22843 verts / 15531 tris wrapped (30 UV misses -> nearest head vertex)
+[groom] BeardCardsLOD0: 22294 verts / 16164 tris wrapped (0 UV misses -> nearest head vertex)
+[groom] BeardCards: 15384 verts / 9796 tris wrapped (0 UV misses -> nearest head vertex)
+[groom] BrowsCardsLOD0: 999 faces at eye level trimmed
+[groom] BrowsCardsLOD0: 8144 verts / 4719 tris wrapped (0 UV misses -> nearest head vertex)
+[groom] BrowsCards: 523 faces at eye level trimmed
+[groom] BrowsCards: 4942 verts / 2613 tris wrapped (0 UV misses -> nearest head vertex)
+[mh] decimated: body 44999 tris (head region 16204, body region 28795), eyes [760, 760], teeth 1199; total 128880
+[mh] source H 1.9622 m, A-pose arm 38.4 deg from vertical, torso y shift 2.6 cm
+[mh] retargeted: height 1.9572 (target 1.9558), feet z -0.0012, hand tip x 0.725 (target 0.721)
+[mh]   joint hips    MetaHuman [-0.     0.002  1.051] -> ours [0.    0.    1.046]  (0.5 cm moved)
+[mh]   joint spine   MetaHuman [-0.    -0.012  1.198] -> ours [0.    0.008 1.193]  (2.0 cm moved)
+[mh]   joint chest   MetaHuman [-0.    -0.008  1.394] -> ours [0.    0.008 1.389]  (1.7 cm moved)
+[mh]   joint neck    MetaHuman [-0.     0.033  1.62 ] -> ours [0.    0.02  1.614]  (1.5 cm moved)
+[mh]   joint head    MetaHuman [-0.     0.028  1.718] -> ours [0.    0.008 1.711]  (2.1 cm moved)
+[mh]   joint clavL   MetaHuman [0.043 0.025 1.585] -> ours [0.043 0.016 1.578]  (1.1 cm moved)
+[mh]   joint upperL  MetaHuman [0.175 0.048 1.579] -> ours [0.191 0.023 1.582]  (3.0 cm moved)
+[mh]   joint foreL   MetaHuman [0.363 0.04  1.332] -> ours [0.406 0.023 1.326]  (4.7 cm moved)
+[mh]   joint handL   MetaHuman [ 0.514 -0.144  1.151] -> ours [0.591 0.023 1.105]  (19.1 cm moved)
+[mh]   joint thighL  MetaHuman [0.102 0.003 0.991] -> ours [ 0.102 -0.008  0.988]  (1.1 cm moved)
+[mh]   joint shinL   MetaHuman [0.113 0.01  0.57 ] -> ours [ 0.102 -0.016  0.528]  (5.1 cm moved)
+[mh]   joint footL   MetaHuman [0.134 0.028 0.08 ] -> ours [ 0.102 -0.004  0.078]  (4.6 cm moved)
+[mh]   joint toeL    MetaHuman [ 0.134 -0.178  0.025] -> ours [ 0.102 -0.209  0.023]  (4.5 cm moved)
+[mh] zones: eye z 1.861, head top 1.956, beard verts 1913, brow 60, scalp 1402
+[mh] head zones: 16123 faces -> /tmp/claude-0/character/mh/work_v2/head_zones.npz
+[mhtex] mh_head_albedo.jpg (2048, 2048) 0.61 MB
+[mhtex] mh_body_albedo.jpg (2048, 2048) 0.33 MB
+[mhtex] Head_SRMF.png (2048, 2048) RGBA: channel means R 155.0 G 168.6 B 0.0 A 193.6 (R=specular, G=roughness, B=metallic)
+[mhtex] mh_head_orm.jpg (2048, 2048) 1.23 MB
+[mhtex] Body_SRMF.png (2048, 2048) RGBA: channel means R 153.4 G 176.3 B 0.0 A 180.8 (R=specular, G=roughness, B=metallic)
+[mhtex] mh_body_orm.jpg (2048, 2048) 0.77 MB
+[mhtex] mh_head_normal.jpg (2048, 2048) 1.06 MB
+[mhtex] mh_body_normal.jpg (2048, 2048) 1.37 MB
+[mhtex] mh_eye_normal.jpg (512, 512) 0.06 MB
+[mhtex] mh_eye_albedo.jpg (1024, 1024) 0.10 MB
+[mhtex] mh_teeth_albedo.jpg (512, 512) 0.05 MB
+[mhtex] mh_hair_cards.png (512, 512) 0.34 MB
+[mhtex] mh_beard_cards.png (256, 256) 0.08 MB
+[mhtex] mh_hair_base.png (512, 512) 0.08 MB
+[mhtex] groom hair: atlas 4096² -> 2048², coverage>0.4 fraction 0.139
+[mhtex] mh_groom_hair.png (2048, 2048) 1.58 MB
+[mhtex] groom beard: atlas 2048² -> 2048², coverage>0.4 fraction 0.034
+[mhtex] mh_groom_beard.png (2048, 2048) 0.64 MB
+[mhtex] groom brows: atlas 2048² -> 2048², coverage>0.4 fraction 0.012
+[mhtex] mh_groom_brows.png (2048, 2048) 0.37 MB
+[mhtex] done
+[mh] skin sanity: {"Body": {"verts": 22514, "tris": 44999, "unweighted": 0, "sum_min": 0.9998473972082138, "sum_max": 1.0000001396983862, "max_influences": 6}, "EyeL": {"verts": 382, "tris": 760, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "EyeR": {"verts": 382, "tris": 760, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "Teeth": {"verts": 626, "tris": 1199, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "Lashes": {"verts": 2144, "tris": 1722, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "HairCardsLOD0": {"verts": 36857, "tris": 30617, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "HairCards": {"verts": 22843, "tris": 15531, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "BeardCardsLOD0": {"verts": 22294, "tris": 16164, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "BeardCards": {"verts": 15384, "tris": 9796, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "BrowsCardsLOD0": {"verts": 6834, "tris": 4719, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}, "BrowsCards": {"verts": 4140, "tris": 2613, "unweighted": 0, "sum_min": 1.0, "sum_max": 1.0, "max_influences": 1}}
+[mh] saved /tmp/claude-0/character/mh/work_v2/body_rigged.blend
+[mh] stage 2: /opt/blender/blender -b --python /home/claude/ah/rimrift/tools/athlete/build_athlete.py -- --work /tmp/claude-0/character/mh/work_v2 --out /home/claude/ah/rimrift/game/assets/athlete/metahuman --mh --name athlete_mh
+[tex] jersey_albedo.png (2048, 1024)
+[tex] jersey_orm.png (2048, 1024)
+[tex] jersey_normal.png (2048, 1024)
+[tex] shorts_albedo.png (1024, 1024)
+[tex] shorts_orm.png (1024, 1024)
+[tex] knit_normal.png (256, 256)
+[tex] sleeve_albedo.png (256, 256)
+[tex] sleeve_orm.png (256, 256)
+[tex] sock_albedo.png (256, 256)
+[tex] sock_orm.png (256, 256)
+[tex] shoe_albedo.png (1024, 1024)
+[tex] shoe_orm.png (1024, 1024)
+[tex] hair_albedo.png (1024, 1024)
+[tex] hair_orm.png (1024, 1024)
+[tex] hair_normal.png (1024, 1024)
+[tex] hair_cards.png (256, 256)
+[tex] skin_albedo.png (2048, 2048)
+[tex] skin_orm.png (2048, 2048)
+[tex] skin_normal.png (2048, 2048)
+[tex] eye_albedo.png (256, 256)
+[tex] eye_orm.png (256, 256)
+[tex] done
+[hair] eye z 1.861, head top 1.956, head y [-0.121, 0.084]
+[uv] MetaHuman UVs kept (two tiles -> two materials)
+[mat] MetaHuman materials kept: ['MH_Head', 'MH_Body']
+[mat] Epic groom cards kept: ['HairCardsLOD0', 'HairCards', 'BeardCardsLOD0', 'BeardCards', 'BrowsCardsLOD0', 'BrowsCards']
+[cover] removed 13380 covered body faces; body now 31619 polys
+[mesh] Body         verts  15979 tris  31619
+[mesh] EyeL         verts    382 tris    760
+[mesh] EyeR         verts    382 tris    760
+[mesh] Teeth        verts    626 tris   1199
+[mesh] Lashes       verts   2144 tris   1722
+[mesh] HairCardsLOD0 verts  36857 tris  30617
+[mesh] HairCards    verts  22843 tris  15531
+[mesh] BeardCardsLOD0 verts  22294 tris  16164
+[mesh] BeardCards   verts  15384 tris   9796
+[mesh] BrowsCardsLOD0 verts   6834 tris   4719
+[mesh] BrowsCards   verts   4140 tris   2613
+[mesh] Jersey       verts   1179 tris   2160 (x2 solidify)
+[mesh] Shorts       verts   1617 tris   2880 (x2 solidify)
+[mesh] Sleeve       verts    735 tris   1344
+[mesh] SockL        verts    441 tris    768
+[mesh] SockR        verts    441 tris    768
+[mesh] ShoeL        verts   1535 tris   3023 (x2 solidify)
+[mesh] ShoeR        verts   1543 tris   3039 (x2 solidify)
+[mesh] total ~140584 tris
+[export] /home/claude/ah/rimrift/game/assets/athlete/metahuman/athlete_mh.glb 18.183052 MB (game: card LOD1)
+[export] /home/claude/ah/rimrift/game/assets/athlete/metahuman/athlete_mh_lod0.glb 19.568324 MB (card LOD0: showroom)
+[mh] loose textures moved to /tmp/claude-0/character/mh/work_v2/textures

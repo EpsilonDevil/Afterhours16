@@ -34,7 +34,9 @@ test('the Monster Mash is an event park like the others, with its own card, colo
 
 test('the schedule: the Beat runs its full 48 hours, then the Mash; nothing of the Beat is deleted', () => {
   const sched = json('server/events.json').schedule;
-  assert.deepEqual(sched.map(s => [s.event, s.from, s.until]), [['kingtut', null, 1791763200], ['jungle', 1791763200, 1791936000], ['beat', 1791936000, HANDOVER], ['monster', HANDOVER, null]]);
+  // (v0.4.8.7: the Mash's two windows end at 8 PM ET Oct 19, then the Favelas and the park shuffle: tests/test_park_shuffle.py)
+  assert.deepEqual(sched.slice(0, 4).map(s => [s.event, s.from, s.until]), [['kingtut', null, 1791763200], ['jungle', 1791763200, 1791936000], ['beat', 1791936000, HANDOVER], ['monster', HANDOVER, HANDOVER + 2 * 48 * 3600]]);
+  assert.equal(sched[4].event, 'favela'); assert.ok(sched[5].shuffle.includes('monster'));
   assert.equal(HANDOVER - 1791936000, 48 * 3600);
   assert.equal((HANDOVER - 1767225600) % (48 * 3600), 0, 'the handover is on a window boundary');
   assert.equal(new Date(HANDOVER * 1000).toISOString(), '2026-10-16T00:00:00.000Z');

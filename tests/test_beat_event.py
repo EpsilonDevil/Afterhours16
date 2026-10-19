@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ScheduleTests(unittest.TestCase):
     def test_the_beat_follows_the_jungle_tonight(self):
         sched = cup.load_schedule()
-        self.assertEqual([r["event"] for r in sched], ["kingtut", "jungle", "beat", "monster"])  # (then the Monster Mash: test_monster_event.py)
+        self.assertEqual([r.get("event", "shuffle") for r in sched][:4], ["kingtut", "jungle", "beat", "monster"])  # (then the Monster Mash: test_monster_event.py; v0.4.8.7 the Favelas)
         self.assertEqual((sched[1]["until"], sched[2]["from"], sched[2]["until"]), (HANDOVER, HANDOVER, HANDOVER + cup.WINDOW))
         self.assertEqual((HANDOVER - cup.EPOCH) % cup.WINDOW, 0)  # the end of a window, not the middle of one
         self.assertEqual(cup.window_bounds(cup.window_at(HANDOVER - 1))[1], HANDOVER)  # (the Jungle's window ends right there)
@@ -41,7 +41,7 @@ class ScheduleTests(unittest.TestCase):
         venues = {v["id"]: v for v in server_app.VENUES}
         for v in ("jungle", "kingtut", "beat", "monster"):
             self.assertTrue(venues[v].get("event"), v)
-        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat", "monster"})
+        self.assertEqual(cup.EVENT_VENUES, {"kingtut", "jungle", "beat", "monster", "favela"})  # (v0.4.8.7: and The Favelas)
 
     def test_the_beat_prizes(self):
         beat, jungle, tut = cup.EVENTS["beat"], cup.EVENTS["jungle"], cup.EVENTS["kingtut"]
@@ -125,7 +125,7 @@ class ApiTests(unittest.TestCase):
             cid = self.call("/api/characters", {"key": self.key(), "build": build})["character"]["id"]
             cfg = self.call("/api/config")
             self.assertEqual((cfg["event"]["id"], cfg["event"]["venue"], cfg["event"]["name"]), ("beat", "beat", "And The Beat Goes On"))
-            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "jungle", "kingtut", "monster"])
+            self.assertEqual(sorted(cfg["event_venues"]), ["beat", "favela", "jungle", "kingtut", "monster"])
             st = self.call("/api/cup")
             self.assertEqual(st["event"]["id"], "beat")
             self.assertEqual(st["prizes"][0]["label"], "King of the Beat")

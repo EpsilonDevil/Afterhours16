@@ -1059,6 +1059,8 @@ class Handler(BaseHTTPRequestHandler):
                         raise builds.Invalid("And The Beat Goes On exclusive. Win it at the Beat Goes On park.")
                     if item.get("exclusive") == "monster":
                         raise builds.Invalid("Monster Mash exclusive. Win it at the Monster Mash.")
+                    if item.get("exclusive") == "favela":  # (v0.4.8.7)
+                        raise builds.Invalid("The Favelas exclusive. Win it at the Favelas.")
                     if item.get("exclusive") == "icon":
                         raise builds.Invalid("Icon badge exclusive. It comes with the Icon badge; it cannot be bought.")
                     if item.get("exclusive"):

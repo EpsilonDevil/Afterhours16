@@ -18,3 +18,39 @@ Nothing from Mixamo, MakeHuman or any asset store. Bundle download kept only in 
 |---|---|---|---|
 | meshy/athlete_v1/athlete_meshy.glb (21.0 MB) | David's Meshy.ai image-to-3D athlete (auto-rig, Unity Humanoid), decimated 72,774 → 44,999 tris, retargeted and re-rigged to our 21 bones by tools/athlete/build_meshy.py; one PBR material (4096² albedo + ORM from Meshy's metallic/roughness) | David's Meshy generation from the character sheet (inputs in the same folder) | per David's Meshy.ai plan terms — not CC0; keep out of any public build until confirmed |
 | meshy/athlete_v1/meshy_*_sheet.png, renders/ | Godot captures of it in AthleteShowroomMeshy.tscn | project's own | |
+
+## metahuman (the hero body)
+| file | what | source | licence |
+|---|---|---|---|
+| metahuman/athlete_mh.glb (16.8 MB, textures embedded; Godot extracts them beside it as athlete_mh_*.png/.jpg) | David's MetaHuman **Athlete_v2** (Unreal 5.8 MetaHuman export: 341-bone skeleton, 132,800 verts / 95,330 tris LOD0, UDIM 1001 = head, 1002 = body; the head is its own shell whose neck+yoke rim is fitted onto the re-cut body's rim and welded) through tools/athlete/build_metahuman.py: welded, weights folded onto our 21 bones, decimated to 45,000 tris (head region 16,200 / body 28,800; 2 eyeballs 720 each; teeth 1,199), retargeted onto our bind (77 in / 215 lb / 80 in, 40 degree A-pose) with the per-bone stretch LBS, PBR materials MH_Head / MH_Body (2048² basecolor + normal + ORM packed from the SRMF maps, JPEG q90), MH_Eye (Eyes_Color 1024², normal 512²), MH_Teeth (512²), then the kit from build_athlete.py --mh (jersey, shorts, sleeve, socks, shoes, hair cap; covered body faces removed). 68,362 tris in the glb. | David's own MetaHuman | Epic MetaHuman EULA (David's asset; usable outside Unreal since the 2025 licence change — confirm before a public build) |
+| metahuman/athlete_mh_v1.glb (17.4 MB) | the v1 build (basecolor only, procedural ORM, no normals), kept for reference; contact_sheet_vs_target_v1.png, motion_sheet_v1.png, build_log_v1.txt | same | same |
+| metahuman/athlete_mh_lod0.glb (18.9 MB) | the same build with the Epic hair-card grooms at LOD0 (showroom/close-ups; the game glb carries LOD1) | David's Unreal export of Epic's MetaHuman grooms (Hair_S_AfroFade, Beard_S_Curly, Eyebrows_M_FlatThick card meshes + atlases) | Epic MetaHuman EULA |
+| metahuman/round4_face_4up.png, round4_alpha_2up.png | round 4: the head built from the MetaHuman Head FBX (open-eyed LOD0 skin, eyeballs with Eyes_Color/Normal, teeth, eyelashes with Eyelashes_Color) welded to the FullBody at the yoke rim; groom/lash atlases imported in Godot without mipmaps (tools/athlete/godot_import_fix.py rewrites the .import files), alpha-scissor 0.35. Built from Athlete_v2_Head.fbx (auto-detected as `<stem>_Head.fbx` beside the FullBody; `--head-fbx` overrides) | project's own | |
+| metahuman/round3_face_4up.png | round 3 (Epic card grooms): Unreal final_face34 vs Godot round 2 vs round 3 vs target, plus Cycles checks | project's own | |
+| metahuman/round2_face_4up.png, round2_before_after.png | round 2 (groom cards, kit fit, eyes, skin shading): Unreal final_face34 vs Godot before/after vs target, and per-fix before/after crops | project's own | |
+| metahuman/renders/*.png, contact_sheet_vs_target.png, motion_sheet.png, build_log.txt | Godot 4.7 Forward+ captures (lavapipe) from AthleteShowroomMH.tscn; the build's numbers | project's own | |
+
+SRMF (MetaHuman Creator's packed map, found on v2): R = specular (~0.60), G = roughness (~0.68, pores and creases
+visible), B = metallic (0 everywhere), A = a mask that is black over the eyelids and blotchy on the skin (probably the
+subsurface mask) — not used; the ORM keeps AO = 1. Unreal's normal maps are DirectX-style: green is flipped for glTF.
+Known source issues (fix at the export): both FullBody FBXs have the eyelids shut in the bind pose — since round 4 the head comes from the open-eyed
+Head FBX (`--head-fbx`, auto-detected); the geometric lid fix remains only for the `--head-fbx none` fallback, v2's head yoke rim is 2 cm higher and ~5 cm
+wider than the body's rim (the script fits it: a 0.78 similarity on the yoke fading out over 11 cm up the neck),
+hair/beard/brows: round 3 uses Epic's own hair-CARD meshes for the three grooms (David's export in mh_v2/grooms/),
+wrapped onto our head by tools/athlete/mh_groom_transfer.py through the shared MetaHuman head UV layout (card vertex ->
+nearest point on the archetype head SKM_Groom_Head_Legacy02 -> that point's UV -> our head's face at that UV, with the
+normal offset scaled by the inter-pupil ratio; per-groom bind surfaces, overlapping UV islands disambiguated by the
+eye-relative position). Atlas layout (Unreal LAYOUT2): *_CardsAtlas_Attribute.png R = strand coverage (= the alpha),
+G/B = per-strand depth/attribute ramps, A unused (255); *_CardsAtlas_Tangent.png = 512² tangent map (unused);
+*_RootUVSeedCoverage.png and *_ColorXYDepthGroupID.png are helmet-space maps for the Helmet_LOD5 cap (unused). The
+atlas UV layer in the card FBXs is the one with the largest face UV span ('LightMapUV' for hair/beard/brows LOD1,
+'UVmap_0' for brows LOD0 — the hair's 'UVmap_1' is a constant). Materials: ~0.05 albedo x coverage, alpha cutoff
+hair 0.35 / beard 0.45 / brows 0.7 (Godot relaxes beard/brows to 0.2 at load because the mip chain averages the
+1-texel strands), roughness 0.75, double-sided. The FlatThick brow tails past the eye corner are trimmed. The earlier
+procedural groom (mh_groom.py) is the fallback when no grooms dir exists: it builds a card groom
+(curly top: ~1,950 alpha cards over a thin matte cap, skin fade on the sides from the ear line up 4 cm as a graded scalp
+tint, soft jittered hairline; ~2,000 short beard fuzz cards over a dense beard tint; a few brow cards — the MetaHuman
+basecolor already paints the brows). Card/scalp textures are generated in mh_textures.py (mh_hair_cards, mh_beard_cards,
+mh_hair_base). Skin: SRMF roughness clamped 0.5..0.7, specular 0.5, and AthleteDriver.cs switches the MH_Head/MH_Body
+materials to Godot's skin-mode subsurface scattering at load (glTF carries no SSS), eyelashes and the transparent eye shells are dropped.
+Rebuild: `blender -b --python tools/athlete/build_metahuman.py -- --fbx <FullBody.fbx> --maps <Maps dir> --out game/assets/athlete/metahuman`.

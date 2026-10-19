@@ -13,6 +13,9 @@
 //     it at 3 wins; at 6 skeleton hands claw up out of the apron, fog creeps over the floor and the court's floodlights
 //     turn ghost green and flicker; at 9 a ring of ghosts circles it; at 12 lightning cracks round it, a giant spectral
 //     skull rises over it, its jaw working, and the ghosts and the wisps spiral up round it in a vortex of green fire.
+//   * The Favelas (v0.4.8.7): the pipa — kites rise and circle round the court at 3 wins; at 6 more of them, and bunting
+//     strung across the court; at 9 a wash of painted tiles slides over the floor in cycling colours; at 12 confetti pours
+//     down while the kites spiral higher and faster.
 import * as G from '../gfx/geometry.js';
 import * as M from '../core/math.js';
 import { Material, Mesh } from '../gfx/renderer.js';
@@ -22,6 +25,7 @@ import { mirrorBall, beamGeo } from './retro.js';
 import * as T from '../gfx/textures.js';
 import { cachedTexture } from './court.js';
 import { skinGeo, ghostGeo, poseGhost, flashScene } from './horror.js';
+import { kiteParts } from './favela.js';
 import * as SP from '../core/spooky.js';
 
 // the rain, per level: drops added at that level, their fall speed, the slant of the fall (m sideways per m down)
@@ -39,6 +43,9 @@ const FLAME_CELLS_PER_M = 2.2, FLAME_LOOP = 240;
 // v0.4.8.5 quick patch 2: the haunt, per level: tongues of ghost fire round the court (their spacing, m), the wisps, the
 // skeleton hands, the ghosts circling, the skull's height over the floor, how often the lightning strikes (s)
 export const HAUNT_FX = { tongue: 0.85, wisps: 16, hands: 14, ghosts: 8, skullH: 15, bolt: { every: [3.5, 8], hold: 0.16, flashes: 3 } };
+// v0.4.8.7: the pipa (The Favelas): the kites' colours and how high they climb over the floor, the bunting's height, the
+// confetti's count and the height it falls from
+export const PIPA_FX = { colors: ['#f2c230', '#2fb8b0', '#e86aa0', '#9ad13a', '#ff6a2a', '#6aa8e0', '#f4efe4'], kiteH: 7, buntingH: 8.5, confetti: 420, confettiH: 12 };
 const hashStr = s => { let h = 7; for (const ch of String(s ?? '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 
 // the court's outline at the fence line (the same runs venues.js fences)
@@ -55,7 +62,7 @@ export class StreakFX {
     this.meshes = [];
     const pts = outline(court);
     this.sides = pts.map((p, i) => [p, pts[(i + 1) % 4]]);
-    if (kind === 'flame') this.buildFlames(court); else if (kind === 'rain') this.buildRain(court); else if (kind === 'disco') this.buildDisco(court); else if (kind === 'haunt') this.buildHaunt(court); else this.buildLasers();
+    if (kind === 'flame') this.buildFlames(court); else if (kind === 'rain') this.buildRain(court); else if (kind === 'disco') this.buildDisco(court); else if (kind === 'haunt') this.buildHaunt(court); else if (kind === 'pipa') this.buildPipa(court); else this.buildLasers();
   }
 
   // v0.4.7.5 qp3: rain over the court. Four layers of streaks (one per level) over the court and its apron, each a
@@ -376,6 +383,72 @@ export class StreakFX {
     audio.rumble?.(0.35);
   }
 
+  // v0.4.8.7 The Favelas: the pipa. Kites (pipas) circle up round the court on their bones (eight at 3 wins, sixteen from 6),
+  // bunting strung across it from 6, a wash of painted tiles sliding over the floor from 9, and at 12 confetti pouring
+  // down while the kites spiral higher and faster. Everything is static geometry moved by matrices: no per-frame uploads
+  buildPipa(court) {
+    const [ox, , oz] = court.origin, C = this.ctx, lin = h => M.hexLinear(h), P = PIPA_FX;
+    const rng = (seed => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; })((court.seed ?? hashStr(court.id)) + 77);
+    const mk = (geo, mat, order, nb = 0) => { const m = new Mesh(C.geometry(geo), mat, { castShadow: false, reflect: false, cull: false, bones: nb ? new Float32Array(16 * nb) : null }); m.order = order; m.visible = false; this.scene.add(m); this.meshes.push(m); return m; };
+    const cz = court.full ? oz : oz + 6.5, rx = COURT.width / 2 + 4, rz = (court.full ? COURT.length / 2 : COURT.length / 4) + 4;
+    this.pc = { ox, cz, rx, rz };
+    // the kites: two meshes of eight, a bone each
+    this.kiteMat = new Material({ color: [1, 1, 1], shading: 'unlit', fog: false, doubleSided: true });
+    this.kites = [0, 1].map(set => mk(skinGeo(Array.from({ length: 8 }, (_, k) => kiteParts(P.colors[(k + set * 3) % P.colors.length], 1.5, k, 6)).flat()), this.kiteMat, 7, 8));
+    this.kiteU = Array.from({ length: 16 }, (_, k) => ({ a: k / 16 * Math.PI * 2 + rng() * 0.3, h: rng() * 2, ph: rng() * 6.3, s: 0.8 + rng() * 0.4 }));
+    // the bunting: lines of little triangular flags across the court, high over it
+    const bp = [], W = COURT.width / 2 + 2.4, lines = court.full ? [-11, -5.5, 0, 5.5, 11] : [1, 6, 11];
+    for (const lz of lines) for (let x = -W; x < W; x += 0.42) {
+      const t = (x + W) / (2 * W), y = P.buntingH - Math.sin(t * Math.PI) * 0.9, col = [...lin(P.colors[Math.floor((x + W) / 0.42) % P.colors.length]), 1];
+      bp.push({ geo: { position: new Float32Array([x, y, 0, x + 0.34, y, 0, x + 0.17, y - 0.42, 0]), normal: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), uv: new Float32Array(6), index: new Uint16Array([0, 1, 2]) }, matrix: M.m4translation(M.m4(), ox, 0, oz + lz), color: col });
+      bp.push({ geo: G.box(0.42, 0.012, 0.012), matrix: M.m4translation(M.m4(), ox + x + 0.21, y + 0.005, oz + lz), color: [0.9, 0.9, 0.9, 1] });
+    }
+    // (the poles stand a metre past the line's ends, clear of the fence and the Got Next spots; a guy line runs out to each)
+    for (const s of [-1, 1]) for (const lz of lines) bp.push({ geo: G.box(0.08, P.buntingH, 0.08), matrix: M.m4translation(M.m4(), ox + s * (W + 1.0), P.buntingH / 2, oz + lz), color: [...lin('#d8d2c4'), 1] }, { geo: G.box(1.0, 0.012, 0.012), matrix: M.m4translation(M.m4(), ox + s * (W + 0.5), P.buntingH, oz + lz), color: [0.9, 0.9, 0.9, 1] });
+    this.buntMat = new Material({ color: [1, 1, 1], shading: 'unlit', fog: false, doubleSided: true });
+    this.bunting = mk(G.merge(bp), this.buntMat, 6);
+    // the painted tiles washing over the floor
+    const fw = COURT.width + 1, fd = court.full ? COURT.length + 1 : COURT.length / 2 + 4, g = G.plane(fw, fd, 1, 1);
+    for (let q = 0; q < g.uv.length; q += 2) { g.uv[q] *= fw / 3.2; g.uv[q + 1] *= fd / 3.2; }
+    this.washMat = new Material({ map: cachedTexture(C, 'favela-tiles', () => T.favelaTiles(), {}), color: [0, 0, 0], shading: 'unlit', blend: 'add', depthWrite: false, fog: false });
+    this.wash = mk(g, this.washMat, 5); M.m4translation(this.wash.matrix, ox, 0.03, court.full ? oz : oz + 6.5 - 2);
+    // the confetti: two stacked layers of paper bits falling round and over the court, wrapping round
+    const cp = [];
+    for (let i = 0; i < P.confetti; i++) {
+      const x = ox + (rng() * 2 - 1) * (rx + 1), z = cz + (rng() * 2 - 1) * (rz + 1), y = rng() * P.confettiH;
+      for (const dy of [0, P.confettiH]) cp.push({ geo: G.quad(0.09, 0.06), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), x, y + dy, z), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), rng(), rng(), rng(), rng() * 6.3))), color: [...lin(P.colors[i % P.colors.length]), 1] });
+    }
+    this.confMat = new Material({ color: [1.4, 1.4, 1.4], shading: 'unlit', fog: false, doubleSided: true });
+    this.confetti = mk(G.merge(cp), this.confMat, 7);
+    this.confY = 0;
+  }
+  updatePipa(dt) {
+    const lv = this.show, n = this.level, t = this.t, { ox, cz, rx, rz } = this.pc;
+    const on = k => lv > k - 1 + 0.05 && n >= k;
+    this.kites[0].visible = lv > 0.05 && n >= 1; this.kites[1].visible = on(2);
+    this.bunting.visible = on(2); this.wash.visible = on(3); this.confetti.visible = on(4);
+    const top = Math.max(0, Math.min(1, lv - 3)), spin = 0.12 + 0.1 * Math.min(lv, 3) + 0.35 * top;
+    this.kiteU.forEach((k, i) => {
+      const mesh = this.kites[i < 8 ? 0 : 1], b = i % 8;
+      if (!mesh.visible) return;
+      const a = k.a + t * spin * k.s, rise = Math.min(1, Math.max(0, lv - (i < 8 ? 0 : 1)));
+      const y = (2 + PIPA_FX.kiteH * rise + 1.2 * Math.sin(t * 0.9 + k.ph) + k.h + top * (6 + 4 * Math.sin(t * 0.7 + k.ph))) * rise;
+      const x = ox + Math.cos(a) * rx * (1 + 0.15 * top), z = cz + Math.sin(a) * rz * (1 + 0.15 * top);
+      const m = M.m4fromYaw(M.m4(), x, y, z, Math.atan2(ox - x, cz - z));
+      M.m4mul(m, m, M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, Math.sin(t * 2.2 + k.ph) * 0.35)));
+      mesh.bones.set(m, b * 16);
+    });
+    const fade = Math.min(1, lv);
+    this.kiteMat.color[0] = this.kiteMat.color[1] = this.kiteMat.color[2] = 1.1 * fade + 0.3 * top;
+    // (the tiles wash across the floor, their tint cycling through the palette)
+    if (this.wash.visible) {
+      const k = Math.min(1, lv - 2) * (0.4 + 0.2 * top), h = t * 0.25;
+      this.washMat.color = [k * (0.6 + 0.4 * Math.sin(h)), k * (0.6 + 0.4 * Math.sin(h + 2.1)), k * (0.6 + 0.4 * Math.sin(h + 4.2))];
+      this.washMat.uvOffset[0] = (t * 0.06) % 1; this.washMat.uvOffset[1] = (t * 0.11) % 1;
+    }
+    if (this.confetti.visible) { this.confY = (this.confY + dt * 1.6) % PIPA_FX.confettiH; M.m4translation(this.confetti.matrix, 0, -this.confY, 0); }
+  }
+
   setLevel(level) { this.level = Math.max(0, Math.min(4, level | 0)); }
 
   update(dt) {
@@ -399,6 +472,7 @@ export class StreakFX {
     }
     if (this.kind === 'disco') return this.updateDisco(dt);
     if (this.kind === 'haunt') return this.updateHaunt(dt);
+    if (this.kind === 'pipa') return this.updatePipa(dt);
     if (this.kind === 'rain') {
       const on = lv > 0.02;
       // each level's layer fades in as the level eases up to it

@@ -75,6 +75,15 @@ PRIZES_MONSTER = (
     (10, "Top 10", 25000, ("mm_celly_zombie", "mm_band_pumpkin", "mm_gsnd_organ")),
     (25, "Top 25", 10000, ("mm_band_pumpkin",)),
 )
+# v0.4.8.7 The Favelas: the Morro Kit (a striped football-style jersey and shorts with a painted-tile hem) for the winner,
+# Ladeira hi-tops, the Passinho, the Bandana, the Pipa green release (paper kites burst up on the make) and the Cuica
+PRIZES_FAVELA = (
+    (1, "King of the Favelas", 150000, ("fv_morro_top", "fv_morro_shorts", "fv_shoes_ladeira", "fv_celly_passinho", "fv_band_bandana",
+                                        "fv_gfx_pipa", "fv_gsnd_cuica")),
+    (3, "Top 3", 60000, ("fv_shoes_ladeira", "fv_celly_passinho", "fv_band_bandana", "fv_gfx_pipa", "fv_gsnd_cuica")),
+    (10, "Top 10", 25000, ("fv_celly_passinho", "fv_band_bandana", "fv_gsnd_cuica")),
+    (25, "Top 25", 10000, ("fv_band_bandana",)),
+)
 PRIZES = PRIZES_KINGTUT  # (the original table; kept for the tests and for anything that still reads it)
 EVENTS = {
     "kingtut": {"id": "kingtut", "venue": "kingtut", "name": "The King Tut Cup", "short": "King Tut Cup", "exclusive": "cup",
@@ -85,6 +94,8 @@ EVENTS = {
              "prizes": PRIZES_BEAT, "played": "Played the Beat", "blurb": "Ante-ups in an 80s city at sundown, with its own soundtrack."},
     "monster": {"id": "monster", "venue": "monster", "name": "The Monster Mash", "short": "Monster Mash", "exclusive": "monster",
                 "prizes": PRIZES_MONSTER, "played": "Played the Mash", "blurb": "Ante-ups on Halloween night in a haunted town."},
+    "favela": {"id": "favela", "venue": "favela", "name": "The Favelas", "short": "The Favelas", "exclusive": "favela",
+               "prizes": PRIZES_FAVELA, "played": "Played the Favelas", "blurb": "Ante-ups on the hillside: stacked houses, narrow alleys, dirtbikes in the streets."},
 }
 EVENT_VENUES = {e["venue"] for e in EVENTS.values()}
 EVENT_BY_VENUE = {e["venue"]: e for e in EVENTS.values()}
@@ -99,13 +110,57 @@ def load_schedule(path=SCHEDULE_FILE):
 SCHEDULE = load_schedule()
 
 
+# v0.4.8.7: the park shuffle. A schedule row {"shuffle": [event ids], "from", "until", "after", "seed"} plays every event
+# in the list once, one 48-hour window each, in a shuffled order, then reshuffles: no event plays twice in a round, and
+# no event plays twice in a row across rounds (a round never starts with the event that ended the last one; the first
+# round never starts with "after", the event before the shuffle). The order is seeded, so every server and every test
+# agrees on it.
+_BAGS = {}
+
+
+def shuffle_bag(row, b):
+    """The b-th round (a list of event ids) of a shuffle row."""
+    ids = [e for e in row["shuffle"] if e in EVENTS]
+    key = (tuple(ids), row.get("seed", ""), row.get("after"), row.get("from"))
+    bags = _BAGS.setdefault(key, [])
+    while len(bags) <= b:
+        i = len(bags)
+        rng = Mulberry(fnv(f"{row.get('seed', 'shuffle')}:{i}"))
+        # (the first round finishes the one "after" began: the other events only, so every park plays before any repeats)
+        order = [e for e in ids if not (i == 0 and e == row.get("after"))]
+        for j in range(len(order) - 1, 0, -1):  # Fisher-Yates
+            k = int(rng.next() * (j + 1))
+            order[j], order[k] = order[k], order[j]
+        prev = row.get("after") if i == 0 else bags[i - 1][-1]
+        if len(order) > 1 and order[0] == prev:
+            order[0], order[1] = order[1], order[0]
+        bags.append(order)
+    return bags[b]
+
+
+def shuffle_event_at(row, t):
+    """The event id a shuffle row plays at time t (t inside the row)."""
+    n = len([e for e in row["shuffle"] if e in EVENTS])
+    if not n:
+        return None
+    k = int((t - row["from"]) // WINDOW)
+    first = len(shuffle_bag(row, 0))
+    if k < first:
+        return shuffle_bag(row, 0)[k]
+    k -= first
+    return shuffle_bag(row, 1 + k // n)[k % n]
+
+
 def active_event(t=None, schedule=None):
     """The event on at time t (an EVENTS entry) or None when nothing is scheduled."""
     t = time.time() if t is None else t
     for row in (SCHEDULE if schedule is None else schedule):
         lo, hi = row.get("from"), row.get("until")
-        if (lo is None or t >= lo) and (hi is None or t < hi) and row["event"] in EVENTS:
-            return EVENTS[row["event"]]
+        if not ((lo is None or t >= lo) and (hi is None or t < hi)):
+            continue
+        ev = shuffle_event_at(row, t) if "shuffle" in row else row.get("event")
+        if ev in EVENTS:
+            return EVENTS[ev]
     return None
 
 
@@ -114,12 +169,31 @@ def event_for_window(w, schedule=None):
     return active_event(window_bounds(w)[0] + 1, schedule)
 
 
-def public_schedule(schedule=None):
+def public_schedule(schedule=None, now=None):
     """v0.4.8.5 quick patch 4: the whole schedule as the client needs it ({event, venue, from, until}, in order, Unix
     seconds, None = open-ended), so a game left running across a handover knows the moment the next event takes over
     and sends the AI world's entrants to the new park on time (they used to keep going to the closed one)."""
-    return [{"event": r["event"], "venue": EVENTS[r["event"]]["venue"], "from": r.get("from"), "until": r.get("until")}
-            for r in (SCHEDULE if schedule is None else schedule) if r.get("event") in EVENTS]
+    # v0.4.8.7: a shuffle row goes out as the plain windows it plays, from the window before now to SHUFFLE_AHEAD
+    # windows ahead (the client refetches the schedule on every load, so it never runs off the end)
+    out, now = [], time.time() if now is None else now
+    for r in (SCHEDULE if schedule is None else schedule):
+        if "shuffle" in r:
+            lo, hi = r["from"], r.get("until")
+            k0 = max(0, int((now - lo) // WINDOW) - 1)
+            for k in range(k0, k0 + SHUFFLE_AHEAD):
+                a = lo + k * WINDOW
+                if hi is not None and a >= hi:
+                    break
+                ev = shuffle_event_at(r, a)
+                if ev in EVENTS:
+                    out.append({"event": ev, "venue": EVENTS[ev]["venue"], "from": a,
+                                "until": a + WINDOW if hi is None else min(a + WINDOW, hi)})
+        elif r.get("event") in EVENTS:
+            out.append({"event": r["event"], "venue": EVENTS[r["event"]]["venue"], "from": r.get("from"), "until": r.get("until")})
+    return out
+
+
+SHUFFLE_AHEAD = 30  # windows (60 days)
 
 
 def public_event(ev, w=None):

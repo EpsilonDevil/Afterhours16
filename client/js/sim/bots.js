@@ -187,7 +187,7 @@ export function makeBot(rng, opts = {}) {
 // wheel chains already put ~15% in a wheel item: 30-36% in all)
 export const WEAR = { show: [0.03, 0.42, 3], slot: [0.3, 0.45] };
 export const WEAR_SETS = [['cup_mocap_top', 'cup_mocap_tights'], ['jb_gorilla_top', 'jb_gorilla_legs'], ['bg_tracksuit_top', 'bg_tracksuit_pants'],
-  ['mm_bones_top', 'mm_bones_tights'], ['wheel_jersey_aurora', 'wheel_shorts_aurora'], ['wheel_jersey_solstice', 'wheel_shorts_solstice']];
+  ['mm_bones_top', 'mm_bones_tights'], ['fv_morro_top', 'fv_morro_shorts'], ['wheel_jersey_aurora', 'wheel_shorts_aurora'], ['wheel_jersey_solstice', 'wheel_shorts_solstice']];
 const WEAR_MATE = Object.fromEntries(WEAR_SETS.flatMap(([a, b]) => [[a, b], [b, a]]));
 export const WEAR_SLOTS = ['top', 'bottom', 'shoes', 'headband', 'sleeve', 'chain', 'jumpshot', 'release', 'dunk', 'celebration', 'greensound', 'greenfx'];
 export const wearShow = flash => Math.min(1, WEAR.show[0] + WEAR.show[1] * Math.pow(Math.max(0, Math.min(1, flash)), WEAR.show[2]));
@@ -262,7 +262,7 @@ export function resolveLook(build, catalog, override = {}) {
   const shoes = item(eq.shoes) || { color: '#f2f2f2', accent: '#3fb6a8', sole: '#f5f5f0', cut: 'mid' };
   const g = { shoes: { color: shoes.color, accent: shoes.accent, sole: shoes.sole, cut: shoes.cut || 'mid', lace: shoes.lace, trim: shoes.trim, model: shoes.model || shoeModel(shoes.id || eq.shoes) } };
   if (item(eq.socks)) g.socks = { color: item(eq.socks).color, style: item(eq.socks).style };
-  if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null, feather: item(eq.headband).feather || null, stripes: item(eq.headband).stripes || null, pattern: item(eq.headband).pattern || null }; // (v0.4.8.5 quick patch: the Neon Terry's stripes; quick patch 2: the Jack-o'-Lantern's pattern)
+  if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null, feather: item(eq.headband).feather || null, stripes: item(eq.headband).stripes || null, pattern: item(eq.headband).pattern || null, trim: item(eq.headband).trim || null }; // (v0.4.8.5 quick patch: the Neon Terry's stripes; quick patch 2: the Jack-o'-Lantern's pattern; v0.4.8.7: the bandana's print colour)
   if (item(eq.sleeve)) g.sleeve = { color: item(eq.sleeve).color, side: build.hand === 'L' ? 'L' : 'R' };
   if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color };
   if (item(eq.leg_sleeve)) g.legSleeve = { color: item(eq.leg_sleeve).color, side: 'L' };

@@ -15,6 +15,8 @@ export const EVENTS = {
   beat: { id: 'beat', name: 'Beat Goes On', park: 'And The Beat Goes On', color: '#ff3fa4', accent: '#2fe0ff', blurb: 'Ante-ups in an 80s city at sundown: neon, lowriders, a disco bar and its own soundtrack. 48-hour leaderboard.', event: true, exclusive: 'beat', prize: 'the Beat Goes On tracksuit', enter: 'Enter the Beat', eyebrow: 'AND THE BEAT GOES ON' },
   // v0.4.8.5 quick patch 2: The Monster Mash, a Halloween night of horror (it follows And The Beat Goes On on the schedule)
   monster: { id: 'monster', name: 'Monster Mash', park: 'The Monster Mash', color: '#7cff4f', accent: '#ff7a1a', blurb: 'Ante-ups on Halloween night: a haunted town under a full moon, a graveyard, a slasher on the loose. 48-hour leaderboard.', event: true, exclusive: 'monster', prize: 'the Bone Suit', enter: 'Enter the Mash', eyebrow: 'THE MONSTER MASH' },
+  // v0.4.8.7: The Favelas, a hillside at golden hour (it follows the Monster Mash on the schedule)
+  favela: { id: 'favela', name: 'The Favelas', park: 'The Favelas', color: '#f2c230', accent: '#2fb8b0', blurb: 'Ante-ups on the hillside: stacked houses, narrow alleys, dirtbikes in the streets. 48-hour leaderboard.', event: true, exclusive: 'favela', prize: 'the Morro Kit', enter: 'Enter the Favelas', eyebrow: 'THE FAVELAS' },
 };
 // name/colors for any park id, affiliation or event
 export const parkInfo = id => AFFILIATIONS[id] || EVENTS[id] || null;
@@ -139,6 +141,28 @@ export const THEMES = {
     env: { top: '#04060c', horizon: '#1a2236', horizonLow: '#141a22', ground: '#0c0e10', skyline: '#06070c', lights: [{ u: 0.52, v: 0.44, r: 0.07, color: 'rgba(225,235,255,1)' }] },
     exposure: 1.18, bloom: { strength: 0.2, threshold: 0.95, radius: 1.2 }, grade: { saturation: 1.05, contrast: 1.08, vignette: 0.68 },
     floodlights: true, lightColor: [0.9, 1.0, 0.86], envIntensity: 0.55,
+  },
+  // v0.4.8.7 The Favelas: the same park layout on a hillside at golden hour going into dusk: streets all round (dirtbikes,
+  // now and then a police chase), the favela climbing the slopes beyond (favela.js), kites over the roofs; kites and
+  // bunting over the court on a streak. No music key: the park plays the regular playlist
+  favela: {
+    id: 'favela', kind: 'park', name: 'The Favelas', style: 'favela', event: true, streakFx: 'pipa',
+    // a painted community court: a deep teal floor, a sunflower-yellow apron framed in blue-and-white tiles with kites,
+    // suns and flowers on it (textures.js favelaApron), a terracotta key, white lines, the kite-over-the-hill crest and the
+    // name in chunky letters with bright drop shadows on the baselines
+    court: { surface: 'asphalt', court: '#1f6f8b', apron: '#f2b631', paint: '#d9643a', lines: '#fbf6ea', arcTint: 'rgba(255,240,200,0.08)', centerFill: '#1f6f8b', wear: 0.3, logo: { shape: 'pipa', color: '#163e5a', accent: '#f2c230', kite: '#e86aa0', sun: '#ffb347', ink: '#f4efe4', size: 1.55, inHalf: true, rotate: Math.PI }, baselineText: 'THE FAVELAS', baselineColor: '#fbf6ea', asphaltTint: '#b8a898',
+      favela: { tiles: ['#1f4fb4', '#f4efe4'], palette: ['#e86aa0', '#2fb8b0', '#d9643a', '#9ad13a', '#1f4fb4'], ink: '#14202a', count: 36 } },
+    ground: '#d8d0c4',
+    // the sky is a dome of its own (favela.js favelaSky: deep blue overhead, lilac and pink, orange round the sun); the
+    // sun sits low in the west-north-west (az: from north toward the west, degrees). The light comes from it, warm and low
+    sunset: { az: 72, el: 6, size: 6, dist: 240 },
+    sky: { top: [0.06, 0.08, 0.26], horizon: [1.0, 0.55, 0.32], ground: [0.22, 0.16, 0.16], stars: 0 },
+    sun: { dir: [-0.86, 0.36, 0.36], color: [1.0, 0.7, 0.46], intensity: 3.3 },
+    ambient: { sky: [0.52, 0.46, 0.64], ground: [0.46, 0.34, 0.28] },
+    fog: { color: [0.86, 0.58, 0.5], density: 0.0024 },
+    env: { top: '#1c2050', horizon: '#ff9a5a', horizonLow: '#ffb070', ground: '#5a3a30', lights: [{ u: 0.2, v: 0.45, r: 0.06, color: 'rgba(255,200,130,1)' }] },
+    exposure: 1.08, bloom: { strength: 0.16, threshold: 1.0, radius: 1.1 }, grade: { saturation: 1.12, contrast: 1.05, vignette: 0.5 },
+    floodlights: false, envIntensity: 0.85,
   },
   arena: {
     // (v0.4.8.6 RIMRIFT: the name down the sidelines and the mark at centre court, in Ember, Bone and Carbon; the mark

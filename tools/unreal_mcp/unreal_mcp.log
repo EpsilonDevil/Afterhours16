@@ -1,0 +1,46 @@
+14:05:35 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+14:05:35 <- initialize {'protocolVersion': '2024-11-05', 'capabilities': {}, 'clientInfo': {'name': 'selftest', 'version': '1'}}
+14:05:35 <- tools/call {'name': 'unreal_status', 'arguments': {}}
+14:05:35 remote_execution from C:/Program Files/Epic Games\UE_5.8\Engine\Plugins\Experimental\PythonScriptPlugin\Content\Python\remote_execution.py
+14:05:36 -> unreal_status ok 402
+14:05:36 <- tools/call {'name': 'unreal_exec', 'arguments': {'code': "import unreal; print('hello from', unreal.SystemLibrary.get_project_directory())"}}
+14:05:37 -> unreal_exec ok 64
+14:23:27 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+14:23:28 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+14:23:28 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'roots': {'listChanged': True}, 'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'local-agent-mode-unreal', 'version': '1.0.0'}}
+14:23:28 <- notifications/initialized {}
+14:23:28 <- tools/list {}
+14:23:28 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'claude-ai', 'version': '0.1.0'}}
+14:23:28 <- notifications/initialized {}
+14:23:28 <- tools/list {}
+14:23:46 <- tools/call {'name': 'unreal_status', 'arguments': {}}
+14:23:46 remote_execution from C:/Program Files/Epic Games\UE_5.8\Engine\Plugins\Experimental\PythonScriptPlugin\Content\Python\remote_execution.py
+14:23:47 -> unreal_status ok 402
+14:23:53 <- tools/call {'name': 'unreal_exec', 'arguments': {'code': "import unreal, sys\nsys.path.append('C:/Users/trail/Documents/Unreal Projects/RimriftMH/Saved')\nimport rimrift_lib5 as R\nsub = R.sub()\nc = unreal.load_asset('/Game/Rimrift/Athlete_v2')\nprint('Athlete_v2 loaded:', c is not None, 'hi-res textures:', c
+14:25:29 -> unreal_exec ok 672
+14:25:29 <- tools/call {'name': 'read_text', 'arguments': {'path': 'C:\\Afterhours16\\tools\\unreal_mcp\\unreal_mcp.log', 'tail': 8}}
+14:25:29 -> read_text ok 802
+14:25:37 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import unreal, sys\nsys.path.append('C:/Users/trail/Documents/Unreal Projects/RimriftMH/Saved')\nimport rimrift_lib5 as R\nsub = R.sub()\nc = unreal.load_asset('/Game/Rimrift/Athlete_v2')\nprint('Athlete_v2 loaded:', c is not None, 'hi-res texture
+14:25:37 -> unreal_exec_async ok 12
+14:26:22 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': '9417a995'}}
+14:26:22 -> unreal_job ok 541
+14:26:35 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import unreal\nprint('GroomLibrary:', [m for m in dir(unreal.GroomLibrary) if not m.startswith('_') and 'editor_property' not in m and 'get_' not in m and 'cast' not in m][:40])\nprint('HairCard classes:', [n for n in dir(unreal) if 'HairCard' in 
+14:26:35 -> unreal_exec_async ok 12
+14:26:54 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': '3728c0e8'}}
+14:26:54 -> unreal_job ok 1941
+14:27:08 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import unreal\ndef dump(ga):\n    print('==', ga.get_path_name())\n    for kind in ('hair_groups_cards', 'hair_groups_meshes'):\n        arr = ga.get_editor_property(kind)\n        for i, e in enumerate(arr):\n            d = {}\n            for p
+14:27:08 -> unreal_exec_async ok 12
+14:27:33 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': '6aeae28d'}}
+14:27:33 -> unreal_job ok 9723
+14:28:00 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import unreal, os\nOUT = 'C:/Afterhours16/rimrift/game/assets/athlete/metahuman_v2/grooms'\nos.makedirs(OUT, exist_ok=True)\nGB = '/MetaHumanCharacter/Optional/Grooms/'\ngrooms = {'hair': GB + 'GroomAssets/Hair/Hair_S_AfroFade/Hair_S_AfroFade', 'b
+14:28:00 -> unreal_exec_async ok 12
+14:28:51 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': 'f4d2ae64'}}
+14:28:51 -> unreal_job ok 2180
+14:28:57 <- tools/call {'name': 'unreal_exec', 'arguments': {'code': "import unreal; print('alive', unreal.SystemLibrary.get_game_time_in_seconds(unreal.EditorLevelLibrary.get_editor_world()))", 'mode': 'file'}}
+14:28:58 -> unreal_exec ok 253
+14:29:12 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import unreal, os\nOUT = 'C:/Afterhours16/rimrift/game/assets/athlete/metahuman_v2/grooms'\nos.makedirs(OUT, exist_ok=True)\nGB = '/MetaHumanCharacter/Optional/Grooms/'\nfolders = {'hair': GB + 'GroomAssets/Hair/Hair_S_AfroFade', 'beard': GB + 'Gr
+14:29:12 -> unreal_exec_async ok 12
+14:30:17 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': 'b33770e3'}}
+14:30:17 -> unreal_job ok 1420
+14:31:24 <- tools/call {'name': 'unreal_exec', 'arguments': {'code': "p = r'C:\\Afterhours16\\rimrift\\game\\assets\\athlete\\metahuman_v2\\grooms\\hair\\Hair_S_AfroFade_CardsAtlas_Attribute.png'\ndata = open(p, 'rb').read()\nn = 0\nfor i in range(0, len(data), 6_000_000):\n    open(p + '.part%d' % n, 'wb').write(data[i:i
+14:31:25 -> unreal_exec ok 18

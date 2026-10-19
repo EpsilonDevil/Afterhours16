@@ -1,9 +1,11 @@
 {
-  "_": "Park event schedule (v0.4.7.5 qp3). The entries are checked in order; the first whose [from, until) holds the moment wins. Times are Unix seconds (UTC). To bring an event back, add an entry for it: {\"event\": \"kingtut\", \"from\": <when>, \"until\": null}. 1791763200 = 2026-10-12 00:00 UTC, the end of the King Tut Cup's last window (141). 1791936000 = 2026-10-14 00:00 UTC, the end of the Jungle Ballers' window (142): And The Beat Goes On (v0.4.8.5 quick patch) runs from there. 1792108800 = 2026-10-16 00:00 UTC, the end of And The Beat Goes On's window (143): The Monster Mash (v0.4.8.5 quick patch 2) runs from there. The 48-hour windows run back to back from cup.EPOCH whatever event is on.",
+  "_": "Park event schedule (v0.4.7.5 qp3). The entries are checked in order; the first whose [from, until) holds the moment wins. Times are Unix seconds (UTC). 1791763200 = 2026-10-12 00:00 UTC, the end of the King Tut Cup's last window (141). 1791936000 = 2026-10-14 00:00 UTC, the end of the Jungle Ballers' window (142): And The Beat Goes On (v0.4.8.5 quick patch) runs from there. 1792108800 = 2026-10-16 00:00 UTC, the end of And The Beat Goes On's window (143): The Monster Mash (v0.4.8.5 quick patch 2) runs from there. v0.4.8.7: 1792454400 = 2026-10-20 00:00 UTC (8 PM ET Oct 19), the end of the Monster Mash's window (145): The Favelas run window 146. 1792627200 = 2026-10-22 00:00 UTC, the end of the Favelas' window: from there the park shuffle plays all five event parks, one 48-hour window each, every park once per round in a seeded shuffled order, never the same park twice in a row (a 'shuffle' row: cup.shuffle_bag). The 48-hour windows run back to back from cup.EPOCH whatever event is on.",
   "schedule": [
     {"event": "kingtut", "from": null, "until": 1791763200},
     {"event": "jungle", "from": 1791763200, "until": 1791936000},
     {"event": "beat", "from": 1791936000, "until": 1792108800},
-    {"event": "monster", "from": 1792108800, "until": null}
+    {"event": "monster", "from": 1792108800, "until": 1792454400},
+    {"event": "favela", "from": 1792454400, "until": 1792627200},
+    {"shuffle": ["kingtut", "jungle", "beat", "monster", "favela"], "from": 1792627200, "until": null, "after": "favela", "seed": "rimrift-park-shuffle"}
   ]
 }

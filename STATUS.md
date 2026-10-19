@@ -31,6 +31,15 @@ Every 9 h ± 10–30 min, for 60 min, three of the world's real AI ICONs run tog
 | Badges | `server/progression.py` (`BADGES.brick_wall.tiers` (18, 63, 154, **173**), was 315: Hall of Fame −45%; `BADGES.posterizer.tiers` (8, 30, 80, **126**), was 180: Hall of Fame −30%; rounded half up) | `sync_badges` on load raises a build already past the new mark (caps and Hall of Fame slots as always); the v0.4.8.5 games→screens conversion maps to the current tiers (170 old games → 170 screens, was 297). `tests/test_v0486_badges.py` (2); `test_v0485.py`, `test_qp9_badges.py` updated |
 | Tests | `tests/v0486squad.test.mjs` (10), `tests/v0486squadpark.test.mjs` (11), `tests/v0486squadui.test.mjs` (4); `tests/v0486brand.test.mjs` now ignores a content-credentials (C2PA) `<metadata>` block in the SVGs (the copies saved to the PC carry one; the PNG/JPG copies carry one too, pixels identical) | browser: a year-old world with the squad clock shifted into window 3 (Old Brick Yard): the real pick, the toast, the Park tag, the squad holding Court 2 as kings in one outfit, the phone list, 0 page errors |
 
+### Quick patch 4 (Oct 19): The Favelas and the park shuffle
+| Area | Where | Notes |
+|---|---|---|
+| The Favelas park | `world/favela.js` (town, life, events, doors, kite fight), `world/themes.js` (`favela` event card and theme, streakFx `pipa`, no music key), `world/venues.js`, `world/parklife.js`, `world/streakfx.js` (`pipa`, `PIPA_FX`), `gfx/textures.js` (plaster, shop signs, kite crest, tile apron, lettering, floor tiles, mural, `favelaGround`), `core/favelasound.js` (siren, bateria; SFX bus), `sim/world.js` (EVENT_PARKS, PARK_NAMES), `server/venues.json` | town ~99k triangles (budget 120k); fewer draw calls and triangles than the Monster Mash in the same views |
+| Rewards | `server/cup.py` (`PRIZES_FAVELA`, `EVENTS["favela"]`), `server/catalog.json` (7 `fv_` items, `v0487`), `char/looks.js`, `char/athlete.js`, `char/view.js`, `char/sway.js` (bandana ends), `char/passinho.js` + 2 additive lines in `char/animator.js` (43 existing celebrations unchanged, `tests/fixtures/celebrations-v0486.json`), `game/greenfx.js` (Pipa), `core/greensound.js` (Cuíca), `sim/bots.js`, `ui/store.js`, `ui/inventory.js` | buying refused; AI winners wear them |
+| Schedule and shuffle | `server/events.json` (Mash until 1792454400, Favelas window 146 until 1792627200, then a `shuffle` row), `server/cup.py` (`shuffle_bag`, `shuffle_event_at`, `active_event`, `public_schedule(now=)` expanding 30 windows ahead, `SHUFFLE_AHEAD`) | seeded Fisher-Yates per round; the first round leaves out `after` (the Favelas); a round never starts with the park that ended the last |
+
+Tests: `tests/test_park_shuffle.py`, `tests/test_favela_event.py`, `tests/v0487favela.test.mjs`, `tests/v0487favelapark.test.mjs`, `tests/v0487favelapolish.test.mjs`, `tests/v0487favelaitems.test.mjs`. Note for the port: this patch adds to `world/themes.js`, `world/venues.js`, `gfx/textures.js` and `char/animator.js` (additive only); pin the frozen baseline commit after this push.
+
 ### Quick patch 3 (Oct 19): RIMRIFT everywhere
 
 | Area | Files | Notes |
