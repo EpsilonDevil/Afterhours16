@@ -670,8 +670,8 @@ def groom_material(name, texname, cutoff=0.35):
 
 gm = {}
 for ob, lod in groom_objs:
-    kind = ob.name.replace('Cards', '').replace('LOD0', '').lower()  # hair / beard / brows
-    if kind not in gm: gm[kind] = groom_material('Groom' + kind.capitalize(), 'mh_groom_' + kind, 0.35)  # (alpha-scissor 0.35 for all three; Godot imports the atlases without mipmaps, see build_athlete/AthleteDriver)
+    kind = 'helmet' if ob.name == 'HairHelmet' else ob.name.replace('Cards', '').replace('LOD0', '').lower()  # hair / beard / brows / helmet
+    if kind not in gm: gm[kind] = groom_material('Groom' + kind.capitalize(), 'mh_groom_' + kind, 0.3 if kind == 'helmet' else 0.35)  # (alpha-scissor 0.35 for all three; Godot imports the atlases without mipmaps, see build_athlete/AthleteDriver)
     ob.data.materials.clear(); ob.data.materials.append(gm[kind])
 if lashes_ob:
     lm = bpy.data.materials.new('MH_Lashes'); lm.use_nodes = True; ntl = lm.node_tree; bl = ntl.nodes['Principled BSDF']

@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/Demo.cs" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/harbor/HarborPoint.tscn" id="2"]
-[ext_resource type="PackedScene" path="res://scenes/athlete/Athlete.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/athlete/AthleteMeshy.tscn" id="3"]
 [ext_resource type="Texture2D" path="res://assets/athlete/ball_albedo.png" id="4"]
 
 [sub_resource type="StandardMaterial3D" id="ballmat"]
@@ -32,7 +32,7 @@ mesh = SubResource("ballmesh")
 offset_left = 16.0
 offset_top = 12.0
 offset_right = 1200.0
-offset_bottom = 140.0
+offset_bottom = 170.0
 theme_override_colors/font_color = Color(0.953, 0.933, 0.894, 1)
 theme_override_colors/font_shadow_color = Color(0.031, 0.039, 0.051, 0.9)
 theme_override_constants/shadow_offset_x = 1

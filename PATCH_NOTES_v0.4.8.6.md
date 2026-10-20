@@ -191,4 +191,6 @@ Nobody gets hurt and no weapons are shown; the chases always end with the rider 
 
 Headbands in the store are now tried on at head-and-shoulders distance.
 
+**Follow-up (Oct 20):** the streak's bunting used to hang across the court level with the 2K cam and covered the top of the screen. It now runs along both sidelines at fence height, out of bounds, so it never blocks the court, the rim or the players in the 2K cam or the broadcast cam.
+
 **The park shuffle.** When The Favelas end at 8 PM Eastern on Wednesday Oct 21, the event park starts a shuffle of all five event parks: the King Tut Cup, the Jungle Ballers, And The Beat Goes On, The Monster Mash and The Favelas, 48 hours each. Every park plays once before any park repeats, and no park ever plays twice in a row. The first round is the four parks the Favelas haven't been: the King Tut Cup (from Oct 21), And The Beat Goes On (Oct 23), the Jungle Ballers (Oct 25) and The Monster Mash (Oct 27); then the parks reshuffle for the next round, and so on with no end date. The order is fixed in advance, so every game shows the same park and switches over on time on its own.

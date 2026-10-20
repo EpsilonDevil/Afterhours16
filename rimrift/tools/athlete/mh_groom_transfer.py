@@ -18,6 +18,7 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 SETS = {'hair': ('hair', 'Hair_S_AfroFade'), 'beard': ('beard', 'Beard_S_Curly'), 'brows': ('brows', 'Eyebrows_M_FlatThick')}
+HELMET = ('hair', 'Hair_S_AfroFade_Helmet_LOD5.fbx')  # the far-LOD cap (967 tris), bound like the hair
 
 
 def _import_mesh(path):
@@ -138,12 +139,13 @@ def transfer(grooms, body, eyes, scene, log):
     log(f'[groom] archetype skin vertices mapped onto our head: {len(mapped)} of {int((~np.isnan(arch_uv[:, 0])).sum())}')
 
     out = []
-    for kind, (sub, stem) in SETS.items():
-        for lod in (0, 1):
-            path = os.path.join(grooms, sub, f'{stem}_CardsMesh_Group0_LOD{lod}.fbx')
+    jobs = [(kind, lod, os.path.join(grooms, sub, f'{stem}_CardsMesh_Group0_LOD{lod}.fbx'), f'{kind.capitalize()}Cards' + ('' if lod == 1 else 'LOD0')) for kind, (sub, stem) in SETS.items() for lod in (0, 1)]
+    jobs.append(('helmet', 5, os.path.join(grooms, HELMET[0], HELMET[1]), 'HairHelmet'))
+    for kind, lod, path, name in jobs:
+        if True:
             if not os.path.exists(path): continue
             ob = _import_mesh(path)
-            ob.name = f'{kind.capitalize()}Cards' + ('' if lod == 1 else 'LOD0')
+            ob.name = name
             # keep the atlas UV layer only, as 'UVMap': the one with the largest face UV span (the real lightmap layer,
             # when present, packs tiny faces; the hair's 'UVmap_1' is a constant) — hair/beard: 'LightMapUV', brows LOD0: 'UVmap_0'
             def span(l):
@@ -153,7 +155,7 @@ def transfer(grooms, body, eyes, scene, log):
                 if l.name != best.name: ob.data.uv_layers.remove(l)
             ob.data.uv_layers[0].name = 'UVMap'
             C = np.array([v.co[:] for v in ob.data.vertices]); C2 = np.zeros_like(C); miss = 0
-            bvh, bidx = bvhs[kind]
+            bvh, bidx = bvhs['hair' if kind == 'helmet' else kind]
             for i, c in enumerate(C):
                 loc, nrm, fi, dist = bvh.find_nearest(Vector(c))
                 loc = np.array(loc[:]); nrm = np.array(nrm[:]); fi = int(bidx[fi])

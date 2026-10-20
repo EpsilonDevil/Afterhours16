@@ -1,0 +1,25 @@
+[meshy] ORM (4096, 4096, 3)
+FBX version: 7400
+[meshy] imported: 36418 verts, 72774 tris, height 1.750 m, 24 bones
+[meshy] unmapped groups (folded into hand/parent by name): []
+[meshy] decimated: 22520 verts, 44999 tris (ratio 0.618)
+[meshy] A-pose arm angle 20.6 deg from vertical (a Humanoid A-pose); source H 1.750 m
+[meshy] handL tip: FBX tail 0.247 m -> mesh tip 0.181 m from the joint
+[meshy] toeL tip: FBX tail 0.166 m -> mesh tip 0.114 m from the joint
+[meshy] handR tip: FBX tail 0.247 m -> mesh tip 0.191 m from the joint
+[meshy] toeR tip: FBX tail 0.171 m -> mesh tip 0.113 m from the joint
+[meshy] retargeted: height 1.9647 (target 1.9558), feet z -0.0132, hand tip x 0.709 (target 0.721)
+[meshy] albedo (4096, 4096), orm (4096, 4096)
+Info: Saved as "athlete_meshy.blend"
+INFO Draco mesh compression is available, use library at /opt/blender/4.5/scripts/addons_core/io_scene_gltf2/libextern_draco.so
+17:40:48 | INFO: Starting glTF 2.0 export
+17:40:48 | INFO: Extracting primitive: char1
+17:40:49 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+17:40:49 | INFO: Primitives created: 1
+17:40:49 | WARNING: There are more than 4 joint vertex influences.The 4 with highest weight will be used (and normalized).
+17:40:49 | INFO: Finished glTF 2.0 export in 0.38486599922180176 s
+
+[export] /tmp/claude-0/animation/out/athlete_meshy.glb 21.01 MB
+Blender 4.5.3 LTS (hash 67807e1800cc built 2025-09-09 01:38:15)
+
+Blender quit

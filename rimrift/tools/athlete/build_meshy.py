@@ -108,6 +108,19 @@ V = V + shift
 for k in src: src[k] = src[k] + shift
 ax = src['handL'] - src['upperL']
 print(f'[meshy] A-pose arm angle {math.degrees(math.atan2(abs(ax[0]), abs(ax[2]))):.1f} deg from vertical (a Humanoid A-pose); source H {Hs:.3f} m')
+# the leaf tails from the MESH, not the FBX leaf bones: Meshy's LeftHand/ToeBase tails are arbitrary (the hand tail sits
+# 9 cm past the fingertips), and the hand segment maps onto our handLen, so a too-long source tail shrank the hands to
+# 0.15 m (ours: 0.20) and the fingers never reached the ball the poses put on them. The tip = the farthest vertex of the
+# leaf's own weight group from its joint, measured along the FBX bone's direction.
+for side in 'LR':
+    for leaf, tipk in (('hand', 'handtip'), ('toe', 'toetip')):
+        j = src[leaf + side]; bone_dir = src[tipk + side] - j; bone_dir /= np.linalg.norm(bone_dir)
+        m = W[:, B[leaf + side]] > 0.5
+        if m.sum() < 10: print(f'[meshy] {leaf}{side}: too few weighted verts, FBX tail kept'); continue
+        along = (V[m] - j) @ bone_dir
+        old = np.linalg.norm(src[tipk + side] - j); new = float(along.max())
+        src[tipk + side] = j + bone_dir * new
+        print(f'[meshy] {leaf}{side} tip: FBX tail {old:.3f} m -> mesh tip {new:.3f} m from the joint')
 
 # ---------------------------------------------------------------- our bind
 d = skel.body_dims(*args.build)

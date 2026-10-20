@@ -12,6 +12,8 @@ import { THEMES, PARK_HQ, PARK_HALL } from '../client/js/world/themes.js';
 import * as FV from '../client/js/world/favela.js';
 import { onSomething, camClear } from '../client/js/world/harbor.js';
 import { StreakFX, PIPA_FX } from '../client/js/world/streakfx.js';
+import { FOLLOW_X, CAM_H } from '../client/js/game/camera.js';
+import { COURT } from '../client/js/sim/constants.js';
 import { createParkLife } from '../client/js/world/parklife.js';
 import { FAVELA_SIGNS, favelaSignUV } from '../client/js/gfx/textures.js';
 
@@ -190,7 +192,7 @@ test('the pipa streak: hidden until a streak, more at every level, all gone on d
   const kiteY = () => Math.max(...Array.from({ length: 8 }, (_, i) => fx.kites[0].bones[i * 16 + 13]));
   settle(1); const y1 = kiteY(); settle(4); const y4 = kiteY();
   assert.ok(y1 > 2 && y4 > y1 + 3, `kites at ${y1.toFixed(1)} m, then ${y4.toFixed(1)} m`);
-  assert.ok(PIPA_FX.buntingH > 7, 'the bunting hangs over the players\' heads');
+  assert.ok(fx.bunting.visible, 'the bunting is up at level 4');
   assert.equal(scene.lights.length, 0, 'no lights of its own');
   assert.equal(settle(0, 10), 0);
   settle(4); fx.dispose();
@@ -209,4 +211,63 @@ test('the bateria comes down a stairway, along the street and up another: never 
       for (const h of H) { const F = FV.houseFrame(h), [lx, lz] = (() => { const dx = x - h.x, dz = z - h.z, c = Math.cos(h.yaw), sn = Math.sin(h.yaw); return [c * dx - sn * dz, sn * dx + c * dz]; })(); void F; assert.ok(!(Math.abs(lx) < h.w / 2 - 0.2 && lz < -0.2 && lz > -h.depth + 0.2), `through a house at ${x.toFixed(1)},${z.toFixed(1)}`); }
     }
   }
+});
+
+// v0.4.8.7 qp: the bunting used to cross over the court 8.5 m up, level with the 2K cam, and filled the top of the screen
+test('the pipa bunting never gets in the way of the 2K cam (or the broadcast cam) on a half court', () => {
+  const P = PIPA_FX, sub = (a, b) => a.map((v, i) => v - b[i]), dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const nrm = v => { const l = Math.hypot(...v); return v.map(x => x / l); }, crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const project = (cam, tgt, fov, p) => { const f = nrm(sub(tgt, cam)), r = nrm(crs(f, [0, 1, 0])), u = crs(r, f), d = sub(p, cam), z = dot(d, f); if (z <= 0.1) return null; const t = Math.tan(fov * Math.PI / 360); return [dot(d, r) / z / (t * 16 / 9), dot(d, u) / z / t]; };
+  // the cameras as camera.js places them on a half court (origin 0, attacking +z)
+  const views = [];
+  for (const fx of [-7, -3.5, 0, 3.5, 7]) for (const fz of [1, 5, 9, 13]) {
+    const z = Math.min(Math.max(fz, 1), 13);
+    views.push({ cam: [fx * FOLLOW_X[0], 7.0 + CAM_H, Math.min(z, 9) - 16.5], tgt: [fx * FOLLOW_X[1], 0.9, Math.min(z + 2.2, COURT.hoopZ - 1.5)], fov: 44, kind: '2k' });
+    const bz = Math.min(Math.max(z * 0.6 + 4.5, 2), 10);
+    views.push({ cam: [-16.5, 7.2, bz], tgt: [fx * 0.25 + 1.5, 1.2, bz + 0.6], fov: 40, kind: 'broadcast' });
+  }
+  const [z0, z1] = P.buntingZ, yLo = P.buntingH - P.buntingSag - 0.45, yHi = P.buntingH + 0.05;
+  let blocked = 0, high = 0;
+  for (const v of views) {
+    // nobody on the court (feet to head) is ever behind the flags
+    for (const s of [-1, 1]) for (let px = -7.6; px <= 7.6; px += 1.9) for (let pz = 0; pz <= 14; pz += 1) for (const py of [0, 1, 2.1]) {
+      const c = v.cam, X = s * P.buntingX;
+      if ((c[0] - X) * (px - X) >= 0) continue;
+      const t = (X - c[0]) / (px - c[0]), y = c[1] + t * (py - c[1]), z = c[2] + t * (pz - c[2]);
+      if (y >= yLo && y <= yHi && z >= z0 - 0.5 && z <= z1 + 0.5) blocked++;
+    }
+    // and in the 2K cam the flags stay out of the top of the frame round the rim
+    if (v.kind === '2k') for (const s of [-1, 1]) for (let z = z0; z <= z1; z += 0.25) for (const y of [yLo, yHi]) {
+      const p = project(v.cam, v.tgt, v.fov, [s * P.buntingX, y, z]);
+      if (p && Math.abs(p[0]) < 0.6 && p[1] > 0.3 && p[1] <= 1) high++;
+    }
+  }
+  assert.equal(blocked, 0, 'no camera ray to a player crosses the bunting');
+  assert.equal(high, 0, 'no bunting in the upper middle of the 2K frame');
+  // (v0.4.8.7 qp: the 3v3 courts are full courts: the 2K cam follows the play the length of the floor, either way, and
+  // swings round the west sideline on a change of possession (camera.js); the bunting there runs buntingZFull)
+  const [Z0, Z1] = P.buntingZFull; let fBlocked = 0, fHigh = 0;
+  for (const fx of [-7, -3.5, 0, 3.5, 7]) for (const fz of [-13, -7, 0, 7, 13]) for (const th of [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, Math.PI]) {
+    const s = Math.cos(th), sx = -Math.sin(th), sz = -Math.cos(th);
+    const v = { cam: [fx * FOLLOW_X[0] + sx * 15.5 * 0.85, 7.6 + CAM_H, fz + sz * 15.5], tgt: [fx * FOLLOW_X[1] - sx * 1.5, 0.9, fz - sz * 2.2], fov: 44 };
+    for (const sd of [-1, 1]) for (let px = -7.6; px <= 7.6; px += 1.9) for (let pz = -14; pz <= 14; pz += 1) for (const py of [0, 1, 2.1]) {
+      const c = v.cam, X = sd * P.buntingX;
+      if ((c[0] - X) * (px - X) >= 0) continue;
+      const t = (X - c[0]) / (px - c[0]), y = c[1] + t * (py - c[1]), z = c[2] + t * (pz - c[2]);
+      if (y >= yLo && y <= yHi && z >= Z0 - 0.5 && z <= Z1 + 0.5) fBlocked++;
+    }
+    // (the length of a full court: with the play deep in the backcourt the far ends of the lines, 30-odd metres off,
+    // draw in toward the middle of the frame; they stay out of its top quarter and well clear of the rim)
+    if (Math.abs(s) === 1) {
+      const rim = project(v.cam, v.tgt, v.fov, [0, COURT.rimY, s * COURT.hoopZ]);
+      for (const sd of [-1, 1]) for (let z = Z0; z <= Z1; z += 0.25) for (const y of [yLo, yHi]) {
+        const p = project(v.cam, v.tgt, v.fov, [sd * P.buntingX, y, z]);
+        if (p && Math.abs(p[0]) <= 1 && (p[1] > 0.75 && p[1] <= 1 || rim && Math.hypot(p[0] - rim[0], (p[1] - rim[1]) / 1.78) < 0.15)) fHigh++;
+      }
+    }
+  }
+  assert.equal(fBlocked, 0, 'full court: no camera ray to a player crosses the bunting, the swing round the sideline included');
+  assert.equal(fHigh, 0, 'full court: no bunting in the top of the 2K frame or near the rim');
+  assert.ok(P.buntingH < 7.0 + CAM_H - 3, 'well below the 2K cam');
+  assert.ok(P.buntingX > COURT.width / 2 + 2, 'out of bounds, past the sideline');
 });

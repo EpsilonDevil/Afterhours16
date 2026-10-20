@@ -177,4 +177,10 @@ if args.grooms:
             im = Image.fromarray(np.dstack([np.asarray(im.convert('RGB').resize((size, size), Image.LANCZOS)), (cov_ds * 255).astype(np.uint8)]), 'RGBA')
         print(f'[mhtex] groom {kind}: atlas {a.shape[1]}² -> {size}², coverage>0.4 fraction {(cov > 0.4).mean():.3f}')
         save(im, f'mh_groom_{kind}.png')
+    hp = os.path.join(args.grooms, 'hair', 'Hair_S_AfroFade_RootUVSeedCoverage.png')
+    if os.path.exists(hp):  # the far-LOD helmet cap: dark hair x the helmet-space coverage (A)
+        a = np.asarray(Image.open(hp).convert('RGBA'), dtype=float) / 255; cov = a[..., 3]
+        rgb = np.dstack([0.045 + 0.02 * cov, 0.034 + 0.014 * cov, 0.027 + 0.01 * cov]) * 255
+        im = Image.fromarray(np.dstack([np.clip(rgb, 0, 255), cov * 255]).astype(np.uint8), 'RGBA').resize((512, 512), Image.LANCZOS)
+        save(im, 'mh_groom_helmet.png')
 print('[mhtex] done')

@@ -18,6 +18,7 @@ Nothing from Mixamo, MakeHuman or any asset store. Bundle download kept only in 
 |---|---|---|---|
 | meshy/athlete_v1/athlete_meshy.glb (21.0 MB) | David's Meshy.ai image-to-3D athlete (auto-rig, Unity Humanoid), decimated 72,774 → 44,999 tris, retargeted and re-rigged to our 21 bones by tools/athlete/build_meshy.py; one PBR material (4096² albedo + ORM from Meshy's metallic/roughness) | David's Meshy generation from the character sheet (inputs in the same folder) | per David's Meshy.ai plan terms — not CC0; keep out of any public build until confirmed |
 | meshy/athlete_v1/meshy_*_sheet.png, renders/ | Godot captures of it in AthleteShowroomMeshy.tscn | project's own | |
+| meshy/athlete_v1/*_texture_0_lit.jpg (3.7 MB), *_orm_lit.png (3.3 MB) | look pass 3 (World agent): the Meshy albedo with its baked studio shading divided out per class (skin / jersey / whites / trim; skin warmed to the sheet, jersey 0.8x and a touch cool, whites 0.92x) and an ORM with per-class roughness (skin 0.48, jersey 0.80, trim 0.72, socks+shoes 0.62). Made by `python3 tools/athlete/delight_meshy.py` from the textures Godot extracts beside the glb; AthleteDriver.TuneMeshy swaps them in at load, the glb is untouched | derived from David's Meshy generation | same as the glb |
 
 ## metahuman (the hero body)
 | file | what | source | licence |

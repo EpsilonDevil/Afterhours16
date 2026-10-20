@@ -9,7 +9,8 @@ render_mode use_debanding;
 uniform vec3 top_color : source_color = vec3(0.30, 0.36, 0.50);      // zenith: dim desaturated blue-grey (out of the poster frame)
 uniform vec3 upper_color : source_color = vec3(0.50, 0.24, 0.12);    // 6..25° up: the deep amber-brown band of the target
 uniform vec3 horizon_color : source_color = vec3(1.0, 0.50, 0.16);   // the horizon under the sun: saturated orange
-uniform vec3 horizon_away : source_color = vec3(0.56, 0.34, 0.30);   // the horizon opposite the sun: dusky
+uniform vec3 horizon_away : source_color = vec3(0.60, 0.40, 0.40);   // the horizon opposite the sun: dusky pink
+uniform vec3 upper_away : source_color = vec3(0.40, 0.30, 0.42);     // look pass 3: the band opposite the sun goes lavender (the Belt of Venus), not brown — the close/baseline cameras look this way and it is what fills the athletes' shadow side
 uniform vec3 ground_color : source_color = vec3(0.35, 0.25, 0.2);
 uniform vec3 ground_horizon : source_color = vec3(0.55, 0.36, 0.28);
 uniform vec3 sun_dir = vec3(-0.24, 0.05, 0.97);
@@ -31,9 +32,10 @@ void sky() {
 	vec2 dh = normalize(d.xz + vec2(1e-5, 0.0)), sh = normalize(s.xz);
 	float toward = dot(dh, sh) * 0.5 + 0.5;
 	vec3 hor = mix(horizon_away, horizon_color, pow(toward, 1.6));
+	vec3 upper = mix(upper_away, upper_color, pow(toward, 1.2));
 	vec3 col;
 	if (d.y >= 0.0) {
-		col = mix(hor, upper_color, smoothstep(0.0, band_height, up));
+		col = mix(hor, upper, smoothstep(0.0, band_height, up));
 		col = mix(col, top_color, smoothstep(band_height * 0.8, upper_height, up));
 	} else {
 		col = mix(mix(ground_horizon, hor, 0.5), ground_color, clamp(-d.y * 6.0, 0.0, 1.0));

@@ -1,7 +1,5 @@
 # RIMRIFT Stage 0.5 spike — working contract for the agent team
 
-> **Oct 19, 2026: Stage 1 direction is set. Read `STAGE1-DIRECTION.md` (next to this file) before any port work.** The toolchain, layout and rules below still apply.
-
 Goal (G0 gate, from the roadmap): C# ball/shots/ratings/constants with a parity harness; Jolt ball-on-rim; Harbor
 Point at sunset; one target-quality athlete driven by the ported procedural animator. Gate = ball parity exact
 over 1,000 shots, no tunnelling at 20 m/s, 60 fps with 10 athletes on David's GPU, athlete sign-off.
@@ -61,3 +59,27 @@ the sign of Z when placing cameras (Godot cameras look down −Z).
 - Tests: add tests for your own work and run them. At the end run the full `dotnet test` on the solution.
 - Report back (your final message) with: what exists (file list), what is proven (test/harness output pasted),
   renders (paths), measurements for the G0 report, and what is NOT done. Honest, numbers first.
+
+## Demo keys and env vars (fps test on David's PC)
+
+`scenes/Demo.tscn` (Harbor Point + the animated athlete + the ported ball solver). Default body = the Meshy athlete (David's pick, Oct 19; the MetaHuman path stays selectable)
+(`assets/athlete/metahuman/athlete_mh.glb`, card LOD1; the showroom `AthleteShowroomMH.tscn` keeps the LOD0-card glb).
+
+- Keys: `1`–`6` cameras (poster, game, baseline, broadcast, rim, close) · `C` cycle · `A` +10 athletes (11 on court =
+  the fps gate) · `R` reset the extras · `B` cycle the body for everyone (meshy → mh → cc0; respawns) · `L` cycle the
+  groom LOD override (auto → 0 full → 1 hair-only → 2 helmet) · `H` toggle the HUD · `Esc` quit.
+- HUD (one screenshot = the test result): fps + min-after-warm-up, athlete count, body, triangles, draw calls, the
+  groom LOD counts (full / hair-only / helmet) and the camera-distance range with the thresholds.
+- Env: `RIMRIFT_BODY=meshy|mh|cc0` (default meshy), `RIMRIFT_DEMO_EXTRAS=10`, `RIMRIFT_GROOM_LOD=auto|0|1|2`,
+  `RIMRIFT_GLB=res://...` (any athlete, overrides the body), capture mode `RIMRIFT_DEMO_SHOTS="name:cam:seconds,..."`
+  + `RIMRIFT_SHOT_DIR=/abs/dir`. `RIMRIFT_DEBUG_BONES=1` draws the animator's joints as unlit lines through the mesh
+  (any athlete scene); the showroom takes extra capture cameras `RIMRIFT_SHOT_CAMS="name:ex,ey,ez:tx,ty,tz:fov;..."`
+  and every capture logs `metrics` (elbow angles, wrist/fingertip heights, hand-to-ball). Look-dev (pass 3): `RIMRIFT_HUD=0`
+  hides the HUD, `RIMRIFT_ATHLETE_MASK=1` draws every athlete as a flat magenta cut-out (exact athlete-pixel masks for
+  measuring), `RIMRIFT_LOOKSET="Exposure=0.78,SunBearingDeg=40,FillColor=0.74;0.64;0.74,Ssil=true"` overrides any
+  exported float/bool/colour of HarborPoint from the shell; `RIMRIFT_LOOK=novol,nofog,...` are the off switches. `AthleteDriver.Ball` is in
+  the athlete's frame (what `Transform * Ball` draws); the driver converts it to world for the animator (fixed Oct 19:
+  the Demo's shooter used to reach for a ball 6 m behind him — "the unnatural shooting arms").
+- Groom distance LOD (camera → head joint): `AthleteDriver.GroomLodMid` (8 m: beard + brows hidden), `GroomLodFar`
+  (18 m: hair cards → the helmet cap `HairHelmet`, from Epic's Helmet_LOD5), `GroomLodHysteresis` (1 m) — exported
+  properties on the athlete scenes, tune them there.

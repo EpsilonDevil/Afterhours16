@@ -43,9 +43,10 @@ const FLAME_CELLS_PER_M = 2.2, FLAME_LOOP = 240;
 // v0.4.8.5 quick patch 2: the haunt, per level: tongues of ghost fire round the court (their spacing, m), the wisps, the
 // skeleton hands, the ghosts circling, the skull's height over the floor, how often the lightning strikes (s)
 export const HAUNT_FX = { tongue: 0.85, wisps: 16, hands: 14, ghosts: 8, skullH: 15, bolt: { every: [3.5, 8], hold: 0.16, flashes: 3 } };
-// v0.4.8.7: the pipa (The Favelas): the kites' colours and how high they climb over the floor, the bunting's height, the
-// confetti's count and the height it falls from
-export const PIPA_FX = { colors: ['#f2c230', '#2fb8b0', '#e86aa0', '#9ad13a', '#ff6a2a', '#6aa8e0', '#f4efe4'], kiteH: 7, buntingH: 8.5, confetti: 420, confettiH: 12 };
+// v0.4.8.7: the pipa (The Favelas): the kites' colours and how high they climb over the floor, the bunting's height, sag,
+// distance out from the court's long axis and where it runs along the sidelines (court-relative z; qp: low and out of
+// bounds so the 2K cam sees over it), the confetti's count and the height it falls from
+export const PIPA_FX = { colors: ['#f2c230', '#2fb8b0', '#e86aa0', '#9ad13a', '#ff6a2a', '#6aa8e0', '#f4efe4'], kiteH: 7, buntingH: 2.3, buntingSag: 0.2, buntingX: 11.0, buntingZ: [0.5, 7.0], buntingZFull: [-7.0, 7.0], confetti: 420, confettiH: 12 };
 const hashStr = s => { let h = 7; for (const ch of String(s ?? '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 
 // the court's outline at the fence line (the same runs venues.js fences)
@@ -396,15 +397,21 @@ export class StreakFX {
     this.kiteMat = new Material({ color: [1, 1, 1], shading: 'unlit', fog: false, doubleSided: true });
     this.kites = [0, 1].map(set => mk(skinGeo(Array.from({ length: 8 }, (_, k) => kiteParts(P.colors[(k + set * 3) % P.colors.length], 1.5, k, 6)).flat()), this.kiteMat, 7, 8));
     this.kiteU = Array.from({ length: 16 }, (_, k) => ({ a: k / 16 * Math.PI * 2 + rng() * 0.3, h: rng() * 2, ph: rng() * 6.3, s: 0.8 + rng() * 0.4 }));
-    // the bunting: lines of little triangular flags across the court, high over it
-    const bp = [], W = COURT.width / 2 + 2.4, lines = court.full ? [-11, -5.5, 0, 5.5, 11] : [1, 6, 11];
-    for (const lz of lines) for (let x = -W; x < W; x += 0.42) {
-      const t = (x + W) / (2 * W), y = P.buntingH - Math.sin(t * Math.PI) * 0.9, col = [...lin(P.colors[Math.floor((x + W) / 0.42) % P.colors.length]), 1];
-      bp.push({ geo: { position: new Float32Array([x, y, 0, x + 0.34, y, 0, x + 0.17, y - 0.42, 0]), normal: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), uv: new Float32Array(6), index: new Uint16Array([0, 1, 2]) }, matrix: M.m4translation(M.m4(), ox, 0, oz + lz), color: col });
-      bp.push({ geo: G.box(0.42, 0.012, 0.012), matrix: M.m4translation(M.m4(), ox + x + 0.21, y + 0.005, oz + lz), color: [0.9, 0.9, 0.9, 1] });
+    // the bunting: lines of little triangular flags strung along both sidelines at fence height, out of bounds.
+    // (v0.4.8.7 qp: it used to cross over the court 8.5 m up, level with the 2K cam, and filled the top of the screen.
+    // Low and outside the lines it never stands between the 2K cam or the broadcast cam and anyone on the court, and it
+    // stops short of the far baseline so it stays out of the top of the frame round the rim: tests/v0487favelapark)
+    const bp = [], [z0, z1] = court.full ? P.buntingZFull : P.buntingZ, span = z1 - z0;
+    for (const s of [-1, 1]) {
+      const x = ox + s * P.buntingX;
+      for (let z = z0, i = 0; z < z1 - 0.3; z += 0.42, i++) {
+        const t = (z - z0) / span, y = P.buntingH - Math.sin(t * Math.PI) * P.buntingSag, col = [...lin(P.colors[(i + (s > 0 ? 3 : 0)) % P.colors.length]), 1];
+        bp.push({ geo: { position: new Float32Array([0, y, z, 0, y, z + 0.34, 0, y - 0.42, z + 0.17]), normal: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]), uv: new Float32Array(6), index: new Uint16Array([0, 1, 2]) }, matrix: M.m4translation(M.m4(), x, 0, oz), color: col });
+        bp.push({ geo: G.box(0.012, 0.012, 0.42), matrix: M.m4translation(M.m4(), x, y + 0.005, oz + z + 0.21), color: [0.9, 0.9, 0.9, 1] });
+      }
+      // (a pole at each end and one in the middle, just taller than the line)
+      for (const pz of [z0, (z0 + z1) / 2, z1]) bp.push({ geo: G.box(0.08, P.buntingH + 0.25, 0.08), matrix: M.m4translation(M.m4(), x, (P.buntingH + 0.25) / 2, oz + pz), color: [...lin('#d8d2c4'), 1] });
     }
-    // (the poles stand a metre past the line's ends, clear of the fence and the Got Next spots; a guy line runs out to each)
-    for (const s of [-1, 1]) for (const lz of lines) bp.push({ geo: G.box(0.08, P.buntingH, 0.08), matrix: M.m4translation(M.m4(), ox + s * (W + 1.0), P.buntingH / 2, oz + lz), color: [...lin('#d8d2c4'), 1] }, { geo: G.box(1.0, 0.012, 0.012), matrix: M.m4translation(M.m4(), ox + s * (W + 0.5), P.buntingH, oz + lz), color: [0.9, 0.9, 0.9, 1] });
     this.buntMat = new Material({ color: [1, 1, 1], shading: 'unlit', fog: false, doubleSided: true });
     this.bunting = mk(G.merge(bp), this.buntMat, 6);
     // the painted tiles washing over the floor

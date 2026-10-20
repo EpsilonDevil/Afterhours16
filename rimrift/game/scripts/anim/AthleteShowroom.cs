@@ -30,6 +30,20 @@ public partial class AthleteShowroom : Node3D
         _ath = GetNode<AthleteDriver>("Athlete");
         _ball = GetNode<MeshInstance3D>("Ball");
         foreach (var n in new[] { "front", "back", "face", "motion" }) _cams[n] = GetNode<Camera3D>("Cam_" + n);
+        // extra capture cameras without touching the scene: RIMRIFT_SHOT_CAMS="name:ex,ey,ez:tx,ty,tz:fov;..." (e.g. a side view
+        // for the shot diagnosis); they are ordinary names for RIMRIFT_SHOTS
+        var extra = OS.GetEnvironment("RIMRIFT_SHOT_CAMS");
+        if (!string.IsNullOrEmpty(extra))
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (var spec in extra.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var p = spec.Split(':'); var e = Array.ConvertAll(p[1].Split(','), s => float.Parse(s, inv)); var t = Array.ConvertAll(p[2].Split(','), s => float.Parse(s, inv));
+                var c = new Camera3D { Name = "Cam_" + p[0], Fov = p.Length > 3 ? float.Parse(p[3], inv) : 35f, Near = 0.05f };
+                AddChild(c); c.Position = new Vector3(e[0], e[1], e[2]); c.LookAt(new Vector3(t[0], t[1], t[2]), Vector3.Up);
+                _cams[p[0]] = c;
+            }
+        }
         _ath.OnTick = Script;
         var shots = OS.GetEnvironment("RIMRIFT_SHOTS");
         _dir = OS.GetEnvironment("RIMRIFT_SHOT_DIR");
@@ -101,6 +115,7 @@ public partial class AthleteShowroom : Node3D
         var path = System.IO.Path.Combine(_dir, name + ".png");
         img.SavePng(path);
         GD.Print($"showroom: saved {path} ({cam} @ {t:F2}s, tick {_ath.Ticks}) {img.GetWidth()}x{img.GetHeight()}");
+        GD.Print($"showroom: metrics {name} @ {t:F2}s: {_ath.PoseMetrics()}");
         NextShot();
     }
 

@@ -17,15 +17,29 @@ public partial class HarborPoint : Node3D
     [Export] public bool BuildEnvironment = true;
     [Export] public float SunElevationDeg = 17.0f;  // the key light (the theme's sun vector sits at 19°): long shadows, the court still lit, poles and fences silhouetted
     [Export] public float SunDiscElevationDeg = 2.6f; // where the disc sits in the sky and the glitter on the water (the poster: on the waterline)
-    [Export] public float SunBearingDeg = 14f;      // bearing from +Z (the sea) toward -X; the theme's own vector is 54°, the poster wants it in view
+    [Export] public float SunBearingDeg = 40f;      // bearing from +Z (the sea) toward -X; the theme's own vector is 54°. Look pass 3: 14° put the sun straight behind the athletes on the game camera (silhouettes); 40° side-lights them like the court reference and keeps the disc in the poster frame
     [Export] public float SunEnergy = 4.8f;          // hot on the sun-facing sides; the shadow sides fall dark (look pass 2)
-    [Export] public float Exposure = 0.68f;          // look pass 2: the target is a dark golden-hour frame (mean luma 0.35, ours was 0.53 at 0.78)
+    [Export] public float Exposure = 0.78f;          // look pass 2 set 0.68 for the empty poster (target luma 0.35); pass 3 with athletes in frame: 0.78 (game cam luma 0.36 vs the court reference's 0.42 / the poster's 0.35)
     [Export] public float Vignette = 0.42f;         // themes.js grade.vignette 0.55; a full-screen multiply before AgX (shaders/world/vignette.gdshader)
     [Export] public float HazeDensity = 0.0f;       // volumetric haze: even 0.0007 veils the whole park salmon under the sun, so it is off (0) by default
     [Export] public float FogBegin = 95f, FogEnd = 650f; // depth fog from beyond the far fence and the shore (the poster camera is 42 m from the far fence, 70 m from the water) out to the horizon
     [Export] public float FogMax = 0.8f;                   // the horizon keeps a little of the sea through the haze
     [Export] public bool Shadows = true;
     [Export] public bool Ssao = true, Ssil = false, Ssr = true;
+    // look pass 3 ("athlete in the world"): the knobs that put the Meshy athletes into the light, all overridable from the
+    // shell for look-dev with RIMRIFT_LOOKSET="AmbientEnergy=0.4,FillEnergy=0.6,..." (any float/bool export of this node)
+    [Export] public float AmbientEnergy = 1.4f;       // energy of the flat ambient term (Godot ignores it for the sky part: with AmbientSkyMix = 1 the sky cubemap alone is the ambient)
+    [Export] public float AmbientSkyMix = 0.5f;       // 1 = the sky cubemap only, 0 = AmbientColor * AmbientEnergy only. Pass 3: half flat dusk ambient — the cubemap alone left the athletes' shadow sides at luma 0.03
+    [Export] public Color AmbientColor = new(0.80f, 0.70f, 0.74f); // dusk-pink (the theme's [0.42, 0.36, 0.48] with the pass-3 energy folded in: lavender, not brown, so the black jerseys stay charcoal)
+    [Export] public float FillEnergy = 0.7f;         // the shadowless sky fill from the camera side (-Z, +X): what lights the athletes' faces when the sun is behind them
+    [Export] public Color FillColor = new(0.74f, 0.64f, 0.74f); // the sky opposite the sun at golden hour: lavender-pink, not blue
+    [Export] public float BounceEnergy = 0.0f;        // a warm shadowless light up from the court (the sunlit teal/orange bouncing onto shorts, chins, undersides)
+    [Export] public Color BounceColor = new(0.55f, 0.75f, 0.70f);
+    [Export] public float SsaoRadius = 0.7f, SsaoIntensity = 2.0f; // pass 3: sized for 1.9 m bodies (under the arms, between the legs), not the 1 m prop scale
+    [Export] public float SsilRadius = 5.0f, SsilIntensity = 1.0f;
+    [Export] public float GlowThreshold = 1.5f, GlowIntensity = 0.35f;
+    [Export] public float ShadowBias = 0.015f, ShadowNormalBias = 0.9f, ShadowBlur = 1.0f;
+    [Export] public float Contrast = 1.0f, Saturation = 0.95f; // pass 3: the frame with athletes measured sat 0.72 vs the references' 0.44-0.62; contrast 1.15 crushed the jerseys' shadow side to luma 0.03 (0.05 at 1.0)
     [Export] public int PalmTiers = 3; // 1 = only the park's shadow-casting palms, 2 = + mid, 3 = + far groves
     [Export] public bool ExtraPalms = true; // look pass 2: a few more palms in the beach band behind the main court (dressing only, not in the layout)
 
@@ -51,6 +65,21 @@ public partial class HarborPoint : Node3D
         var look = OS.GetEnvironment("RIMRIFT_LOOK") ?? "";
         _look = new HashSet<string>(look.Split(',', StringSplitOptions.RemoveEmptyEntries));
         if (_look.Contains("nossr")) Ssr = false; if (_look.Contains("nossao")) Ssao = false; if (_look.Contains("noshadow")) Shadows = false;
+        var lookset = OS.GetEnvironment("RIMRIFT_LOOKSET") ?? "";
+        foreach (var kv in lookset.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {   // "Name=value" for any exported float/bool/colour (colour = r;g;b) of this node, e.g. RIMRIFT_LOOKSET="Exposure=0.7,Ssil=true,FillColor=0.8;0.6;0.7"
+            var p = kv.Split('='); if (p.Length != 2) continue;
+            var cur = Get(p[0]);
+            Variant v = cur.VariantType switch
+            {
+                Variant.Type.Bool => p[1] == "true" || p[1] == "1",
+                Variant.Type.Int => int.Parse(p[1]),
+                Variant.Type.Color => new Color(float.Parse(p[1].Split(';')[0], System.Globalization.CultureInfo.InvariantCulture), float.Parse(p[1].Split(';')[1], System.Globalization.CultureInfo.InvariantCulture), float.Parse(p[1].Split(';')[2], System.Globalization.CultureInfo.InvariantCulture)),
+                _ => float.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture),
+            };
+            Set(p[0], v);
+            GD.Print($"HarborPoint: lookset {p[0]} = {Get(p[0])}");
+        }
         int checks = Layout.Verify();
         GD.Print($"HarborPoint: layout proof: {checks} values derived in C# match the JS export (tools/world/export_layout.mjs)");
         if (BuildEnvironment) BuildSkyAndSun();
@@ -119,7 +148,7 @@ public partial class HarborPoint : Node3D
         sun.DirectionalShadowMaxDistance = 110;
         sun.DirectionalShadowSplit1 = 0.05f; sun.DirectionalShadowSplit2 = 0.14f; sun.DirectionalShadowSplit3 = 0.36f;
         sun.DirectionalShadowFadeStart = 0.9f;
-        sun.ShadowBias = 0.015f; sun.ShadowNormalBias = 0.9f; sun.ShadowBlur = 1.0f;
+        sun.ShadowBias = ShadowBias; sun.ShadowNormalBias = ShadowNormalBias; sun.ShadowBlur = ShadowBlur;
         sun.DirectionalShadowBlendSplits = true;
         sun.DirectionalShadowPancakeSize = 40;
         sun.ShadowOpacity = 1.0f;
@@ -138,12 +167,12 @@ public partial class HarborPoint : Node3D
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = sky, RadianceSize = Sky.RadianceSizeEnum.Size256, ProcessMode = Sky.ProcessModeEnum.Realtime },
             // the theme's ambient is a dim cool sky [0.42, 0.36, 0.48]: keep the shadows readable, not filled
-            AmbientLightSource = Godot.Environment.AmbientSource.Sky, AmbientLightSkyContribution = 1.0f, AmbientLightEnergy = 0.26f,
+            AmbientLightSource = Godot.Environment.AmbientSource.Sky, AmbientLightSkyContribution = AmbientSkyMix, AmbientLightColor = AmbientColor, AmbientLightEnergy = AmbientEnergy,
             ReflectedLightSource = Godot.Environment.ReflectionSource.Sky,
             TonemapMode = Godot.Environment.ToneMapper.Agx, TonemapExposure = Exposure, TonemapWhite = 6.0f,
-            GlowEnabled = true, GlowIntensity = 0.35f, GlowBloom = 0.04f, GlowHdrThreshold = 1.5f, GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Softlight,
-            SsaoEnabled = Ssao, SsaoRadius = 1.0f, SsaoIntensity = 1.8f,
-            SsilEnabled = Ssil,
+            GlowEnabled = true, GlowIntensity = GlowIntensity, GlowBloom = 0.04f, GlowHdrThreshold = GlowThreshold, GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Softlight,
+            SsaoEnabled = Ssao, SsaoRadius = SsaoRadius, SsaoIntensity = SsaoIntensity,
+            SsilEnabled = Ssil, SsilRadius = SsilRadius, SsilIntensity = SsilIntensity,
             SsrEnabled = Ssr, SsrMaxSteps = 48, SsrFadeIn = 0.15f, SsrFadeOut = 2.0f, SsrDepthTolerance = 0.3f,
             // a thin volumetric haze toward the sun (the glitter corridor on the water), kept off the courts
             VolumetricFogEnabled = HazeDensity > 0, VolumetricFogDensity = HazeDensity, VolumetricFogAlbedo = new Color(0.96f, 0.76f, 0.6f),
@@ -154,7 +183,7 @@ public partial class HarborPoint : Node3D
             FogEnabled = true, FogMode = Godot.Environment.FogModeEnum.Depth, FogLightColor = new Color(0.80f, 0.42f, 0.20f), FogLightEnergy = 1.0f, FogDensity = FogMax,
             FogDepthBegin = FogBegin, FogDepthEnd = FogEnd, FogDepthCurve = 1.5f, FogAerialPerspective = 0.7f, FogSkyAffect = 0.0f, FogSunScatter = 0.12f,
             // the graded-photograph look: themes.js grade (1.1 / 1.05) pushed; the target measures sat 0.61 vs our 0.47
-            AdjustmentEnabled = true, AdjustmentSaturation = 1.05f, AdjustmentContrast = 1.15f,
+            AdjustmentEnabled = true, AdjustmentSaturation = Saturation, AdjustmentContrast = Contrast,
         };
         if (_look.Contains("novol")) env.VolumetricFogEnabled = false; if (_look.Contains("nofog")) env.FogEnabled = false;
         if (_look.Contains("noglow")) env.GlowEnabled = false; if (_look.Contains("noamb")) env.AmbientLightEnergy = 0; if (_look.Contains("noadj")) env.AdjustmentEnabled = false;
@@ -163,8 +192,13 @@ public partial class HarborPoint : Node3D
         AddChild(Env);
         // a cool fill from the sky side so the shadows are not black (the theme's ambient sky [0.42, 0.36, 0.48]).
         // SkyMode LightOnly: it must not draw a second sun in the procedural sky.
-        var fill = new DirectionalLight3D { Name = "SkyFill", LightColor = new Color(0.45f, 0.55f, 0.85f), LightEnergy = 0.24f, ShadowEnabled = false, LightSpecular = 0.0f, SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly };
-        if (!_look.Contains("nofill")) { AddChild(fill); fill.LookAtFromPosition(new Vector3(40, 60, -30), Vector3.Zero, Vector3.Up); }
+        var fill = new DirectionalLight3D { Name = "SkyFill", LightColor = FillColor, LightEnergy = FillEnergy, ShadowEnabled = false, LightSpecular = 0.0f, SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly };
+        if (!_look.Contains("nofill") && FillEnergy > 0) { AddChild(fill); fill.LookAtFromPosition(new Vector3(40, 60, -30), Vector3.Zero, Vector3.Up); }
+        if (BounceEnergy > 0)
+        {   // the court's bounce: a shadowless light from below (lights down-facing and near-vertical surfaces a little)
+            var bounce = new DirectionalLight3D { Name = "CourtBounce", LightColor = BounceColor, LightEnergy = BounceEnergy, ShadowEnabled = false, LightSpecular = 0.0f, SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly };
+            AddChild(bounce); bounce.LookAtFromPosition(new Vector3(0, -60, -25), Vector3.Zero, Vector3.Back);
+        }
         if (Vignette > 0 && !_look.Contains("novig")) BuildVignette();
     }
 
