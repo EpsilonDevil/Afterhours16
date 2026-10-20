@@ -31,6 +31,18 @@ Every 9 h ± 10–30 min, for 60 min, three of the world's real AI ICONs run tog
 | Badges | `server/progression.py` (`BADGES.brick_wall.tiers` (18, 63, 154, **173**), was 315: Hall of Fame −45%; `BADGES.posterizer.tiers` (8, 30, 80, **126**), was 180: Hall of Fame −30%; rounded half up) | `sync_badges` on load raises a build already past the new mark (caps and Hall of Fame slots as always); the v0.4.8.5 games→screens conversion maps to the current tiers (170 old games → 170 screens, was 297). `tests/test_v0486_badges.py` (2); `test_v0485.py`, `test_qp9_badges.py` updated |
 | Tests | `tests/v0486squad.test.mjs` (10), `tests/v0486squadpark.test.mjs` (11), `tests/v0486squadui.test.mjs` (4); `tests/v0486brand.test.mjs` now ignores a content-credentials (C2PA) `<metadata>` block in the SVGs (the copies saved to the PC carry one; the PNG/JPG copies carry one too, pixels identical) | browser: a year-old world with the squad clock shifted into window 3 (Old Brick Yard): the real pick, the toast, the Park tag, the squad holding Court 2 as kings in one outfit, the phone list, 0 page errors |
 
+### Quick patch 5 (Oct 20): shared AI world, Hall of Fame for every badge, chains, possession, open threes, forced dunk
+| Area | Where | Notes |
+|---|---|---|
+| Shared AI world | `server/migrations/015_v0487_shared_world.sql`, `server/app.py` (`GET /api/ai-world/canonical`), `server/online.py` (hello carries the world; pong carries the server clock; `pop` relayed within a park), `server/progression.py` (`shared`, `prev`), `sim/world.js` (server clock and time zone, server prizes, own games don't move the AI), `game/park.js` (lowest account id hosts the park and sends its state twice a second; handover), `world/parklife.js` (events on server-clock slots), `core/netplay.js`, `ui/online.js` | ambient extras still per screen; Crew HQ not mirrored |
+| Hall of Fame | `server/progression.py` `_raise_badges` (no HOF_LIMIT stop), `server/builds.py` `icon_status_info` (every badge at its cap), `sim/builds.js` `iconStatusInfo`, `sim/world.js` `climbBadges` (at the Icon every badge to its cap; `e.climb.hof` counted), `ui/myplayer.js` | HOF_LIMIT 7 = the Icon badge's need only; `sync_badges` on profile load awards what progress already earned |
+| Chains | `server/catalog.json` (chain style fields), `sim/bots.js` `chainSpec`, `char/athlete.js`, `char/looks.js`, `char/view.js` (3.5 cm toward the camera), `ui/store.js` | textures keyed by look, not gold/ice |
+| Quarters | `sim/game.js` `endPeriod` (possession at the buzzer keeps the ball; a make in the last 4 s gives it to the other team), `lastMade` | rules change: moves the port baseline |
+| Open threes | `sim/shots.js` `OPEN_THREE_SURE` 85, `openThreeSure`, `sim/game.js` `jumperWindow` (`sure`, no non-shooter cut), `game/hud.js` legend | rules change |
+| Forced dunk | `core/input.js`, `game/session.js`, `sim/shots.js` (range 4.2 m, toward the rim > 1.2 m/s or under it), `sim/game.js`, `sim/player.js` (`forceDunk` intent, on the wire), `ui/screens.js` | sim_batch unchanged without the combo |
+
+Tests: `tests/v0487sharedworld.test.mjs`, `tests/v0487sharedpark.test.mjs`, `tests/test_shared_world.py`, `tests/test_v0487_hof.py`, `tests/v0487chains.test.mjs`, `tests/v0487rules.test.mjs`, `tests/v0487forcedunk.test.mjs`. Port note: game.js, shots.js and world.js rules changed again; pin the frozen baseline after this push.
+
 ### Quick patch 4 (Oct 19): The Favelas and the park shuffle
 | Area | Where | Notes |
 |---|---|---|

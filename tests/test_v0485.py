@@ -100,15 +100,16 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(builds.badge_caps(giant)["handles_for_days"], 2)
         progression.sync_badges(giant)
         self.assertEqual(giant["badges"]["handles_for_days"]["tier"], 2)
-        # seven Hall of Fame badges already: the eighth stops at Gold
-        # (a 6'8" lockdown can take eight badges to Hall of Fame, one more than a build may hold)
+        # seven Hall of Fame badges already: v0.4.8.7, the eighth goes to Hall of Fame too (there's no limit any more:
+        # a 6'8" lockdown can take eight badges to Hall of Fame, and ICON status needs all eight)
         full = {b: {"progress": 9999, "tier": 4} for b in ("catch_shoot", "corner_specialist", "pick_pocket", "interceptor", "rim_protector", "chasedown", "brick_wall")}
         ch = char_for("lockdown", height=80, games=200, badges={**full, "handles_for_days": {"progress": 150, "tier": 3}})
         ch["badges_v0485"] = True
         self.assertEqual(builds.hof_capacity(ch), 8)
         self.assertEqual(builds.hof_count(ch), 7)
         progression.sync_badges(ch)
-        self.assertEqual(ch["badges"]["handles_for_days"]["tier"], 3)
+        self.assertEqual(ch["badges"]["handles_for_days"]["tier"], 4)
+        self.assertEqual(builds.hof_count(ch), 8)
 
     def test_brick_wall_moves_to_screens_once_and_keeps_its_tier(self):
         ch = char_for("lockdown", height=78, games=170, badges={"brick_wall": {"progress": 170, "tier": 3}})

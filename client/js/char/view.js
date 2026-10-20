@@ -163,15 +163,26 @@ export class AthleteView {
       add(geo.shoes, new Material({ map: shoeTex, color: [0.95, 0.95, 0.95], roughness: 0.48, specular: 0.65, character: true, layer: 5, emissiveMap: shoeE, emissive: shoeE ? [MONSTER_GLOW.slime, MONSTER_GLOW.slime, MONSTER_GLOW.slime] : [0, 0, 0] }), 'shoes');
     }
     if (geo.chain) {
-      // v0.4.4: textured chains. Gold is polished metal; iced is white gold paved with stones that glint.
-      const kind = geo.chain.iced ? 'ice' : 'gold';
-      const tex = sharedTex(ctx, 'chain:' + kind, () => paintChain(kind).color, { aniso: 8 });
-      const ptex = sharedTex(ctx, 'pendant:' + kind, () => paintPendant(kind).color, { aniso: 8 });
-      const etex = kind === 'ice' ? sharedTex(ctx, 'chainE:' + kind, () => paintChain(kind).emissive, {}) : null;
-      const petex = kind === 'ice' ? sharedTex(ctx, 'pendantE:' + kind, () => paintPendant(kind).emissive, {}) : null;
-      const metal = (map, emap) => new Material({ map, color: [1, 1, 1], roughness: kind === 'ice' ? 0.16 : 0.24, metalness: 0.92, specular: 1.1, character: true, emissiveMap: emap, emissive: emap ? [2.4, 2.5, 2.7] : [0, 0, 0], layer: 5 });
-      add(geo.chain.chain, metal(tex, etex), 'chain');
-      add(geo.chain.pendant, Object.assign(metal(ptex, petex), { doubleSided: true }), 'pendant');
+      // v0.4.4: textured chains; v0.4.8.7: each chain's own (its link, metal and stones: sim/bots.js chainSpec). The
+      // textures were shared by 'gold' or 'ice' alone, so every chain was drawn as one of two; now they're keyed by what
+      // they look like (two players in the same chain still share one)
+      const cs = look.gear?.chain || {}, stones = !!cs.stone || (!cs.link && geo.chain.iced);
+      const ck = 'chain:' + [cs.link || geo.chain.link, cs.metal || cs.color, cs.stone].join('|'), pk = 'pendant:' + [geo.chain.pendantKind, cs.metal || cs.color, cs.stone].join('|');
+      const cspec = cs.link ? cs : (geo.chain.iced ? 'ice' : 'gold');
+      const tex = sharedTex(ctx, ck, () => paintChain(cspec).color, { aniso: 8 });
+      const etex = stones ? sharedTex(ctx, ck + ':e', () => paintChain(cspec).emissive, {}) : null;
+      const pspec = cs.link ? { ...cs, pendant: geo.chain.pendantKind } : cspec;
+      const ptex = geo.chain.pendant ? sharedTex(ctx, pk, () => paintPendant(pspec).color, { aniso: 8 }) : null;
+      const petex = geo.chain.pendant && (stones || geo.chain.pendantKind === 'iced' || geo.chain.pendantKind === 'heart') ? sharedTex(ctx, pk + ':e', () => paintPendant(pspec).emissive, {}) : null;
+      const rough = { rope: 0.3, cuban: 0.24, tennis: 0.16, box: 0.18 }[geo.chain.link] ?? 0.24;
+      // (viewBias: a jersey's neckline band is drawn 1.8 cm toward the camera so it's never under the skin (the straps,
+      // above), and a chain lying along that neckline went under it: on a sleeveless jersey most of every chain was hidden.
+      // A chain is the outermost thing on him, so it's drawn further forward still: 3.5 cm, found by eye in the showroom,
+      // the least that keeps all of a chain's front over every top's binding)
+      const metal = (map, emap, mt = 0.92) => new Material({ map, color: [1, 1, 1], roughness: rough, metalness: mt, specular: 1.1, character: true, emissiveMap: emap, emissive: emap ? [2.4, 2.5, 2.7] : [0, 0, 0], layer: 5, viewBias: 0.035 });
+      add(geo.chain.chain, metal(tex, etex, etex ? 0.55 : 0.92), 'chain'); // (stones set in it: part stone, less mirror)
+      // (a pendant paved with stones is mostly stone, not metal: less of the dark sky mirrored in it, so the stones read)
+      if (geo.chain.pendant) add(geo.chain.pendant, Object.assign(metal(ptex, petex, petex ? 0.35 : 0.92), { doubleSided: true }), 'pendant');
     }
     // v0.4.7.5 qp3 perf: the people around the park (everyone built below full detail: walkers, the background games,
     // the games you watch, the crowd) get a far model too. A park is sixty-odd people at 40-50 thousand triangles each,

@@ -28,7 +28,7 @@ export function meterLegendHTML() {
   return `<h3>Shot meter</h3><div class="meter-legend">
     <span><i class="ml-core"></i>Solid green: the green window your ratings give you on their own</span>
     <span><i class="ml-boost"></i>Fading out to yellow: what boosts add (badges, Icon badge, takeover, animations). Still a green release</span>
-    <span><i class="ml-ring"></i>Outlined: perfect timing, but not an automatic make (layups with anyone on you, shots from past 35 ft, a non-shooter's three). A wide-open layup's window is solid: time it and it's in</span>
+    <span><i class="ml-ring"></i>Outlined: perfect timing, but not an automatic make (layups with anyone on you, shots from past 35 ft, a non-shooter's three, unless it's wide open and his three-point rating is 85 or better). A wide-open layup's window is solid: time it and it's in</span>
     <span>Let go anywhere inside the window for an Excellent release; outside it, the shot almost never goes in. No window: smothered, or past half court.</span></div>`;
 }
 

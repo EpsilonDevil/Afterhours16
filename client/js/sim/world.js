@@ -72,9 +72,15 @@ const NONE = Object.freeze([]);
 const shareOf = (list, x) => { let a = 0; for (const t of list) { a += t.share; if (x < a) return t; } return list[list.length - 1]; };
 const fmtHour = h => { h = ((h % 24) + 24) % 24; const hh = Math.floor(h), mm = Math.round((h - hh) * 4) * 15; const H = hh % 12 || 12; return `${H}${mm ? ':' + String(mm % 60).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`; };
 const fmtClock = t => { const d = new Date(t), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
-// local midnight-based day number (so schedules follow the player's clock)
-const dayIndex = t => { const d = new Date(t); return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY); };
+// local midnight-based day number (so schedules follow the player's clock). v0.4.8.7 shared world: on an online server's
+// world the days and hours are the server's (its clock: CLOCK_SKEW, its time zone: WORLD_TZ, minutes east of UTC), so
+// everybody connected to it has the same people on at the same moment whatever his own clock or time zone says
+let WORLD_TZ = null;
+const dayIndex = t => { if (WORLD_TZ != null) return Math.floor((t + CLOCK_SKEW + WORLD_TZ * 60000) / DAY); const d = new Date(t); return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY); };
 const localHour = t => { const d = new Date(t); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; };
+// v0.4.8.7 shared world: the world's clock (the online server's, where there is one): every rule that counts days, hours or
+// windows reads it, so two PCs whose clocks differ still agree
+export const worldNow = (t = Date.now()) => t + CLOCK_SKEW;
 
 // v0.4.8.5 qp8: his badges on the climb, a set like yours: his Hall of Fame badges (h of them: his own first, best first,
 // then his archetype's, then the rest his build can take to Hall of Fame) and, filling out as h goes up, every other
@@ -84,9 +90,12 @@ export function climbBadges(b, start, h, target) {
   const cap = badgeCaps(b), base = capBadges(start || {}, b), arch = b.archetype || 'two_way';
   const order = [...new Set([...Object.keys(base).filter(k => base[k] >= 4), ...Object.keys(base).filter(k => cap[k] >= 4).sort((x, y) => base[y] - base[x]),
     ...(BADGE_POOL[arch] || []).filter(k => cap[k] >= 4), ...BADGE_IDS.filter(k => cap[k] >= 4)])];
+  // (v0.4.8.7: ICON status asks for every badge at its cap, every Hall of Fame his build can reach, not just the 7 his
+  // Icon badge takes; so at his Icon badge the rest of his Hall of Fame badges are in too, as they are for you)
+  const done = target > 0 && h >= target;
   const hof = new Set(order.slice(0, h)), q = target > 0 ? Math.min(1, h / target) : 1, out = {};
   for (const k of BADGE_IDS) {
-    const fill = Math.floor(q * Math.min(cap[k], 3) + 1e-9), tier = hof.has(k) ? 4 : Math.min(cap[k], Math.max(base[k] || 0, fill));
+    const fill = Math.floor(q * Math.min(cap[k], 3) + 1e-9), tier = done ? cap[k] : hof.has(k) ? 4 : Math.min(cap[k], Math.max(base[k] || 0, fill));
     if (tier > 0) out[k] = tier;
   }
   return out;
@@ -126,6 +135,11 @@ export class AIWorld {
     data = data || {};
     this.seed = data.seed || ((Math.random() * 2147483646) | 0) + 1;
     this.born = data.born || Date.now();
+    // v0.4.8.7: an online server's world, the same for everyone connected to it (adoptSharedWorld): nothing of this
+    // account's own (the games it has seen them play: prog) changes the AI in it. prev: the account's own world from before
+    // it went online, kept aside in its save
+    this.shared = !!data.shared;
+    this.prev = data.prev && typeof data.prev === 'object' ? data.prev : null;
     this.friends = [...(data.friends || [])];
     this.squad = (data.squad || []).filter(id => this.friends.includes(id));
     this.met = { ...(data.met || {}) };
@@ -151,7 +165,12 @@ export class AIWorld {
     this.preparing = null; this.squadAsync = typeof window !== 'undefined' && typeof setTimeout === 'function';
   }
 
-  toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met, prog: this.prog, ...(this.exSquad ? { exSquad: this.exSquad } : {}) }; }
+  toJSON() { return { seed: this.seed, born: this.born, friends: this.friends, squad: this.squad, met: this.met, prog: this.prog, ...(this.exSquad ? { exSquad: this.exSquad } : {}), ...(this.shared ? { shared: true } : {}), ...(this.prev ? { prev: this.prev } : {}) }; }
+  // (v0.4.8.7: the games this account has seen them play count only in its own world, never in a shared one)
+  progOf(id) { return this.shared ? null : this.prog[id]; }
+  // (v0.4.8.7: the world's clock moved (it went online, or the server's clock was read again): the schedules are redone)
+  // (only the sessions are kept on this PC's clock; everything else goes by the world's day, window or time asked about)
+  clockChanged() { this.sessCache = null; }
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   changed() { this.dirty = true; for (const fn of this.listeners) fn(this); }
 
@@ -160,6 +179,9 @@ export class AIWorld {
 
   // cheap header: tier, habit, home park, rep, iq (no build yet)
   account(id) {
+    // (v0.4.8.7: rep goes by the world's day, so a game loaded yesterday and one loaded now agree: a new day, new headers)
+    const today = Math.floor(worldNow() / DAY);
+    if (today !== this.cacheDay) { if (this.cacheDay != null) { this.cache.clear(); this.frames.clear(); } this.cacheDay = today; }
     let a = this.cache.get(id);
     if (a) return a;
     const r = this.rng(id, 'acct');
@@ -170,7 +192,7 @@ export class AIWorld {
     const iq = Math.max(0, Math.min(1, r.range(tier.iq[0], tier.iq[1])));
     const home = r.next() < 0.14 ? null : PARKS[r.int(0, PARKS.length - 1)];
     // rep grows slowly the longer this world has existed (they keep playing when you're not around)
-    const days = Math.max(0, (Date.now() - this.born) / DAY);
+    const days = Math.max(0, (today * DAY - this.born) / DAY);
     const activity = habit.id === 'grinder' ? 1.6 : habit.id === 'weekend' || habit.id === 'lunch' ? 0.6 : 1;
     const baseRep = r.int(tier.rep[0], tier.rep[1]);
     const rep = Math.min(20, baseRep + Math.min(4, Math.floor(days * activity / r.range(9, 16))));
@@ -184,8 +206,8 @@ export class AIWorld {
   // the park's other courts count) and a little with time (he plays when you're not around), up to a bit past his
   // tier's ceiling. About +1 OVR for every dozen games.
   growth(id, t = Date.now()) {
-    const a = this.account(id), p = this.prog[id];
-    const days = Math.max(0, (t - this.born) / DAY), activity = a.habit.id === 'grinder' ? 1.6 : a.habit.id === 'weekend' || a.habit.id === 'lunch' ? 0.6 : 1;
+    const a = this.account(id), p = this.progOf(id);
+    const days = Math.max(0, (worldNow(t) - this.born) / DAY), activity = a.habit.id === 'grinder' ? 1.6 : a.habit.id === 'weekend' || a.habit.id === 'lunch' ? 0.6 : 1;
     const g = Math.min(0.1, (p?.g || 0) * 0.0022 + (p?.w || 0) * 0.0008) + Math.min(0.04, days * activity * 0.0006);
     return Math.max(0, Math.min(0.12, g, Math.min(1, a.tier.hi + 0.08) - a.level));
   }
@@ -197,10 +219,10 @@ export class AIWorld {
   entry(id, t = Date.now()) {
     const gk = Math.round(this.growth(id, t) * 400);
     const L = this.ladder(id, t), wheel = this.wheelOf(id, t), prizes = this.prizes[id] || NONE, sq = this.squadKnown(id, t); // (only a squad already picked: an entry never sets a pick off)
-    const key = `${gk}|${L ? `${L.h}:${L.pr}` : '-'}|${wheel.owned.length}|${this.unlockVer}|${sq ? sq.k : '-'}`;
+    const a = this.account(id);
+    const key = `${gk}|${L ? `${L.h}:${L.pr}` : '-'}|${wheel.owned.length}|${this.unlockVer}|${sq ? sq.k : '-'}|${a.rep}`;
     let e = this.full.get(id);
     if (e && e.key === key) return e;
-    const a = this.account(id);
     const flash = Math.min(1, a.level * 0.6 + a.rep / 40);
     const bot = makeBot(this.rng(id, 'build'), { catalog: this.catalog, position: a.position, level: a.level, rep: a.rep, flash });
     if (gk > 0) {
@@ -213,9 +235,10 @@ export class AIWorld {
     if (ic || wheel.owned.length || prizes.length) wearUnlocked(bot.build, [...wheel.owned, ...prizes], this.catalog, this.rng(id, 'wear'), flash, a.rep);
     // (v0.4.8.6: for his ICON Squad's hour, the squad's outfit: sim/iconsquad.js squadOutfit)
     if (sq) { const eq = bot.build.equipment = { ...bot.build.equipment }; for (const slot of FIT_SLOTS) { if (sq.outfit[slot]) eq[slot] = sq.outfit[slot]; else delete eq[slot]; } }
-    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, key, games: this.prog[id]?.g || 0 };
+    e = { ...bot, aiId: id, iq: a.iq, tier: a.tier.id, tierLabel: a.tier.label, rep: { level: a.rep, label: a.repLabel }, home: a.home, habit: a.habit.label, gk, key, games: this.progOf(id)?.g || 0 };
     if (ic || wheel.owned.length || prizes.length) e.unlocked = { icon: ic, wheel: wheel.owned.slice(), prizes: [...prizes] };
-    if (L) e.climb = { hof: L.h, proRun: L.pr, legend: bot.build.legend.upgrades };
+    // (v0.4.8.7: his Hall of Fame badges as built: at his Icon badge every one his build can reach, not just the 7)
+    if (L) e.climb = { hof: Object.entries(bot.build.badges || {}).filter(([k, v]) => Math.min(Number(v?.tier ?? v) || 0, badgeCaps(bot.build)[k] ?? 4) >= 4).length, proRun: L.pr, legend: bot.build.legend.upgrades };
     if (sq) e.iconSquad = sq.k;
     e.build.rep = e.rep;
     this.full.set(id, e);
@@ -226,8 +249,8 @@ export class AIWorld {
   // his games since this world began: the ones it has seen (prog g: with you, against you, on the park's other courts)
   // and the ones he plays when you're not around
   careerGames(id, t = Date.now()) {
-    const a = this.account(id), days = Math.max(0, (t - this.born) / DAY);
-    return (this.prog[id]?.g || 0) + days * activityOf(a) * a.daysP * ICON_GRIND.perDay;
+    const a = this.account(id), days = Math.max(0, (worldNow(t) - this.born) / DAY);
+    return (this.progOf(id)?.g || 0) + days * activityOf(a) * a.daysP * ICON_GRIND.perDay;
   }
   // a number of his own, stable per AI (a hash of his id with this world's seed)
   hashOf(id, salt) { return (hashString(`${id}|${salt}|`) ^ this.seed) >>> 0; }
@@ -336,7 +359,7 @@ export class AIWorld {
   }
   // his Daily Spins, every UTC day finished since this world began (spun once, kept: each day only adds to it)
   wheelOf(id, t = Date.now()) {
-    const today = Math.floor(t / DAY);
+    const today = Math.floor(worldNow(t) / DAY);
     let s = this.wheel.get(id);
     if (!s) { s = { day: Math.floor(this.born / DAY), spins: 0, owned: [] }; this.wheel.set(id, s); }
     if (s.day >= today) return s;
@@ -371,7 +394,7 @@ export class AIWorld {
     if (!this.unlockAsked) return true;
     if (t - this.unlockAsked < 60000) return false;
     if (!this.unlockOk) return true;
-    return cupWindow(t) - 1 > (this.unlockThrough ?? cupWindow(this.unlockAsked) - 1);
+    return cupWindow(worldNow(t)) - 1 > (this.unlockThrough ?? cupWindow(worldNow(this.unlockAsked)) - 1);
   }
   // v0.4.7.5: a game they played (any court): ids played, winners won
   playedGame(ids, winners = []) {
@@ -420,7 +443,8 @@ export class AIWorld {
     if (a.habit.weekdays && weekend) p *= 0.25;
     if (a.habit.weekends && !weekend) p *= 0.18;
     const midnight = new Date(day * DAY); // UTC midnight of that date → convert to local midnight
-    const localMid = new Date(midnight.getUTCFullYear(), midnight.getUTCMonth(), midnight.getUTCDate()).getTime();
+    // (v0.4.8.7: on a shared world, the server's midnight, on this PC's clock)
+    const localMid = WORLD_TZ != null ? day * DAY - WORLD_TZ * 60000 - CLOCK_SKEW : new Date(midnight.getUTCFullYear(), midnight.getUTCMonth(), midnight.getUTCDate()).getTime();
     const parkFor = () => (a.home && r.next() < 0.8 ? a.home : PARKS[r.int(0, PARKS.length - 1)]);
     if (r.next() < p) {
       const s = a.start + r.range(-0.9, 0.9), l = a.len * r.range(0.65, 1.25);
@@ -446,7 +470,8 @@ export class AIWorld {
       // (qp4: the event on at that moment by the server's schedule, so a game left running across a handover sends them
       // to the new park on time; they used to keep going to the one that had just closed, and the new one stood empty)
       const ev = eventVenueAt(t);
-      if (ev && cupEntrant(id, cupWindow(t)) && hashString(`${id}|cuphr|${Math.floor(t / 3600000)}`) % 100 < 55) return { park: ev, until: Math.min(s.end, (Math.floor(t / 3600000) + 1) * 3600000, nextEventChange(t) ?? Infinity) };
+      const wt = worldNow(t), hr = Math.floor(wt / 3600000);
+      if (ev && cupEntrant(id, cupWindow(wt)) && hashString(`${id}|cuphr|${hr}`) % 100 < 55) return { park: ev, until: Math.min(s.end, (hr + 1) * 3600000 - CLOCK_SKEW, nextEventChange(t) ?? Infinity) };
       return { park: s.park, until: s.end };
     }
     return null;
@@ -493,7 +518,7 @@ export class AIWorld {
       if (exclude.has(id) || this.status(id, t)) continue;
       const a = this.account(id);
       // the Cup is topped up from its own entrants; a park from its regulars (and people with no home park)
-      if (EVENT_PARKS.has(park) ? !cupEntrant(id, cupWindow(t)) : (a.home && a.home !== park)) continue;
+      if (EVENT_PARKS.has(park) ? !cupEntrant(id, cupWindow(worldNow(t))) : (a.home && a.home !== park)) continue;
       const nx = this.nextOnline(id, t);
       cands.push([id, nx ? nx.start - t : 1e12]);
     }
@@ -527,7 +552,7 @@ export class AIWorld {
   playingElsewhere(id, t = Date.now()) {
     if (!this.online(id, t)) return false;
     if (this.squadOf(id, t)) return true; // (v0.4.8.6: his ICON Squad runs the whole hour)
-    return (hashString(id + '@' + Math.floor(t / 360000) + '|' + this.seed) % 100) < 45;
+    return (hashString(id + '@' + Math.floor(worldNow(t) / 360000) + '|' + this.seed) % 100) < 45;
   }
   // v0.4.5: you can only pull someone into your squad when he's online and not in a game. `playing` comes from
   // the park you're at (courts and your own game); everyone else uses playingElsewhere.
@@ -587,8 +612,25 @@ export function setEventSchedule(rows, serverNow = null) {
     venue: EVENT_PARKS.has(r.venue) ? r.venue : null, // (an event this copy of the game doesn't know: nobody goes)
     from: Number.isFinite(r.from) ? r.from * 1000 : -Infinity, until: Number.isFinite(r.until) ? r.until * 1000 : Infinity,
   }));
-  if (Number.isFinite(serverNow)) { const k = serverNow * 1000 - Date.now(); CLOCK_SKEW = Math.abs(k) < 6 * 3600000 ? k : 0; setSquadClock(CLOCK_SKEW); }
+  // (v0.4.8.7: while an online server's clock is in charge, this game's own service's doesn't move it: setWorldClock)
+  if (Number.isFinite(serverNow) && !WORLD_CLOCK.shared) { const k = serverNow * 1000 - Date.now(); CLOCK_SKEW = Math.abs(k) < 6 * 3600000 ? k : 0; setSquadClock(CLOCK_SKEW); }
   EVENT_VENUE = eventVenueAt(Date.now());
+  return true;
+}
+// v0.4.8.7 shared world: the online server's clock and time zone (its `now` in ms read against this PC's, tz in minutes east
+// of UTC), for the world, the event schedule and the ICON Squad alike. Returns true when the world's clock moved enough to
+// matter (a quarter of a second, or a new time zone): the AI world then redoes its schedules (clockChanged). null clears it
+// (offline again: this PC's own clock and time zone)
+export const WORLD_CLOCK = { shared: false, skew: 0, tz: null };
+export function setWorldClock(serverMs, tz = null, localMs = Date.now()) {
+  if (serverMs == null) { const was = WORLD_CLOCK.shared; WORLD_CLOCK.shared = false; WORLD_TZ = null; return was; }
+  if (!Number.isFinite(serverMs)) return false;
+  const k = serverMs - localMs, skew = Math.abs(k) < 6 * 3600000 ? k : 0, z = Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? Math.round(tz) : 0;
+  const moved = !WORLD_CLOCK.shared || Math.abs(skew - CLOCK_SKEW) > 250 || z !== WORLD_TZ;
+  if (!moved) return false;
+  WORLD_CLOCK.shared = true; WORLD_CLOCK.skew = skew; WORLD_CLOCK.tz = z;
+  CLOCK_SKEW = skew; WORLD_TZ = z; setSquadClock(skew);
+  if (EVENT_SCHEDULE) EVENT_VENUE = eventVenueAt(localMs);
   return true;
 }
 // the event park on at time t (local clock), or null when nothing is scheduled
@@ -615,11 +657,14 @@ export const cupEntrant = (id, w) => hashString(`${id}|cup|${w}`) % 100 < 22;
 
 // app-level helpers: one world per account, saved to the server (debounced) whenever it changes
 let squadLeft = false; // (once per launch of the game)
-export function initWorld(app) {
+export function initWorld(app, data = undefined) {
+  // (v0.4.8.7: the online server's world, when this page has heard of it: adoptSharedWorld builds it from this account's save)
+  if (data === undefined && app.sharedWorld && app.profile) { initWorld(app, app.profile.ai_world || null); adoptSharedWorld(app, app.sharedWorld); return app.ai; }
   // (v0.4.8.6 qp: after the season reset, an AI world from before it is the old one, whatever got it saved: a new one instead)
-  const r = app.config?.season_reset, saved = app.profile?.ai_world;
+  const r = app.config?.season_reset, saved = data !== undefined ? data : app.profile?.ai_world;
   const stale = !!(r?.done && saved && !(Number(saved.born) >= (r.at - 3600) * 1000));
   const w = new AIWorld(stale ? null : saved, app.catalog);
+  if (w.shared && !app.sharedWorld) w.shared = false; // (a shared world from last time, offline now: it's this account's own until the server says so)
   app.ai = w;
   // v0.4.7.5: you left your squad when you closed the game (the AI who want to keep running together still do)
   if (!squadLeft) { squadLeft = true; if (w.leaveSquadOnStart()) app.squadNote = w.exSquad; }
@@ -628,12 +673,16 @@ export function initWorld(app) {
     clearTimeout(timer);
     if (app.seasonResetting) return; // (v0.4.8.6 qp: the reset is happening: this page's world is the old one, never saved again)
     timer = setTimeout(async () => {
+      if (app.ai !== w) return; // (v0.4.8.7: replaced by the online server's world in the meantime: that one saves itself)
       try { const r = await app.api.mutate('/api/ai-world', { world: w.toJSON() }); w.dirty = false; if (app.profile) app.profile.ai_world = r.world; } catch (e) { console.warn('AI world not saved', e.message); }
     }, 800);
   };
   w.onChange(save);
   if (w.dirty) save();
-  refreshUnlocks(app, w); // (v0.4.8.5 qp7: what the AI field has won in the events; ui/events.js asks again as windows close)
+  w.save = save;
+  // (v0.4.8.5 qp7: what the AI field has won in the events; ui/events.js asks again as windows close. v0.4.8.7: on the online
+  // server's world, the server's word, with nothing of this account's own standings in it)
+  if (w.shared && app.sharedWorld?.unlocks) w.setUnlocks(app.sharedWorld.unlocks); else refreshUnlocks(app, w);
   // (v0.4.8.6: the ICON Squad is picked a few minutes before its hour, off the frame, so it's ready on time)
   const watch = () => {
     if (app.ai !== w) return; // (another account signed in: its own world watches)
@@ -648,5 +697,45 @@ export function initWorld(app) {
 export async function refreshUnlocks(app, w = app?.ai) {
   if (!w || !app?.api) return false;
   w.unlockAsked = Date.now(); w.unlockOk = false;
+  // (v0.4.8.7: the online server's world: asked of the server, the answer comes back as its world: adoptSharedWorld)
+  if (w.shared && app.net?.connected) { app.net.send({ t: 'world' }); return false; }
   try { const r = await app.api.get('/api/ai-world/unlocks'); return app.ai === w ? w.setUnlocks(r) : false; } catch (e) { console.warn('AI unlocks not loaded', e.message); return false; }
 }
+
+// ---------------- v0.4.8.7: one AI world per online server ----------------
+// Everybody connected to the same online server plays in the same AI world: the server issues its seed and its birth
+// (GET /api/ai-world/canonical, and the hub's hello / world messages: server/app.py shared_world), and everything in it
+// is worked out from those and the server's clock (setWorldClock: its time and time zone), never this PC's clock, its
+// own Math.random or what this account has done (prog: the games it has seen them play; the event prizes come from the
+// server, standings with nobody's own entries in them). So the same AI hoopers with the same builds, levels, looks,
+// unlocks and ICONs are on at the same parks at the same moment on every screen, and the same ICON Squad.
+// sw: {seed, born (ms), now (the server's clock, ms, as the message left), tz (minutes east of UTC), unlocks, schedule}.
+// The account's save follows: on the server's world already (same seed and birth), its friends, squad and the people it
+// has played with stay; coming from a world of its own, that one is kept aside in the save (prev) and the social side
+// starts afresh (the same ids are other people here). Returns true when app.ai is a new world
+export function validShared(sw) { return !!sw && typeof sw === 'object' && Number.isInteger(sw.seed) && sw.seed >= 1 && sw.seed < 2 ** 31 && Number.isFinite(sw.born) && sw.born > 0; }
+export function adoptSharedWorld(app, sw, localMs = Date.now()) {
+  if (!validShared(sw)) return false;
+  app.sharedWorld = sw;
+  const moved = setWorldClock(Number.isFinite(sw.now) ? sw.now : null, sw.tz, localMs);
+  if (Array.isArray(sw.schedule)) setEventSchedule(sw.schedule, null);
+  const cur = app.ai;
+  if (cur && cur.shared && cur.seed === sw.seed && cur.born === sw.born) {
+    if (moved) cur.clockChanged();
+    if (sw.unlocks && app.ai === cur) cur.setUnlocks(sw.unlocks);
+    return false;
+  }
+  if (!app.profile) { if (moved && cur) cur.clockChanged(); return false; } // (signed in later: initWorld adopts it then)
+  const saved = cur ? cur.toJSON() : app.profile.ai_world || null;
+  const same = !!saved && saved.seed === sw.seed && Number(saved.born) === sw.born;
+  const kept = s => s && ((s.friends || []).length || Object.keys(s.met || {}).length || Object.keys(s.prog || {}).length); // (an empty new world isn't worth keeping)
+  const own = saved && !saved.shared && kept(saved) ? { seed: saved.seed, born: saved.born, friends: saved.friends || [], squad: [], met: saved.met || {}, prog: saved.prog || {} } : null;
+  const data = same ? { ...saved, shared: true } : { seed: sw.seed, born: sw.born, shared: true, friends: [], squad: [], met: {}, prog: {}, ...(own || saved?.prev ? { prev: own || saved.prev } : {}) };
+  const w = initWorld(app, data);
+  w.shared = true;
+  if (!same) w.save?.();
+  app.worldVer = (app.worldVer || 0) + 1; // (the park you're in moves its people over: game/park.js)
+  return true;
+}
+// a test or the hub's sign-out: back to this PC's own clock (the world itself stays until the next sign-in)
+export function leaveSharedClock() { return setWorldClock(null); }

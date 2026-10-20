@@ -111,8 +111,8 @@ function detail(app, c, i, inv) {
 }
 
 export function tryOn(app, c, item, cat) {
-  // (v0.4.8.7: a headband is tried on closer, head and shoulders: from the whole-body view a band is a few pixels)
-  const focus = item?.slot === 'headband' ? 'upper' : (CATS.find(x => x[0] === cat) || [])[2] || 'full';
+  // (v0.4.8.7: a headband or a chain is tried on closer, head and shoulders: from the whole-body view it's a few pixels)
+  const focus = item?.slot === 'headband' || item?.slot === 'chain' ? 'upper' : (CATS.find(x => x[0] === cat) || [])[2] || 'full';
   if (!item) { app.showroom.setCharacter(c, app.look(c)); return; }
   if (item.category === 'green') {
     // v0.4.7.5: a green release shows on a made jumper: this sound with your effect, or this effect with your sound

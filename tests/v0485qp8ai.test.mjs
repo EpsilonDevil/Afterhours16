@@ -119,7 +119,7 @@ test('your rules: a full 90 max OVR, attributes within their caps, cap breakers 
     for (const [k, v] of Object.entries(b.attributes)) assert.ok(v <= caps[k], `${id} ${k} ${v} > cap ${caps[k]}`);
     const cap = B.badgeCaps(b), hof = Object.entries(e.badges).filter(([, t]) => t >= 4).length;
     for (const [k, t] of Object.entries(e.badges)) { assert.ok(t <= cap[k]); assert.equal(b.badges[k].tier, t); }
-    assert.equal(hof, L.h); assert.ok(hof <= B.HOF_LIMIT);
+    assert.equal(hof, L.icon ? B.hofCapacity(b) : L.h); assert.ok(hof <= B.hofCapacity(b)); // (v0.4.8.7: at his Icon, every HOF he can reach)
     assert.equal(b.cap_breakers.earned, 5 * Math.min(5, hof));
     const placed = Object.values(b.cap_breakers.applied).reduce((s, n) => s + n, 0);
     assert.equal(placed + b.cap_breakers.available, b.cap_breakers.earned);
@@ -127,7 +127,7 @@ test('your rules: a full 90 max OVR, attributes within their caps, cap breakers 
     if (!b.icon_badge) assert.equal(b.legend.upgrades, 0, 'Legend upgrades only with the Icon badge');
     else assert.ok(b.legend.upgrades <= Math.floor(b.legend.games / 2), 'every 2 Pro Run games, +1');
     const info = B.iconStatusInfo(b);
-    if (info.active) { icons++; assert.ok(info.cap_breakers && info.badges && b.overall === 99 && hof === B.iconNeed(b)); assert.equal(info.badges_left, 0); }
+    if (info.active) { icons++; assert.ok(info.cap_breakers && info.badges && b.overall === 99 && hof === B.hofCapacity(b)); assert.equal(info.badges_left, 0); }
   }
   assert.ok(climbers > 300 && icons > 100, `${climbers} climbing, ${icons} ICONs`);
   // the HOF badges come from his own set first, and the set fills out toward Gold as they do

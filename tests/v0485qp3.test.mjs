@@ -82,7 +82,7 @@ test('the park calls half as many fouls as before (shooting fouls and reach-ins)
 function iconBuild(over = {}) {
   const c = { archetype: 'stretch_big', position: 'PF', height: 83, weight: 235, wingspan: 87, progression: { prorun_completed: 30 }, cap_breakers: { earned: 25 }, badges: {}, overall: 99, ...over };
   const caps = badgeCaps(c); let hof = 0;
-  for (const k of BADGE_IDS) { const t = caps[k] >= 4 && hof < HOF_LIMIT ? (hof++, 4) : Math.min(caps[k], 3); c.badges[k] = { tier: t, progress: 0 }; }
+  for (const k of BADGE_IDS) c.badges[k] = { tier: caps[k], progress: 0 }; // (v0.4.8.7: every badge at its cap, every Hall of Fame the build can reach)
   return c;
 }
 
@@ -93,7 +93,7 @@ test('ICON status: every cap breaker, every badge maxed (the Hall of Fame slots 
   assert.equal(iconStatus(iconBuild({ overall: 98 })), false, '98 OVR');
   assert.equal(iconStatus(iconBuild({ cap_breakers: { earned: 20 } })), false, 'a cap breaker short');
   assert.equal(iconStatus(iconBuild({ progression: { prorun_completed: 27 } })), false, 'cap breakers not open yet (max OVR 89)');
-  const short = iconBuild(); const silver = BADGE_IDS.find(k => short.badges[k].tier === 3); short.badges[silver].tier = 2;
+  const short = iconBuild(); const silver = BADGE_IDS.find(k => short.badges[k].tier >= 2); short.badges[silver].tier -= 1;
   assert.equal(iconStatus(short), false, 'a badge below what it can reach');
   assert.equal(iconStatusInfo(short).badges_left, 1);
   // the server's word wins when the character came from it

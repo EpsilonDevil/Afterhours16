@@ -278,6 +278,8 @@ export function controlsTable(app) {
     ['Shoot — hold, release at the top (a green inside 35 ft is a guaranteed make, outside the window almost never; never while smothered)', K('shoot'), P('shoot')],
     ['Bailout — pass out of your jumper before the release', `${K('pass')} while shooting`, `${P('pass')} while shooting`],
     ['Attack the rim — your better finish, dunk or layup (hold; a layup is timed like a shot)', K('dunk'), `${G('RS')} down while sprinting, held`],
+    // (v0.4.8.7: the forced dunk combo, with whatever the three are bound to)
+    ['Force a dunk — any build, on a drive to the rim (the dunk can still miss or get blocked)', `${K('sprint')} + ${K('stickDown')} + ${K('shoot')}, held`, `${P('sprint')} + ${G('RS')} down + ${P('shoot')}, held`],
     ['Pump fake', `Tap ${K('shoot')}`, `Tap ${P('shoot')}`],
     ['Pass (aims with your stick) / bounce / lob', K('pass', 'bounce', 'lob'), `${P('pass')} / ${P('bounce')} / ${P('lob')}`],
     ['Alley-oop', K('alley'), `${P('alleyMod')}+${P('lob')}`],

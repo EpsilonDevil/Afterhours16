@@ -990,7 +990,7 @@ export function paintShoe(spec = {}) {
         poly(half, [[0.08, 0.6], [0.4, 0.84], [0.6, 0.84], [0.32, 0.6]], trim === upper ? accent : trim);
         line(half, [[0.08, 0.6], [0.4, 0.84]], 'rgba(0,0,0,0.3)', 2, [5, 4]);
         dots(half, 0.82, 0.97, 0.6, 0.78, 0.028, 'rgba(0,0,0,0.3)', 2.6);
-        g.fillStyle = accent; g.font = `900 ${Math.round(26 * k)}px "Arial Black", sans-serif`; g.textAlign = 'center'; g.fillText('16', X(half, 0.12), Y(0.62)); break;
+        g.fillStyle = accent; g.font = `900 ${Math.round(26 * k)}px "Arial Black", sans-serif`; g.textAlign = 'center'; g.fillText('RR', X(half, 0.12), Y(0.62)); break; // (v0.4.8.7: RIMRIFT's mark; it said 16, the old name's)
       }
       case 'boombox': {
         // v0.4.8.5 quick patch And The Beat Goes On: an 80s white leather hi-top. A perforated toe box, a cyan padded collar,
@@ -1232,54 +1232,103 @@ export function paintBandana(spec = {}) {
 // v0.4.4 chain textures. paintChain: one tile of 4 links (u repeats along the chain, v goes round the tube).
 // Gold: polished Cuban links with bright edges and dark gaps. Iced: white-gold links paved with stones. The
 // iced version also returns an emissive "glint" map so the stones sparkle under the bloom.
-export function paintChain(kind) {
-  const W = 256, Hh = 64, c = canvas(W, Hh), g = c.getContext('2d');
-  const iced = kind === 'ice';
-  const e = iced ? canvas(W, Hh) : null, ge = e && e.getContext('2d');
-  g.fillStyle = iced ? '#6f7680' : '#4a3209'; g.fillRect(0, 0, W, Hh);
+// v0.4.8.7: each chain its own (sim/bots.js chainSpec: link, metal, stone). Before this there were two textures, 'gold'
+// and 'ice', and every chain was one of them. A tile is 4 links (or 4 stones, or a few turns of the rope) along u; v goes
+// round the tube. The metal shades from the item's colour (yellow gold, sterling, white gold, rose gold); stones glint
+// (the emissive map). An old caller passing 'gold' or 'ice' gets the Gold Chain's or the Iced Out Chain's look.
+const LEGACY_CHAIN = { gold: { link: 'cuban', metal: '#e8c15a', stone: null }, ice: { link: 'tennis', metal: '#dfeaf5', stone: '#ffffff' } };
+const metalRamp = hex => { const m = hexToRgb(hex || '#e8c15a'); return { hi: rgbStr(mix(m, [1, 1, 1], 0.7)), lt: rgbStr(mix(m, [1, 1, 1], 0.3)), mid: rgbStr(m), dk: rgbStr(shade(m, 0.6)), deep: rgbStr(shade(m, 0.32)) }; };
+export function paintChain(spec) {
+  const s = typeof spec === 'string' ? LEGACY_CHAIN[spec] || LEGACY_CHAIN.gold : spec || LEGACY_CHAIN.gold;
+  const link = s.link || 'cuban', M = metalRamp(s.metal || s.color), W = 256, Hh = 64, c = canvas(W, Hh), g = c.getContext('2d');
+  const st = s.stone ? hexToRgb(s.stone) : null, e = st ? canvas(W, Hh) : null, ge = e && e.getContext('2d');
   if (ge) { ge.fillStyle = '#000'; ge.fillRect(0, 0, W, Hh); }
-  const n = 4, lw = W / n;
-  for (let i = 0; i < n; i++) {
-    const cx = lw * (i + 0.5), tilt = i % 2 ? 0.35 : -0.35;
-    g.save(); g.translate(cx, Hh / 2); g.rotate(tilt);
-    const grd = g.createLinearGradient(0, -Hh * 0.45, 0, Hh * 0.45);
-    if (iced) { grd.addColorStop(0, '#f4f7fb'); grd.addColorStop(0.5, '#c9d0d8'); grd.addColorStop(1, '#8c949e'); }
-    else { grd.addColorStop(0, '#fff1b0'); grd.addColorStop(0.35, '#f2c650'); grd.addColorStop(0.7, '#c9902a'); grd.addColorStop(1, '#7c560f'); }
-    g.fillStyle = grd;
-    g.beginPath(); g.ellipse(0, 0, lw * 0.62, Hh * 0.46, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = iced ? '#5a616b' : '#5a3d0a';
-    g.beginPath(); g.ellipse(0, 0, lw * 0.34, Hh * 0.17, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = iced ? 'rgba(255,255,255,0.7)' : 'rgba(255,248,210,0.85)'; g.lineWidth = 3;
-    g.beginPath(); g.ellipse(0, 0, lw * 0.55, Hh * 0.39, 0, Math.PI * 1.1, Math.PI * 1.75); g.stroke();
-    g.restore();
-    if (iced) {
-      // pavé stones over the link
-      for (let k = 0; k < 26; k++) {
-        const a = (k / 26) * Math.PI * 2, rr = 0.48 + 0.12 * ((k * 7) % 3);
-        const x = cx + Math.cos(a) * lw * 0.5 * rr, y = Hh / 2 + Math.sin(a) * Hh * 0.36 * rr;
-        const sz = 2.6 + (k % 3) * 0.6;
-        g.fillStyle = ['#ffffff', '#e8f4ff', '#f6f9ff', '#dfe9ff'][k % 4];
-        g.beginPath(); g.arc(x, y, sz, 0, Math.PI * 2); g.fill();
-        g.fillStyle = 'rgba(120,140,170,0.6)'; g.beginPath(); g.arc(x + 0.8, y + 0.8, sz * 0.45, 0, Math.PI * 2); g.fill();
-        if (k % 3 === 0) { ge.fillStyle = k % 2 ? '#ffffff' : '#bfe2ff'; ge.beginPath(); ge.arc(x - 0.5, y - 0.5, 1.6, 0, Math.PI * 2); ge.fill(); }
-      }
+  const stone = (x, y, rad, glint = true) => {
+    const gr = g.createRadialGradient(x - rad * 0.3, y - rad * 0.3, rad * 0.1, x, y, rad);
+    gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.55, rgbStr(mix(st, [1, 1, 1], 0.35))); gr.addColorStop(1, rgbStr(shade(st, 0.62)));
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - rad * 0.6, y); g.lineTo(x + rad * 0.6, y); g.moveTo(x, y - rad * 0.6); g.lineTo(x, y + rad * 0.6); g.stroke(); // (the facets)
+    if (glint) { ge.fillStyle = rgbStr(mix(st, [1, 1, 1], 0.6)); ge.beginPath(); ge.arc(x - rad * 0.25, y - rad * 0.25, Math.max(1.4, rad * 0.35), 0, 7); ge.fill(); }
+  };
+  if (link === 'rope') {
+    // a rope: strands twisted in a tight spiral, each a bright ridge with a dark groove beside it, running diagonally
+    g.fillStyle = M.deep; g.fillRect(0, 0, W, Hh);
+    const n = 8, step = W / n;
+    for (let i = -2; i < n + 2; i++) {
+      const x0 = i * step, gr = g.createLinearGradient(x0, 0, x0 + step, 0);
+      gr.addColorStop(0, M.dk); gr.addColorStop(0.35, M.hi); gr.addColorStop(0.6, M.mid); gr.addColorStop(1, M.deep);
+      g.fillStyle = gr; g.beginPath(); g.moveTo(x0, Hh); g.lineTo(x0 + step * 0.85, Hh); g.lineTo(x0 + step * 0.85 + Hh * 0.9, 0); g.lineTo(x0 + Hh * 0.9, 0); g.closePath(); g.fill();
+    }
+  } else if (link === 'tennis') {
+    // a tennis chain: one unbroken row of round stones, each in a square setting with a prong at every corner
+    g.fillStyle = M.dk; g.fillRect(0, 0, W, Hh);
+    const n = 4, lw = W / n;
+    for (let i = 0; i < n; i++) {
+      const cx = lw * (i + 0.5), cy = Hh / 2;
+      g.fillStyle = M.mid; g.fillRect(cx - lw * 0.46, cy - Hh * 0.46, lw * 0.92, Hh * 0.92);
+      g.fillStyle = M.lt; g.fillRect(cx - lw * 0.46, cy - Hh * 0.46, lw * 0.92, Hh * 0.08);
+      stone(cx, cy, Math.min(lw, Hh) * 0.38);
+      g.fillStyle = M.hi; for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.arc(cx + dx * lw * 0.33, cy + dy * Hh * 0.33, 2.6, 0, 7); g.fill(); }
+    }
+  } else if (link === 'box') {
+    // a box chain: square links seen end on (a hollow square, its inner walls in shadow), each face set with small stones
+    // (bright overall: from a few metres a fine chain is its average colour, and too much shadow reads as black)
+    g.fillStyle = M.dk; g.fillRect(0, 0, W, Hh);
+    const n = 4, lw = W / n;
+    for (let i = 0; i < n; i++) {
+      const cx = lw * (i + 0.5), cy = Hh / 2, a = lw * 0.47, b = Hh * 0.47;
+      const gr = g.createLinearGradient(0, cy - b, 0, cy + b); gr.addColorStop(0, M.hi); gr.addColorStop(0.5, M.lt); gr.addColorStop(1, M.mid);
+      g.fillStyle = gr; g.fillRect(cx - a, cy - b, a * 2, b * 2);
+      g.fillStyle = M.dk; g.fillRect(cx - a * 0.32, cy - b * 0.32, a * 0.64, b * 0.64);
+      if (st) for (const [dx, dy] of [[-0.72, -0.72], [0, -0.72], [0.72, -0.72], [-0.72, 0], [0.72, 0], [-0.72, 0.72], [0, 0.72], [0.72, 0.72]]) stone(cx + dx * a, cy + dy * b, Math.min(a, b) * 0.2, (dx + dy) % 2 === 0);
+    }
+  } else {
+    // Cuban: flat, tight, interlocking oval links, alternately tilted, a bright bevel on each and dark gaps between
+    g.fillStyle = M.deep; g.fillRect(0, 0, W, Hh);
+    const n = 4, lw = W / n;
+    for (let i = 0; i < n; i++) {
+      const cx = lw * (i + 0.5), tilt = i % 2 ? 0.35 : -0.35;
+      g.save(); g.translate(cx, Hh / 2); g.rotate(tilt);
+      const grd = g.createLinearGradient(0, -Hh * 0.45, 0, Hh * 0.45);
+      grd.addColorStop(0, M.hi); grd.addColorStop(0.35, M.lt); grd.addColorStop(0.7, M.mid); grd.addColorStop(1, M.dk);
+      g.fillStyle = grd; g.beginPath(); g.ellipse(0, 0, lw * 0.66, Hh * 0.47, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = M.deep; g.beginPath(); g.ellipse(0, 0, lw * 0.3, Hh * 0.13, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = M.hi; g.lineWidth = 3; g.beginPath(); g.ellipse(0, 0, lw * 0.58, Hh * 0.4, 0, Math.PI * 1.1, Math.PI * 1.75); g.stroke();
+      g.restore();
+      if (st) for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; stone(cx + Math.cos(a) * lw * 0.42, Hh / 2 + Math.sin(a) * Hh * 0.3, 2.6, k % 3 === 0); }
     }
   }
   return { color: c, emissive: e };
 }
 
-// medallion face: gold with a raised rim and an original "16" mark, or an iced-out stone pattern
-export function paintPendant(kind) {
+// a pendant's face (v0.4.8.7: from the chain's own spec, sim/bots.js chainSpec): the medallion in the chain's metal with a
+// raised rim and an original RR mark (it said "16", the old name's); the iced disc paved with the chain's stones; the heart
+// in the chain's metal, paved edge to edge with its stones (the heart's outline is the mesh's, athlete.js buildChain)
+export function paintPendant(spec) {
+  const s = typeof spec === 'string' ? { ...(LEGACY_CHAIN[spec] || LEGACY_CHAIN.gold), pendant: spec === 'ice' ? 'iced' : 'medallion' } : spec || {};
+  const kind = s.pendant || (s.stone ? 'iced' : 'medallion'), M = metalRamp(s.metal || s.color);
   const S = 256, c = canvas(S, S), g = c.getContext('2d');
-  const iced = kind === 'ice';
+  const iced = kind === 'iced' || kind === 'heart', st = hexToRgb(s.stone || '#ffffff');
   const e = iced ? canvas(S, S) : null, ge = e && e.getContext('2d');
   if (ge) { ge.fillStyle = '#000'; ge.fillRect(0, 0, S, S); }
   const grd = g.createRadialGradient(S * 0.38, S * 0.32, 10, S / 2, S / 2, S * 0.55);
-  if (iced) { grd.addColorStop(0, '#ffffff'); grd.addColorStop(0.6, '#cfd6df'); grd.addColorStop(1, '#7d8692'); }
-  else { grd.addColorStop(0, '#fff3b8'); grd.addColorStop(0.5, '#e9b94a'); grd.addColorStop(1, '#8d6414'); }
+  grd.addColorStop(0, M.hi); grd.addColorStop(0.5, M.mid); grd.addColorStop(1, M.dk);
   g.fillStyle = grd; g.fillRect(0, 0, S, S);
-  g.lineWidth = 16; g.strokeStyle = iced ? '#e9eef5' : '#f7d777'; g.beginPath(); g.arc(S / 2, S / 2, S * 0.43, 0, Math.PI * 2); g.stroke();
-  g.lineWidth = 4; g.strokeStyle = iced ? '#7c8591' : '#8a5f12'; g.beginPath(); g.arc(S / 2, S / 2, S * 0.36, 0, Math.PI * 2); g.stroke();
+  if (kind === 'heart') {
+    // stones in rows across the whole face (the mesh cuts the heart out of it), a bright metal rim round the outline
+    for (let y = 14; y < S; y += 22) for (let x = 14 + ((y / 22) % 2) * 11; x < S; x += 22) {
+      g.fillStyle = rgbStr(mix(st, [1, 1, 1], 0.4)); g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill();
+      g.strokeStyle = rgbStr(shade(st, 0.6)); g.lineWidth = 1.5; g.stroke();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x - 3, y - 3, 2.6, 0, 7); g.fill();
+      if ((x + y) % 3 === 0) { ge.fillStyle = rgbStr(mix(st, [1, 1, 1], 0.6)); ge.beginPath(); ge.arc(x - 2, y - 2, 3.4, 0, 7); ge.fill(); }
+    }
+    g.strokeStyle = M.hi; g.lineWidth = 10; g.beginPath();
+    for (let k = 0; k <= 64; k++) { const t = k / 64 * Math.PI * 2, ox = 16 * Math.pow(Math.sin(t), 3) / 17 * 0.97, oy = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) / 15 * 0.97; const X = S * (0.5 + ox * 0.5), Y = S * (0.5 - oy * 0.5); k ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+    g.stroke();
+    return { color: c, emissive: e };
+  }
+  g.lineWidth = 16; g.strokeStyle = M.lt; g.beginPath(); g.arc(S / 2, S / 2, S * 0.43, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 4; g.strokeStyle = M.dk; g.beginPath(); g.arc(S / 2, S / 2, S * 0.36, 0, Math.PI * 2); g.stroke();
   if (iced) {
     for (let ring = 0; ring < 6; ring++) {
       const rr = S * (0.06 + ring * 0.065), cnt = Math.max(1, Math.round(ring * 7.5));
@@ -1291,9 +1340,10 @@ export function paintPendant(kind) {
       }
     }
   } else {
-    g.fillStyle = '#7a520c'; g.font = '900 104px "Arial Black", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('16', S / 2 + 4, S / 2 + 6);
-    g.fillStyle = '#ffe59a'; g.fillText('16', S / 2, S / 2);
+    // (the mark raised out of the face: its shadow, then the bright metal)
+    g.fillStyle = M.deep; g.font = '900 96px "Arial Black", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('RR', S / 2 + 4, S / 2 + 6);
+    g.fillStyle = M.hi; g.fillText('RR', S / 2, S / 2);
   }
   return { color: c, emissive: e };
 }

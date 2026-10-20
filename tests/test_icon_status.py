@@ -29,10 +29,7 @@ def icon_build(**over):
     caps = builds.badge_caps(c)
     hof = 0
     for k in builds.BADGE_IDS:
-        if caps[k] >= 4 and hof < builds.HOF_LIMIT:
-            t, hof = 4, hof + 1
-        else:
-            t = min(caps[k], 3)
+        t = caps[k]  # (v0.4.8.7: an ICON has every badge at its cap, every Hall of Fame his build can reach, not just 7)
         c["badges"][k] = {"tier": t, "progress": 0}
     c.update(over)
     return c

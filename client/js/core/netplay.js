@@ -93,6 +93,7 @@ export class Net {
       case 'hello':
         this.you = m.you; this.friends = m.friends || [];
         this.sendEntry();
+        if (m.world) this.emit('world', m); // (v0.4.8.7: the service's one AI world: sim/world.js adoptSharedWorld)
         this.emit('friends'); this.emit('state'); return;
       case 'authed': this.token = m.token; this.authError = null; this.emit('authed', m); return;
       case 'autherror':
@@ -146,6 +147,16 @@ export class Net {
         if (this.rtts.length > 8) this.rtts.shift();
         const s = [...this.rtts].sort((a, b) => a - b);
         this.rtt = s[Math.min(1, s.length - 1)];
+        // (v0.4.8.7: the service's clock against this PC's, from the replies with the quickest round trips: the shared AI
+        // world runs on it)
+        if (typeof m.s === 'number') {
+          const rt = performance.now() - m.c, k = m.s + rt / 2 - Date.now();
+          (this.skews || (this.skews = [])).push([rt, k]);
+          if (this.skews.length > 8) this.skews.shift();
+          const best = [...this.skews].sort((a, b) => a[0] - b[0]).slice(0, 3).map(x => x[1]).sort((a, b) => a - b);
+          this.serverSkew = best[Math.floor(best.length / 2)];
+          this.emit('clock', this.serverSkew);
+        }
         return;
       }
       // (qp3 perf: someone's round trip changed: the people here and your squad set up games with it)

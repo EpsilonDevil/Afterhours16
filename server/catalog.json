@@ -1359,11 +1359,16 @@
   "min_overall": 0,
   "rep_required": 10,
   "original_2k_asset": false,
-  "description": "For the ones who run the park.",
+  "description": "For the ones who run the park. A heavy yellow-gold Cuban link, flat and tight, sitting at the collarbones, with a round gold medallion stamped with a raised RR.",
   "id": "chain_gold",
   "name": "Gold Chain",
   "slot": "chain",
   "color": "#e8c15a",
+  "link": "cuban",
+  "thick": 0.0044,
+  "drop": 0.07,
+  "pendant": "medallion",
+  "v0487chain": true,
   "price": 7800
  },
  {
@@ -1727,7 +1732,13 @@
   "category": "accessory",
   "slot": "chain",
   "color": "#dfeaf5",
-  "description": "Daily Spin exclusive."
+  "link": "tennis",
+  "stone": "#ffffff",
+  "thick": 0.004,
+  "drop": 0.085,
+  "pendant": "iced",
+  "v0487chain": true,
+  "description": "Daily Spin exclusive. A white-gold tennis chain, one unbroken row of clear stones in square settings, hanging to mid-chest with a big pavé disc that throws light."
  },
  {
   "min_overall": 0,
@@ -7225,8 +7236,13 @@
   "name": "Silver Rope Chain",
   "slot": "chain",
   "color": "#c9ced6",
+  "link": "rope",
+  "thick": 0.0034,
+  "drop": 0.105,
+  "pendant": null,
+  "v0487chain": true,
   "price": 6200,
-  "description": "Original cosmetic accessory. No attribute bonus."
+  "description": "Original cosmetic accessory. No attribute bonus. A sterling-silver rope chain, its strands twisted in a tight spiral, worn long and plain, no pendant."
  },
  {
   "category": "accessory",
@@ -7255,8 +7271,15 @@
   "name": "Rose Ice Chain",
   "slot": "chain",
   "color": "#f4c7d3",
+  "metal": "#e8a98f",
+  "link": "box",
+  "stone": "#ffd6e2",
+  "thick": 0.0031,
+  "drop": 0.05,
+  "pendant": "heart",
   "price": 0,
-  "description": "Daily Spin exclusive. Original cosmetic accessory.",
+  "v0487chain": true,
+  "description": "Daily Spin exclusive. Original cosmetic accessory. A short rose-gold box chain close round the neck, every square link set with a pale pink stone, and an iced heart hanging from it.",
   "exclusive": "wheel"
  },
  {

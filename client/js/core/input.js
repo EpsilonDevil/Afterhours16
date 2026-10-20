@@ -427,6 +427,19 @@ export class Input {
     return null;
   }
 
+  // v0.4.8.7: the forced dunk, held: sprint + right stick down + shoot, on offense. A pad: the sprint button (RT / R2 as
+  // bound) with the right stick pushed down and the shoot button (X / Square as bound); the keyboard: a sprint key, the
+  // step-back key (stickDown) and a shoot key, as bound. (game/session.js turns it into the intent's forceDunk)
+  forceDunkHeld() {
+    if (this.capturing || this.ctx !== 'offense') return false;
+    const D = a => (this.keymap[a] || []).some(k => this.down.has(k));
+    if (D('sprint') && D('stickDown') && D('shoot')) return true;
+    const g = this.gp;
+    if (!g.connected || !g.axes) return false;
+    const rx = g.axes[2] || 0, ry = g.axes[3] || 0;
+    return ry > 0.6 && Math.abs(ry) > Math.abs(rx) && this.gpBtn(this.pb('sprint')) && this.gpBtn(this.pb('shoot'));
+  }
+
   // ---------------- rumble ----------------
   rumble(strong = 0.5, weak = 0.5, ms = 120) {
     if (!this.vibration || !this.gp.connected) return;

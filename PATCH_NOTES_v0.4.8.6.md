@@ -194,3 +194,28 @@ Headbands in the store are now tried on at head-and-shoulders distance.
 **Follow-up (Oct 20):** the streak's bunting used to hang across the court level with the 2K cam and covered the top of the screen. It now runs along both sidelines at fence height, out of bounds, so it never blocks the court, the rim or the players in the 2K cam or the broadcast cam.
 
 **The park shuffle.** When The Favelas end at 8 PM Eastern on Wednesday Oct 21, the event park starts a shuffle of all five event parks: the King Tut Cup, the Jungle Ballers, And The Beat Goes On, The Monster Mash and The Favelas, 48 hours each. Every park plays once before any park repeats, and no park ever plays twice in a row. The first round is the four parks the Favelas haven't been: the King Tut Cup (from Oct 21), And The Beat Goes On (Oct 23), the Jungle Ballers (Oct 25) and The Monster Mash (Oct 27); then the parks reshuffle for the next round, and so on with no end date. The order is fixed in advance, so every game shows the same park and switches over on time on its own.
+
+## Quick patch 5 (Oct 20): One AI world online, Hall of Fame for every badge, chains, possession, open threes, the forced dunk
+
+**One AI world for everyone online.** Every player on the same online server now sees the same AI world: the same AI hoopers with the same builds, looks, unlocks and ICONs, online at the same times, at the same parks. Friends in the same park see the same games on every court, the same lines and the same park-goers. The server keeps one world (its seed and start time), and every game follows the server's clock and time zone, so different PC clocks and time zones no longer make a difference. When several players are in a park, the first one there keeps its games, lines and ICON Squad in step for the others; if he leaves, the next one carries on. Your own games no longer change the AI. Offline play keeps its own world, as before.
+- **Heads-up:** an account's AI friends and squad from its old world don't carry into the shared world (the same names are different people there). Nothing is deleted; the old world is kept on the save.
+- **Still per screen:** the background extras, like pedestrians, animals and the event parks' townsfolk, still wander on their own on each screen.
+
+**Hall of Fame for every badge.** There's no Hall of Fame limit any more. The 7 Hall of Fame badges are only what your archetype's Icon badge needs; every badge your build can take to Hall of Fame can now get there, and ICON status needs every badge at its max. **A build already past a badge's requirements gets it the next time the game loads your profile** (its progress kept counting while it was held at Gold). Cap breakers still come with the first 5 Hall of Fame badges. The AI's ICONs follow the same rule.
+
+**Every chain looks like itself.** The four chains used to come out as only two looks (gold or iced). Now:
+
+| Chain | Links | Metal and stones | Length | Pendant |
+| --- | --- | --- | --- | --- |
+| Gold Chain | Cuban, thickest | yellow gold | collarbone | gold medallion with RR |
+| Silver Rope Chain | rope | sterling silver | longest | none |
+| Iced Out Chain | tennis | white gold, clear stones | mid-chest | big iced disc |
+| Rose Ice Chain | box, finest | rose gold, pink stones | shortest | iced heart |
+
+Chains now show over a jersey's neckline, the store tries chains on at head-and-shoulders distance, and the medallion and the retro shoe's side mark say RR.
+
+**Quarters don't change possession** (Pro-Am and the Pro Run). The team with the ball when a quarter ends starts the next quarter with it. A basket on the buzzer hands it to the other team, like any make. It used to alternate whoever had the ball.
+
+**A solid green window on wide-open threes for 85+ shooters.** A wide-open three (guarded 10% or less) by a build with an 85 or higher three-point rating now has a solid green window whatever the archetype: a green goes in, and the non-shooter's 10% smaller window doesn't apply to it.
+
+**Force a dunk with any build.** Hold R2 + right stick down + Square (Xbox: RT + right stick down + X; keyboard: sprint + the step-back key + shoot) while driving at the rim, within about 4 m, and any build dunks it, whatever its dunk rating or height. A build that can't normally dunk uses a basic one- or two-hand dunk. Makes, misses and blocks still come from the dunk's usual chances, so a poor dunker misses more. Further out it's a normal drive. Any two of the three still do what they did before. The combo is listed in the controls.

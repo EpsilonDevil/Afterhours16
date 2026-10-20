@@ -423,14 +423,17 @@ export class Game {
     // v0.4.7.5 quick patch: a non-shooter (anyone but a Sharpshooter or a Stretch Big) has a 10% smaller window, and
     // his green from three isn't a sure make (outlined on the meter). smothered: no window at all, whatever adds to it.
     // ghost: ignore the smother (the window he'd have had a hair less guarded: a release in it gets a record scratch).
-    const nonShooter = !S.isShooterArch(p.archetype), smothered = !ghost && S.isSmothered(contest);
+    // v0.4.8.7: a wide-open three by an 85+ three-point shooter (any archetype) has a solid green window: a green is a
+    // sure make, and his window isn't cut for not being a shooting archetype (S.openThreeSure)
+    const openThree = three && !a.post && S.openThreeSure(contest, this.natural(p).three_point);
+    const nonShooter = !S.isShooterArch(p.archetype) && !openThree, smothered = !ghost && S.isSmothered(contest);
     const ctx = { contest: ghost ? Math.min(contest, S.SMOTHER - 1e-3) : contest, moving: a.moving, fade: a.fade, d, three, catchShoot: a.catchShoot, corner, pkg: p.shotPkg, greenK: this.greenK(p), hustle: a.hustle, nonShooter };
     const k = this.speed * (p.human ? p.greenBonus ?? this.greenBonus : 1);
     const total = smothered ? 0 : S.greenWindowMs(p.ratings[key], p.badges, ctx) * k;
     const natural = smothered ? 0 : S.greenWindowMs(this.natural(p)[key], {}, { ...ctx, greenK: 1, pkg: S.naturalPkg(p.shotPkg) }) * k;
     // (qp3: a shot out of the post is a sure make on a green only wide open, like a layup: any coverage keeps it outlined)
-    const sure = d <= S.DEEP_D && !smothered && !(nonShooter && three) && (!a.post || contest <= WIDE_OPEN);
-    return { total, natural: Math.min(total, natural), sure, three, d, corner, smothered, nonShooter };
+    const sure = d <= S.DEEP_D && !smothered && (openThree || (!(nonShooter && three) && (!a.post || contest <= WIDE_OPEN)));
+    return { total, natural: Math.min(total, natural), sure, three, d, corner, smothered, nonShooter, openThree };
   }
   // guard: how guarded the finish is on the jumper scale (shots.js insideGuard); smothered at the rim = no window
   layupWindow(p, a, contest, guard = S.insideGuard(contest), ghost = false) {
@@ -751,7 +754,7 @@ export class Game {
   multiIntent(p) {
     const it = { ...blankIntent(), ...(this.humanIntents.get(p.id) || {}) }, sq = it.seq, used = p.usedSeq || 0;
     if (sq) {
-      if (sq.shoot && sq.shoot <= used) { it.shoot = null; it.attack = false; it.jump = false; }
+      if (sq.shoot && sq.shoot <= used) { it.shoot = null; it.attack = false; it.jump = false; it.forceDunk = false; }
       if (sq.pass && sq.pass <= used) it.pass = null;
       if (sq.move && sq.move <= used) it.move = null;
       if (sq.steal && sq.steal <= used) { it.steal = false; it.stealDir = null; it.stealLow = false; }
@@ -1255,7 +1258,8 @@ export class Game {
   }
   startShot(p, it) {
     const rim = this.rimFor(p.team);
-    const ctx = { sprint: it.sprint, forceJumper: it.forceJumper, attack: !!it.attack, defs: this.opponents(p) };
+    // (v0.4.8.7: forceDunk, the forced dunk: sprint + right stick down + shoot on a drive; a person's alone, never the AI's)
+    const ctx = { sprint: it.sprint, forceJumper: it.forceJumper, attack: !!it.attack, forceDunk: !!it.forceDunk && !this.isAI(p), defs: this.opponents(p) };
     if (p.action?.type === 'move' && p.action.move === 'stepback' && !it.attack) ctx.forceJumper = true;
     const st = S.shotTypeFor(p, rim, ctx);
     if (st.type === 'none') return; // attack-the-rim pressed out of range: keep driving
@@ -1351,7 +1355,9 @@ export class Game {
     // v0.4.3: higher dunk packages take off from further out and get up higher (when the athlete has the
     // bounce for it), which buys air time for the flashier finishes
     const tier = S.dunkTier(p);
-    const style = this.dunkStyle(p, standing);
+    // (v0.4.8.7: a forced dunk by a build that can't normally dunk is a basic one: two hands or one, nothing flashy; one
+    // that can dunks it with his own package. The jump is still what it takes to reach the rim, below)
+    const style = st.forced && !st.able ? (this.rng.next() < 0.5 ? 'power' : 'onehand') : this.dunkStyle(p, standing);
     const flair = S.STYLE_FLAIR[style] ?? 0;
     const takeoffDist = standing ? Math.min(d, 0.9) : Math.min(d, 1.7 + tier * 0.12 + (st.long ? 0.35 * n(p.ratings.vertical) : 0) + this.rng.range(-0.2, 0.3));
     const travel = Math.max(0, d - takeoffDist);
@@ -2773,6 +2779,7 @@ export class Game {
         return;
       }
       this.score[team] += pts;
+      this.lastMade = { team, t: this.time }; // (v0.4.8.7: a basket on the buzzer gives the next quarter's ball to the other team, as any make does)
       if (shooter && shooter.team === team) {
         shooter.stats.pts += pts;
         if (info.ft) shooter.stats.ftm++; else { shooter.stats.fgm++; if (info.three) shooter.stats.tpm++; }
@@ -3631,14 +3638,18 @@ export class Game {
     this.emit({ type: 'buzzer', quarter: this.quarter });
     if (this.quarter >= this.quarters && this.score[0] !== this.score[1]) { this.finish(this.score[0] > this.score[1] ? 0 : 1); return; }
     this.phase = 'quarterBreak';
-    const q = this.quarter;
+    // v0.4.8.7: the end of a quarter doesn't change possession (Pro-Am and the Pro Run). The team that had the ball at the
+    // buzzer starts the next quarter with it; a basket that went in on the buzzer hands it to the other team, like any
+    // make. (It used to alternate: the opening tip's loser started quarter 2, its winner quarter 3, whoever had the ball.)
+    const made = this.lastMade && this.time - this.lastMade.t < 4 ? this.lastMade.team : -1;
+    const keep = made >= 0 ? 1 - made : this.possession;
     this.deadBall(2.5, () => {
       this.quarter++;
       const ot = this.quarter > this.quarters;
       this.gameClock = ot ? Math.min(120, this.quarterLen) : this.quarterLen; // (v0.4.8.5: 1-minute quarters get 1-minute overtimes)
       this.teamFouls = [0, 0];
       if (this.quarter === Math.floor(this.quarters / 2) + 1 && !ot) this.attackDir = [-this.attackDir[0], -this.attackDir[1]];
-      const team = (this.firstPossession + q) % 2;
+      const team = keep;
       const bz = -this.attackDir[team] * (COURT.length / 2 + 0.45);
       this.startInbound(team, { x: 0, z: bz * 0 + -this.attackDir[team] * 1, }, 'sideline', 1.6);
       // inbound from midcourt sideline

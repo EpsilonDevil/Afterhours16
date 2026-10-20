@@ -252,6 +252,21 @@ export function shoeModel(id) {
   return 'basic';
 }
 
+// v0.4.8.7: a chain's look, from its own catalog entry: the link (cuban, rope, tennis, box), the metal (its colour, or
+// `metal` when the stones give the item its colour), the stones set in it, how thick it is and how far it hangs (H units),
+// and its pendant (medallion, iced, heart, or none). Before this every chain came out as one of two looks, 'gold' or
+// 'ice', picked from its id (the Silver Rope Chain was drawn as the Gold Chain, the Rose Ice Chain as the Iced Out
+// Chain). One without those fields (a chain added later) still gets a look of its own from its id and colour
+export function chainSpec(it = {}) {
+  const id = it.id || '', iced = /ice/.test(id);
+  const link = it.link || (/rope/.test(id) ? 'rope' : /box/.test(id) ? 'box' : iced ? 'tennis' : 'cuban');
+  return {
+    id, link, kind: iced || it.stone ? 'ice' : 'plain', color: it.color || '#e8c15a', metal: it.metal || it.color || '#e8c15a',
+    stone: it.stone !== undefined ? it.stone : iced ? '#ffffff' : null, thick: it.thick || (link === 'rope' ? 0.0034 : 0.0038), drop: it.drop ?? 0.072,
+    pendant: it.pendant !== undefined ? it.pendant : link === 'rope' ? null : iced ? 'iced' : 'medallion',
+  };
+}
+
 // Resolve visual look from appearance + equipment ids
 export function resolveLook(build, catalog, override = {}) {
   const ap = build.appearance || {};
@@ -267,7 +282,7 @@ export function resolveLook(build, catalog, override = {}) {
   if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color };
   if (item(eq.leg_sleeve)) g.legSleeve = { color: item(eq.leg_sleeve).color, side: 'L' };
   if (item(eq.knee_pad)) g.kneePad = { color: item(eq.knee_pad).color, side: 'R' };
-  if (item(eq.chain)) g.chain = { kind: /ice/.test(eq.chain) ? 'ice' : 'gold', color: item(eq.chain).color };
+  if (item(eq.chain)) g.chain = chainSpec({ ...item(eq.chain), id: eq.chain }); // (v0.4.8.7: each chain its own look, not gold or ice)
   return {
     skin: ap.skin, hair: ap.hair, hair_color: ap.hair_color, face: ap.face, beard: ap.beard,
     number: override.number ?? ap.number ?? 0, name: (override.name ?? build.name ?? '').split(' ').slice(-1)[0],

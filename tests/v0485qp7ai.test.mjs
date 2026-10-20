@@ -17,6 +17,7 @@ import { Player } from '../client/js/sim/player.js';
 import { Game } from '../client/js/sim/game.js';
 import { clampFull } from '../client/js/sim/clamp.js';
 import { RNG } from '../client/js/core/rng.js';
+import { hofCapacity } from '../client/js/sim/builds.js';
 
 const src = f => fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 const list = JSON.parse(fs.readFileSync(new URL('../server/catalog.json', import.meta.url)));
@@ -106,7 +107,7 @@ test('Icon badges by grinding: the climb\'s 7th Hall of Fame badge, legends and 
       for (const id of ic) {
         const a = w.account(id), L = w.ladder(id, NOW), e = w.entry(id);
         assert.ok(['legend', 'elite'].includes(a.tier.id) && w.potential(id) >= AI_LADDER.icon, `${id} ${a.tier.id}`);
-        assert.ok(L.h >= L.target && L.h === Object.values(e.badges).filter(t => t >= 4).length, `${id}: his Icon is his ${L.target}th HOF`);
+        assert.ok(L.h >= L.target && Object.values(e.badges).filter(t => t >= 4).length === hofCapacity(e.build), `${id}: his Icon at his ${L.target}th HOF, and then every HOF his build can reach (v0.4.8.7)`);
         assert.equal(e.build.icon_badge, ICON_FOR_ARCH[e.build.archetype]);
       }
     }

@@ -9,7 +9,7 @@
 import { $$, esc, toast, closeModal, modal } from './common.js';
 import { Net } from '../core/netplay.js';
 import { THEMES, travelLock } from '../world/themes.js';
-import { PARK_NAMES } from '../sim/world.js';
+import { PARK_NAMES, adoptSharedWorld, setWorldClock } from '../sim/world.js';
 import { resolveLook } from '../sim/bots.js';
 import { GAME_SPEED } from '../sim/game.js';
 import { settings } from '../core/settings.js';
@@ -63,6 +63,11 @@ export async function initOnline(app) {
   net.on('courts', () => placeOf(app)?.onCourts?.());
   net.on('state', () => { if (!net.connected) placeOf(app)?.clearPeers?.(); });
   net.on('squad', () => followSquad(app));
+  // v0.4.8.7: the online server's one AI world (every hello, and again when asked: refreshUnlocks), its clock read off the
+  // pings, so everyone connected sees the same AI hoopers in the same places at the same moment (sim/world.js)
+  net.on('world', m => { if (m?.world) adoptSharedWorld(app, { ...m.world, ...(net.serverSkew != null ? { now: Date.now() + net.serverSkew } : {}) }); });
+  net.on('clock', k => { const sw = app.sharedWorld; if (sw && setWorldClock(Date.now() + k, sw.tz)) app.ai?.clockChanged?.(); });
+  net.on('pop', m => placeOf(app)?.onPop?.(m)); // (the park's people as its host sees them: game/park.js)
   // signed in on the host's game from your own copy: keep the token for next time (in your own save)
   net.on('autherror', m => { if (!document.querySelector('.ol-prompt')) toast(m.text, 'error'); signInPromptError(app, m); });
   net.on('authed', m => { if (net.hub) toast(`Signed in online as ${m.you?.username || ''}.`); if (document.querySelector('.ol-prompt')) closeModal(); });

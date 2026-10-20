@@ -174,8 +174,8 @@ function badges(app, root, c) {
   const caps = c.badge_caps || badgeCaps(c), capacity = c.hof_capacity ?? hofCapacity(c), need = c.icon_need ?? iconNeed(c);
   const hof = c.hof_count || 0, iconId = c.icon_badge || mineIcon?.[0];
   const pips = (tier, cap) => [1, 2, 3, 4].map(t => `<i class="pip p${t} ${t <= tier ? 'on' : ''} ${t > cap ? 'locked' : ''}" title="${TIER[t]}${t > cap ? ' (locked on this build)' : ''}"></i>`).join('');
-  root.innerHTML = `<div class="muted">Badges level up from what you do in games: Bronze → Silver → Gold → Hall of Fame. Every earned badge is active, and each tier is a big step up from the last. A stat with none of its badges plays 10% weaker. Your archetype and height decide how far each badge can go. A build holds up to ${rules.hof_limit} Hall of Fame badges: the first 5 bring 5 cap breakers each, and the ${need === rules.hof_limit ? `${rules.hof_limit}th` : `${need}th (every one your build can reach)`} unlocks your archetype's Icon badge.</div>
-    <div class="badge-build"><span>${archHTML(c)} · ${esc(BAND_LABEL[heightBand(c.height)] || '')}</span><b>${capacity}</b><small>badges can reach Hall of Fame on this build</small><b>${hof}/${Math.min(rules.hof_limit, capacity)}</b><small>Hall of Fame now</small></div>
+  root.innerHTML = `<div class="muted">Badges level up from what you do in games: Bronze → Silver → Gold → Hall of Fame. Every earned badge is active, and each tier is a big step up from the last. A stat with none of its badges plays 10% weaker. Your archetype and height decide how far each badge can go. Every badge that can reach Hall of Fame on your build can get there: the first 5 Hall of Fame badges bring 5 cap breakers each, and the ${need === rules.hof_limit ? `${rules.hof_limit}th` : `${need}th (every one your build can reach)`} unlocks your archetype's Icon badge. ICON status needs every badge at its max.</div>
+    <div class="badge-build"><span>${archHTML(c)} · ${esc(BAND_LABEL[heightBand(c.height)] || '')}</span><b>${capacity}</b><small>badges can reach Hall of Fame on this build</small><b>${hof}/${capacity}</b><small>Hall of Fame now</small></div>
     <div class="icon-badge ${icon ? 'on' : ''}"><div class="icon-art-wrap">${iconBadgeSVG(iconId, 76, { locked: !icon })}</div><div><b>${esc(icon ? icon.name : mineIcon ? mineIcon[1].name : 'Icon badge')}</b>
       <small>${icon ? 'UNLOCKED · ' : `Locked · ${hof}/${need} Hall of Fame · `}${esc((icon || mineIcon?.[1])?.desc || '')}</small></div></div>
     ${iconStatusCard(c)}
@@ -188,7 +188,7 @@ function badges(app, root, c) {
       return `<div class="badge ${TIER_CLS[tier]} ${cap < 4 ? 'capped' : ''}"><div class="badge-art">${badgeSVG(id, tier, 58, { cap })}</div>
         <div class="badge-info"><b>${esc(b.name)}</b><small>${tier ? TIER[tier] : 'Not earned'}${over} · ${esc(b.desc)}</small>
         <div class="pips">${pips(tier, cap)}${cap < 4 ? `<em>Max ${TIER[cap]}</em>` : ''}</div>
-        <span class="bar small"><i style="width:${pct}%"></i></span><small class="muted">${next ? `${st.progress}/${next} ${b.stat.replace('_', ' ')}${tier === 3 && st.progress >= next && hof >= rules.hof_limit ? ` · Hall of Fame limit reached (${hof}/${rules.hof_limit})` : ''}` : tier >= cap && cap < 4 ? 'Maxed for this build' : 'Maxed'}</small></div></div>`;
+        <span class="bar small"><i style="width:${pct}%"></i></span><small class="muted">${next ? `${st.progress}/${next} ${b.stat.replace('_', ' ')}` : tier >= cap && cap < 4 ? 'Maxed for this build' : 'Maxed'}</small></div></div>`;
     }).join('')}</div>`).join('')}`;
 }
 

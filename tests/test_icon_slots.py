@@ -35,10 +35,7 @@ def make_icon(ch, ovr99=True):
     ch["legend"] = {"games": 0, "upgrades": 0, "floor": {a: 99 for a in builds.ATTRIBUTES}}
     caps, hof, ch["badges"] = builds.badge_caps(ch), 0, {}
     for k in builds.BADGE_IDS:
-        if caps[k] >= 4 and hof < builds.HOF_LIMIT:
-            t, hof = 4, hof + 1
-        else:
-            t = min(caps[k], 3)
+        t = caps[k]  # (v0.4.8.7: an ICON has every badge at its cap, every Hall of Fame his build can reach, not just 7)
         ch["badges"][k] = {"tier": t, "progress": 0}
     return ch
 

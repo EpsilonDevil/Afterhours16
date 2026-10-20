@@ -173,7 +173,7 @@ export function iconStatusInfo(c = {}) {
   const caps = badgeCaps(c), have = c.badges || {};
   const tierOf = k => Math.min(Number(have[k]?.tier ?? have[k] ?? 0) || 0, caps[k]);
   const capacity = hofCapacity(c), hofs = BADGE_IDS.filter(k => tierOf(k) >= 4).length;
-  const badgesLeft = BADGE_IDS.filter(k => tierOf(k) < Math.min(caps[k], 3)).length + Math.max(0, Math.min(HOF_LIMIT, capacity) - hofs);
+  const badgesLeft = BADGE_IDS.filter(k => tierOf(k) < caps[k]).length; // (v0.4.8.7: every badge at its cap, Hall of Fame included: no 7-HOF limit)
   const cbMax = Math.min(CAP_BREAKER_HOF_LIMIT, capacity) * CAP_BREAKERS_PER_HOF, cbEarned = c.cap_breakers_earned ?? c.cap_breakers?.earned ?? 0;
   const cbDone = maxOvr(c) >= OVR_CAP && cbEarned >= cbMax;
   const ovr = c.overall ?? (c.attributes ? overall(c.attributes, c.position || 'SF') : 0);

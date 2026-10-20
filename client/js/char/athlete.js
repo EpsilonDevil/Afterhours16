@@ -1150,7 +1150,13 @@ export class AthleteModel {
     const fabric = fam === 'compression' ? 0.0025 : fam === 'hoodie' ? 0.016 : fam === 'shell' ? 0.014 : 0.009;
     const iced = spec.kind === 'ice';
     const drape = fam === 'compression' ? 0 : 0.8; // same drape as buildTop, so the chain follows the fabric
-    const r = iced ? 0.0042 : 0.0036; // tube radius (H units)
+    // v0.4.8.7: each chain its own (sim/bots.js chainSpec): how thick (tube radius, H units), how far it hangs at the front,
+    // and the link's section: a Cuban link flat against the chest, a rope round, a tennis chain's settings six-sided, a box
+    // chain square
+    const link = spec.link || (iced ? 'tennis' : 'cuban');
+    const r = spec.thick || (iced ? 0.0042 : 0.0036); // tube radius (H units)
+    const dropF = spec.drop ?? 0.072;
+    const SECTION = { cuban: { cols: 10, ra: 1.25, rb: 0.6 }, rope: { cols: 12, ra: 1, rb: 1 }, tennis: { cols: 6, ra: 1.1, rb: 0.85 }, box: { cols: 4, ra: 1, rb: 1 } }[link] || { cols: 10, ra: 1, rb: 1 };
     const path = [], wts = [], N = 72;
     // point on the (clothed) body surface at height yf with lateral offset xt (H units), front or back
     const surf = (yf, xt, frontSide, loose) => {
@@ -1166,7 +1172,7 @@ export class AthleteModel {
       // the chain sits at the base of the neck at the back and sides, then drops in a U to the sternum
       const ang = -Math.PI + (i / N) * Math.PI * 2, c0 = Math.cos(ang), side = Math.sign(Math.sin(ang)) || 1;
       const front = Math.pow((1 + c0) / 2, 1.6);
-      const yf = 0.838 - 0.072 * front;
+      const yf = 0.838 - dropF * front;
       const xt = Math.abs(Math.sin(ang)) * (0.056 - 0.01 * front);
       const cloth = fam === 'hoodie' || fam === 'shell' ? fabric : yf > 0.8 ? fabric * 0.45 : fabric; // (v0.4.8.5 quick patch: over the windbreaker's collar too)
       const loose = cloth + r + 0.0022;
@@ -1177,31 +1183,41 @@ export class AthleteModel {
     }
     let len = 0; const acc = [0];
     for (let i = 1; i < path.length; i++) { len += Math.hypot(...sub(path[i], path[i - 1])); acc.push(len); }
-    const linkRepeat = 0.06 * H; // one texture tile (4 links)
+    const linkRepeat = ({ cuban: 0.05, rope: 0.034, tennis: 0.05, box: 0.034 }[link] || 0.06) * H; // one texture tile (4 links, stones or twists)
     const gb = new GB();
-    gb.tube(path, path.map(() => r * H), [0, 1, 0], {
-      cols: 10, capEnd: false,
+    gb.tube(path, path.map(() => [r * H * SECTION.ra, r * H * SECTION.rb]), [0, 1, 0], {
+      cols: SECTION.cols, capEnd: false,
       uv: (t, c) => [acc[Math.round(t * N)] / linkRepeat, c],
       w: t => wts[Math.round(t * N)],
     });
     const chain = gb.finish();
-    // pendant: a medallion hanging just below the lowest point, facing forward with the chest
+    const pendantKind = spec.pendant !== undefined ? spec.pendant : iced ? 'iced' : 'medallion';
+    if (!pendantKind) return { chain, pendant: null, iced, link, pendantKind: null };
+    // pendant: hanging just below the lowest point, facing forward with the chest: a disc (a medallion, or a bigger iced
+    // one) or a heart (its outline: the classic curve, fanned from its middle)
     const pg = new GB(), lo = path[N / 2], w = wts[N / 2];
-    const pr = (iced ? 0.02 : 0.017) * H, th = 0.004 * H;
+    const heart = pendantKind === 'heart';
+    const pr = (pendantKind === 'iced' ? 0.021 : heart ? 0.016 : 0.017) * H, th = (heart ? 0.0032 : 0.004) * H;
     const cz = lo[2] + 0.004 * H, cy = lo[1] - pr - 0.004 * H;
-    const seg = 28;
+    const seg = heart ? 48 : 28;
+    const outline = a => {
+      if (!heart) return [Math.sin(a), Math.cos(a)];
+      const t = a; // (16 sin^3 t, 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t), about 34 x 30 across: to -1..1, centred
+      return [16 * Math.pow(Math.sin(t), 3) / 17, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) / 15];
+    };
     const ringF = [], ringB = [];
     for (let k = 0; k <= seg; k++) {
-      const a = k / seg * Math.PI * 2, x = Math.sin(a) * pr, y = Math.cos(a) * pr;
-      ringF.push(pg.v([lo[0] + x, cy + y, cz + th], [0.5 + Math.sin(a) * 0.5, 0.5 - Math.cos(a) * 0.5], null, w));
-      ringB.push(pg.v([lo[0] + x, cy + y, cz - th], [0.5 + Math.sin(a) * 0.5, 0.5 - Math.cos(a) * 0.5], null, w));
+      const a = k / seg * Math.PI * 2, [ox, oy] = outline(a), x = ox * pr, y = oy * pr, uv = [0.5 + ox * 0.5, 0.5 - oy * 0.5];
+      ringF.push(pg.v([lo[0] + x, cy + y, cz + th], uv, null, w));
+      ringB.push(pg.v([lo[0] + x, cy + y, cz - th], uv, null, w));
     }
     pg.capRing(ringF, [lo[0], cy, cz + th], [0.5, 0.5], null, w, true);
     pg.capRing(ringB, [lo[0], cy, cz - th], [0.5, 0.5], null, w, false);
     for (let k = 0; k < seg; k++) { pg.tri(ringF[k], ringB[k], ringB[k + 1]); pg.tri(ringF[k], ringB[k + 1], ringF[k + 1]); }
     // bail (the loop the chain runs through)
-    pg.tube([[lo[0], cy + pr, cz], [lo[0], cy + pr + 0.006 * H, cz + 0.001 * H], [lo[0], lo[1], lo[2]]], [0.0022 * H, 0.0022 * H, 0.002 * H], [0, 0, 1], { cols: 8, uv: () => [0.95, 0.5], w: () => w });
-    return { chain, pendant: pg.finish(), iced };
+    const top0 = cy + pr * (heart ? outline(0)[1] : 1);
+    pg.tube([[lo[0], top0, cz], [lo[0], top0 + 0.006 * H, cz + 0.001 * H], [lo[0], lo[1], lo[2]]], [0.0022 * H, 0.0022 * H, 0.002 * H], [0, 0, 1], { cols: 8, uv: () => [0.95, 0.5], w: () => w });
+    return { chain, pendant: pg.finish(), iced, link, pendantKind };
   }
 
   // v0.4.8.5 quick patch 2: the Jack-o'-Lantern headband (The Monster Mash). A pumpkin-orange band round the head (on top

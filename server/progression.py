@@ -326,9 +326,8 @@ def _raise_badges(char, todo):
         tiers = BADGES[bid]["tiers"]
         # v0.4.7.5: a badge stops at the highest tier its build allows (archetype and height)
         new_tier = min(caps.get(bid, 4), sum(1 for t in tiers if b["progress"] >= t))
-        # v0.4.5: a build holds at most 7 Hall of Fame badges; others stop at Gold
-        if new_tier >= 4 and b["tier"] < 4 and hof_count(char) >= HOF_LIMIT:
-            new_tier = 3
+        # (v0.4.8.7: no Hall of Fame limit any more. It used to stop every badge past the 7th Hall of Fame at Gold, which
+        # locked a build out of the ICON status (every badge at its cap). The 7 are only what the Icon badge needs.)
         if new_tier > b["tier"]:
             reached_hof = new_tier >= 4 and b["tier"] < 4
             upgraded.append({"id": bid, "name": BADGES[bid]["name"], "tier": new_tier})
@@ -557,7 +556,7 @@ def normalize_code(code):
 AI_ID = re.compile(r"^ai-[0-9]{1,4}$")
 
 
-def ai_world(world):
+def ai_world(world, _nested=True):
     """Sanitize the client's AI-world state: the seed of this account's AI population, friends, the current
     squad, and who you've played with (games together, last seen)."""
     if not isinstance(world, dict):
@@ -596,4 +595,16 @@ def ai_world(world):
         ex_ids = list(dict.fromkeys(ids(ex.get("ids"), 4)))
         if ex_ids and isinstance(at, (int, float)) and not isinstance(at, bool) and 0 < at < 1e13:
             out["exSquad"] = {"ids": ex_ids, "at": float(at)}
+    # v0.4.8.7: an online server's world (the same for everyone connected to it), and the account's own world from before
+    # it went online, kept aside (sanitized the same way, one level deep)
+    if world.get("shared") is True:
+        out["shared"] = True
+    prev = world.get("prev")
+    if _nested and isinstance(prev, dict):
+        try:
+            p = ai_world({k: v for k, v in prev.items() if k not in ("prev", "shared", "exSquad")}, _nested=False)
+            p["squad"] = []
+            out["prev"] = p
+        except Invalid:
+            pass
     return out

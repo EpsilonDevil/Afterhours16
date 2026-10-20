@@ -217,7 +217,7 @@ export class Player {
 }
 
 export function blankIntent() {
-  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null, post: false, postMove: null, postShot: null, postStick: null };
+  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null, post: false, postMove: null, postShot: null, postStick: null, forceDunk: false }; // (v0.4.8.7: forceDunk, the forced dunk combo)
 }
 
 // Local (player-facing) → world offset

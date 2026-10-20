@@ -114,7 +114,7 @@ BASE_OVR_CAP = 80
 PRORUN_GAMES_PER_OVR = 3
 CAP_BREAKERS_PER_HOF = 5
 CAP_BREAKER_HOF_LIMIT = 5  # cap breakers come with the first 5 Hall of Fame badges (25 max per build)
-HOF_LIMIT = 7  # Hall of Fame badges per build; the 7th unlocks the archetype's Icon badge
+HOF_LIMIT = 7  # Hall of Fame badges the archetype's Icon badge needs (v0.4.8.7: not a limit: every badge a build can take to Hall of Fame can get there)
 ICON_FOR_ARCH = {"sharpshooter": "sharp_eye", "slasher": "hash_slinging", "playmaker": "oprah", "lockdown": "the_clamp",
                  "two_way": "the_general", "glass_cleaner": "big_brother", "stretch_big": "open_arms", "post_scorer": "sexy_red"}
 COST_K = 0.65  # v0.4.5: everything costs 35% less
@@ -411,8 +411,8 @@ def hof_init(char):
 
 # v0.4.8.5 quick patch 3: ICON status, the endgame. A build is an ICON once it has unlocked every cap breaker it can earn
 # (cap breakers open at 90 max OVR; they come 5 a Hall of Fame badge for the first 5, fewer on a build that can't
-# reach 5 HOFs), every badge is as high as it can go on this build (its cap, with the 7 Hall of Fame slots full, or as
-# many as the build can reach, and the rest at Gold) and its overall is 99. Computed, never stored: nothing a build
+# reach 5 HOFs), every badge is as high as it can go on this build (its cap: v0.4.8.7, every badge that can reach Hall of
+# Fame on this build at Hall of Fame, not just 7 of them; the rest at their caps) and its overall is 99. Computed, never stored: nothing a build
 # has done can be taken away, so it stays an ICON.
 ICON_STATUS_OVR = 99
 
@@ -421,8 +421,7 @@ def icon_status_info(char):
     caps_ = badge_caps(char)
     have = char.get("badges") or {}
     tiers = {k: min(int((have.get(k) or {}).get("tier", 0) or 0), caps_[k]) for k in BADGE_IDS}
-    hof_target = min(HOF_LIMIT, hof_capacity(char))
-    badges_left = sum(1 for k, t in tiers.items() if t < min(caps_[k], 3)) + max(0, hof_target - hof_count(char))
+    badges_left = sum(1 for k, t in tiers.items() if t < caps_[k])  # (v0.4.8.7: every badge at its cap, Hall of Fame included)
     cb = char.get("cap_breakers") or {}
     cb_max = min(CAP_BREAKER_HOF_LIMIT, hof_capacity(char)) * CAP_BREAKERS_PER_HOF
     cb_done = cap_breakers_unlocked(char) and int(cb.get("earned", 0) or 0) >= cb_max

@@ -12,8 +12,8 @@ import { StreakFX, streakLevel } from '../world/streakfx.js';
 import { boostedBuild } from '../sim/ratings.js';
 import { consumeBoostsLocal } from '../ui/rewards.js';
 import { Player } from '../sim/player.js';
-import { COURT } from '../sim/constants.js';
-import { RNG } from '../core/rng.js';
+import { COURT, DT } from '../sim/constants.js';
+import { RNG, hashString } from '../core/rng.js';
 import { resolveLook, makeBot } from '../sim/bots.js';
 import { capBadges } from '../sim/builds.js';
 import { PlayerVisual, MatchSession } from './session.js';
@@ -21,7 +21,7 @@ import { GAME_SPEED } from '../sim/game.js';
 import { VisualPool } from './vispool.js';
 import { audio } from '../core/audio.js';
 import * as M from '../core/math.js';
-import { BOUNTY_MIN, bountyFor } from '../sim/world.js';
+import { BOUNTY_MIN, bountyFor, worldNow } from '../sim/world.js';
 import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP, squadAIPlayers } from '../ui/online.js';
 import { endWinStreak } from './iconfx.js';
 import { MAX_ICONS_PER_AI_TEAM, isIconEntry } from '../sim/iconsquad.js';
@@ -87,6 +87,17 @@ export class Walker {
   update(dt) {
     const p = this.p, it = p.intent;
     it.mx = 0; it.mz = 0; it.sprint = false; it.face = null;
+    // (v0.4.8.7: a park-goer as the park's host has him, ParkHub.onPop: he goes where he is on the host's screen)
+    const T = this.mirror;
+    if (T) {
+      if (this.visual.pending) { p.setPos(T.x, T.z, T.f); return; }
+      const dx = T.x - p.x, dz = T.z - p.z, d = Math.hypot(dx, dz);
+      if (d > 6) p.setPos(T.x, T.z, T.f);
+      else if (d > 0.12) { const k = Math.min(1, Math.max(0.15, (T.m || 0) + (d - 0.4) * 0.6)); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = !!T.s && d > 0.4; } // (his pace there, a touch quicker to catch up)
+      else it.face = T.f;
+      p.move(dt * GAME_SPEED, false, 0); p.stamina = 1;
+      return;
+    }
     if (this.visual.pending) return; // still being built (a few frames): he walks in once he's there
     // (v0.4.8.6 ICON Squad: his leader walked out of the park: so does he, with him)
     if (this.lead && (this.lead.gone || this.lead.disposed)) { if (this.exit) { this.gone = true; return; } this.lead = null; }
@@ -273,13 +284,14 @@ export class Peers {
 class Spectator {
   constructor(hub, court, x, z, facing, sit) {
     this.hub = hub; this.court = court; this.sit = sit;
-    const bot = makeBot(hub.rng, { level: hub.rng.range(0.2, 0.8) });
+    const R = this.rng = hub.specRng || hub.rng; // (v0.4.8.7: the same people on the benches on every screen)
+    const bot = makeBot(R, { level: R.range(0.2, 0.8) });
     this.p = new Player(0, 0, { build: bot.build, name: bot.name }, hub.app.catalog);
     this.p.setPos(x, z, facing);
     this.visual = new PlayerVisual(hub.r, hub.scene, bot.build, resolveLook(bot.build, hub.catalog), { detail: 0.6 });
     this.base = sit ? 'sit' : 'idle';
-    this.react = null; this.reactT = 0; this.cool = hub.rng.range(0, 1);
-    this.look = hub.rng.range(-0.35, 0.35); // where along the court he's looking
+    this.react = null; this.reactT = 0; this.cool = R.range(0, 1);
+    this.look = R.range(-0.35, 0.35); // where along the court he's looking
     this.setPose(this.base);
     this.render(0.25, true); // settle into the pose
   }
@@ -292,7 +304,7 @@ class Spectator {
   // ev: the court's events this frame
   onEvents(evs) {
     if (this.cool > 0 || !evs?.length) return;
-    const rng = this.hub.rng;
+    const rng = this.rng;
     let kind = null, hype = 0;
     for (const e of evs) {
       if (e.type === 'score') {
@@ -360,6 +372,8 @@ export class ParkHub {
     this.event = this.cup ? (EVENTS[themeId] || null) : null;
     this.ante = null; this.cupState = null; this.cupT = 0;
     this.rng = new RNG((Date.now() & 0xffff) ^ 0x5a5a);
+    // (v0.4.8.7: the people on the benches are the same on every screen: their own seed, from the park and the world)
+    this.specRng = new RNG((hashString(`${themeId}|spectators`) ^ (app.ai?.seed || 1)) >>> 0);
     this.mode = 'roam';
     this.catalog = app.catalog;
     const char = app.char();
@@ -455,7 +469,7 @@ export class ParkHub {
       const seats = [];
       for (const bz of full ? [oz - 9, oz - 3, oz + 3] : [oz + 4]) for (const dz of [-0.62, 0, 0.62]) seats.push(bz + dz);
       const n = full ? 4 : 2;
-      for (const z of this.rng.shuffle(seats).slice(0, n)) out.push(new Spectator(this, c, bx, z, Math.PI / 2, true));
+      for (const z of this.specRng.shuffle(seats).slice(0, n)) out.push(new Spectator(this, c, bx, z, Math.PI / 2, true));
       const stand = full ? [[ox - W + 0.75, oz + 8.6, Math.PI / 2], [ox + W + 0.7, oz - 11.5, -Math.PI / 2]] : [[ox - 4.5, oz - 4.6, 0], [ox + 3.8, oz - 4.9, 0]];
       for (const [x, z, f] of stand.slice(0, full ? 2 : 1)) out.push(new Spectator(this, c, x, z, f, false));
     }
@@ -599,9 +613,9 @@ export class ParkHub {
   }
   // online at this park and not already doing something here (v0.4.8.6: and never one of the ICON Squad on his own)
   availableHere(t = Date.now()) {
-    const busy = this.busyIds(), squad = new Set(this.world.squad), icon = this.iconIds(t);
+    const busy = this.busyIds(), squad = new Set(this.world.squad), icon = this.iconIds(t), theirs = this.peerAIIds();
     const ids = this.world.onlineAt(this.themeId, t);
-    return ids.filter(id => !busy.has(id) && !squad.has(id) && !icon.has(id));
+    return ids.filter(id => !busy.has(id) && !squad.has(id) && !icon.has(id) && !theirs.has(id));
   }
   // n players for a court: people around first (closest to a wanted level when asked), then free park-goers;
   // topUp: if the park is too quiet, regulars who are about to come on "hop on early". v0.4.8.6: no AI team but the
@@ -731,8 +745,8 @@ export class ParkHub {
     c.bgStart = performance.now();
   }
   // the AI game on a court (v0.4.8.6: on its own, so the tests can play the park's rotations without a renderer)
-  bgSession(c, rosters, teams) {
-    const s = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters, teams, seed: this.rng.int(1, 1e9), target: 11, difficulty: 0.6, assist: true });
+  bgSession(c, rosters, teams, seed = this.rng.int(1, 1e9)) { // (v0.4.8.7: seed: the park host's game, played the same here)
+    const s = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!c.full, scene: this.scene, venue: this.venue, court: c, rosters, teams, seed, target: 11, difficulty: 0.6, assist: true });
     s.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
     return s;
   }
@@ -891,7 +905,9 @@ export class ParkHub {
     this.venue.update(dt);
     this.venue.practice.hoop.update(dt, this.practice ? null : null);
     // background courts
+    const mirror = this.mirroring(); // (v0.4.8.7: the park's host runs its people; here they're played as he has them)
     for (const c of this.courts) {
+      if (c.session && mirror) { this.mirrorCourt(c, dt); continue; }
       if (c.session) {
         c.session.rate = this.courtRate(c);
         c.session.frame(dt);
@@ -920,8 +936,12 @@ export class ParkHub {
     this.updateStreakFX(dt);
     if (this.cup && (this.cupT -= dt) <= 0) { this.cupT = 60; this.refreshCup(); }
     this.popT -= dt;
-    if (this.popT <= 0) { this.popT = 20; this.populationTick(); }
-    if ((this.iconT -= dt) <= 0) { this.iconT = 2; this.squadTick(); } // (v0.4.8.6 the ICON Squad: their hour, and where they are)
+    // (v0.4.8.7: online with others here, the park's host decides who comes and goes, and the ICON Squad's moves; the
+    // rest of you play his park: popTick)
+    if (this.world !== this.app.ai) this.rebaseWorld();
+    if (this.popT <= 0) { this.popT = 20; if (mirror) this.syncSquad(); else this.populationTick(); }
+    if ((this.iconT -= dt) <= 0) { this.iconT = 2; if (!mirror) this.squadTick(); } // (v0.4.8.6 the ICON Squad: their hour, and where they are)
+    this.popTick(dt);
     if (this.mode !== 'roam' && this.overview) this.setOverview(false);
     if (this.mode === 'roam') this.roam(dt);
     else if (this.mode === 'match' && this.mySession) {
@@ -1555,8 +1575,8 @@ export class ParkHub {
       }
       // real people took the court: the AI game we had on it gives way (their game comes in as a watch)
       if (ct && (ct.busy || (ct.kings && ct.kings.leader !== me)) && c.session && !(c.mine && c === this.myCourt)) this.vacate(c);
-      // and gave it back: the park's own games start up on it again
-      if (!this.realHeld(c) && !c.session && !c.live && !c.mine && !this.disposed) this.newBackgroundGame(c, null);
+      // and gave it back: the park's own games start up on it again (v0.4.8.7: the park's host starts them, for everyone)
+      if (!this.realHeld(c) && !c.session && !c.live && !c.mine && !this.disposed && !this.mirroring()) this.newBackgroundGame(c, null);
     });
   }
   onClaimed(m) {
@@ -1592,6 +1612,173 @@ export class ParkHub {
   onPeerPos(m) { if (!this.inGameIds().has(m.from)) this.peers.pos(m); }
   onPeople(m) { this.peers.people(m); }
   clearPeers() { this.peers.clear(); }
+
+  // ---------------- v0.4.8.7: one park for everyone in it ----------------
+  // The AI world is the online server's (sim/world.js adoptSharedWorld), so everybody here has the same people online
+  // at this park. Who of them is where (on which court, in which line, walking where) and how the courts' games go is
+  // the park's own business, so one of the real players here runs it for everyone: the park's host (the lowest account
+  // id here; the next one takes over from where it stands the moment he goes). The host plays the park as always and
+  // sends it out (pop, twice a second: the courts' games by seed, rosters and tick, the AI lines, the park-goers and
+  // where they're heading, the ICON Squad's state, the regulars who hopped on); everyone else plays it as he has it:
+  // the same games from the same seeds, kept on his tick (mirrorCourt), the same people walking to the same places.
+  // The real people's own claims, kings and games already go through the hosted game (onCourts, the lockstep games).
+  popHostId() {
+    const net = this.netHere();
+    if (!net || !net.people.size || net.myId == null) return null;
+    let best = net.myId;
+    for (const id of net.people.keys()) if (String(id) < String(best)) best = id;
+    return best;
+  }
+  // playing the host's park right now (he's someone else, and he has been heard from lately)
+  mirroring() {
+    const h = this.popHostId(), net = this.app.net;
+    const on = h != null && h !== net?.myId && this.popLast?.from === h && performance.now() - this.popAt < 4000;
+    if (!on && this.mirrorWas) this.leaveMirror();
+    this.mirrorWas = on;
+    return on;
+  }
+  // AI squad mates the real people here brought: they walk with them on everyone's screen, so they're nobody else's
+  peerAIIds() {
+    const net = this.netHere(), s = new Set();
+    if (!net) return s;
+    for (const id of net.people.keys()) for (const a of net.aiOf(id) || []) if (a?.id) s.add(a.id);
+    for (const f of this.peers.followers()) if (f.aiId) s.add(f.aiId);
+    return s;
+  }
+  // the host: his park out to the others twice a second
+  popTick(dt) {
+    if ((this.popSendT = (this.popSendT || 0) - dt) > 0) return;
+    this.popSendT = 0.5;
+    const net = this.netHere();
+    if (!net || this.popHostId() !== net.myId) return;
+    net.send(this.popSnapshot());
+  }
+  popSnapshot() {
+    const t = Date.now(), u = this.icon, idx = c => this.courts.indexOf(c);
+    const ids = es => (es || []).map(e => e?.aiId || null);
+    return {
+      t: 'pop', place: this.placeKey(), wt: worldNow(t),
+      courts: this.courts.map(c => {
+        const s = c.session;
+        if (!s || c.live || (c === this.myCourt && (this.mySession || this.mode === 'starting'))) return null;
+        // (p: how fast this game is going on the host's screen, ticks a millisecond, as he measures it between reports)
+        const now = performance.now(), m = c.popMe && c.popMe.s === s.opts.seed ? c.popMe : null;
+        const p = m && now - m.at > 100 ? (s.game.tick - m.k) / (now - m.at) : (s.rate || 1) / DT / 1000;
+        c.popMe = { s: s.opts.seed, k: s.game.tick, at: now };
+        return { s: s.opts.seed, r: s.opts.rosters.map(ids), tm: s.opts.teams.map(x => x.abbr), ks: c.kingsStreak || 0, k: s.game.tick, o: s.game.over ? 1 : 0, rt: s.rate || 1, p: Math.round(Math.max(0, p) * 1e5) / 1e5 };
+      }),
+      lines: this.courts.map(c => c.lines.map(l => (l && !l.mine && !l.remote ? { ids: l.members.map(w => w.entry.aiId), ...(l.icon != null ? { icon: l.icon } : {}) } : null))),
+      walkers: this.walkers.filter(w => w.entry?.aiId && w.follow == null && !w.gone).map(w => {
+        const p = w.p, sp = w.spot ? [idx(w.spot.court), w.spot.row, w.spot.slot] : null;
+        return [w.entry.aiId, Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100, Math.round(p.facing * 100) / 100, Math.round(Math.hypot(p.intent.mx, p.intent.mz) * 100) / 100, p.intent.sprint ? 1 : 0, sp, w.exit ? 1 : 0, w.unit ?? null, w.watch ? 1 : 0];
+      }),
+      icon: u ? { k: u.k, ids: [...u.ids], formed: !!u.formed, over: u.over ? worldNow(u.over) : 0, end: u.end ? worldNow(u.end) : 0, park: u.park || this.themeId, last: u.last ? idx(u.last) : -1 } : null,
+      extra: [...this.world.extra].filter(([, x]) => x.park === this.themeId).map(([id, x]) => [id, worldNow(x.until)]),
+    };
+  }
+  onPop(m) {
+    const net = this.netHere();
+    if (!net || m?.place !== this.placeKey() || m.from == null || m.from !== this.popHostId() || m.from === net.myId) return;
+    this.popLast = m; this.popAt = performance.now(); this.mirrorWas = true;
+    this.applyPop(m);
+  }
+  // the host's park, here: his courts' games, his lines, his park-goers, the ICON Squad as he has it
+  applyPop(m) {
+    const t = Date.now(), skew = worldNow(t) - t, mine = c => c === this.myCourt && (this.mySession || this.mode === 'starting');
+    // the park-goers first (the lines are made of them)
+    const want = new Map((m.walkers || []).map(a => [a[0], a]));
+    const keep = [];
+    for (const w of this.walkers) {
+      if (w.follow != null || !w.entry?.aiId) { keep.push(w); continue; } // (your own squad walks with you)
+      const a = want.get(w.entry.aiId);
+      if (!a) { w.dispose(); continue; }
+      keep.push(w); want.delete(w.entry.aiId); w.target = null;
+      this.mirrorWalker(w, a);
+    }
+    this.walkers = keep;
+    const busy = new Set([...this.world.squad, ...this.peerAIIds()]);
+    for (const [id, a] of want) {
+      if (busy.has(id) || !/^ai-\d+$/.test(String(id))) continue;
+      const w = this.spawnWalker(a[1], a[2], this.entryFor(id));
+      this.mirrorWalker(w, a);
+      this.walkers.push(w);
+    }
+    const byId = new Map(this.walkers.filter(w => w.mirror).map(w => [w.entry.aiId, w]));
+    // the courts' games: the same game from the same seed, or none
+    this.courts.forEach((c, i) => {
+      const d = m.courts?.[i];
+      if (c.live || mine(c)) return;
+      if (!d) { if (c.session) { c.session.dispose(); c.session = null; } c.kings = null; c.kingsStreak = 0; c.popK = null; return; }
+      c.kingsStreak = d.ks || 0;
+      if (!c.session || c.session.opts.seed !== d.s) {
+        if (c.session) c.session.dispose();
+        const rosters = (d.r || []).map(r => r.map(id => (id ? this.entryFor(id) : null)).filter(Boolean));
+        if (rosters.length !== 2 || rosters.some(r => r.length !== c.format)) { c.session = null; c.kings = null; return; }
+        for (const e of [...rosters[0], ...rosters[1]]) e.human = false;
+        for (const e of rosters[0]) if (e.build) e.build = { ...e.build, win_streak: c.kingsStreak };
+        const team = (abbr, d0) => (abbr === ICON_TEAM.abbr ? { ...ICON_TEAM } : d0);
+        c.session = this.bgSession(c, rosters, [team(d.tm?.[0], { name: 'Kings', abbr: 'KNG', color: '#ffd84a' }), team(d.tm?.[1], { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' })], d.s);
+        c.kings = rosters[0]; c.bgStart = performance.now();
+      }
+      // (his pace, as the last two reports show it: ticks a millisecond; a slow PC's game runs slow on his screen and here alike)
+      const now = performance.now(), was = c.popK && c.popK.s === d.s ? c.popK : null, pace = Number.isFinite(d.p) ? d.p : (d.rt || 1) / DT / 1000;
+      c.popK = { s: d.s, k: d.k, rt: d.rt || 1, at: now, o: d.o, pace: was ? was.pace * 0.5 + pace * 0.5 : pace };
+    });
+    // the AI lines (yours and the real squads' are the hosted game's)
+    this.courts.forEach((c, i) => c.lines.forEach((l, r) => {
+      if (l && (l.mine || l.remote)) return;
+      const d = m.lines?.[i]?.[r];
+      if (!d) { if (l) { for (const w of l.members) if (w.spot?.court === c) w.spot = null; c.lines[r] = null; } return; }
+      const members = d.ids.map(id => byId.get(id)).filter(Boolean);
+      c.lines[r] = { members, mine: false, ready: false, readyAt: 0, mirror: true, ...(d.icon != null ? { icon: d.icon } : {}) };
+      members.forEach((w, slot) => { w.spot = { court: c, row: r, slot }; });
+      this.markFull(c, c.lines[r]);
+    }));
+    // the ICON Squad as the host has it; the regulars who hopped on to fill his courts
+    const u = m.icon;
+    this.icon = u ? { ...(this.icon?.k === u.k ? this.icon : {}), k: u.k, ids: new Set(u.ids || []), formed: !!u.formed, over: u.over ? u.over - skew : 0, end: u.end ? u.end - skew : 0, park: u.park, last: u.last >= 0 ? this.courts[u.last] || null : null } : null;
+    for (const [id, x] of this.world.extra) if (x.park === this.themeId) this.world.extra.delete(id);
+    for (const [id, until] of m.extra || []) this.world.extra.set(id, { park: this.themeId, until: until - skew });
+  }
+  mirrorWalker(w, a) {
+    w.mirror = { x: a[1], z: a[2], f: a[3], m: a[4], s: a[5] };
+    w.exit = !!a[7]; w.unit = a[8] ?? null; w.follow = null; w.lead = null;
+    w.spot = null; // (set again from the lines)
+  }
+  // a court's game kept on the host's tick: the same game runs here at his pace, a little quicker or slower to stay with
+  // him, and caught up at once when it's far behind (a game just picked up, a hitch)
+  mirrorCourt(c, dt) {
+    const s = c.session, g = s.game, q = c.popK;
+    if (!q) { s.rate = this.courtRate(c); s.frame(dt); return; }
+    // (where his game is by now: his last report, on at his pace, for a second and a half at most: a host gone quiet for a
+    // moment is waited for, not run past)
+    const want = q.k + Math.min(1500, performance.now() - q.at) * (q.o ? 0 : q.pace), gap = want - g.tick;
+    if (gap > 90 || (gap > 2 && s.visuals.some(v => v.pending))) { // (his players still being built here: the game goes on without them)
+      for (let n = 0; n < Math.min(gap, 2400) && !g.over; n++) g.step(DT); // (no events: what happened while he caught up is history)
+      g.events.length = 0;
+    }
+    s.rate = Math.max(1e-4, Math.min(4, (q.pace * 1000 + gap * 0.8) * DT)); // (his pace, closing half the gap in about a second; never 0: the session reads 0 as 1)
+    s.frame(dt);
+  }
+  // leaving the host's park (he left, or went quiet): this one runs it from here, as it stands
+  leaveMirror() {
+    for (const w of this.walkers) if (w.mirror) { w.mirror = null; w.state = w.exit ? 'walk' : w.spot ? 'queued' : 'idle'; w.t = this.rng.range(0.5, 3); if (w.exit) w.leave(); else if (w.spot) { const sp = w.spot.court.rows[w.spot.row]?.[w.spot.slot]; if (sp) w.goTo(sp.x, sp.z); } }
+    for (const c of this.courts) { c.popK = null; c.lines.forEach(l => { if (l?.mirror) delete l.mirror; }); }
+    this.popLast = null;
+  }
+  // the AI world changed under the park (it went online: the server's world): its people go, the new world's come in
+  rebaseWorld() {
+    this.world = this.app.ai;
+    for (const w of this.walkers) if (w.follow == null) w.dispose();
+    this.walkers = this.walkers.filter(w => w.follow != null && !w.disposed);
+    for (const c of this.courts) {
+      c.lines.forEach((l, r) => { if (l && !l.mine && !l.remote) c.lines[r] = null; });
+      if (c.session && !(c === this.myCourt && (this.mySession || this.mode === 'starting'))) { c.session.dispose(); c.session = null; c.kings = null; c.kingsStreak = 0; }
+    }
+    this.icon = null;
+    this.specRng = new RNG((hashString(`${this.themeId}|spectators`) ^ (this.world?.seed || 1)) >>> 0);
+    if (!this.mirroring()) { this.populationTick(); this.squadTick(); }
+  }
   // the people in a game here right now (yours, or one you're watching): they're on the court, not walking about
   inGameIds() {
     const s = new Set();

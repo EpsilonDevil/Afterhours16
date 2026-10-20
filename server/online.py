@@ -333,9 +333,10 @@ def crew_row(db, cid):
 # played there (watch). Squads go everywhere together; games are started by a squad leader (or whoever decides for a
 # court) and relayed in lockstep to their players and to everyone watching from the same place.
 class Hub:
-    def __init__(self, db, authenticator=None):
+    def __init__(self, db, authenticator=None, world=None):
         self.db = db
         self.authenticator = authenticator  # (qp3: sign-ins from your friends' own copies: Service.online_auth)
+        self.world = world  # (v0.4.8.7: the service's one AI world, Service.shared_world_payload: in every hello, and on asking)
         self.lock = threading.RLock()
         self.conns = {}      # account id -> WSConn
         self.squads = {}     # squad id -> {"id", "leader", "members": [aids, leader first]}
@@ -347,6 +348,16 @@ class Hub:
         self.game_seq = 0
 
     # ---- small helpers ----
+    def world_payload(self):
+        """v0.4.8.7: {"world": the shared AI world} for a message, or nothing (a hub made without one: the tests)."""
+        if not self.world:
+            return {}
+        try:
+            return {"world": self.world()}
+        except Exception as e:  # (never let it hold up a sign-in)
+            print(f"Shared world unavailable: {e}", flush=True)
+            return {}
+
     def live(self, aid):
         c = self.conns.get(aid)
         return c if c and c.alive else None
@@ -420,7 +431,7 @@ class Hub:
                 self.drop(old, reason="replaced")
                 old.close(4000)
             self.conns[conn.aid] = conn
-        conn.send({"t": "hello", "you": {"id": conn.aid, "username": conn.username}, "friends": self.friends_payload(conn.aid)})
+        conn.send({"t": "hello", "you": {"id": conn.aid, "username": conn.username}, "friends": self.friends_payload(conn.aid), **self.world_payload()})
         self.push_presence(conn.aid)
         cid = crew_of(self.db, conn.aid)
         if cid:
@@ -1028,7 +1039,13 @@ class Hub:
                     if sq:
                         self.push_squad_entries(sq)
             elif t == "ping":
-                conn.send({"t": "pong", "c": msg.get("c")})
+                conn.send({"t": "pong", "c": msg.get("c"), "s": time.time() * 1000})  # (v0.4.8.7: and the service's clock)
+            elif t == "world":  # (v0.4.8.7: the shared AI world again: an event window closed, its prizes are in)
+                conn.send({"t": "world", **self.world_payload()})
+            elif t == "pop":  # (v0.4.8.7: the park's people as the park's host sees them, to everyone else there)
+                place = conn.info.get("park")
+                if place and msg.get("place") == place:
+                    self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {**msg, "from": conn.aid})
             elif t == "friend":  # (qp3: friend requests on the socket: a game from your own copy has no cookie here)
                 try:
                     if msg.get("action") not in ("add", "accept", "decline", "remove"):
@@ -1113,7 +1130,7 @@ class Hub:
             if not isinstance(msg, dict):
                 continue
             if msg.get("t") == "ping":
-                conn.send({"t": "pong", "c": msg.get("c")})
+                conn.send({"t": "pong", "c": msg.get("c"), "s": time.time() * 1000})
                 continue
             if msg.get("t") == "hi" and self.authenticator:  # (the version check on its own, as soon as the socket opens)
                 try:

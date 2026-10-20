@@ -179,7 +179,7 @@ class Service:
         self.behind_proxy, self.public_url = False, None
         self.upnp = None  # upnp.PortMapper while hosting: the router forwards the port to this PC by itself
         self.build = compute_build()  # (qp3: the game's fingerprint, for the online version check)
-        self.hub = online.Hub(self.db, self.online_auth)
+        self.hub = online.Hub(self.db, self.online_auth, world=self.shared_world_payload)  # (v0.4.8.7: and its AI world)
         self.hub_hosts = {r[0] for r in self.db.query("SELECT DISTINCT hub FROM hub_links") if r[0]}  # (the CSP lets the page reach them)
         # qp3 (Oct 12): the game's own online server (online.json), for a copy that isn't hosting (see online_default)
         self.default_hub, self.default_join = load_online_default()
@@ -468,6 +468,38 @@ class Service:
                     "board": top, "around": around, "me": {**me, "rank": mine["rank"] if mine else None},
                     "prizes": cup.prize_table(ev),
                     "previous": prev, "event_schedule": cup.public_schedule()}
+
+    # v0.4.8.7: the one AI world everybody connected to this service plays in (sim/world.js adoptSharedWorld): its seed and
+    # its birth, made once and kept (shared_world), a new one after a season reset (a world born before it is the old one,
+    # reset.stale_world). Everything else in it is worked out from these and the clock, the same on every screen
+    def shared_world(self, now=None):
+        now = time.time() if now is None else now
+        old = lambda row: bool(self.season and self.reset_done and season.stale_world({"born": row[1]}, self.season))
+        rows = self.db.query("SELECT seed, born FROM shared_world WHERE id=1")
+        if rows and not old(rows[0]):
+            return {"seed": int(rows[0][0]), "born": float(rows[0][1])}
+        with self.db.transaction() as c:
+            row = c.execute("SELECT seed, born FROM shared_world WHERE id=1").fetchone()
+            if row and not old(row):
+                return {"seed": int(row[0]), "born": float(row[1])}
+            seed, born = secrets.randbelow(2 ** 31 - 2) + 1, float(now * 1000)
+            c.execute("INSERT INTO shared_world(id,seed,born,created_at) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET seed=excluded.seed, born=excluded.born, created_at=excluded.created_at",
+                      (seed, born, now))
+        return {"seed": seed, "born": born}
+
+    def shared_world_payload(self, now=None):
+        """The shared world as the game takes it (GET /api/ai-world/canonical, the hub's hello and world messages): seed and
+        born (ms), the service's clock (now, ms) and time zone (tz, minutes east of UTC: the world's days and hours are this
+        service's), the prizes the AI field has won (standings with nobody's own entries in them, so no account's games
+        change them) and the event schedule."""
+        now = time.time() if now is None else now
+        w = self.shared_world(now)
+        through = cup.window_at(now) - 1
+        key = (w["seed"], w["born"], through)
+        cached = getattr(self, "_shared_unlocks", None)
+        if not cached or cached[0] != key:
+            cached = self._shared_unlocks = (key, {"prizes": cup.ai_prizes(w["seed"], w["born"] / 1000, {}, now), "through": through})
+        return {**w, "now": now * 1000, "tz": time.localtime(now).tm_gmtoff // 60, "unlocks": cached[1], "schedule": cup.public_schedule()}
 
     # v0.4.8.5 qp7: the prizes the AI world has won in the closed event windows (cup.ai_prizes), for the client to dress
     # them in (sim/world.js setUnlocks). The rows are read under the lock; the standings are worked out after it (a cold
@@ -798,6 +830,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"career": json.loads(rows[0]["data"]) if rows else None, "updated_at": rows[0]["updated_at"] if rows else None})
             if path == "/api/cup":
                 return self.respond(200, s.cup_status(self.account()))
+            if path == "/api/ai-world/canonical":  # (v0.4.8.7: the one AI world everybody on this service plays in)
+                return self.respond(200, s.shared_world_payload())
             if path == "/api/ai-world/unlocks":  # (v0.4.8.5 qp7: what the AI world has won)
                 return self.respond(200, s.ai_unlocks(self.account()))
             if re.fullmatch(r"/api/matches/[a-f0-9-]{36}", path):

@@ -126,6 +126,11 @@ export const layupSure = (guard, layupRating) => { const s = layupState(guard); 
 export const SHOOTER_ARCH = new Set(['sharpshooter', 'stretch_big']);
 export const NON_SHOOTER_WIN = 0.9;
 export const isShooterArch = arch => !arch || SHOOTER_ARCH.has(arch);
+// v0.4.8.7: a wide-open three (guarded 10% or less, the HUD's "Wide open") by a build with an 85+ three-point rating has a
+// solid green window, whatever his archetype: a green there is a sure make (Game.jumperWindow), and the non-shooter's
+// 10% smaller window doesn't apply to it
+export const OPEN_THREE_SURE = 85;
+export const openThreeSure = (contest, threeRating) => (contest || 0) <= WIDE_OPEN_GUARD && (threeRating ?? 0) >= OPEN_THREE_SURE;
 export const DEF_K = 1.0375; // v0.4.5 defense pressure / range / positioning
 // v0.4.7.5 qp3 (Oct 12): blocks: what the defender brings to a block try (his Block and Interior D, his size over the
 // shooter, Rim Protector and Chase Down) counts 3.75% more. (A shorter defender's disadvantage isn't made bigger.)
@@ -575,6 +580,9 @@ export function planShot(rng, P, rim, side, make, arc, opts = {}) {
 // or pull-up is clearly the better option: ratings decide first, then what the defense allows (a rim
 // protector waiting at the rim favours a finesse layup, a defender walling off the lane favours a pull-up).
 // ctx: {sprint, forceJumper, attack (dedicated dunk bind), defs (defenders)}
+// v0.4.8.7 the forced dunk's reach: within `range` (m) of the rim, moving faster than `minSpeed` (m/s) at least `toward`
+// (cosine) at it; or within `under` of it, any way (the driving dunk's own range below, and the standing dunk's)
+export const FORCE_DUNK = { range: 4.2, minSpeed: 1.2, toward: 0.4, under: 1.4 };
 export function shotTypeFor(player, rim, ctx = {}) {
   const d = Math.hypot(rim.x - player.x, rim.z - player.z);
   const speed = Math.hypot(player.vx, player.vz);
@@ -586,6 +594,15 @@ export function shotTypeFor(player, rim, ctx = {}) {
   const canDunk = (raw.driving_dunk ?? 0) >= 55 && player.stamina > 0.12 && lift > 3.2;
   const canStand = (raw.standing_dunk ?? 0) >= 65 && lift > 3.25;
   const cover = coverage(player, rim, d, ctx.defs || []);
+  // v0.4.8.7: the forced dunk (sprint + right stick down + shoot; session.js it.forceDunk): any build dunks it, whatever
+  // his dunk ratings, vertical, height or package, on a drive to the rim from where a dunk can be taken (or right under
+  // it), ahead of the usual choice of finish. Whether it goes down is the dunk's own make chance and contest (game.js
+  // slam), so a poor dunker misses and gets blocked more. Out of range it's the usual attack: keep driving, or the layup
+  if (ctx.forceDunk && ctx.attack) {
+    const F = FORCE_DUNK, able = canDunk || canStand;
+    if (d < F.under) return { type: 'dunk', d, standing: speed < 1, cover, forced: true, able };
+    if (d < F.range && speed > F.minSpeed && toward > F.toward) return { type: 'dunk', d, cover, forced: true, able };
+  }
   if (ctx.attack) {
     // dedicated bind: the finish you're better at, Driving Dunk (Standing Dunk right under the rim) or Layup, and on
     // an exact tie the one your archetype plays (v0.4.5 quick patch; it used to dunk whenever it physically could).

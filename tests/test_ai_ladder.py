@@ -93,7 +93,7 @@ class ClimbTests(unittest.TestCase):
                 self.assertLessEqual(v, caps[a], f"{r['id']} {a}: within its cap, as yours")
             hof = builds.hof_count(c)
             self.assertEqual(hof, r["climb"]["hof"])
-            self.assertLessEqual(hof, builds.HOF_LIMIT)
+            self.assertLessEqual(hof, builds.hof_capacity(c))  # (v0.4.8.7: no 7-HOF limit; at his Icon badge he has them all)
             self.assertEqual(c["cap_breakers"]["earned"], builds.CAP_BREAKERS_PER_HOF * min(builds.CAP_BREAKER_HOF_LIMIT, hof))
             self.assertLessEqual(sum(c["cap_breakers"]["applied"].values()), c["cap_breakers"]["earned"])
             for k, b in c["badges"].items():

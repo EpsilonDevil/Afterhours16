@@ -293,7 +293,16 @@ export class MatchSession {
     // v0.4.1: attack-the-rim bind (keyboard dunk key, or right stick down while sprinting). Held, it keeps
     // asking until you're in range, so you can press it early on a drive.
     const attackHeld = inp.isDown('dunk') || (inp.gp.dunkHeld && inp.ctx === 'offense');
-    if (has && (inp.wasPressed('dunk') || attackHeld)) {
+    // v0.4.8.7: the forced dunk. Sprint + right stick down + shoot together (R2 + right stick down + Square; RT + right
+    // stick down + X; keyboard: the sprint key + the step-back key + shoot, each as bound): any build dunks it on a drive
+    // in range (sim/shots.js FORCE_DUNK), never a dribble move or a jumper. Two of the three do what they always did
+    const forceDunk = has && inp.forceDunkHeld && inp.forceDunkHeld();
+    if (forceDunk) {
+      const a = me.action;
+      delete P.move; // (no step-back: the stick is part of the combo)
+      if (!(a && (a.type === 'dunk' || a.type === 'layup' || a.type === 'shoot'))) P.shoot = { ttl: 0.3, attack: true, force: true };
+      else if (P.shoot && !P.shoot.attack) delete P.shoot; // (and no shot press left over from it)
+    } else if (has && (inp.wasPressed('dunk') || attackHeld)) {
       const a = me.action;
       if (!(a && (a.type === 'dunk' || a.type === 'layup' || a.type === 'shoot'))) P.shoot = { ttl: inp.wasPressed('dunk') ? 0.3 : 0.1, attack: true };
     }
@@ -325,7 +334,7 @@ export class MatchSession {
         }
         if (ps && ps.stick === 'spin') P.post = { move: 'postspin', side: 1, ttl: 0.4 };
         delete P.move;
-      } else if (has) {
+      } else if (has && !forceDunk) { // (v0.4.8.7: the forced dunk's stick is never a dribble move)
         const ps = inp.proStickInfo ? inp.proStickInfo() : (inp.proStick() ? { stick: inp.proStick(), slow: false } : null);
         const btb = inp.wasPressed('btb');
         if (ps || btb) {
@@ -412,7 +421,7 @@ export class MatchSession {
     if (P.shoot) {
       const b = g.ball;
       const incoming = b.mode === 'flight' && b.kind === 'pass' && b.info && b.info.to === me.id;
-      if (has || g.phase === 'ft' || g.phase === 'tip') { it.shoot = 'press'; if (P.shoot.attack) it.attack = true; }
+      if (has || g.phase === 'ft' || g.phase === 'tip') { it.shoot = 'press'; if (P.shoot.attack) it.attack = true; if (P.shoot.force && has) it.forceDunk = true; }
       else if (incoming && !P.shoot.jump) P.shoot.ttl = Math.max(P.shoot.ttl, 0.05); // catch-and-shoot: hold the press until the catch
       else it.jump = true;
     }

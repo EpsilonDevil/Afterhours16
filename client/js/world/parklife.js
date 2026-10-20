@@ -13,6 +13,8 @@ import * as RT from './retro.js';
 import * as HR from './horror.js';
 import { favelaLife, favelaEvents } from './favela.js';
 import * as SP from '../core/spooky.js';
+import { worldNow, WORLD_CLOCK } from '../sim/world.js';
+import { hashString } from '../core/rng.js';
 
 const lin = hex => M.hexLinear(hex);
 const col = hex => [...lin(hex), 1];
@@ -508,16 +510,57 @@ export function createParkLife(r, scene, theme, rng, opts = {}) {
     const before = dyn.length, fn = make();
     events.push({ fn, meshes: dyn.splice(before) });
   };
+  // v0.4.8.7: the park's events on the world's clock (sim/world.js worldNow, the online server's): every LIFE.slot ms one
+  // may start (which one, and everything it picks as it starts, from the park and the slot: the life rng is set from them
+  // for its start), so everybody at the same park sees the same one. Arriving, the ones under way are picked up where they
+  // are by now
+  let lifeSlot = null, lifeSynced = false;
+  const LIFE = { slot: 20000, chance: 80, back: 4 };
+  // (and the park's clock and its traffic, boats and crane put where the world's clock has them: the same on every screen.
+  // Only the movers that run on their own rhythm can be; the people's stops and turns are each screen's own)
+  const syncLife = () => {
+    lifeSynced = true;
+    const T = (worldNow() / 1000) % 86400, wrap = (v, a, b) => a + ((((v - a) % (b - a)) + (b - a)) % (b - a));
+    lifeT = T;
+    for (const m of movers) {
+      if (m.axis === 'z') m.z = wrap(m.z + m.dir * m.v * (T % (160 / m.v)), -80, 80);
+      else if (m.shuttle) { const span = m.x1 - m.x0, P = 2 * span / m.v; let d = ((m.x - m.x0) + (m.dir > 0 ? 0 : 2 * span - 2 * (m.x - m.x0)) + m.v * (T % P)) % (2 * span); m.dir = d < span ? 1 : -1; m.x = d < span ? m.x0 + d : m.x1 - (d - span); }
+      else m.x = wrap(m.x + m.dir * m.v * (T % (220 / m.v)), -110, 110);
+      if (m.ph != null) m.ph = (m.ph + T * (m.sloth ? 0.25 : 1.3)) % (Math.PI * 2 * 1000);
+    }
+    if (crane) crane.t = T;
+  };
+  const slotEvent = k => { const h = hashString(`${theme.id}|life|${k}`); return h % 100 < LIFE.chance ? (h >>> 8) % EVENTS.length : -1; };
+  const startAt = (i, k) => { const s0 = rng.s; rng.s = (hashString(`${theme.id}|ev|${k}`) >>> 0) || 1; start(EVENTS[i]); rng.s = s0; };
+  const lifeSlots = () => {
+    const now = worldNow(), k = Math.floor(now / LIFE.slot);
+    if (lifeSlot === k) return;
+    for (let j = lifeSlot == null ? k - LIFE.back : k; j <= k; j++) {
+      const i = slotEvent(j);
+      if (i < 0 || events.length >= 2) continue;
+      startAt(i, j);
+      if (j === k) continue;
+      const ev = events[events.length - 1];
+      let on = true; for (let a = (now - j * LIFE.slot) / 1000; a > 0 && on; a -= 0.1) on = ev.fn(Math.min(0.1, a)); // (under way: caught up)
+      if (!on) { for (const m of ev.meshes) scene.remove(m); events.pop(); }
+    }
+    lifeSlot = k;
+  };
 
   return {
     update(dt) {
       dt = Math.min(dt, 0.1); lifeT += dt;
+      if (WORLD_CLOCK.shared && !lifeSynced) syncLife();
       updPeople(dt); updMovers(dt); for (const f of updExtra) f(dt);
       for (let i = events.length - 1; i >= 0; i--) {
         if (events[i].fn(dt)) continue;
         for (const m of events[i].meshes) scene.remove(m); // geometry stays cached for the next time
         events.splice(i, 1);
       }
+      // (v0.4.8.7: on an online server's world, the park's events go by its clock, so friends at the same park see the
+      // same ones at the same moment: lifeSlots)
+      if (WORLD_CLOCK.shared) { lifeSlots(); return; }
+      lifeSlot = null;
       if ((nextEvt -= dt) <= 0) {
         nextEvt = rng.range(15, 35);
         if (events.length < 2) start(rng.pick(EVENTS));

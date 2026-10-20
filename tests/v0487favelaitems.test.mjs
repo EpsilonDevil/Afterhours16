@@ -105,7 +105,7 @@ test('the Ladeira hi-top: its own design (the tile panel down each side), a gum 
   const lad = l.slice(l.indexOf('function ladeiraShoe'), l.indexOf('function smoothT'));
   assert.ok(lad.includes('deep = rgbStr(shade(sole, 0.34))') && lad.includes('for (let t = 0.01; t < 0.99; t += 0.05) poly(half') && /h = 0\.43/.test(lad));
   // (and the store tries a band on close up)
-  assert.ok(src('client/js/ui/store.js').includes("const focus = item?.slot === 'headband' ? 'upper'"));
+  assert.ok(src('client/js/ui/store.js').includes("const focus = item?.slot === 'headband' || item?.slot === 'chain' ? 'upper'"));
 });
 
 test('the Hillside Bandana: a printed band round the head, knotted at the back, its two ends hanging down', () => {
