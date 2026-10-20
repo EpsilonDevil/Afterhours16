@@ -505,13 +505,50 @@ def apply_cap_breakers(char, attribute, count):
     return char
 
 
+# v0.4.8.7: cap breaker respec. Once a build has reached ICON status (99 OVR, every cap breaker in, every badge maxed: its
+# ICON slot is marked then, icon_slot), it can take back every cap breaker it placed and place them again. The first
+# respec is free; every one after costs CB_RESPEC_VC. Each attribute goes back to its cap without the breakers (it was
+# paid for up to there with VC and stays paid for); the breakers are banked again to place where you like. Until they're
+# placed again the build plays below 99 and its ICON status waits for them, but the respec stays open to it for good.
+CB_RESPEC_VC = 250000
+
+
+def cb_respec_info(char):
+    cb = char.get("cap_breakers") or {}
+    eligible = bool(char.get("icon_slot") or icon_status(char))
+    used = int(cb.get("respecs", 0) or 0)
+    return {"eligible": eligible, "used": used, "free": eligible and used == 0, "cost": 0 if used == 0 else CB_RESPEC_VC,
+            "placed": sum(n for n in (cb.get("applied") or {}).values() if isinstance(n, int) and n > 0)}
+
+
+def respec_cap_breakers(char):
+    """Take back every placed cap breaker (ICON builds only). Returns the VC it costs (0 for the first)."""
+    info = cb_respec_info(char)
+    if not info["eligible"]:
+        raise Invalid("Cap breaker respecs open once this build reaches ICON status (99 OVR, every cap breaker, every badge maxed).")
+    if not info["placed"]:
+        raise Invalid("No cap breakers are placed on this build.")
+    if icon_status(char):
+        char["icon_slot"] = True  # (an ICON not marked yet keeps its respec, and its slot, from here)
+    cb = char["cap_breakers"]
+    cb["applied"] = {}
+    cb["available"] = int(cb.get("earned", 0) or 0)
+    cb["respecs"] = info["used"] + 1
+    top = caps(char)
+    attrs = char.get("attributes") or {}
+    for a in list(attrs):
+        if a in top and isinstance(attrs[a], int):
+            attrs[a] = min(attrs[a], top[a])
+    return info["cost"]
+
+
 def describe(char):
     """Derived (non-persisted) fields for clients."""
     cap = caps(char)
     cb = char.get("cap_breakers") or {}
     return {"caps": cap, "overall": overall(char["attributes"], char["position"]),
             "hof_count": hof_count(char), "hof_limit": HOF_LIMIT, "cap_breakers_available": cb.get("available", 0),
-            "badge_caps": badge_caps(char), "hof_capacity": hof_capacity(char), "icon_need": icon_need(char),
+            "badge_caps": badge_caps(char), "hof_capacity": hof_capacity(char), "icon_need": icon_need(char), "cb_respec": cb_respec_info(char),
             "max_ovr": max_ovr(char), "base_ovr_cap": BASE_OVR_CAP, "ovr_cap": OVR_CAP, "prorun_completed": prorun_completed(char),
             "prorun_to_next": 0 if max_ovr(char) >= OVR_CAP else PRORUN_GAMES_PER_OVR - prorun_completed(char) % PRORUN_GAMES_PER_OVR,
             "cap_breakers_unlocked": cap_breakers_unlocked(char), "cap_breakers_earned": cb.get("earned", 0),

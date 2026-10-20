@@ -120,6 +120,7 @@ export function openCapBreakers(app, done = () => {}) {
   capBreakerPanel(app, card.querySelector('#cb-body'), c, { done: () => { closeModal(); done(); } });
 }
 
+export const CB_RESPEC_VC = 250000; // (server/builds.py CB_RESPEC_VC)
 function capBreakerPanel(app, body, c, { inline = false, done = () => {} } = {}) {
   const avail = c.cap_breakers_available || 0, earned = c.cap_breakers_earned ?? avail;
   const unlocked = c.cap_breakers_unlocked ?? maxOvr(c) >= OVR_CAP;
@@ -133,9 +134,15 @@ function capBreakerPanel(app, body, c, { inline = false, done = () => {} } = {})
     const l = body.querySelector('[data-later]'); if (l) l.onclick = () => done();
     return;
   }
+  // v0.4.8.7: an ICON build can take back its cap breakers and place them again: the first respec is free, then 250,000 VC
+  const rs = c.cb_respec || {}, placed = Object.values(applied).reduce((a, b) => a + b, 0);
+  let confirmRespec = false;
+  const respecBar = () => !rs.eligible ? `<p class="muted cb-respec-note">Cap breaker respecs open once this build reaches ICON status.</p>`
+    : `<div class="row between cb-respec"><div><b>Respec cap breakers</b><small class="muted"> Take back all ${placed} placed and place them again. ${rs.free ? 'Your first respec is free.' : `Costs ${CB_RESPEC_VC.toLocaleString()} VC.`} Your OVR drops until you place them again.</small></div>
+      <button class="btn ${confirmRespec ? 'primary' : 'ghost'}" data-respec ${placed ? '' : 'disabled'}>${confirmRespec ? `Confirm respec · ${rs.free ? 'Free' : `${CB_RESPEC_VC.toLocaleString()} VC`}` : `Respec · ${rs.free ? 'Free' : `${CB_RESPEC_VC.toLocaleString()} VC`}`}</button></div>`;
   const draw = () => {
     const ovr = overall(Object.fromEntries(ATTRS.map(k => [k, c.attributes[k] + (plan[k] || 0)])), c.position);
-    body.innerHTML = `<p class="muted">Each cap breaker adds +1 to an attribute that's maxed out on your build (at its cap, below 99), past the ${OVR_CAP} OVR cap. Upgrade an attribute to its cap with VC first to make it eligible. Unused ones stay banked here.</p>
+    body.innerHTML = `${respecBar()}<p class="muted">Each cap breaker adds +1 to an attribute that's maxed out on your build (at its cap, below 99), past the ${OVR_CAP} OVR cap. Upgrade an attribute to its cap with VC first to make it eligible. Unused ones stay banked here.</p>
       <div class="row between"><div>Left to place <b class="big">${left()}</b> of ${avail} · ${earned} earned · ${Object.values(applied).reduce((a, b) => a + b, 0)} placed</div><div>OVR <b class="big">${ovr}</b></div></div>
       <div class="attr-cols">${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => {
         const cur = c.attributes[k], cap = c.caps[k], n = plan[k] || 0, ok = cur >= cap && cap < 99;
@@ -146,6 +153,18 @@ function capBreakerPanel(app, body, c, { inline = false, done = () => {} } = {})
     body.querySelectorAll('[data-cbi]').forEach(b => b.onclick = () => { const k = b.dataset.cbi; plan[k] = (plan[k] || 0) + 1; draw(); });
     body.querySelectorAll('[data-cbd]').forEach(b => b.onclick = () => { const k = b.dataset.cbd; plan[k] = Math.max(0, (plan[k] || 0) - 1); if (!plan[k]) delete plan[k]; draw(); });
     const later = body.querySelector('[data-later]'); if (later) later.onclick = () => done();
+    const respec = body.querySelector('[data-respec]');
+    if (respec) respec.onclick = async ev => {
+      if (!confirmRespec) { confirmRespec = true; draw(); return; }
+      ev.currentTarget.disabled = true;
+      try {
+        const res = await app.api.mutate(`/api/characters/${c.id}/cbrespec`, {});
+        app.replaceChar(res.character);
+        if (res.balance != null && app.setBalance) app.setBalance(res.balance);
+        app.audio.ui('buy'); toast(res.cost ? `Cap breakers taken back for ${res.cost.toLocaleString()} VC. Place them again.` : 'Cap breakers taken back (free respec). Place them again.');
+        done();
+      } catch (e) { toast(e.message, 'error'); confirmRespec = false; draw(); }
+    };
     const reset = body.querySelector('[data-reset]'); if (reset) reset.onclick = () => { for (const k in plan) delete plan[k]; draw(); };
     body.querySelector('[data-ok]').onclick = async ev => {
       ev.currentTarget.disabled = true;

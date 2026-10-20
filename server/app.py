@@ -1068,7 +1068,7 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute("INSERT INTO characters VALUES(?,?,?,?)", (char["id"], aid, encode(char), time.time()))
                     return {"character": s.describe(char), "build_slots": {**slots, "used": slots["used"] + 1}}
                 return self.respond(200, db.once(aid, data.get("key"), "character_create", build, create))
-            char_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/(upgrade|appearance|equip|affiliation|capbreakers)", path)
+            char_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/(upgrade|appearance|equip|affiliation|capbreakers|cbrespec)", path)
             if char_route:
                 return self.character_action(aid, data, *char_route.groups())
             del_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/delete", path)  # (v0.4.8.5 qp8: deleting a build)
@@ -1190,7 +1190,7 @@ class Handler(BaseHTTPRequestHandler):
     def character_action(self, aid, data, char_id, action):
         s, db = self.service, self.service.db
         allowed = {"upgrade": ("key", "targets", "max"), "appearance": ("key", "appearance"), "equip": ("key", "item_id", "slot"), "affiliation": ("key", "affiliation"),
-                   "capbreakers": ("key", "attribute", "count")}[action]
+                   "capbreakers": ("key", "attribute", "count"), "cbrespec": ("key",)}[action]
         builds.strict_keys(data, allowed)
         payload = {k: v for k, v in data.items() if k != "key"}
 
@@ -1209,6 +1209,11 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"cost": cost, "balance": balance}
             elif action == "capbreakers":
                 builds.apply_cap_breakers(char, data.get("attribute"), data.get("count", 1))
+            elif action == "cbrespec":
+                # v0.4.8.7: ICON builds take back their cap breakers to place again (the first free, then 250,000 VC)
+                cost = builds.respec_cap_breakers(char)
+                balance = db.change_wallet(c, aid, -cost, "capbreaker_respec", "cbrespec:" + data["key"]) if cost else None
+                result = {"cost": cost, **({"balance": balance} if balance is not None else {})}
             elif action == "appearance":
                 char["appearance"] = builds.appearance(data.get("appearance", {}))
             elif action == "affiliation":

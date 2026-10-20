@@ -219,3 +219,10 @@ Chains now show over a jersey's neckline, the store tries chains on at head-and-
 **A solid green window on wide-open threes for 85+ shooters.** A wide-open three (guarded 10% or less) by a build with an 85 or higher three-point rating now has a solid green window whatever the archetype: a green goes in, and the non-shooter's 10% smaller window doesn't apply to it.
 
 **Force a dunk with any build.** Hold R2 + right stick down + Square (Xbox: RT + right stick down + X; keyboard: sprint + the step-back key + shoot) while driving at the rim, within about 4 m, and any build dunks it, whatever its dunk rating or height. A build that can't normally dunk uses a basic one- or two-hand dunk. Makes, misses and blocks still come from the dunk's usual chances, so a poor dunker misses more. Further out it's a normal drive. Any two of the three still do what they did before. The combo is listed in the controls.
+
+## Quick patch 6 (Oct 20): Cap breaker respec for ICON builds
+
+**Respec your cap breakers once a build is ICON.** A build that has reached 99 OVR ICON status can now take back every cap breaker it placed and place them again wherever you like. Open the build's Cap Breakers tab (next to Upgrades) and press **Respec** at the top, then **Confirm respec**.
+- **The first respec on each build is free.** Every respec after that costs **250,000 VC**. If you don't have the VC, nothing changes.
+- **Only ICON builds can respec.** The button shows on every build, but stays closed with a note until that build reaches ICON status (99 OVR, every cap breaker placed, every badge maxed). Once a build has been ICON, the option stays open to it for good.
+- **What it does:** every attribute goes back to its cap without the breakers (the upgrades you paid VC for stay), and all the build's cap breakers return to it, ready to place. Until you place them again the build sits below 99 and its ICON status waits for them; its ICON build slot is kept.

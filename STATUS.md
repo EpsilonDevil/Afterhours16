@@ -31,6 +31,15 @@ Every 9 h ± 10–30 min, for 60 min, three of the world's real AI ICONs run tog
 | Badges | `server/progression.py` (`BADGES.brick_wall.tiers` (18, 63, 154, **173**), was 315: Hall of Fame −45%; `BADGES.posterizer.tiers` (8, 30, 80, **126**), was 180: Hall of Fame −30%; rounded half up) | `sync_badges` on load raises a build already past the new mark (caps and Hall of Fame slots as always); the v0.4.8.5 games→screens conversion maps to the current tiers (170 old games → 170 screens, was 297). `tests/test_v0486_badges.py` (2); `test_v0485.py`, `test_qp9_badges.py` updated |
 | Tests | `tests/v0486squad.test.mjs` (10), `tests/v0486squadpark.test.mjs` (11), `tests/v0486squadui.test.mjs` (4); `tests/v0486brand.test.mjs` now ignores a content-credentials (C2PA) `<metadata>` block in the SVGs (the copies saved to the PC carry one; the PNG/JPG copies carry one too, pixels identical) | browser: a year-old world with the squad clock shifted into window 3 (Old Brick Yard): the real pick, the toast, the Park tag, the squad holding Court 2 as kings in one outfit, the phone list, 0 page errors |
 
+### Quick patch 6 (Oct 20): cap breaker respec
+| Area | Where | Notes |
+|---|---|---|
+| Respec rules | `server/builds.py` (`CB_RESPEC_VC` 250,000, `cb_respec_info`, `respec_cap_breakers`; `describe` adds `cb_respec`) | eligible once ICON (`icon_slot` or live `icon_status`); `cap_breakers.respecs` counts; first free; attributes clamped to the caps without breakers (breakers were pure +1s, so no paid upgrade is lost); `available` = `earned` |
+| Route | `server/app.py` (`POST /api/characters/{id}/cbrespec`, key-idempotent; `db.change_wallet` kind `capbreaker_respec`) | "Not enough VC." leaves the build untouched (same transaction) |
+| UI | `ui/myplayer.js` (`CB_RESPEC_VC`, respec bar at the top of the Cap Breakers panel: Free / 250,000 VC, two-click confirm) | closed with a note until ICON |
+
+Tests: `tests/test_v0487_cbrespec.py`. No sim rules change (no port baseline move).
+
 ### Quick patch 5 (Oct 20): shared AI world, Hall of Fame for every badge, chains, possession, open threes, forced dunk
 | Area | Where | Notes |
 |---|---|---|
