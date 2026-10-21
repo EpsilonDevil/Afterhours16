@@ -25,6 +25,8 @@ select option, select optgroup { background-color: #161a22; color: #f1f0ea; }
 [hidden] { display: none !important; }
 .layer { position: fixed; inset: 0; pointer-events: none; }
 .layer > * { pointer-events: auto; }
+/* v0.4.8.7 qp7: the park's interaction prompt only shows a key: clicks and the wheel go through it to the game and menus */
+#prompt, #prompt * { pointer-events: none; }
 
 /* ---------- HUD ---------- */
 #hud { z-index: 5; pointer-events: none; }

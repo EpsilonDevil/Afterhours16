@@ -27,6 +27,8 @@ export class PadNav {
     this.rep = { dir: null, t: 0 };
     this.on = false;
     window.addEventListener('mousemove', e => { if (this.on && Math.abs(e.movementX) + Math.abs(e.movementY) > 3) this.hide(); });
+    // v0.4.8.6 qp7: turning the mouse wheel is the mouse taking over too: the focus ring stops pulling the page back to it
+    window.addEventListener('wheel', () => { if (this.on) this.hide(); }, { passive: true });
     // keyboard: Esc closes dialogs that allow it
     window.addEventListener('keydown', e => {
       if (e.code !== 'Escape' || !modalOpen() || app.input.capturing) return;
@@ -111,10 +113,11 @@ export class PadNav {
       for (const el of list) { const r = el.getBoundingClientRect(); const dd = Math.hypot(r.x + r.width / 2 - cx, r.y + r.height / 2 - cy); if (dd < best) { best = dd; pick = el; } }
     }
     if (!pick) pick = list.find(el => el.matches('[data-padhold]')) || list.find(el => el.matches('.btn.primary') && !el.closest('.topbar')) || list.find(el => !el.closest('.topbar')) || list[0];
-    this.set(pick && visible(pick) ? pick : list[0]);
+    // (v0.4.8.6 qp7: finding the focus again after a menu redraws never scrolls the page; only moving it does)
+    this.set(pick && visible(pick) ? pick : list[0], { scroll: false });
   }
 
-  set(el) {
+  set(el, { scroll = true } = {}) {
     if (this.cur) this.cur.classList.remove('pad-focus');
     this.cur = el;
     if (!el) return;
@@ -122,8 +125,7 @@ export class PadNav {
     this.curSig = sig(el);
     this.curRect = el.getBoundingClientRect();
     try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    this.app.audio?.ui?.('tick');
+    if (scroll) { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); this.app.audio?.ui?.('tick'); }
   }
 
   move(root, dir) {

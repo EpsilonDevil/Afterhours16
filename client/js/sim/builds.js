@@ -160,8 +160,13 @@ export const iconNeed = b => Math.max(1, Math.min(HOF_LIMIT, hofCapacity(b)));
 
 // v0.4.8: an Icon badge's secret package (the Sharp Eye jumpshot base and release) is never in the store, and shows in
 // the Inventory only for the build that holds that Icon badge (the server only lets that build put it on: app.eligible)
-export const inStore = i => !i.secret;
-export const forBuild = (i, c) => !i.secret || (!!c && c.icon_badge === i.icon);
+// (v0.4.8.7 qp7: every Icon badge's own item, by its "icon" field, whatever else it's marked: the Hash-Slinging dunk
+// package used to show in the store and, locked, in every other build's Inventory. iconItemFor is the rule: the build has
+// unlocked that Icon badge (c.icon_badge, which the server sets from its archetype at the unlock: an Oprah item is a
+// Playmaker's who has unlocked Oprah). Everyone else doesn't see it at all; it stays in the account's locker for them)
+export const iconItemFor = (i, c) => !!c && !!i?.icon && c.icon_badge === i.icon;
+export const inStore = i => !i.secret && !i.icon;
+export const forBuild = (i, c) => (i.icon ? iconItemFor(i, c) : !i.secret);
 
 // v0.4.8.5 quick patch 3: ICON status, the endgame (mirrors server/builds.py icon_status_info). Every cap breaker the
 // build can earn unlocked (they open at 90 max OVR, 5 a Hall of Fame badge for the first 5), every badge as high as it

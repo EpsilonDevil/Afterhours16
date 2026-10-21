@@ -824,3 +824,16 @@ select { background-color: rgba(255,255,255,.06); }
 .rk-warn { color: #ffcf8f; }
 .btn .rk-cost { font-size: 11px; letter-spacing: .06em; color: #ff8f8a; text-transform: none; }
 @media (max-width: 760px) { .pa-ladder { display: none; } .pa-rank { gap: 12px; padding: 12px; } }
+
+/* v0.4.8.7 qp7: smooth wheels.
+   The home hub clipped (overflow: hidden) whatever didn't fit at short window heights, so the wheel over it did
+   nothing: it scrolls now, and only when it has to. */
+.home-hub { overflow-x: hidden; overflow-y: auto; }
+/* The main scrollers (a screen's panel, a modal card, the phone's list, the in-game help) keep the wheel to themselves
+   at their ends instead of handing it on (no rubber-band or chained jump of whatever is under them). The small lists
+   inside a card (the crew's friends and levels, the draft, the schedule, the remap columns) are left to chain: at
+   their end the wheel goes on to scroll the card they're in, so they never trap it. */
+.panel, .modal-card, .ph-body, .help-overlay { overscroll-behavior: contain; }
+/* The screens whose content grows and shrinks with a filter (the store, inventory, MyPlayer, stats) keep their
+   scrollbar's space, so a filter that makes the list fit no longer shifts the whole layout sideways under the pointer. */
+.panel.store, .panel.mp, .panel.stats-panel { scrollbar-gutter: stable; }

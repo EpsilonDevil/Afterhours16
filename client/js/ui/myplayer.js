@@ -1,5 +1,5 @@
 // MyPlayer: attribute upgrades (VC), badges, appearance, animations, player management.
-import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor, archHTML } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, bar, TIER, TIER_CLS, title, heightStr, confirmBox, ratingColor, archHTML, keepScroll, busy } from './common.js';
 import { ATTR_GROUPS, ATTR_LABEL, ATTRS, overall } from '../sim/ratings.js';
 import { upgradeCost, badgeCaps, hofCapacity, iconNeed, heightBand, BAND_LABEL, ARCHETYPES, maxOvr, BASE_OVR_CAP, OVR_CAP, PRORUN_GAMES_PER_OVR, prorunCompleted, forBuild, iconStatusInfo, winStreak, iconAuraLevel, ICON_AURA_STEP, buildSlots, MAX_BUILD_SLOTS } from '../sim/builds.js';
 import { badgeSVG, iconBadgeSVG } from './badgeart.js';
@@ -22,7 +22,9 @@ export function render(app, root, params = {}) {
       <div class="ovr"><b>${c.overall}</b><small>OVR</small></div></div>
     <div class="subtabs">${TABS.map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     <div id="mp-body"></div></section>`;
-  $$('[data-tab]', root).forEach(b => b.onclick = () => render(app, root, { tab: b.dataset.tab }));
+  // (v0.4.8.7 qp7: another tab starts at its top; the screen notes which tab it's on, so a refresh after an action keeps
+  // the place: Screens.go sameView)
+  $$('[data-tab]', root).forEach(b => b.onclick = () => { app.screenParams = { tab: b.dataset.tab }; render(app, root, { tab: b.dataset.tab }); });
   const body = $('#mp-body', root);
   if (tab === 'attributes') attributes(app, body, c, params.view || 'upgrades');
   if (tab === 'badges') badges(app, body, c);
@@ -68,7 +70,7 @@ function attributes(app, root, c, view = 'upgrades') {
   const cbN = c.cap_breakers_available || 0;
   root.innerHTML = `<div class="seg attr-seg"><button class="${view === 'upgrades' ? 'on' : ''}" data-view="upgrades">Upgrades</button><button class="${view === 'capbreakers' ? 'on' : ''}" data-view="capbreakers">Cap Breakers${cbN ? ` <span class="seg-n">${cbN}</span>` : ''}</button></div>
     ${maxOvrLine(app, c)}${maxOvr(c) >= OVR_CAP ? legendLine(app, c) : ''}<div id="attr-view"></div>`;
-  $$('[data-view]', root).forEach(b => b.onclick = () => attributes(app, root, app.char(), b.dataset.view));
+  $$('[data-view]', root).forEach(b => b.onclick = () => { app.screenParams = { tab: 'attributes', ...(b.dataset.view === 'capbreakers' ? { view: 'capbreakers' } : {}) }; attributes(app, root, app.char(), b.dataset.view); });
   const box = $('#attr-view', root);
   if (view === 'capbreakers') return capBreakerPanel(app, box, c, { inline: true, done: () => Screens.go(app, 'myplayer', { tab: 'attributes', view: 'capbreakers' }) });
   upgrades(app, box, c);
@@ -76,7 +78,8 @@ function attributes(app, root, c, view = 'upgrades') {
 
 function upgrades(app, root, c) {
   const pending = {};
-  const draw = () => {
+  const draw = () => keepScroll(root, paint); // (qp7: every + and − redraws in place)
+  const paint = () => {
     let cost = 0;
     for (const [k, v] of Object.entries(pending)) cost += upgradeCost(c.attributes[k], v);
     const projected = { ...c.attributes, ...pending };
@@ -102,10 +105,12 @@ function upgrades(app, root, c) {
       catch (e) { toast(e.message, 'error'); ev.currentTarget.disabled = false; }
     };
     $('[data-max]', root).onclick = async ev => {
+      const btn = ev.currentTarget;
       if (!c.max_upgrade_cost) return toast('Already maxed out.');
-      if (!(await confirmBox(`Max every attribute for ${money(c.max_upgrade_cost)} VC?`, 'Max out'))) return;
+      if (btn.disabled || !(await confirmBox(`Max every attribute for ${money(c.max_upgrade_cost)} VC?`, 'Max out'))) return;
+      busy(btn, true); // (qp7: one purchase, however many clicks)
       try { const res = await app.api.mutate(`/api/characters/${c.id}/upgrade`, { max: true }); app.replaceChar(res.character); app.setBalance(res.balance); app.audio.ui('buy'); toast(`Maxed out for ${money(res.cost)} VC.`); Screens.go(app, 'myplayer', { tab: 'attributes' }); }
-      catch (e) { toast(e.message, 'error'); }
+      catch (e) { toast(e.message, 'error'); busy(btn, false); }
     };
   };
   draw();
@@ -140,7 +145,8 @@ function capBreakerPanel(app, body, c, { inline = false, done = () => {} } = {})
   const respecBar = () => !rs.eligible ? `<p class="muted cb-respec-note">Cap breaker respecs open once this build reaches ICON status.</p>`
     : `<div class="row between cb-respec"><div><b>Respec cap breakers</b><small class="muted"> Take back all ${placed} placed and place them again. ${rs.free ? 'Your first respec is free.' : `Costs ${CB_RESPEC_VC.toLocaleString()} VC.`} Your OVR drops until you place them again.</small></div>
       <button class="btn ${confirmRespec ? 'primary' : 'ghost'}" data-respec ${placed ? '' : 'disabled'}>${confirmRespec ? `Confirm respec · ${rs.free ? 'Free' : `${CB_RESPEC_VC.toLocaleString()} VC`}` : `Respec · ${rs.free ? 'Free' : `${CB_RESPEC_VC.toLocaleString()} VC`}`}</button></div>`;
-  const draw = () => {
+  const draw = () => keepScroll(body, paint); // (qp7: placing one redraws in place, in the panel or the modal)
+  const paint = () => {
     const ovr = overall(Object.fromEntries(ATTRS.map(k => [k, c.attributes[k] + (plan[k] || 0)])), c.position);
     body.innerHTML = `${respecBar()}<p class="muted">Each cap breaker adds +1 to an attribute that's maxed out on your build (at its cap, below 99), past the ${OVR_CAP} OVR cap. Upgrade an attribute to its cap with VC first to make it eligible. Unused ones stay banked here.</p>
       <div class="row between"><div>Left to place <b class="big">${left()}</b> of ${avail} · ${earned} earned · ${Object.values(applied).reduce((a, b) => a + b, 0)} placed</div><div>OVR <b class="big">${ovr}</b></div></div>
@@ -224,7 +230,7 @@ function iconStatusCard(c) {
     ${st.active ? `<small class="aura">${aura}</small>` : `<ul>${row(st.cap_breakers, 'All cap breakers unlocked', `${Math.min(st.cap_breakers_earned, st.cap_breakers_max)}/${st.cap_breakers_max}${maxOvr(c) < OVR_CAP ? ` · open at ${OVR_CAP} max OVR` : ''}`)}${row(st.badges, 'Every badge maxed', st.badges ? 'done' : `${st.badges_left} to go`)}${row(st.ovr >= st.ovr_need, '99 overall', `${st.ovr}/${st.ovr_need}`)}</ul>`}</div></div>`;
 }
 
-const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['rebound', 'Rebound package', 'rebound', 'open_arms'], ['steal', 'Steal package', 'steal', 'the_clamp'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']];
+const ANIM_SLOTS = [['jumpshot', 'Jumpshot base', 'jumpshot'], ['release', 'Jumpshot release', 'jumpshot'], ['dunk', 'Dunk package', 'dunk'], ['layup', 'Layup package', 'layup'], ['sizeup', 'Size-up package', 'moves'], ['post', 'Post-move package', 'post'], ['block', 'Block package', 'block'], ['rebound', 'Rebound package', 'rebound', 'open_arms'], ['steal', 'Steal package', 'steal', 'the_clamp'], ['pass', 'Pass package', null, 'oprah'], ['celebration', 'Celebration', 'celebrate'], ['movement', 'Movement style', 'gait']]; // (v0.4.8.7 qp7: Oprah's Pass Package: no preview of its own yet)
 function animations(app, root, c) {
   const inv = new Set(app.profile.inventory);
   root.innerHTML = `<div class="muted">Equip animations you own. Buy more in the VC Store. Click Preview to see them on your player.</div>
@@ -234,11 +240,14 @@ function animations(app, root, c) {
       const basic = icon === 'open_arms' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: the Open Arms badge's own basic snag">Basic Rip</button>`
         : icon === 'the_clamp' ? `<button class="chip ${!cur ? 'on' : ''}" data-equip="${slot}" data-id="" title="No package: The Clamp badge's own basic steal, The Vise">Basic Vise</button>` : ''; // (qp6)
       return `<div class="anim-slot"><h5>${label}</h5><div class="chips">${basic}${owned.map(i => `<button class="chip ${cur === i.id ? 'on' : ''}" data-equip="${slot}" data-id="${i.id}">${esc(i.name.split(': ').pop())}</button>`).join('') || (basic ? '' : '<span class="muted small">None owned</span>')}
-        <button class="chip ghost" data-preview="${preview}" data-slot="${slot}">Preview ▶</button></div></div>`;
+        ${preview ? `<button class="chip ghost" data-preview="${preview}" data-slot="${slot}">Preview ▶</button>` : ''}</div></div>`;
     }).join('')}`;
+  // (qp7: equipping one redraws the tab where you were scrolled, and waits for the server: no double equips)
   $$('[data-equip]', root).forEach(b => b.onclick = async () => {
-    try { const res = await app.api.mutate(`/api/characters/${c.id}/equip`, { slot: b.dataset.equip, item_id: b.dataset.id || null }); app.replaceChar(res.character); render(app, root.parentElement.parentElement, { tab: 'animations' }); }
-    catch (e) { toast(e.message, 'error'); }
+    if (b.disabled || b.classList.contains('on')) return;
+    busy(b, true);
+    try { const res = await app.api.mutate(`/api/characters/${c.id}/equip`, { slot: b.dataset.equip, item_id: b.dataset.id || null }); app.replaceChar(res.character); const scr = root.parentElement.parentElement; keepScroll(scr, () => render(app, scr, { tab: 'animations' })); }
+    catch (e) { toast(e.message, 'error'); busy(b, false); }
   });
   $$('[data-preview]', root).forEach(b => b.onclick = () => {
     const ch = app.char();

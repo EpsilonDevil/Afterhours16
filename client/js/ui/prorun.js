@@ -2,7 +2,7 @@
 // whoever holds the slot your play earned, then an 82-game season, the play-in, four playoff rounds and the
 // Finals. Play your games in the arena or sim them; every other game is simulated (sim/league.js). Played games
 // go through a server ticket like Pro-Am: VC and badge progress pay 1.5x the park rate, and there's no music.
-import { $, $$, esc, money, toast, modal, closeModal, confirmBox, busy } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, confirmBox, busy, keepScroll } from './common.js';
 import * as L from '../sim/league.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
@@ -77,14 +77,17 @@ export async function render(app, root, params = {}) {
   if (!document.body.contains(root)) return;
   syncMe(app, career);
   const state = { tab: params.tab || 'overview' };
-  const draw = () => {
-    if (!career) drawNew(app, root, c => { career = c; draw(); });
+  // (v0.4.8.7 qp7: a sim, a playoff day or a saved setting redraws the career where you were scrolled; another tab starts
+  // at its top)
+  const draw = (fresh = false) => (fresh === true ? paint() : keepScroll(root, paint));
+  const paint = () => {
+    if (!career) drawNew(app, root, c => { career = c; draw(true); });
     else if (career.phase === 'college') drawCollege(app, root, career, draw);
     else if (career.phase === 'draft') drawDraft(app, root, career, draw);
     else drawSeason(app, root, career, state, draw);
     maxOvrStrip(app, root);
   };
-  draw();
+  draw(true);
 }
 
 // v0.4.7.5: games played here raise your max OVR (+1 every 3, from 80 up to 90)
@@ -165,7 +168,7 @@ function drawSeason(app, root, career, state, redraw) {
       <div class="pr-mine">${[['PPG', me?.ppg], ['RPG', me?.rpg], ['APG', me?.apg], ['MPG', me?.mpg]].map(([k, v]) => `<div><b>${f1(v)}</b><small>${k}</small></div>`).join('')}</div></div>
     <nav class="tabs-inner pr-tabs">${TABS.map(([k, l]) => `<button class="${state.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</nav>
     <div class="pr-body">${state.tab === 'schedule' ? tabSchedule(career) : state.tab === 'standings' ? tabStandings(career, st) : state.tab === 'roster' ? tabRoster(career) : state.tab === 'leaders' ? tabLeaders(career) : state.tab === 'settings' ? `${settingsForm(career.settings, { playoffs: !!career.po })}<p class="muted small">Quarter length and difficulty apply to games you play. The rest shapes simulated games.</p><div class="row gap end"><button class="btn ghost" data-restart>Start over (new career)</button></div>` : tabOverview(career, st)}</div></section>`;
-  $$('[data-tab]', root).forEach(b => b.onclick = () => { state.tab = b.dataset.tab; redraw(); });
+  $$('[data-tab]', root).forEach(b => b.onclick = () => { if (state.tab === b.dataset.tab) return; state.tab = b.dataset.tab; redraw(true); });
   bindSettings(root, career.settings, () => saveCareer(app, career));
   const on = (sel, f) => { const b = $(sel, root); if (b) b.onclick = ev => { busy(ev.target, true); setTimeout(() => f(ev), 20); }; };
   on('[data-play]', () => playLeagueGame(app, career));

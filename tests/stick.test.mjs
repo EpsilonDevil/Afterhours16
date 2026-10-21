@@ -123,7 +123,9 @@ function attackLayup(how, timing) {
   const { g, p } = handler(5);
   p.raw = { ...(p.raw || p.ratings), driving_dunk: 30, standing_dunk: 30 };
   const rim = g.rimFor(0), side = g.sideFor(0);
-  p.setPos(rim.x, rim.z - side * 3.4, side > 0 ? 0 : Math.PI); p.vz = side * 4; g.giveBall(p, 'dribble');
+  // (v0.4.8.7 qp7: the bind is the forced dunk on a drive now, for any build; a slow approach, not a drive, is still the
+  // bind's own finish, here the layup)
+  p.setPos(rim.x, rim.z - side * 3.4, side > 0 ? 0 : Math.PI); p.vz = side * 1; g.giveBall(p, 'dribble');
   const inp = fakeInput(), sess = { input: inp, game: g, basis: { rx: 1, rz: 0, fx: 0, fz: 1 }, pend: { shoot: { ttl: 0.3, attack: true } }, defHands: null };
   const hold = on => { if (how === 'key') { if (on) inp.down.add('KeyZ'); else inp.down.delete('KeyZ'); } else { inp.gp.connected = true; inp.gp.dunkHeld = on; } };
   let grade = null, a = null;

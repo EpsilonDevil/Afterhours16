@@ -183,6 +183,8 @@ export class FriendWalker extends Walker {
     else it.face = T.f;
     p.move(dt * GAME_SPEED, false, 0);
     p.stamina = 1;
+    // (v0.4.8.7 qp7: a celebration he started on his screen plays out here: Peers.emote)
+    if (p.action) { p.action.t += dt; if (p.action.t > p.action.dur) p.action = null; }
   }
 }
 
@@ -216,7 +218,19 @@ export class PeerFollower extends Walker {
 // each of them brought from his own game. world: the ParkHub or CrewHQ (it has app, r, scene, pool, rng and
 // placeKey()); positions come in through the hosted game (ui/online.js)
 export class Peers {
-  constructor(world) { this.w = world; this.map = new Map(); this.fol = new Map(); this.withAI = !!world.parkList; } // (AI squads walk with their owners in the parks)
+  constructor(world) {
+    this.w = world; this.map = new Map(); this.fol = new Map(); this.withAI = !!world.parkList; // (AI squads walk with their owners in the parks)
+    // (v0.4.8.7 qp7: their celebrations, as the service relays them: server/online.py emote)
+    this.offEmote = world.app?.net?.on?.('emote', m => this.emote(m)) || null;
+  }
+  // someone here celebrated: he plays it where he stands (the animation the service named for the item he has on)
+  emote(m) {
+    const net = this.w.app.net, w = m && this.map.get(m.from);
+    if (this.w.disposed || !w || !net || net.place !== this.w.placeKey?.() || typeof m.kind !== 'string') return false;
+    w.p.startAction('celebrate', Math.max(0.5, Math.min(3, +m.dur || 1.6)), { kind: m.kind });
+    return true;
+  }
+  detach() { this.offEmote?.(); this.offEmote = null; this.clear(); }
   get size() { return this.map.size; }
   list() { return [...this.map.values()]; }
   followers() { return [...this.fol.values()]; }
@@ -1020,8 +1034,16 @@ export class ParkHub {
     const pr = this.venue.practice.origin;
     if (Math.hypot(me.x - (pr[0] - 4), me.z - (pr[2] - 2)) < 3 || Math.hypot(me.x - pr[0], me.z - pr[2]) < 4.5) { this.prompt = `${promptGlyph(inp, 'E', 'A')} Shoot around`; if (inp.wasPressed('interact')) this.startPractice(); }
     this.gotNext(dt);
-    if (inp.wasPressed('celebrate') && !me.action) me.startAction('celebrate', 1.6, { kind: this.app.catalog[this.char.equipment?.celebration]?.anim || 'flex' });
+    if (inp.wasPressed('celebrate') && !me.action) this.celebrate(me);
     if (me.action) { me.action.t += dt; if (me.action.t > me.action.dur) me.action = null; }
+  }
+  // your celebration in the park: here, and (v0.4.8.7 qp7) on the screens of the real people here (it used to play on yours
+  // alone: nothing of it went out, their copy of you only had your walk)
+  celebrate(me = this.me) {
+    const item = this.char?.equipment?.celebration || null, anim = item ? this.app.catalog?.[item]?.anim : null;
+    me.startAction('celebrate', 1.6, { kind: anim || 'flex' });
+    const net = this.netHere?.() || null;
+    if (net && net.people.size) net.emote(anim ? item : null, anim ? null : 'flex', 1.6);
   }
 
   separate(a, b, staticB = false) {
@@ -1625,6 +1647,9 @@ export class ParkHub {
   popHostId() {
     const net = this.netHere();
     if (!net || !net.people.size || net.myId == null) return null;
+    // (v0.4.8.7 qp7: the service picks the host, one answer for everyone: whoever has been here longest. Before it says,
+    // the lowest id here)
+    if (net.host != null && (net.host === net.myId || net.people.has(net.host))) return net.host;
     let best = net.myId;
     for (const id of net.people.keys()) if (String(id) < String(best)) best = id;
     return best;
@@ -2048,7 +2073,7 @@ export class ParkHub {
 
   dispose() {
     this.disposed = true;
-    this.peers.clear();
+    this.peers.detach(); // (qp7: and stops listening for their emotes)
     for (const c of this.courts) if (c.live) c.live.dispose();
     for (const c of this.courts) if (c.fx) c.fx.dispose();
     for (const sp of this.spectators || []) sp.dispose();

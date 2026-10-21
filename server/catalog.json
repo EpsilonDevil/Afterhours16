@@ -2415,6 +2415,7 @@
   "signature": "hs_sling",
   "exclusive": "icon",
   "icon": "hash_slinging",
+  "secret": true,
   "v0475qp3": true
  },
  {
@@ -4139,6 +4140,34 @@
   "icon": "the_clamp",
   "secret": true,
   "v0485qp6": true
+ },
+ {
+  "category": "animation",
+  "min_overall": 0,
+  "rep_required": 0,
+  "original_2k_asset": false,
+  "id": "pass_oprah",
+  "name": "Pass Package: Oprah",
+  "slot": "pass",
+  "price": 0,
+  "min_attr": {},
+  "styles": [
+   "btb",
+   "nolook",
+   "wrap",
+   "btl",
+   "shoulder",
+   "elbow",
+   "spin",
+   "bullet",
+   "overhead"
+  ],
+  "signature": "nolook",
+  "description": "The Playmaker Icon's own: nine ultra-flashy streetball passes nobody else throws (Behind the Back, No-Look, Wraparound, Between the Legs, Over the Shoulder, Elbow Pass, Spin Dish, Dribble Bullet and Behind the Head), each picked for the pass and where your man is. Comes with the Oprah Icon badge, for that build only (a Playmaker who has unlocked it); it cannot be bought.",
+  "exclusive": "icon",
+  "icon": "oprah",
+  "secret": true,
+  "v0487qp7": true
  },
  {
   "category": "animation",

@@ -1,5 +1,5 @@
 // Mode screens: Park entry + hub overlay, Pro-Am team & games, Practice gym, results.
-import { $, $$, esc, money, toast, modal, closeModal, title, TIER, confirmBox, archHTML } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, title, TIER, confirmBox, archHTML, keepScroll, busy } from './common.js';
 import { AFFILIATIONS, THEMES, EVENTS, travelLock } from '../world/themes.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
@@ -584,7 +584,9 @@ const COLORS = ['#2457c5', '#c8322f', '#1f7a4d', '#7a2bd1', '#f2c14e', '#e8590c'
 export function proam(app, root) {
   const c = app.char();
   const t = structuredClone(app.profile.proam_team || { name: `${c.name.split(' ')[0]} Squad`, abbr: c.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'AHS', primary: '#2457c5', secondary: '#f2c14e', logo: 'bolt', wood: 'natural', roster_seed: (hashString(c.id) % 1e6) + 1, wins: 0, losses: 0 });
-  const draw = () => {
+  // (v0.4.8.7 qp7: a color, logo or floor pick, new teammates and closing the phone redraw where you were scrolled)
+  const draw = () => keepScroll(root, paint);
+  const paint = () => {
     const roster = proamRoster(app, t);
     root.innerHTML = `<section class="panel wide-panel proam">
       <div class="eyebrow">PRO-AM · 5V5 · RIMRIFT ARENA</div><h1>${esc(t.name || 'Your team')}</h1>
@@ -614,12 +616,14 @@ export function proam(app, root) {
     $('[data-ql]', root).onchange = e => { settings.quarterLen = +e.target.value; saveSettings(); };
     $('[data-resign]', root).onclick = () => { t.roster_seed = (Math.random() * 1e9 | 0) + 1; draw(); };
     $('[data-phone]', root).onclick = () => Phone.openPhone(app, { tab: 'squad', onClose: () => { if (document.body.contains(root)) draw(); } });
-    $('[data-save]', root).onclick = () => saveTeam(app, t);
-    $('[data-play]', root).onclick = async () => {
+    $('[data-save]', root).onclick = async ev => { const b = ev.currentTarget; if (b.disabled) return; busy(b, true); await saveTeam(app, t); busy(b, false); };
+    $('[data-play]', root).onclick = async ev => {
       // v0.4.7.5 qp3 online: with friends in your squad, the game is theirs too (the leader starts it)
+      const b = ev.currentTarget; if (b.disabled) return;
       const net = app.net, mates = net?.connected ? Online.freeSquad(app) : [];
       if (mates.length && !net.isLeader()) { toast('Your squad leader starts Pro-Am games: you suit up when he does.', 'error'); return; }
-      if (await saveTeam(app, t)) { if (mates.length) startProAmOnline(app); else playProAm(app); }
+      busy(b, true); // (qp7: one game per click, however slow the save)
+      if (await saveTeam(app, t)) { if (mates.length) startProAmOnline(app); else playProAm(app); } else busy(b, false);
     };
     const ch = root.querySelector('[data-pachal]'); if (ch) ch.onclick = () => Phone.openPhone(app, { tab: 'online' });
   };

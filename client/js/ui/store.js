@@ -6,18 +6,18 @@ import { BLOCK_BY_ID } from '../sim/blocks.js';
 import { snagName } from '../sim/snags.js';
 import { clampName } from '../sim/clamp.js';
 import { minAttrFor } from '../sim/bots.js';
-import { $, $$, esc, money, toast, modal, closeModal, title } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, title, keepScroll, busy } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
 import { playGreenSound } from '../core/greensound.js';
 
 // [category, label, camera focus, group, icon]. icon (v0.4.8.5): a category that exists only for the build holding that
 // Icon badge, in his Inventory alone (never in the store): the Open Arms Rebound Package's Rebounds (qp6: and The
-// Clamp's Steal Package's Steals)
+// Clamp's Steal Package's Steals; v0.4.8.7 qp7: and Oprah's Pass Package's Passes)
 export const CATS = [
   ['top', 'Tops', 'upper', 'Apparel'], ['bottom', 'Bottoms', 'full', 'Apparel'], ['shoes', 'Shoes', 'shoes', 'Apparel'], ['accessory', 'Accessories', 'full', 'Apparel'],
   ['jumpshot', 'Jumpshot Bases', 'wide', 'Animations'], ['release', 'Releases', 'wide', 'Animations'], ['dunk', 'Dunks', 'wide', 'Animations'], ['layup', 'Layups', 'wide', 'Animations'],
-  ['sizeup', 'Size-Ups', 'wide', 'Animations'], ['post', 'Post Moves', 'wide', 'Animations'], ['block', 'Blocks', 'wide', 'Animations'], ['rebound', 'Rebounds', 'wide', 'Animations', 'open_arms'], ['steal', 'Steals', 'wide', 'Animations', 'the_clamp'], ['celebration', 'Celebrations', 'upper', 'Animations'], ['movement', 'Movement', 'wide', 'Animations'], // (qp3: Block Packages)
+  ['sizeup', 'Size-Ups', 'wide', 'Animations'], ['post', 'Post Moves', 'wide', 'Animations'], ['block', 'Blocks', 'wide', 'Animations'], ['rebound', 'Rebounds', 'wide', 'Animations', 'open_arms'], ['steal', 'Steals', 'wide', 'Animations', 'the_clamp'], ['pass', 'Passes', 'wide', 'Animations', 'oprah'], ['celebration', 'Celebrations', 'upper', 'Animations'], ['movement', 'Movement', 'wide', 'Animations'], // (qp3: Block Packages)
   // v0.4.7.5 green releases: the sound and the effect when your green goes in
   ['greensound', 'Green Sounds', 'green', 'Green Releases'], ['greenfx', 'Green FX', 'green', 'Green Releases'],
 ];
@@ -28,7 +28,8 @@ export const catOf = i => (ACC_SLOTS.has(i.slot) ? 'accessory' : i.slot);
 import { inStore, forBuild } from '../sim/builds.js';
 export { inStore, forBuild };
 // the slots you can leave empty (everything else always has something on)
-export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup', 'post', 'block'].includes(i.slot) && !(i.category === 'green' && i.price === 0 && !i.exclusive);
+// (v0.4.8.7 qp7: and the Pass Package: Oprah's passes come with the badge itself, so it stays on: nothing to take off)
+export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpshot', 'dunk', 'sizeup', 'layup', 'pass', 'post', 'block'].includes(i.slot) &&!(i.category === 'green' && i.price === 0 && !i.exclusive);
 
 // v0.4.8.5: the categories a screen shows. The store (no build given) never shows an Icon's own category; the Inventory
 // shows it only to the build that holds that Icon badge (for anyone else it isn't there at all)
@@ -45,7 +46,10 @@ export function render(app, root, params = {}) {
   if (!c) return Screens.go(app, 'create');
   let cat = params.cat || 'top', filter = params.filter || 'all', sel = params.sel || null;
   if (!catShown(cat)) cat = 'top'; // (v0.4.8.5: an Icon's own category, the Rebounds, is never in the store)
-  const draw = () => {
+  // (v0.4.8.7 qp7: picking an item, a purchase or an equip redraws the store where you were scrolled (keepScroll); a new
+  // category or filter starts at the top of its list)
+  const draw = (fresh = false) => (fresh ? paint() : keepScroll(root, paint));
+  const paint = () => {
     const inv = new Set(app.profile.inventory);
     const items = Object.values(app.catalog).filter(i => inStore(i) && inCat(i, cat)).filter(i => filter === 'all' || (filter === 'owned' ? inv.has(i.id) : !inv.has(i.id))).sort((a, b) => a.price - b.price || a.name.localeCompare(b.name));
     if (!sel || !items.find(i => i.id === sel)) sel = items[0]?.id || null;
@@ -57,22 +61,22 @@ export function render(app, root, params = {}) {
       <div class="item-grid">${items.map(i => card(app, c, i, inv, sel)).join('') || '<div class="muted">Nothing here yet.</div>'}</div>
     </section>
     ${item ? detail(app, c, item, inv) : ''}`;
-    $$('[data-cat]', root).forEach(b => b.onclick = () => { cat = b.dataset.cat; sel = null; draw(); });
-    $$('[data-filter]', root).forEach(b => b.onclick = () => { filter = b.dataset.filter; draw(); });
+    $$('[data-cat]', root).forEach(b => b.onclick = () => { if (cat === b.dataset.cat) return; cat = b.dataset.cat; sel = null; draw(true); });
+    $$('[data-filter]', root).forEach(b => b.onclick = () => { if (filter === b.dataset.filter) return; filter = b.dataset.filter; draw(true); });
     $$('[data-item]', root).forEach(b => b.onclick = () => { sel = b.dataset.item; draw(); });
     const bp = $('[data-back-park]', root); if (bp) bp.onclick = () => enterPark(app, params.returnPark);
-    const buy = $('[data-buy]', root); if (buy) buy.onclick = () => purchase(app, c, item, draw);
+    const buy = $('[data-buy]', root); if (buy) buy.onclick = () => purchase(app, c, item, () => draw());
     const goInv = () => Screens.go(app, 'inventory', { cat, sel: item?.id, returnPark: params.returnPark });
     $$('[data-inventory]', root).forEach(b => b.onclick = goInv);
     const hear = $('[data-hear]', root); if (hear) hear.onclick = () => playGreenSound(app.audio, item.id, {});
     tryOn(app, c, item, cat);
   };
-  draw();
+  draw(true);
 }
 
 export function swatch(i) {
   if (i.category === 'green') return `<div class="sw-green ${i.exclusive ? 'gold' : ''}"><i>${i.slot === 'greensound' ? '♪' : '✦'}</i></div>`;
-  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'block' ? 'BLK' : i.slot === 'post' ? 'PST' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : i.slot === 'movement' ? 'MOV' : i.slot === 'rebound' ? 'REB' : i.slot === 'steal' ? 'STL' : 'JS'}</div>`;
+  if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'block' ? 'BLK' : i.slot === 'post' ? 'PST' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : i.slot === 'movement' ? 'MOV' : i.slot === 'rebound' ? 'REB' : i.slot === 'steal' ? 'STL' : i.slot === 'pass' ? 'PAS' : 'JS'}</div>`;
   const a = i.color || '#888', b = i.trim || i.accent || i.secondary || '#fff';
   return `<div class="sw-item" style="--a:${a};--b:${b}"><i></i></div>`;
 }
@@ -145,6 +149,7 @@ async function purchase(app, c, item, redraw) {
     <div class="row gap end"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-yes>Buy</button></div>`);
   card.querySelector('[data-yes]').onclick = async () => {
     closeModal();
+    const buyBtn = $('[data-buy]'); busy(buyBtn, true); // (v0.4.8.7 qp7: no second purchase while the first is on its way)
     try {
       const res = await app.api.mutate('/api/store/purchase', { item_id: item.id, character_id: c.id });
       app.profile.inventory.push(item.id);
@@ -154,8 +159,8 @@ async function purchase(app, c, item, redraw) {
       // v0.4.7.5: equip it right away, or keep shopping (everything you own is in the Inventory)
       const done = modal(`<div class="eyebrow">PURCHASED</div><h2>${esc(item.name)}</h2><p class="muted">It's in your Inventory.</p>
         <div class="row gap end"><button class="btn ghost" data-close>Keep shopping</button><button class="btn primary" data-eq>Equip now</button></div>`);
-      done.querySelector('[data-eq]').onclick = async () => { closeModal(); await equip(app, c, item, redraw); toast(`Equipped ${item.name}.`); };
-    } catch (e) { toast(e.message, 'error'); }
+      done.querySelector('[data-eq]').onclick = async () => { closeModal(); if (await equip(app, c, item, redraw)) toast(`Equipped ${item.name}.`); };
+    } catch (e) { busy(buyBtn, false); toast(e.message, 'error'); }
   };
 }
 

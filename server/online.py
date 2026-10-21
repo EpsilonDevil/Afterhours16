@@ -333,10 +333,16 @@ def crew_row(db, cid):
 # played there (watch). Squads go everywhere together; games are started by a squad leader (or whoever decides for a
 # court) and relayed in lockstep to their players and to everyone watching from the same place.
 class Hub:
-    def __init__(self, db, authenticator=None, world=None):
+    def __init__(self, db, authenticator=None, world=None, catalog=None):
         self.db = db
         self.authenticator = authenticator  # (qp3: sign-ins from your friends' own copies: Service.online_auth)
         self.world = world  # (v0.4.8.7: the service's one AI world, Service.shared_world_payload: in every hello, and on asking)
+        # v0.4.8.7 qp7: the catalog (celebration items → their animation: emotes are checked and named here), each park's
+        # host (the one real player who runs its people for everyone, picked here: host_of) and his latest report (pop)
+        self.catalog = catalog or {}
+        self.hosts = {}      # place -> account id
+        self.pops = {}       # place -> (monotonic time, the host's last pop message)
+        self.arrivals = 0
         self.lock = threading.RLock()
         self.conns = {}      # account id -> WSConn
         self.squads = {}     # squad id -> {"id", "leader", "members": [aids, leader first]}
@@ -458,16 +464,71 @@ class Hub:
         if old == place:
             return
         conn.info["park"] = place
+        self.arrivals += 1
+        conn.info["arrived"] = self.arrivals
         if old:
             self.send_to([c.aid for c in self.at(old)], {"t": "gone", "id": conn.aid, "place": old})
             self.release_place(conn.aid, old)
+            self.pick_host(old)
         if place:
+            self.pick_host(place, quiet=conn.aid)
             others = self.at(place, skip=conn.aid)
+            pop = self.pops.get(place)
             conn.send({"t": "here", "place": place, "players": [self.person(c) for c in others],
-                       "courts": self.courts_payload(place), "games": self.place_games(place)})
+                       "courts": self.courts_payload(place), "games": self.place_games(place), "host": self.hosts.get(place),
+                       # (v0.4.8.7 qp7: the park as its host had it a moment ago: the newcomer's screen matches at once)
+                       **({"pop": pop[1]} if pop and time.monotonic() - pop[0] < 5 and pop[1].get("from") != conn.aid else {})})
             if conn.entry:
                 self.send_to([c.aid for c in others], {"t": "pentry", **self.person(conn)})
             self.offer_watch(conn, place)
+
+    # ---- v0.4.8.7 qp7: each park's host, picked here (one answer for everyone): whoever has been there longest ----
+    def host_of(self, place):
+        there = self.at(place)
+        return min(there, key=lambda c: (c.info.get("arrived", 0), str(c.aid))).aid if there else None
+
+    def pick_host(self, place, quiet=None):
+        """The park's host after someone came or went: told to everyone there when it changes (quiet: the one just arriving,
+        who hears it in his 'here'). The last report goes with the old host."""
+        h = self.host_of(place)
+        if h == self.hosts.get(place):
+            return h
+        if h is None:
+            self.hosts.pop(place, None)
+        else:
+            self.hosts[place] = h
+        self.pops.pop(place, None)
+        if h is not None:
+            self.send_to([c.aid for c in self.at(place)], {"t": "host", "place": place, "id": h}, skip=quiet)
+        return h
+
+    # ---- v0.4.8.7 qp7: emotes (a celebration in the park, or the Crew HQ) ----
+    DEFAULT_EMOTES = ("flex", "chest", "point")
+    EMOTE_GAP = 0.6
+
+    def emote(self, conn, msg):
+        """Checked and named here: the celebration item he has on (his entry, what everyone sees him in) gives the
+        animation, or one of the default three with nothing on; at most one every EMOTE_GAP seconds. Everyone else where
+        he is gets it at once."""
+        place = conn.info.get("park")
+        now = time.monotonic()
+        if not place or now - conn.info.get("emote_at", 0) < self.EMOTE_GAP:
+            return
+        item = msg.get("item") if isinstance(msg.get("item"), str) else None
+        worn = (((conn.entry or {}).get("build") or {}).get("equipment") or {}).get("celebration")
+        kind = None
+        if item:
+            it = self.catalog.get(item) or {}
+            if item == worn and it.get("slot") == "celebration" and isinstance(it.get("anim"), str):
+                kind = it["anim"]
+        elif msg.get("kind") in self.DEFAULT_EMOTES:
+            kind = msg["kind"]
+        if not kind:
+            return
+        dur = msg.get("dur")
+        dur = max(0.5, min(3.0, float(dur))) if isinstance(dur, (int, float)) and not isinstance(dur, bool) else 1.6
+        conn.info["emote_at"] = now
+        self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {"t": "emote", "from": conn.aid, "kind": kind, "item": item, "dur": dur})
 
     def person(self, c):
         return {"id": c.aid, "username": c.username, "name": c.info.get("name") or c.username, "entry": c.entry, "rtt": c.info.get("rtt"), "ai": c.aisquad}
@@ -1043,9 +1104,14 @@ class Hub:
             elif t == "world":  # (v0.4.8.7: the shared AI world again: an event window closed, its prizes are in)
                 conn.send({"t": "world", **self.world_payload()})
             elif t == "pop":  # (v0.4.8.7: the park's people as the park's host sees them, to everyone else there)
+                # (qp7: only from the host picked here, and kept a moment for whoever arrives next)
                 place = conn.info.get("park")
-                if place and msg.get("place") == place:
-                    self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {**msg, "from": conn.aid})
+                if place and msg.get("place") == place and self.hosts.get(place, self.host_of(place)) == conn.aid:
+                    out = {**msg, "from": conn.aid}
+                    self.pops[place] = (time.monotonic(), out)
+                    self.send_to([c.aid for c in self.at(place, skip=conn.aid)], out)
+            elif t == "emote":
+                self.emote(conn, msg)
             elif t == "friend":  # (qp3: friend requests on the socket: a game from your own copy has no cookie here)
                 try:
                     if msg.get("action") not in ("add", "accept", "decline", "remove"):

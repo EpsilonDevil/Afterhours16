@@ -686,7 +686,10 @@ class ApiTests(unittest.TestCase):
             se = {"equipment": {"jumpshot": "js_base_standard", "release": "release_classic"}}
             self.assertEqual(sorted(self.service.grant_icon_items(c, aid, "sharp_eye", se, equip=True)), ["js_base_sharpeye", "release_sharpeye"])
             self.assertEqual((se["equipment"]["jumpshot"], se["equipment"]["release"]), ("js_base_sharpeye", "release_sharpeye"))
-            self.assertEqual(self.service.grant_icon_items(c, aid, "oprah", {"equipment": {}}, equip=True), [])  # no items yet for the others
+            # (v0.4.8.7 qp7: Oprah's passes are an item now too, the Pass Package, into its own "pass" slot)
+            op = {"equipment": {}}
+            self.assertEqual(self.service.grant_icon_items(c, aid, "oprah", op, equip=True), ["pass_oprah"])
+            self.assertEqual(op["equipment"]["pass"], "pass_oprah")
             self.assertEqual(self.service.grant_icon_items(c, aid, None), [])
 
     def test_bug_reports_land_in_a_text_file_next_to_the_exe(self):

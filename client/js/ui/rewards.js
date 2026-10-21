@@ -35,13 +35,16 @@ export function openWheel(app, onSpin) {
     if (!card.isConnected) { clearInterval(timer); return; }
     if (spinning) return;
     const left = (status().next_at || 0) - Date.now() / 1000;
-    btn.disabled = left > 0;
-    st.innerHTML = left > 0 ? `Next spin in <b>${fmtLeft(left)}</b>` : '<b class="good">Your spin is ready!</b>';
+    // (v0.4.8.7 qp7: only what changed: the Spin button is never touched while it stays the same, so a hover or a press
+    // on it lives through the ticks)
+    if (btn.disabled !== left > 0) btn.disabled = left > 0;
+    const html = left > 0 ? `Next spin in <b>${fmtLeft(left)}</b>` : '<b class="good">Your spin is ready!</b>';
+    if (st._html !== html) { st._html = html; st.innerHTML = html; }
   };
   tick(); timer = setInterval(tick, 1000);
   btn.onclick = async () => {
     if (spinning) return;
-    spinning = true; btn.disabled = true; st.textContent = 'Spinning…';
+    spinning = true; btn.disabled = true; st.textContent = 'Spinning…'; st._html = null;
     let res;
     try { res = await app.api.mutate('/api/daily-spin', {}); }
     catch (e) { spinning = false; toast(e.message, 'error'); tick(); return; }

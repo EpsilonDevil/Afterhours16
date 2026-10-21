@@ -59,7 +59,7 @@ export class Net {
       if (this.ws !== ws) return;
       clearInterval(this.pingT);
       this.ws = null; this.state = 'off'; this.you = null;
-      this.place = null; this.people = new Map(); this.courts = {}; this.placeGames = []; this.squad = null; this.crew = null;
+      this.place = null; this.people = new Map(); this.courts = {}; this.placeGames = []; this.squad = null; this.crew = null; this.host = null;
       if (this.gameFn) this.gameFn({ t: 'closed' }); else this.inbox.push({ t: 'closed' });
       for (const fn of this.watchFns.values()) fn({ t: 'closed' });
       this.emit('state'); this.emit('people'); this.emit('courts'); this.emit('squad'); this.emit('crew');
@@ -106,7 +106,11 @@ export class Net {
       // ---- the place you're at ----
       case 'here':
         this.place = m.place; this.people = new Map((m.players || []).map(p => [p.id, p])); this.courts = m.courts || {}; this.placeGames = m.games || [];
-        this.emit('people'); this.emit('courts'); return;
+        this.host = m.host ?? null; // (v0.4.8.7 qp7: the park's host, picked by the service)
+        this.emit('people'); this.emit('courts');
+        if (m.pop) this.emit('pop', m.pop); // (and the park as he had it a moment ago)
+        return;
+      case 'host': if (m.place === this.place) { this.host = m.id ?? null; this.emit('host', m); } return;
       case 'pentry': if (m.id) { this.people.set(m.id, { id: m.id, username: m.username, name: m.name, entry: m.entry, rtt: m.rtt, ai: m.ai || [] }); this.emit('people', m); } return;
       case 'gone': this.people.delete(m.id); this.emit('people', m); this.emit('gone', m); return;
       case 'courts': if (m.place === this.place) { this.courts = m.courts || {}; this.emit('courts'); } return;
@@ -171,6 +175,9 @@ export class Net {
     }
   }
   sendEntry() { const e = this.entryFn && this.entryFn(); if (e) this.send({ t: 'entry', entry: e }); }
+  // v0.4.8.7 qp7: a celebration in the park or the Crew HQ, for the people there (the service checks it against the item
+  // you have on and names its animation: server/online.py emote). item: the celebration item worn, or none (kind: a default)
+  emote(item, kind, dur = 1.6) { return this.connected && this.place ? this.send({ t: 'emote', ...(item ? { item } : { kind }), dur }) : false; }
   // presence: your name, where you are and what you're doing (sent when it changes)
   where(info) {
     const k = JSON.stringify(info);

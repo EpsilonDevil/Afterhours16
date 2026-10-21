@@ -30,13 +30,13 @@ export const PADMAP = {
 // what can be rebound, in the order the remap screen lists them
 export const REMAP_KEYS = [
   ['up', 'Move up'], ['down', 'Move down'], ['left', 'Move left'], ['right', 'Move right'], ['sprint', 'Sprint'],
-  ['shoot', 'Shoot / pump fake'], ['dunk', 'Attack the rim (dunk)'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alley', 'Alley-oop'],
+  ['shoot', 'Shoot / pump fake (sprinting at the rim: layup)'], ['dunk', 'Attack the rim (dunk, any build)'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alley', 'Alley-oop'],
   ['stickLeft', 'Move: cross left'], ['stickRight', 'Move: cross right'], ['stickUp', 'Move: hesitation'], ['stickDown', 'Move: step-back'], ['spin', 'Move: spin'], ['btb', 'Move: behind the back'],
   ['post', 'Post up (hold)'], ['screen', 'Call screen'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'], ['handsUp', 'Hands up'],
   ['camera', 'Camera'], ['celebrate', 'Celebrate'], ['help', 'Show controls'], ['social', 'Social phone'],
 ];
 export const REMAP_PAD = [
-  ['shoot', 'Shoot / pump fake'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alleyMod', 'Alley-oop modifier (+ lob)'],
+  ['shoot', 'Shoot / pump fake (sprinting at the rim: layup)'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alleyMod', 'Alley-oop modifier (+ lob)'],
   ['mod', 'Icon pass modifier / call screen'], ['sprint', 'Sprint'], ['post', 'Post up (hold)'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'],
   ['celebrate', 'Celebrate'], ['camera', 'Camera'],
 ];
@@ -54,6 +54,10 @@ export function keyName(code) {
 // standard-mapping button indices
 export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, VIEW: 8, MENU: 9, LS: 10, RS: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15, HOME: 16 };
 
+// v0.4.8.6 qp7: menu layers. A wheel or click over one of these belongs to the menu, not the game.
+const UI_SEL = 'button, a, input, select, textarea, label, .modal, #modal, .panel, .topbar, .menu-layer, .phone, #phone, .help-overlay, .ph-body, [data-ui]';
+export const overUI = t => !!(t && t.closest && t.closest(UI_SEL));
+const MENU_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab']);
 const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F11', 'F5', 'F3', 'F7', 'Backquote']);
 // browser shortcuts that would yank the player out of the game; blocked whenever the page can block them
 const CTRL_BLOCK = new Set(['KeyS', 'KeyD', 'KeyF', 'KeyP', 'KeyR', 'KeyG', 'KeyH', 'KeyJ', 'KeyU', 'KeyO', 'KeyE', 'KeyK', 'KeyL', 'KeyB', 'KeyA', 'Equal', 'Minus', 'Digit0']);
@@ -153,7 +157,9 @@ export class Input {
       if (!this.enabled) return;
       if (typing(e)) return;
       if (e.ctrlKey || e.metaKey) { if (CTRL_BLOCK.has(e.code)) e.preventDefault(); return; }
-      if (GAME_KEYS.has(e.code) || (this.ctx !== 'menu' && this.keyCodes.has(e.code))) e.preventDefault();
+      // (v0.4.8.6 qp7: in the menus the arrows, Space and Tab keep their browser jobs on a menu control or list (scroll it,
+      // press the focused button, move focus); in a game they're game keys as before)
+      if (this.ctx === 'menu' ? GAME_KEYS.has(e.code) && !(MENU_KEYS.has(e.code) && overUI(e.target)) : (GAME_KEYS.has(e.code) || this.keyCodes.has(e.code))) e.preventDefault();
       if (e.altKey && e.code !== 'AltLeft' && e.code !== 'AltRight') return;
       if (!e.repeat && !this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
@@ -179,12 +185,18 @@ export class Input {
     window.addEventListener('mousedown', e => {
       this.mouse.buttons = e.buttons;
       if (e.button === 1) e.preventDefault(); // no autoscroll
-      const onUI = e.target && e.target.closest && e.target.closest('button, a, input, select, textarea, label, .modal, .panel, .topbar');
-      if (!onUI || this.ctx !== 'menu') { this.pressed.add('Mouse' + e.button); this.down.add('Mouse' + e.button); }
+      // (v0.4.8.6 qp7: a click on a button, panel, dialog or the phone is a menu click in every context, so clicking a
+      // park panel or the pause menu no longer also shoots or passes)
+      if (!overUI(e.target)) { this.pressed.add('Mouse' + e.button); this.down.add('Mouse' + e.button); }
       this.lastDevice = 'mouse';
     });
     window.addEventListener('mouseup', e => { this.mouse.buttons = e.buttons; this.down.delete('Mouse' + e.button); this.released.add('Mouse' + e.button); });
-    window.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); return; } this.mouse.wheel += Math.sign(e.deltaY); }, { passive: false });
+    // v0.4.8.6 qp7: the wheel listener is passive, so the browser scrolls a menu at once instead of waiting on a busy frame
+    // (a blocking listener here made the wheel lag or seem ignored over the 3D showroom). A wheel over a menu, panel,
+    // modal or the phone scrolls that and doesn't zoom the camera. Browser zoom (Ctrl + wheel) is blocked on the game
+    // canvas only (the only blocking listener left), so it never holds up menu scrolling.
+    window.addEventListener('wheel', e => { if (e.ctrlKey || overUI(e.target)) return; this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
+    if (target === window && typeof document !== 'undefined') document.getElementById?.('world')?.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
     window.addEventListener('contextmenu', e => { if (!typing(e)) e.preventDefault(); });
     window.addEventListener('dragstart', e => { if (!typing(e)) e.preventDefault(); });
     window.addEventListener('gamepadconnected', e => { this.gp.connected = true; this.gp.index = e.gamepad.index; this.gp.id = e.gamepad.id; this.gp.family = padFamily(e.gamepad.id); if (this.onPadChange) this.onPadChange(true, this.gp); });
@@ -425,19 +437,6 @@ export class Input {
     if (this.gp.flick) return this.gp.flick;
     if (this.gp.push && this.ctx === 'offense') return this.gp.push; // v0.4.5: no push gets lost
     return null;
-  }
-
-  // v0.4.8.7: the forced dunk, held: sprint + right stick down + shoot, on offense. A pad: the sprint button (RT / R2 as
-  // bound) with the right stick pushed down and the shoot button (X / Square as bound); the keyboard: a sprint key, the
-  // step-back key (stickDown) and a shoot key, as bound. (game/session.js turns it into the intent's forceDunk)
-  forceDunkHeld() {
-    if (this.capturing || this.ctx !== 'offense') return false;
-    const D = a => (this.keymap[a] || []).some(k => this.down.has(k));
-    if (D('sprint') && D('stickDown') && D('shoot')) return true;
-    const g = this.gp;
-    if (!g.connected || !g.axes) return false;
-    const rx = g.axes[2] || 0, ry = g.axes[3] || 0;
-    return ry > 0.6 && Math.abs(ry) > Math.abs(rx) && this.gpBtn(this.pb('sprint')) && this.gpBtn(this.pb('shoot'));
   }
 
   // ---------------- rumble ----------------

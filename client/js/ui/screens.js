@@ -1,5 +1,5 @@
 // Screen router, top bar, auth, home, settings and FPS overlay.
-import { $, $$, esc, money, toast, modal, closeModal, heightStr, title, archHTML } from './common.js';
+import { $, $$, esc, money, toast, modal, closeModal, heightStr, title, archHTML, keepScroll } from './common.js';
 import { padGlyph, promptGlyph, KEYMAP, PADMAP, REMAP_KEYS, REMAP_PAD, PAD, PAD_BINDABLE } from '../core/input.js';
 import { lockin } from '../core/lockin.js';
 import { settings, saveSettings, volumeGain } from '../core/settings.js';
@@ -32,9 +32,17 @@ const ICON = {
 };
 
 export function go(app, name, params = {}) {
-  app.screen = name;
+  // (v0.4.8.7 qp7: going to the screen you're already on, on the same tab, is a refresh (after a purchase, an upgrade, a
+  // build picked): it keeps every list where you had scrolled it. A new screen, or another tab of it, starts at the top)
+  const refresh = app.screen === name && sameView(app.screenParams, params);
+  app.screen = name; app.screenParams = params;
   audio.ui('click');
   const ui = $('#ui');
+  return refresh ? keepScroll(ui, () => drawScreen(app, name, params, ui)) : drawScreen(app, name, params, ui);
+}
+const VIEW_KEYS = ['tab', 'view', 'cat', 'mode'];
+export const sameView = (a = {}, b = {}) => VIEW_KEYS.every(k => (a?.[k] ?? null) === (b?.[k] ?? null));
+function drawScreen(app, name, params, ui) {
   if (app.mode === 'park' || app.mode === 'match') { if (name !== 'park-hub') Modes.leaveWorld(app); }
   app.mode = 'menu';
   $('#hud').hidden = true;
@@ -277,9 +285,9 @@ export function controlsTable(app) {
     ['Move / sprint', `${K('up', 'left', 'down', 'right')} / ${K('sprint')}`, `${G('LS')} / ${P('sprint')}`],
     ['Shoot — hold, release at the top (a green inside 35 ft is a guaranteed make, outside the window almost never; never while smothered)', K('shoot'), P('shoot')],
     ['Bailout — pass out of your jumper before the release', `${K('pass')} while shooting`, `${P('pass')} while shooting`],
-    ['Attack the rim — your better finish, dunk or layup (hold; a layup is timed like a shot)', K('dunk'), `${G('RS')} down while sprinting, held`],
-    // (v0.4.8.7: the forced dunk combo, with whatever the three are bound to)
-    ['Force a dunk — any build, on a drive to the rim (the dunk can still miss or get blocked)', `${K('sprint')} + ${K('stickDown')} + ${K('shoot')}, held`, `${P('sprint')} + ${G('RS')} down + ${P('shoot')}, held`],
+    // (v0.4.8.7 qp7: attack the rim is the forced dunk, and the shoot button on a drive is the forced layup)
+    ['Attack the rim — a dunk, any build, on a drive to the rim (it can still miss or get blocked; held, it keeps driving until you\'re in range)', K('dunk'), `${G('RS')} down while sprinting, held`],
+    ['Layup — shoot while sprinting at the rim (never a dunk, a jumper or a pump fake; hold, release at the top)', `${K('sprint')} + ${K('shoot')}`, `${P('sprint')} + ${P('shoot')}`],
     ['Pump fake', `Tap ${K('shoot')}`, `Tap ${P('shoot')}`],
     ['Pass (aims with your stick) / bounce / lob', K('pass', 'bounce', 'lob'), `${P('pass')} / ${P('bounce')} / ${P('lob')}`],
     ['Alley-oop', K('alley'), `${P('alleyMod')}+${P('lob')}`],

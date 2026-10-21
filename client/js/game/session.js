@@ -293,16 +293,9 @@ export class MatchSession {
     // v0.4.1: attack-the-rim bind (keyboard dunk key, or right stick down while sprinting). Held, it keeps
     // asking until you're in range, so you can press it early on a drive.
     const attackHeld = inp.isDown('dunk') || (inp.gp.dunkHeld && inp.ctx === 'offense');
-    // v0.4.8.7: the forced dunk. Sprint + right stick down + shoot together (R2 + right stick down + Square; RT + right
-    // stick down + X; keyboard: the sprint key + the step-back key + shoot, each as bound): any build dunks it on a drive
-    // in range (sim/shots.js FORCE_DUNK), never a dribble move or a jumper. Two of the three do what they always did
-    const forceDunk = has && inp.forceDunkHeld && inp.forceDunkHeld();
-    if (forceDunk) {
-      const a = me.action;
-      delete P.move; // (no step-back: the stick is part of the combo)
-      if (!(a && (a.type === 'dunk' || a.type === 'layup' || a.type === 'shoot'))) P.shoot = { ttl: 0.3, attack: true, force: true };
-      else if (P.shoot && !P.shoot.attack) delete P.shoot; // (and no shot press left over from it)
-    } else if (has && (inp.wasPressed('dunk') || attackHeld)) {
+    // (v0.4.8.7 qp7: this bind is the forced dunk now, for any build, on a drive in range: stepIntent marks its press
+    // forceDunk. The old sprint + right stick down + shoot combo is gone)
+    if (has && (inp.wasPressed('dunk') || attackHeld)) {
       const a = me.action;
       if (!(a && (a.type === 'dunk' || a.type === 'layup' || a.type === 'shoot'))) P.shoot = { ttl: inp.wasPressed('dunk') ? 0.3 : 0.1, attack: true };
     }
@@ -334,7 +327,7 @@ export class MatchSession {
         }
         if (ps && ps.stick === 'spin') P.post = { move: 'postspin', side: 1, ttl: 0.4 };
         delete P.move;
-      } else if (has && !forceDunk) { // (v0.4.8.7: the forced dunk's stick is never a dribble move)
+      } else if (has) {
         const ps = inp.proStickInfo ? inp.proStickInfo() : (inp.proStick() ? { stick: inp.proStick(), slow: false } : null);
         const btb = inp.wasPressed('btb');
         if (ps || btb) {
@@ -421,7 +414,16 @@ export class MatchSession {
     if (P.shoot) {
       const b = g.ball;
       const incoming = b.mode === 'flight' && b.kind === 'pass' && b.info && b.info.to === me.id;
-      if (has || g.phase === 'ft' || g.phase === 'tip') { it.shoot = 'press'; if (P.shoot.attack) it.attack = true; if (P.shoot.force && has) it.forceDunk = true; }
+      // (v0.4.8.7 qp7: the attack bind's press is the forced dunk (sim/shots.js FORCE_DUNK: any build, on a drive in
+      // range); the shoot button's press while sprinting is the forced layup (FORCE_LAYUP: on a drive at the rim it's a
+      // layup, never a dunk, a jumper or a pump fake; anywhere else it's the usual shot). Both are a person's alone: the
+      // sim ignores them on the AI, and they go over the wire in the intent)
+      if (has || g.phase === 'ft' || g.phase === 'tip') {
+        it.shoot = 'press';
+        if (P.shoot.attack) it.attack = true;
+        if (P.shoot.attack && has) it.forceDunk = true;
+        else if (has && it.sprint && !P.shoot.jump) it.forceLayup = true;
+      }
       else if (incoming && !P.shoot.jump) P.shoot.ttl = Math.max(P.shoot.ttl, 0.05); // catch-and-shoot: hold the press until the catch
       else it.jump = true;
     }
@@ -986,7 +988,9 @@ export class MatchSession {
       this.rumbleFor(e);
       // (qp3: an Icon badge's activation, the Hash-Slinging dunks, is the big one: hud.badge shows it 20% larger, with the
       // badge's full art running, for twice as long)
-      if (e.type === 'badge' && mine) { const bd = e.icon ? this.app.config.icon_badges?.[e.badge] : this.app.config.badges?.[e.badge]; hud.badge({ key: e.badge, tier: e.tier, name: bd?.name || e.badge, group: bd?.group, icon: !!e.icon }); continue; }
+      // (v0.4.8.7 qp7: an Icon badge's pop-up shows for everyone on the floor, the AI's ICONs and the other players online
+      // too, and for you watching a game: with his name when it isn't yours. Ordinary badges stay yours alone)
+      if (e.type === 'badge' && (mine || e.icon)) { const bd = e.icon ? this.app.config.icon_badges?.[e.badge] : this.app.config.badges?.[e.badge]; hud.badge({ key: e.badge, tier: e.tier, name: bd?.name || e.badge, group: bd?.group, icon: !!e.icon, who: mine ? null : P?.name || null }); continue; }
       // v0.4.5 hot / cold / takeovers
       if (e.type === 'hot' && e.on && P) { if (mine) { hud.callout('ON FIRE', 'hot'); audio.cheer(0.9); } else hud.pushFeed(`${P.name} is on fire`); continue; }
       if (e.type === 'cold' && e.on && P) { if (mine) hud.callout('GOING COLD', 'cold'); else hud.pushFeed(`${P.name} went cold`); continue; }
@@ -1186,7 +1190,10 @@ export class MatchSession {
     if (el) { el.remove(); return; }
     const d = document.createElement('div');
     d.id = 'help-overlay'; d.className = 'help-overlay';
-    import('../ui/screens.js').then(S => { d.innerHTML = `<h3>Controls</h3>${S.controlsTable(this.app)}${meterLegendHTML()}<p class="muted small">Tab / RS click to close</p>`; document.body.appendChild(d); });
+    // (v0.4.8.7 qp7: in the page at once, filled when the controls table has loaded: a quick second Tab closes it instead of
+    // opening a second one on top, and one closed before it filled stays closed)
+    document.body.appendChild(d);
+    import('../ui/screens.js').then(S => { if (d.isConnected) d.innerHTML = `<h3>Controls</h3>${S.controlsTable(this.app)}${meterLegendHTML()}<p class="muted small">Tab / RS click to close</p>`; }).catch(() => d.remove());
   }
 
   // (a check or an inbound: whoever has the ball stops celebrating; everyone else gets to finish)

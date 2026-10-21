@@ -32,6 +32,40 @@ export function modal(html, opts = {}) {
 }
 export function closeModal() { const el = $('#modal'); el.hidden = true; el.innerHTML = ''; if (closeModal.onClose) { const f = closeModal.onClose; closeModal.onClose = null; f(); } }
 
+// v0.4.8.6 quick patch 7: a menu that redraws itself (a timer tick, a purchase, equipping, a tab inside a panel) keeps
+// every list where you had scrolled it, instead of jumping back to the top. keepScroll(root, draw) notes the scroll of
+// root, its ancestors and every scrolled box inside it, runs draw (sync or async) and puts them back. A box is matched
+// by its tag and classes (state classes like on/sel/pad-focus ignored) and its place among boxes with the same ones.
+const SCROLL_STATE = /\b(on|sel|selected|active|busy|pad-focus|open|hover|pending|locked|new)\b/g;
+const scrollKey = el => el.tagName + '.' + (typeof el.className === 'string' ? el.className.replace(SCROLL_STATE, '').replace(/\s+/g, ' ').trim() : '') + (el.id ? '#' + el.id : '');
+function scrollBoxes(root) {
+  const ups = []; for (let p = root.parentElement; p && p !== document.documentElement; p = p.parentElement) ups.push(p);
+  const seen = new Map(), out = [];
+  for (const el of [document.scrollingElement || document.documentElement, ...ups.reverse(), root, ...root.querySelectorAll('*')]) {
+    const k = scrollKey(el), n = (seen.get(k) || 0) + 1; seen.set(k, n);
+    out.push([k + ':' + n, el]);
+  }
+  return out;
+}
+export function keepScroll(root, draw) {
+  if (!root || !root.isConnected) return draw();
+  const before = scrollBoxes(root).filter(([, el]) => el.scrollTop > 0 || el.scrollLeft > 0).map(([k, el]) => [k, el.scrollTop, el.scrollLeft]);
+  if (!before.length) return draw();
+  const put = (late) => {
+    if (!root.isConnected) return;
+    const now = new Map(scrollBoxes(root));
+    for (const [k, t, l] of before) {
+      const el = now.get(k); if (!el) continue;
+      // (the late pass, after images and fonts lay out, only lifts a box the redraw clamped; never fights your own scroll)
+      if (late && el.scrollTop > 1) continue;
+      el.scrollTop = t; el.scrollLeft = l;
+    }
+  };
+  const done = v => { put(false); requestAnimationFrame(() => put(true)); return v; };
+  const r = draw();
+  return r && typeof r.then === 'function' ? r.then(done) : done(r);
+}
+
 export function confirmBox(text, okLabel = 'Confirm') {
   return new Promise(resolve => {
     const card = modal(`<h3>${esc(text)}</h3><div class="row gap end"><button class="btn ghost" data-no>Cancel</button><button class="btn primary" data-yes>${esc(okLabel)}</button></div>`, { close: false });

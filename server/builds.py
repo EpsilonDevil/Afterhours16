@@ -27,9 +27,10 @@ EYES = ("#3a2418", "#5a3a22", "#2f4a5a", "#3d5a3a", "#1d1a18")
 DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard_shoes", "release": "release_classic",
                      "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic", "post": "post_basic", "block": "block_basic"}
 # (v0.4.8.5: "rebound", the Open Arms Icon's Rebound Package: optional, empty by default, only its holder can fill it;
-# qp6: "steal", The Clamp Icon's Steal Package, the same way)
+# qp6: "steal", The Clamp Icon's Steal Package, the same way; v0.4.8.7 qp7: "pass", the Oprah Icon's Pass Package)
 EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
-               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "steal", "post", "block")
+               "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "steal", "pass",
+               "post", "block")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)
 
 ARCH_SCALE = 1.12  # v0.4.3 1.4; v0.4.4 strengths/weaknesses 20% smaller

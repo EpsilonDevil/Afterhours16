@@ -42,7 +42,8 @@ CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json"
 # character (so one never stands in for another): Sexy Red's Post Move Package, The General's Salute
 ICON_EQUIP_ONCE = {"post_sexy_red": "icon_pkg_v0485qp5_sr", "cel_general_salute": "icon_pkg_v0485qp5_gen",
                    "block_big_brother": "icon_pkg_v0485qp5_bb",  # (and Big Brother's own Block Package)
-                   "steal_the_clamp": "icon_pkg_v0485qp6_clamp"}  # (qp6: and The Clamp's Steal Package, into the new "steal" slot)
+                   "steal_the_clamp": "icon_pkg_v0485qp6_clamp",  # (qp6: and The Clamp's Steal Package, into the new "steal" slot)
+                   "pass_oprah": "icon_pkg_v0487qp7_oprah"}  # (v0.4.8.7 qp7: and Oprah's Pass Package, into the new "pass" slot)
 VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
@@ -179,7 +180,7 @@ class Service:
         self.behind_proxy, self.public_url = False, None
         self.upnp = None  # upnp.PortMapper while hosting: the router forwards the port to this PC by itself
         self.build = compute_build()  # (qp3: the game's fingerprint, for the online version check)
-        self.hub = online.Hub(self.db, self.online_auth, world=self.shared_world_payload)  # (v0.4.8.7: and its AI world)
+        self.hub = online.Hub(self.db, self.online_auth, world=self.shared_world_payload, catalog=CATALOG)  # (v0.4.8.7: and its AI world; qp7: the catalog, for emotes)
         self.hub_hosts = {r[0] for r in self.db.query("SELECT DISTINCT hub FROM hub_links") if r[0]}  # (the CSP lets the page reach them)
         # qp3 (Oct 12): the game's own online server (online.json), for a copy that isn't hosting (see online_default)
         self.default_hub, self.default_join = load_online_default()

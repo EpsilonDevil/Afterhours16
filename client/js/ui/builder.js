@@ -1,5 +1,5 @@
 // MyPlayer builder (create) and appearance editor with live 3D preview and cap preview.
-import { $, $$, esc, toast, heightStr, title, bar, money } from './common.js';
+import { $, $$, esc, toast, heightStr, title, bar, money, keepScroll } from './common.js';
 import { POSITIONS, ARCHETYPES, caps, startingAttributes, upgradeCost, OVR_CAP, PRORUN_GAMES_PER_OVR, buildSlots, buildSlotRule } from '../sim/builds.js';
 import { ATTR_GROUPS, ATTR_LABEL, overall } from '../sim/ratings.js';
 import { settings, saveSettings } from '../core/settings.js';
@@ -17,13 +17,37 @@ const DEFAULT = { name: 'Rookie', position: 'SG', archetype: 'sharpshooter', hei
 export function create(app, root, params = {}) {
   const d = structuredClone(params.draft || DEFAULT);
   let previewTimer;
-  const render = () => {
+  const clamp = () => {
     const [lo, hi] = POSITIONS[d.position];
     d.height = Math.max(lo, Math.min(hi, d.height));
     d.wingspan = Math.max(d.height - 1, Math.min(d.height + 8, d.wingspan));
+    return [lo, hi];
+  };
+  const side = () => {
     const c = caps(d), start = startingAttributes(d);
     const ovr0 = overall(start, d.position), ovr1 = overall(c, d.position);
     let cost = 0; for (const k in c) cost += upgradeCost(start[k], c[k]);
+    return `<aside class="panel builder-side">
+      <div class="ovr-row"><div class="ovr"><b>${ovr0}</b><small>START</small></div><div class="ovr dim"><b>${ovr1}</b><small>VC MAX</small></div><div class="ovr dim"><b>${OVR_CAP}</b><small>PRO RUN</small></div></div>
+      <div class="muted small">Upgrade to ${ovr1} OVR with VC (${money(cost)} VC for everything). Then every ${PRORUN_GAMES_PER_OVR} games you play in The Pro Run raise your max by 1, up to ${OVR_CAP}.</div>
+      ${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => `<div class="attr-row"><span>${ATTR_LABEL[k]}</span>${bar(start[k], 99, c[k])}<b>${c[k]}</b></div>`).join('')}</div>`).join('')}
+    </aside>`;
+  };
+  // (v0.4.8.7 qp7: a pick redraws the builder where you were scrolled; a slider being dragged is never rebuilt under
+  // the pointer: dragging updates its own readout, the wingspan range and the side panel, nothing else)
+  const render = () => keepScroll(root, paint);
+  const slide = inp => {
+    clamp();
+    const fmt = { height: heightStr, weight: v => `${v} lb`, wingspan: heightStr };
+    const lab = (k, v) => { const b = $(`[data-num="${k}"]`, root)?.parentElement?.querySelector('b'); if (b) b.textContent = fmt[k](v); };
+    lab(inp.dataset.num, d[inp.dataset.num]);
+    const ws = $('[data-num="wingspan"]', root);
+    if (ws && inp.dataset.num === 'height') { ws.min = d.height - 1; ws.max = d.height + 8; ws.value = d.wingspan; lab('wingspan', d.wingspan); }
+    const old = $('.builder-side', root);
+    if (old) keepScroll(old, () => { const t = document.createElement('div'); t.innerHTML = side(); const n = t.firstElementChild; old.replaceChildren(...n.childNodes); });
+  };
+  const paint = () => {
+    const [lo, hi] = clamp();
     const cfg = app.config;
     root.innerHTML = `
     <section class="panel builder">
@@ -44,11 +68,7 @@ export function create(app, root, params = {}) {
       </div>
       <div class="row gap end sticky-actions">${app.profile.characters.length ? '<button class="btn ghost" data-cancel>Cancel</button>' : ''}<button class="btn primary" data-create ${slotsFull(app) ? 'data-full' : ''}>Create player</button></div>
     </section>
-    <aside class="panel builder-side">
-      <div class="ovr-row"><div class="ovr"><b>${ovr0}</b><small>START</small></div><div class="ovr dim"><b>${ovr1}</b><small>VC MAX</small></div><div class="ovr dim"><b>${OVR_CAP}</b><small>PRO RUN</small></div></div>
-      <div class="muted small">Upgrade to ${ovr1} OVR with VC (${money(cost)} VC for everything). Then every ${PRORUN_GAMES_PER_OVR} games you play in The Pro Run raise your max by 1, up to ${OVR_CAP}.</div>
-      ${Object.entries(ATTR_GROUPS).map(([g, keys]) => `<div class="attr-group"><h5>${g}</h5>${keys.map(k => `<div class="attr-row"><span>${ATTR_LABEL[k]}</span>${bar(start[k], 99, c[k])}<b>${c[k]}</b></div>`).join('')}</div>`).join('')}
-    </aside>`;
+    ${side()}`;
     bind();
   };
   const preview = () => {
@@ -61,7 +81,7 @@ export function create(app, root, params = {}) {
   const bind = () => {
     $$('[data-pos]', root).forEach(b => b.onclick = () => { d.position = b.dataset.pos; const fit = { PG: 'playmaker', SG: 'sharpshooter', SF: 'two_way', PF: 'stretch_big', C: 'glass_cleaner' }; if (!['PG', 'SG'].includes(d.position) && ['playmaker'].includes(d.archetype)) d.archetype = fit[d.position]; render(); preview(); });
     $$('[data-arch]', root).forEach(b => b.onclick = () => { d.archetype = b.dataset.arch; render(); });
-    $$('[data-num]', root).forEach(i => i.oninput = () => { d[i.dataset.num] = +i.value; render(); preview(); });
+    $$('[data-num]', root).forEach(i => i.oninput = () => { d[i.dataset.num] = +i.value; slide(i); preview(); });
     $$('[data-hand]', root).forEach(b => b.onclick = () => { d.hand = b.dataset.hand; render(); });
     bindLook(root, d.appearance, () => { render(); preview(); app.showroom.setFocus('face'); });
     $('[data-name]', root).oninput = e => { d.name = e.target.value; };
@@ -81,7 +101,7 @@ export function create(app, root, params = {}) {
       } catch (e) { toast(e.message, 'error'); btn.disabled = false; }
     };
   };
-  render(); preview();
+  paint(); preview();
   app.showroom.setFocus('left');
 }
 
@@ -96,18 +116,22 @@ export function bindLook(root, a, onChange) {
 
 export function appearanceEditor(app, root, char) {
   const a = structuredClone(char.appearance);
-  const render = () => {
+  const render = (fresh = false) => (fresh === true ? paint() : keepScroll(root, paint)); // (qp7: a look pick keeps your place; keepScroll covers the panel around it too)
+  const paint = () => {
     root.innerHTML = `<div class="step"><h4>Appearance (free)</h4>${lookPickers(app.config, a)}
       <div class="row gap"><label class="muted small">Jersey number <input class="text num" type="number" min="0" max="99" value="${a.number}" data-number></label></div></div>
       <div class="row gap end"><button class="btn primary" data-save>Save look</button></div>`;
     bindLook(root, a, () => { render(); const b = { ...char, appearance: a }; app.showroom.setCharacter(b, app.look(b)); app.showroom.setFocus('face'); });
     $('[data-number]', root).oninput = e => { a.number = Math.max(0, Math.min(99, +e.target.value | 0)); };
     $('[data-save]', root).onclick = async ev => {
-      ev.currentTarget.disabled = true;
+      // (qp7: the button itself, kept before the await: ev.currentTarget is null by then, so the old re-enable threw and
+      // left Save greyed out for good)
+      const btn = ev.currentTarget; if (btn.disabled) return;
+      btn.disabled = true;
       try { const res = await app.api.mutate(`/api/characters/${char.id}/appearance`, { appearance: a }); app.replaceChar(res.character); toast('Look saved.'); }
       catch (e) { toast(e.message, 'error'); }
-      ev.currentTarget.disabled = false;
+      btn.disabled = false;
     };
   };
-  render();
+  render(true);
 }

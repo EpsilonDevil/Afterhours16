@@ -36,6 +36,7 @@ export function openPhone(app, opts = {}) {
 
   // presence: someone physically at this park counts as online, and we can say what he's doing
   let where = new Map();
+  let lastBody = null, lastOnline = null, pressing = false; // (v0.4.8.7 qp7: what the 5 s tick compares against; a press in progress)
   const statusOf = id => {
     if (where.has(id)) return { online: true, park: hub.themeId, text: where.get(id) === 'On the sidelines' ? 'Online at this park' : where.get(id) };
     const s = w.statusText(id, Date.now(), hub?.themeId);
@@ -165,9 +166,16 @@ export function openPhone(app, opts = {}) {
       ${st.who ? '' : `<nav class="tabs-inner ph-tabs">${TABS.map(([k, l]) => `<button class="${st.tab === k ? 'on' : ''}" data-tab="${k}">${l === 'Park' && !hub ? 'Parks' : l}</button>`).join('')}</nav>`}
       <div class="ph-body">${body}</div>
       <div class="ph-foot muted small">${app.input?.usingPad ? 'LB + RB to put the phone away' : 'O or Esc to put the phone away'}</div>`;
-    const b = host.querySelector('.ph-body'); if (b) b.scrollTop = st.whoScroll != null && !st.who ? st.whoScroll : scroll;
-    $$('[data-tab]', host).forEach(x => x.onclick = () => { st.tab = x.dataset.tab; st.whoScroll = 0; draw(); });
-    $$('[data-who]', host).forEach(x => x.onclick = () => { st.whoScroll = host.querySelector('.ph-body')?.scrollTop || 0; st.who = x.dataset.who; draw(); });
+    // (v0.4.8.7 qp7: the list's scroll is kept on every redraw. A saved place (back from a profile: the list where you
+    // left it; a new tab: its top) is used once and then let go: it used to stick, so every redraw after it, the 5 s
+    // tick included, threw the list back to that place, the top of the page after a tab change)
+    const b = host.querySelector('.ph-body');
+    if (b) b.scrollTop = st.newWho ? 0 : st.whoScroll != null && !st.who ? st.whoScroll : scroll; // (a profile opens at its top)
+    if (!st.who) st.whoScroll = null;
+    st.newWho = false;
+    lastBody = st.who ? null : body; lastOnline = online;
+    $$('[data-tab]', host).forEach(x => x.onclick = () => { if (st.tab === x.dataset.tab) return; st.tab = x.dataset.tab; st.whoScroll = 0; draw(); });
+    $$('[data-who]', host).forEach(x => x.onclick = () => { st.whoScroll = host.querySelector('.ph-body')?.scrollTop || 0; st.who = x.dataset.who; st.newWho = true; draw(); });
     $$('[data-back]', host).forEach(x => x.onclick = () => { st.who = null; draw(); });
     $$('[data-add]', host).forEach(x => x.onclick = ev => { ev.stopPropagation(); if (w.addFriend(x.dataset.add)) toast(`${w.entry(x.dataset.add).name} added to your friends.`); else toast('Friends list is full (200).', 'error'); });
     $$('[data-unfriend]', host).forEach(x => x.onclick = () => { w.removeFriend(x.dataset.unfriend); hub?.syncSquad(); });
@@ -183,6 +191,23 @@ export function openPhone(app, opts = {}) {
     $$('[data-crewmenu]', host).forEach(x => x.onclick = () => { closeModal(); Crew.openCrew(app, { onChange: c => { if (app.world?.crew && c) { app.world.crew = c; app.world.refreshBoards?.(); } } }); });
   }
   draw();
-  // keep statuses and the clock fresh while it's open
-  const tick = setInterval(() => { if (!phoneOpen()) { clearInterval(tick); off(); return; } if (!st.who && st.tab === 'park') draw(); }, 5000);
+  // keep statuses and the clock fresh while it's open. (v0.4.8.7 qp7: the clock and the online count are text, changed
+  // in place; the list is redrawn only when something in it changed, and never under a press: a redraw between the
+  // mouse going down and up on a button (Add friend, Invite) swallowed the click, and every redraw reset the hover)
+  host.addEventListener('pointerdown', () => { pressing = true; });
+  const letGo = () => { pressing = false; };
+  window.addEventListener('pointerup', letGo, true);
+  const tick = setInterval(() => {
+    if (!phoneOpen()) { clearInterval(tick); off(); window.removeEventListener('pointerup', letGo, true); return; }
+    phoneTick();
+  }, 5000);
+  function phoneTick() {
+    const ck = host.querySelector('.ph-status span'); if (ck) ck.textContent = clock();
+    if (st.who || st.tab !== 'park' || pressing) return;
+    where = hub ? new Map(hub.parkList().map(x => [x.id, x.where])) : new Map();
+    const online = w.onlineCount();
+    if (listPark() !== lastBody) { draw(); return; }
+    if (online !== lastOnline) { const dot = host.querySelector('.ph-status span:last-child'); if (dot) dot.innerHTML = `<i class="ph-dot on"></i> ${online} online`; lastOnline = online; }
+  }
+  host.phoneTick = phoneTick; // (the tests run a tick by hand)
 }

@@ -1,5 +1,5 @@
 // v0.4.4 Locker Codes tab: type a code, the server checks it and pays out (each code has a per-account limit).
-import { $, esc, money, toast } from './common.js';
+import { $, esc, money, toast, keepScroll } from './common.js';
 
 export function render(app, root) {
   const draw = () => {
@@ -16,11 +16,11 @@ export function render(app, root) {
       ${used.length ? `<table class="code-list">${used.map(c => `<tr><td><b>${esc(c.code)}</b></td><td>${esc(c.label)}</td><td class="muted">${c.used} / ${c.max} used</td></tr>`).join('')}</table>` : '<p class="muted small">Nothing redeemed yet.</p>'}
     </section>`;
     const input = $('[data-code]', root), btn = $('[data-redeem]', root);
-    input.focus();
+    input.focus({ preventScroll: true });
     $('[data-form]', root).onsubmit = async ev => {
       ev.preventDefault();
       const code = input.value.trim();
-      if (!code) return;
+      if (!code || btn.disabled) return; // (v0.4.8.7 qp7: Enter again while it checks does nothing)
       btn.disabled = true;
       try {
         const r = await app.api.mutate('/api/locker-codes/redeem', { code });
@@ -28,7 +28,7 @@ export function render(app, root) {
         const list = app.profile.locker_codes = (app.profile.locker_codes || []).filter(x => x.code !== r.code);
         list.unshift({ code: r.code, used: r.used, max: r.max, label: r.label });
         app.audio?.ui?.('buy');
-        draw();
+        await keepScroll(root, draw); // (qp7: the list grows in place: no jump back to the top)
         $('[data-result]', root).innerHTML = `<div class="code-win"><div class="eyebrow">UNLOCKED</div><b>+${money(r.vc)} VC</b><small>${esc(r.code)} · ${r.max - r.used} use${r.max - r.used === 1 ? '' : 's'} left on this account</small></div>`;
       } catch (e) {
         btn.disabled = false;

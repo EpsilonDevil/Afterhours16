@@ -583,6 +583,10 @@ export function planShot(rng, P, rim, side, make, arc, opts = {}) {
 // v0.4.8.7 the forced dunk's reach: within `range` (m) of the rim, moving faster than `minSpeed` (m/s) at least `toward`
 // (cosine) at it; or within `under` of it, any way (the driving dunk's own range below, and the standing dunk's)
 export const FORCE_DUNK = { range: 4.2, minSpeed: 1.2, toward: 0.4, under: 1.4 };
+// v0.4.8.7 qp7 the forced layup's reach (the shoot button pressed while sprinting): a drive the same way, out to the
+// layup's own range (the attack bind's, below)
+export const FORCE_LAYUP = { range: 4.4, minSpeed: 1.2, toward: 0.4, under: 1.4 };
+const driving = (F, d, speed, toward) => d < F.under || (d < F.range && speed > F.minSpeed && toward > F.toward);
 export function shotTypeFor(player, rim, ctx = {}) {
   const d = Math.hypot(rim.x - player.x, rim.z - player.z);
   const speed = Math.hypot(player.vx, player.vz);
@@ -594,27 +598,27 @@ export function shotTypeFor(player, rim, ctx = {}) {
   const canDunk = (raw.driving_dunk ?? 0) >= 55 && player.stamina > 0.12 && lift > 3.2;
   const canStand = (raw.standing_dunk ?? 0) >= 65 && lift > 3.25;
   const cover = coverage(player, rim, d, ctx.defs || []);
-  // v0.4.8.7: the forced dunk (sprint + right stick down + shoot; session.js it.forceDunk): any build dunks it, whatever
-  // his dunk ratings, vertical, height or package, on a drive to the rim from where a dunk can be taken (or right under
-  // it), ahead of the usual choice of finish. Whether it goes down is the dunk's own make chance and contest (game.js
-  // slam), so a poor dunker misses and gets blocked more. Out of range it's the usual attack: keep driving, or the layup
+  // v0.4.8.7: the forced dunk (qp7: the attack bind, a person's press; session.js it.forceDunk): any build dunks it,
+  // whatever his dunk ratings, vertical, height or package, on a drive to the rim from where a dunk can be taken (or right
+  // under it), ahead of the usual choice of finish. Whether it goes down is the dunk's own make chance and contest
+  // (game.js slam), so a poor dunker misses and gets blocked more. Out of range it's the usual attack: keep driving (qp7:
+  // still driving at it just outside the range, it keeps going to the dunk instead of settling for the layup there; a
+  // long-gather dunk he'd take anyway still goes), or, not driving, the layup
   if (ctx.forceDunk && ctx.attack) {
     const F = FORCE_DUNK, able = canDunk || canStand;
     if (d < F.under) return { type: 'dunk', d, standing: speed < 1, cover, forced: true, able };
-    if (d < F.range && speed > F.minSpeed && toward > F.toward) return { type: 'dunk', d, cover, forced: true, able };
+    if (driving(F, d, speed, toward)) return { type: 'dunk', d, cover, forced: true, able };
+    if (speed > F.minSpeed && toward > F.toward) {
+      const st = attackFinish(player, d, speed, toward, canDunk, canStand, cover, raw);
+      return st.type === 'dunk' ? st : { type: 'none', d };
+    }
   }
-  if (ctx.attack) {
-    // dedicated bind: the finish you're better at, Driving Dunk (Standing Dunk right under the rim) or Layup, and on
-    // an exact tie the one your archetype plays (v0.4.5 quick patch; it used to dunk whenever it physically could).
-    // A dunk still has to be physically possible.
-    const dunkOver = dunkAttr => betterFinish(player, dunkAttr, raw.layup) === 'dunk';
-    if (d < 1.6 && canStand && dunkOver(raw.standing_dunk)) return { type: 'dunk', d, standing: true, cover };
-    if (d < 4.2 && canDunk && (speed > 1.2 || d < 2.4) && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover };
-    // v0.4.5: with an empty lane ahead the bind takes off from further out (long gather), at full speed
-    if (d < 5.8 && canDunk && speed > 3 && toward > 0.7 && cover.open && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover, long: true };
-    if (d < 4.4) return { type: d < 1.6 && speed < 1 ? 'close' : 'layup', d, cover };
-    return { type: 'none', d };
-  }
+  if (ctx.attack) return attackFinish(player, d, speed, toward, canDunk, canStand, cover, raw);
+  // v0.4.8.7 qp7: the forced layup (the shoot button pressed while sprinting, a person's; session.js it.forceLayup): on a
+  // drive at the rim (moving at it faster than 1.2 m/s from inside the layup range, or right under it) it's a layup,
+  // never a dunk, a pull-up or a pump fake (game.js startLayup, timed with the button like any layup). Anywhere else the
+  // press is the usual shot
+  if (ctx.forceLayup && driving(FORCE_LAYUP, d, speed, toward)) return { type: 'layup', d, cover, forced: true };
   if (d < 1.4 && canStand && ctx.sprint) return { type: 'dunk', d, standing: true, cover };
   if (d < 4.4 && speed > 2.2 && toward > 0.55) {
     const pick = pickFinish(player, d, cover, canDunk);
@@ -624,6 +628,20 @@ export function shotTypeFor(player, rim, ctx = {}) {
   if (d < 1.8) return { type: 'close', d };
   const fade = speed > 1.2 && toward < -0.5;
   return { type: 'jumper', d, fade };
+}
+
+// the attack bind's finish (shotTypeFor)
+function attackFinish(player, d, speed, toward, canDunk, canStand, cover, raw) {
+  // dedicated bind: the finish you're better at, Driving Dunk (Standing Dunk right under the rim) or Layup, and on
+  // an exact tie the one your archetype plays (v0.4.5 quick patch; it used to dunk whenever it physically could).
+  // A dunk still has to be physically possible.
+  const dunkOver = dunkAttr => betterFinish(player, dunkAttr, raw.layup) === 'dunk';
+  if (d < 1.6 && canStand && dunkOver(raw.standing_dunk)) return { type: 'dunk', d, standing: true, cover };
+  if (d < 4.2 && canDunk && (speed > 1.2 || d < 2.4) && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover };
+  // v0.4.5: with an empty lane ahead the bind takes off from further out (long gather), at full speed
+  if (d < 5.8 && canDunk && speed > 3 && toward > 0.7 && cover.open && dunkOver(raw.driving_dunk)) return { type: 'dunk', d, cover, long: true };
+  if (d < 4.4) return { type: d < 1.6 && speed < 1 ? 'close' : 'layup', d, cover };
+  return { type: 'none', d };
 }
 
 // What the defense is doing about a drive from `p` to the rim

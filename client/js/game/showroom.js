@@ -10,6 +10,20 @@ import { PreviewSim } from './preview.js';
 import { greenFxFor } from './greenfx.js';
 import { playGreenSound } from '../core/greensound.js';
 
+// v0.4.8.7 qp7: a wheel turned over the canvas itself (not a list, a panel or anything else drawn over it, even one that
+// lets the event through to the canvas), and not a pinch (ctrl + wheel)
+export function wheelOverCanvas(e, cv, doc = typeof document !== 'undefined' ? document : null) {
+  if (!e || e.ctrlKey || e.target !== cv) return false;
+  const at = doc?.elementFromPoint ? doc.elementFromPoint(e.clientX, e.clientY) : cv;
+  return !at || at === cv;
+}
+// the zoom after one wheel event: by its distance (lines and pages in pixels; one notch is ~100 px, a third of a step of
+// zoom; a burst from a fast trackpad flick is held to a notch an event)
+export function wheelZoom(zoom, e) {
+  const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  return M.clamp(zoom - M.clamp(px || 0, -120, 120) / 300, -1, 2.5);
+}
+
 export class Showroom {
   constructor(app) {
     this.app = app;
@@ -76,10 +90,15 @@ export class Showroom {
   bindDrag() {
     const cv = this.app.renderer.canvas;
     let lx = 0;
-    cv.addEventListener('pointerdown', e => { if (!this.active) return; this.dragging = true; lx = e.clientX; cv.setPointerCapture(e.pointerId); });
+    // (v0.4.8.7 qp7: the left button only; a drag that's cancelled or loses its capture (a menu opening over it, the window
+    // losing focus) ends, so the player doesn't keep spinning with the mouse afterwards)
+    cv.addEventListener('pointerdown', e => { if (!this.active || (e.button != null && e.button !== 0)) return; this.dragging = true; lx = e.clientX; try { cv.setPointerCapture(e.pointerId); } catch { /* no capture */ } });
     cv.addEventListener('pointermove', e => { if (!this.active || !this.dragging) return; this.yawVel = (e.clientX - lx) * 0.01; this.yaw += this.yawVel; lx = e.clientX; });
-    cv.addEventListener('pointerup', () => { this.dragging = false; });
-    cv.addEventListener('wheel', e => { if (!this.active) return; this.zoom = M.clamp(this.zoom + Math.sign(e.deltaY) * -0.4, -1, 2.5); }, { passive: true });
+    const stop = () => { this.dragging = false; };
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) cv.addEventListener(ev, stop);
+    // (v0.4.8.7 qp7: the wheel zooms only when it's turned over the player himself, never when it reaches here from a menu
+    // list over the canvas; by how far it turned, so a trackpad zooms smoothly instead of in big jumps)
+    cv.addEventListener('wheel', e => { if (!this.active || !wheelOverCanvas(e, cv)) return; this.zoom = wheelZoom(this.zoom, e); }, { passive: true });
   }
 
   setAccent(hex) {

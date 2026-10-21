@@ -226,3 +226,52 @@ Chains now show over a jersey's neckline, the store tries chains on at head-and-
 - **The first respec on each build is free.** Every respec after that costs **250,000 VC**. If you don't have the VC, nothing changes.
 - **Only ICON builds can respec.** The button shows on every build, but stays closed with a note until that build reaches ICON status (99 OVR, every cap breaker placed, every badge maxed). Once a build has been ICON, the option stays open to it for good.
 - **What it does:** every attribute goes back to its cap without the breakers (the upgrades you paid VC for stay), and all the build's cap breakers return to it, ready to place. Until you place them again the build sits below 99 and its ICON status waits for them; its ICON build slot is kept.
+
+## Quick patch 7 (Oct 21): Smooth menus, new finishing controls, emotes online, Icon badges on show
+
+**Menus scroll and click the way they should.**
+- **The mouse wheel no longer lags or gets ignored.** Before, menus waited on the 3D showroom before they could scroll, and that's fixed.
+- **Lists stay where you scrolled them.** Buying, equipping, upgrading, timers ticking, or the phone and countdowns refreshing used to jump a list back to the top. Now it stays put. Switching to a new tab or category still starts at the top.
+- **One click is enough.** Countdowns (the Daily Spin, the phone, the events) no longer swap buttons out from under the cursor, so a click never needs a second try.
+- **No more doubled requests.** Buy, Equip, Save, Add and the other slow buttons can't be sent twice.
+- **Builder sliders drag in one smooth motion.** They no longer cut out mid-drag.
+- **The wheel stays in the box you're scrolling.** Reaching the end of a list or dialog no longer scrolls the page behind it, and short windows can scroll the home hub.
+- **Keyboard keys work in menus again.** The arrows, Space and Tab scroll lists, press the focused button and move between fields.
+- **Controller:** turning the mouse wheel hides the controller's focus ring, and a menu that redraws no longer pulls the page back to it.
+- **In the park and in games**, a click or wheel over a panel, the pause menu or the phone belongs to that menu. It no longer zooms the camera, shoots or passes. The showroom zooms only with the wheel over the player, smoothly on a trackpad, and stops turning if a menu opens mid-drag. The button prompt no longer catches clicks.
+
+**Finishing at the rim.** The R2 + right stick down + Square combo is gone.
+- **Attack the rim now forces a dunk, with any build.** That's Z on the keyboard, or the right stick down while sprinting. The make, miss and block chances are the dunk's usual ones, and a build that can't normally dunk uses a basic dunk. Starting a little too far out, you keep driving until you're in range.
+- **Sprint + Shoot at the rim forces a layup.** It's never a dunk, jumper or pump fake. The layup is timed like a shot: a quick tap is an early layup. Anywhere else, Shoot works as before.
+
+**Emotes reach other players.** A celebration in the park or at the Crew HQ used to play only on your own screen. Now everyone there sees it on your player. The server checks that it's the celebration you actually have on. Games already showed them.
+
+**One park for everyone online.**
+- **The server picks the park's host:** whoever has been at the park longest. A new arrival no longer takes over and resets the park.
+- **Only that host's updates go out**, so two players can't both drive the park.
+- **A player who walks in sees the park as it is straight away.**
+
+**Icon badge items belong to their Icon.** Each Icon badge's own animation items now show only on a build that has unlocked that badge. Other builds don't see them at all: no card, no count and no tab. They're never in the store, and they go on automatically when the badge unlocks. The items:
+- Sharp Eye's jumpshot and release
+- Hash-Slinging's dunk package (it used to show as a locked card on every build and in the store)
+- The Clamp's Steal Package
+- Big Brother's Block Package
+- Open Arms' Rebound Package
+- Sexy Red's Post Move Package
+- The General's Salute
+- **New:** Oprah's **Pass Package: Oprah**, under a Passes tab that only a Playmaker with Oprah unlocked has.
+
+**Icon badges show on screen when they make the play.** Each Icon badge now pops up on screen, the way Hash-Slinging does, whenever it's behind the play:
+
+| Badge | Pops when |
+| --- | --- |
+| Sharp Eye | A made jumper with its own jumpshot or release, or a green only its bigger window gave |
+| Hash-Slinging | A made dunk |
+| Oprah | A pass (every one of his passes is an Oprah pass) |
+| The Clamp | One of its steal reaches, pick-offs or strips |
+| The General | A made basket, a block or a steal |
+| Big Brother | A block from his Block Package |
+| Open Arms | A rebound snag |
+| Sexy Red | A post move, post finish or post shot with her Post Move Package on |
+
+The pop shows for every player in the game, AI ICONs and other players included, with the player's name when it isn't you. Each badge pops at most once every 1.5 s per player.

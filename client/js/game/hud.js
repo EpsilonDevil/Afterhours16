@@ -80,8 +80,11 @@ export class HUD {
   }
   show(v) { this.root.hidden = !v; }
   // v0.4.3 pre-game team intro (lower third); null hides it
+  // (v0.4.8.7 qp7: the DOM is touched only when what it shows changes: setIntro, setHint, setStamina)
   setIntro(html) {
     const el = this.introBox;
+    if ((html || '') === this.introKey) return;
+    this.introKey = html || '';
     if (!html) { el.hidden = true; el.innerHTML = ''; this.root.classList.remove('intro-on'); return; }
     el.innerHTML = html; el.hidden = false; this.root.classList.add('intro-on');
   }
@@ -165,7 +168,7 @@ export class HUD {
   badge(info) {
     if (this.badgeQ.length > 6) return;
     const last = this.badgeQ[this.badgeQ.length - 1];
-    if (last && last.key === info.key && last.tier === info.tier) return; // same badge firing twice in one play
+    if (last && last.key === info.key && last.tier === info.tier && (last.who || null) === (info.who || null)) return; // same badge firing twice in one play (qp7: the same player's)
     this.badgeQ.push(info);
   }
   showNextBadge() {
@@ -179,7 +182,7 @@ export class HUD {
     const k = b.icon ? ICON_POP_K : 1;
     d.className = b.icon ? 'badge-pop icon' : `badge-pop tier${b.tier}`;
     d.innerHTML = b.icon
-      ? `<span class="bp-art">${iconBadgeSVG(b.key, ICON_POP_ART)}</span><span class="bp-text"><small>ICON BADGE ACTIVATED</small><b>${esc(b.name)}</b></span>`
+      ? `<span class="bp-art">${iconBadgeSVG(b.key, ICON_POP_ART)}</span><span class="bp-text"><small>ICON BADGE ACTIVATED${b.who ? ` · ${esc(b.who)}` : ''}</small><b>${esc(b.name)}</b></span>`
       : `<span class="bp-art">${badgeSVG(b.key, b.tier, 42)}</span><span class="bp-text"><small>BADGE ACTIVATED · ${esc(TIER[b.tier] || '')}</small><b>${esc(b.name)}</b></span>`;
     this.badgeBox.appendChild(d);
     requestAnimationFrame(() => d.classList.add('on'));
@@ -223,7 +226,7 @@ export class HUD {
   }
 
   showCam(label) { this.camLabel.textContent = label; this.camLabel.classList.add('on'); this.camT = 1.4; }
-  setHint(text) { this.hint.innerHTML = text || ''; this.hint.hidden = !text; }
+  setHint(text) { if ((text || '') === this.hintKey) return; this.hintKey = text || ''; this.hint.innerHTML = text || ''; this.hint.hidden = !text; }
   // v0.4.7.5 qp3: the alley-oop press. o: {x, y, html (the button glyph, or the result text), frac (time left,
   // 1 → 0), state: wait | open | hit | miss}; null hides it
   setOop(o) {
@@ -267,10 +270,11 @@ export class HUD {
   }
 
   setStamina(x, y, v, show) {
-    this.stamina.hidden = !show;
+    if (this.stamina.hidden !== !show) this.stamina.hidden = !show;
     if (!show) return;
-    this.stamina.style.transform = `translate(${x - 26}px, ${y + 8}px)`;
-    this.stamina.firstChild.style.width = `${Math.round(v * 100)}%`;
+    const tr = `translate(${Math.round(x - 26)}px, ${Math.round(y + 8)}px)`, w = `${Math.round(v * 100)}%`;
+    if (tr !== this.staminaTr) { this.staminaTr = tr; this.stamina.style.transform = tr; }
+    if (w !== this.staminaW) { this.staminaW = w; this.stamina.firstChild.style.width = w; }
     this.stamina.classList.toggle('low', v < 0.25);
   }
 

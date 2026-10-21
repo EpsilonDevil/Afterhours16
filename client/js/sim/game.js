@@ -3,7 +3,9 @@
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
 import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
-import { pickBlockStyle, BLOCK_BY_ID } from './blocks.js';
+import { pickBlockStyle, BLOCK_BY_ID, blockPackageOf, ICON_BLOCK_PKG_BY_ID } from './blocks.js';
+// v0.4.8.7 qp7: an Icon badge's pop-up, at most once this many seconds of game per player and badge (Game.iconPop)
+export const ICON_POP_GAP = 1.5;
 import { pickSnag, snagAction, snagTick, snagCuttable, snagBall, SNAG, SNAG_FROM, OA_ICON } from './snags.js';
 import { clampReach, clampFull, clampGot, clampStealBall, clampPickStart, clampStripStart, clampFxTick, clampPickBall } from './clamp.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
@@ -312,7 +314,7 @@ export class Game {
   }
 
   // ---------- helpers ----------
-  emit(e) { e.t = this.time; this.events.push(e); this.badgeTriggers(e); this.playTrack(e); return e; }
+  emit(e) { e.t = this.time; this.events.push(e); this.badgeTriggers(e); this.playTrack(e); this.iconTriggers(e); return e; }
 
   // ---------- v0.4.5: plays, streaks and takeovers ----------
   // Every event is read once for: positive / negative plays (stamina), going hot / cold, and takeover progress.
@@ -546,6 +548,45 @@ export class Game {
       case 'move': if (p.stamina < 0.5) fx('handles_for_days'); break;
     }
   }
+  // v0.4.8.7 qp7: an Icon badge pops up on screen every time it does something, as Hash-Slinging's dunks always have: the
+  // same 'badge' event (icon: true), from the events every screen's game runs (so the AI's ICONs, the other players in an
+  // online game and anyone watching see it alike), only when the badge itself is behind what happened, and never more than
+  // once every ICON_POP_GAP seconds of game per player and badge. Display only: it reads the game, never its rng.
+  //   Sharp Eye: a jumper made with his Sharp Eye base or release (and a green only its 5% made: sharpEyeSave)
+  //   Hash-Slinging: every dunk he throws down (slam)
+  //   Oprah: every pass he throws, each one of his own streetball passes (sim/oprah.js)
+  //   The Clamp: one of his steal reaches, pick-offs or strips (sim/clamp.js: the reach, the pick and the strip)
+  //   The General: a basket, a block or a steal: his +2.5% to everything is all over those
+  //   Big Brother: a block thrown with his Icon's own Block Package
+  //   Open Arms: a rebound snag (sim/snags.js)
+  //   Sexy Red: a move, a finish or a shot out of the post with his Icon's own Post Package
+  iconTriggers(e) {
+    if (e.type === 'badge' || e.player == null) return;
+    const p = this.players[e.player];
+    if (!p || !p.icon) return;
+    const t = e.type;
+    switch (p.icon) {
+      case 'sharp_eye': if (t === 'release' && e.made && e.kind === 'jumper' && !e.post && this.flipsFor(p)) this.iconPop(p); break;
+      case 'oprah': if (t === 'pass') this.iconPop(p); break;
+      case 'the_general': if ((t === 'score' && !e.ft) || t === 'block' || t === 'steal') this.iconPop(p); break;
+      case 'big_brother': if (t === 'block' && ICON_BLOCK_PKG_BY_ID[blockPackageOf(p)]?.icon === p.icon) this.iconPop(p); break;
+      case 'open_arms': if (t === 'snag') this.iconPop(p); break;
+      case 'sexy_red': if ((t === 'postmove' || t === 'postfinish' || (t === 'release' && e.post)) && postPackageOf(p).icon === p.icon) this.iconPop(p); break;
+    }
+  }
+  iconPop(p, badge = p?.icon) {
+    if (!this.iconPopOk(p, badge)) return false;
+    this.emit({ type: 'badge', player: p.id, badge, tier: 5, icon: true });
+    return true;
+  }
+  // may his Icon badge pop up now (his own, and its gap since the last one gone by)? Yes notes the time
+  iconPopOk(p, badge = p?.icon) {
+    if (!p || !badge || p.icon !== badge) return false;
+    const at = this.iconPopAt || (this.iconPopAt = new Map()), k = `${p.id}:${badge}`, last = at.get(k);
+    if (last != null && this.time - last < ICON_POP_GAP) return false;
+    at.set(k, this.time);
+    return true;
+  }
   holder() { return this.ball.holder >= 0 ? this.players[this.ball.holder] : null; }
   rimFor(team) { return rimOf(this.attackDir[team]); }
   sideFor(team) { return this.attackDir[team]; }
@@ -730,7 +771,7 @@ export class Game {
   sharpEyeSave(p, grade, err, win) {
     if (p.icon !== 'sharp_eye' || grade !== 'excellent' || !(win > 0) || err == null) return;
     const gk = this.greenK(p), without = win * (gk - (ICON_BADGES.sharp_eye.green || 0)) / gk;
-    if (Math.abs(err) * 1000 > without) this.emit({ type: 'badge', player: p.id, badge: 'sharp_eye', tier: 5, icon: true });
+    if (Math.abs(err) * 1000 > without && this.iconPopOk(p, 'sharp_eye')) this.emit({ type: 'badge', player: p.id, badge: 'sharp_eye', tier: 5, icon: true }); // (qp7: with the gap every Icon pop-up keeps)
   }
   flipsFor(p) { return p.icon === 'sharp_eye' && (p.shotPkg?.style === 'sharpeye' || p.shotPkg?.release === 'sharpeye'); }
   startFlips() {
@@ -754,7 +795,7 @@ export class Game {
   multiIntent(p) {
     const it = { ...blankIntent(), ...(this.humanIntents.get(p.id) || {}) }, sq = it.seq, used = p.usedSeq || 0;
     if (sq) {
-      if (sq.shoot && sq.shoot <= used) { it.shoot = null; it.attack = false; it.jump = false; it.forceDunk = false; }
+      if (sq.shoot && sq.shoot <= used) { it.shoot = null; it.attack = false; it.jump = false; it.forceDunk = false; it.forceLayup = false; }
       if (sq.pass && sq.pass <= used) it.pass = null;
       if (sq.move && sq.move <= used) it.move = null;
       if (sq.steal && sq.steal <= used) { it.steal = false; it.stealDir = null; it.stealLow = false; }
@@ -1258,8 +1299,10 @@ export class Game {
   }
   startShot(p, it) {
     const rim = this.rimFor(p.team);
-    // (v0.4.8.7: forceDunk, the forced dunk: sprint + right stick down + shoot on a drive; a person's alone, never the AI's)
-    const ctx = { sprint: it.sprint, forceJumper: it.forceJumper, attack: !!it.attack, forceDunk: !!it.forceDunk && !this.isAI(p), defs: this.opponents(p) };
+    // (v0.4.8.7 qp7: forceDunk, the attack bind's forced dunk, and forceLayup, the shoot button's forced layup on a drive
+    // while sprinting: a person's alone, never the AI's)
+    const human = !this.isAI(p);
+    const ctx = { sprint: it.sprint, forceJumper: it.forceJumper, attack: !!it.attack, forceDunk: !!it.forceDunk && human, forceLayup: !!it.forceLayup && human, defs: this.opponents(p) };
     if (p.action?.type === 'move' && p.action.move === 'stepback' && !it.attack) ctx.forceJumper = true;
     const st = S.shotTypeFor(p, rim, ctx);
     if (st.type === 'none') return; // attack-the-rim pressed out of range: keep driving
@@ -1624,6 +1667,7 @@ export class Game {
     // slot empty; sim/clamp.js. The same reach otherwise)
     const clampAnim = clampReach(p, this.ball, { hand, low, aimed: !!dir || low, tick: this.tick });
     p.startAction('steal', 0.46, { checked: false, hand, low, aimed: !!dir || low, icon: clampAnim ? 'clamp' : null, clamp: clampAnim });
+    if (clampAnim) this.iconPop(p, 'the_clamp'); // (v0.4.8.7 qp7: one of the Clamp's own reaches: the badge pops up)
     p.spend(COST.steal);
     p.cool.steal = 0.85 - bk(p.badges, 'pick_pocket') * 0.08;
     this.emit({ type: 'reach', player: p.id, hand });
@@ -2096,7 +2140,7 @@ export class Game {
     if (made && a.hs) a.hang = HS_TIMING.hangOnRim + this.rng.range(0, HS_TIMING.hangOnRimR); // (qp3: every Hash-Slinging finish hangs)
     this.emit({ type: 'slam', player: p.id, made, style: a.style, side: a.side, poster: poster ? poster.id : -1, tier: a.tier || 0, flair: S.STYLE_FLAIR[a.style] ?? 0, hs: !!a.hs, flat: !!(poster && poster.action?.flat) });
     // qp3: the Hash-Slinging Icon badge (+5% to both dunk ratings) activates on every dunk he throws down
-    if (made && p.icon === 'hash_slinging') this.emit({ type: 'badge', player: p.id, badge: 'hash_slinging', tier: 5, icon: true });
+    if (made && p.icon === 'hash_slinging' && this.iconPopOk(p, 'hash_slinging')) this.emit({ type: 'badge', player: p.id, badge: 'hash_slinging', tier: 5, icon: true }); // (v0.4.8.7 qp7: with the gap every Icon pop-up keeps)
   }
 
   // Dunker `p` posterizes defender `d`: the defender is shoved back along the dunk line (and often knocked
@@ -2939,6 +2983,7 @@ export class Game {
             this.emit({ type: 'steal', player: p.id, victim: passer.id, intercept: true });
             this.changePossessionTo(p, 'steal');
             if (clampFull(p)) clampPickStart(p, b, { tick: this.tick, rim: this.rimFor(p.team) }); // (v0.4.8.5: the Clamp's pick-off, for show: his Steal Package's)
+            if (clampFull(p)) this.iconPop(p, 'the_clamp'); // (v0.4.8.7 qp7: and the badge pops up)
             this.catchBall(p);
             return;
           }
@@ -3275,6 +3320,7 @@ export class Game {
             handler.stats.tov++; def.stats.stl++;
             const b = this.ball;
             if (clampFull(def)) clampStripStart(def, b, { tick: this.tick }); // (v0.4.8.5: the Clamp's chest-up strip, for show: his Steal Package's)
+            if (clampFull(def)) this.iconPop(def, 'the_clamp'); // (v0.4.8.7 qp7: and the badge pops up)
             this.pokeOut(def, handler);
             this.emit({ type: 'steal', player: def.id, victim: handler.id, bump: true });
           } else if (this.mode === 'proam' && this.isCharge(handler, def, -rv)) {

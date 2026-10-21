@@ -1,7 +1,7 @@
 // v0.4.5 Crews: start a crew, pick its members from your friends (up to 39 + you), watch it level from 1 to
 // 40. Opened from the social phone (Crew tab), from the board in the Crew HQ, and from the HQ door in any park.
 // The server keeps the crew and its XP (your games, and your AI members' play while you're away).
-import { $, $$, esc, modal, closeModal, toast, money } from './common.js';
+import { $, $$, esc, modal, closeModal, toast, money, keepScroll, busy } from './common.js';
 import { PARK_NAMES, EVENT_PARKS } from '../sim/world.js';
 
 // readable text on a crew color (dark ink on the light ones)
@@ -42,9 +42,12 @@ const levelBar = lv => {
   return `<div class="crew-lvl"><b>LEVEL ${lv.level}</b><small>of 40</small><span class="bar"><i style="width:${pct}%"></i></span><span class="muted small">${money(lv.xp)} XP${lv.next ? ` · ${money(lv.next - lv.xp)} to level ${lv.level + 1}` : ' · max level'}</span></div>`;
 };
 
-export async function openCrew(app, opts = {}) {
+// (v0.4.8.7 qp7: swap: run right before the card is drawn, once the crew has loaded: the old card stays up until the new
+// one is ready, instead of the screen going empty while it loads)
+export async function openCrew(app, opts = {}, swap = null) {
   let st;
   try { st = await fetchCrew(app); } catch (e) { toast(e.message, 'error'); return; }
+  swap?.();
   const w = app.ai, cr = st.crew;
   const ent = id => w.entry(id);
   if (!cr) {
@@ -87,12 +90,16 @@ export async function openCrew(app, opts = {}) {
         <div class="row gap end"><button class="btn small" data-save>Save</button></div></div>
     </div></div>`, { wide: true });
   let color = cr.color;
-  const redo = async (body, msg) => {
-    try { const r = await app.api.mutate('/api/crew', body); app.crew = r.crew; if (msg) toast(msg(r.crew)); closeModal(); openCrew(app, opts); opts.onChange?.(r.crew); syncOnline(app); }
-    catch (e) { toast(e.message, 'error'); }
+  // (v0.4.8.7 qp7: the crew card reopens where you had scrolled it and its friends list, not back at the top; and a
+  // button waits for its request: a second click on Add or Save while the first is on its way does nothing)
+  const redo = async (body, msg, btn) => {
+    if (btn?.disabled) return;
+    busy(btn, true);
+    try { const r = await app.api.mutate('/api/crew', body); app.crew = r.crew; if (msg) toast(msg(r.crew)); await keepScroll($('#modal'), () => openCrew(app, opts, closeModal)); const mc = $('#modal .modal-card'); if (mc) mc.style.animation = 'none'; /* (the same card again: no pop-in) */ opts.onChange?.(r.crew); syncOnline(app); }
+    catch (e) { toast(e.message, 'error'); busy(btn, false); }
   };
-  $$('[data-add]', card).forEach(b => b.onclick = () => redo({ action: 'add', member: b.dataset.add }, () => `${ent(b.dataset.add).name} joined ${cr.name}.`));
-  $$('[data-remove]', card).forEach(b => b.onclick = () => redo({ action: 'remove', member: b.dataset.remove }, () => `${ent(b.dataset.remove).name} left the crew. His XP stays.`));
+  $$('[data-add]', card).forEach(b => b.onclick = () => redo({ action: 'add', member: b.dataset.add }, () => `${ent(b.dataset.add).name} joined ${cr.name}.`, b));
+  $$('[data-remove]', card).forEach(b => b.onclick = () => redo({ action: 'remove', member: b.dataset.remove }, () => `${ent(b.dataset.remove).name} left the crew. His XP stays.`, b));
   $$('[data-color]', card).forEach(b => b.onclick = () => { color = b.dataset.color; $$('[data-color]', card).forEach(x => x.classList.toggle('on', x === b)); });
-  $('[data-save]', card).onclick = () => redo({ action: 'update', name: $('[data-name]', card).value, tag: $('[data-tag]', card).value, color }, c => `Saved: ${c.name} [${c.tag}].`);
+  $('[data-save]', card).onclick = ev => redo({ action: 'update', name: $('[data-name]', card).value, tag: $('[data-tag]', card).value, color }, c => `Saved: ${c.name} [${c.tag}].`, ev.currentTarget);
 }

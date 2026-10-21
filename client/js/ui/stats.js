@@ -1,7 +1,7 @@
 // v0.4.4 lifetime stats: a Stats tab in the menus and a pause-menu modal in game. Standard box-score
 // averages and shooting splits per build, split by mode, plus a side-by-side table of all your builds and the
 // auto-play profile those numbers produce.
-import { $$, esc, modal, archHTML } from './common.js';
+import { $$, esc, modal, archHTML, keepScroll } from './common.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import { careerSplit, careerLine, fmtPct, statProfile, STAT_LABELS } from '../sim/profile.js';
 
@@ -57,10 +57,11 @@ function wire(app, el, state, redraw) {
 
 export function render(app, root) {
   const state = { mode: 'all', sel: app.char()?.id };
-  const draw = () => {
+  // (v0.4.8.7 qp7: picking a build from the list at the bottom, or another mode, redraws where you were scrolled)
+  const draw = () => keepScroll(root, () => {
     root.innerHTML = `<section class="panel wide-panel stats-panel"><div class="eyebrow">LIFETIME STATS</div><h1>Career numbers</h1>${body(app, state.mode, state.sel)}</section>`;
     wire(app, root, state, draw);
-  };
+  });
   draw();
 }
 
@@ -69,6 +70,6 @@ export function openStatsModal(app) {
   const state = { mode: 'all', sel: app.char()?.id };
   const card = modal(`<div class="stats-panel" data-st></div>`, { wide: true, cls: 'stats-card' });
   const host = card.querySelector('[data-st]');
-  const draw = () => { host.innerHTML = `<div class="eyebrow">LIFETIME STATS</div><h2>Career numbers</h2>${body(app, state.mode, state.sel)}`; wire(app, host, state, draw); };
+  const draw = () => keepScroll(host, () => { host.innerHTML = `<div class="eyebrow">LIFETIME STATS</div><h2>Career numbers</h2>${body(app, state.mode, state.sel)}`; wire(app, host, state, draw); }); // (qp7: the modal keeps its place too)
   draw();
 }

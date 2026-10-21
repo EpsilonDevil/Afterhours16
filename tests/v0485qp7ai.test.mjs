@@ -129,7 +129,8 @@ test('every one of the eight: an AI Icon wears his Icon\'s package and plays it'
   for (const [ic, e] of Object.entries(found)) {
     const items = iconItems(ic);
     for (const i of items) assert.equal(e.build.equipment[i.slot], i.id, `${ic}: ${i.id} on`);
-    assert.equal(items.length, ic === 'oprah' ? 0 : ic === 'sharp_eye' ? 2 : 1, ic); // (Oprah's passes come with the badge)
+    assert.equal(items.length, ic === 'sharp_eye' ? 2 : 1, ic); // (v0.4.8.7 qp7: Oprah's passes are an item now too, the Pass Package)
+    if (ic === 'oprah') assert.equal(e.build.equipment.pass, 'pass_oprah');
     const p = new Player(0, 0, e, catalog), plain = new Player(1, 0, { ...e, build: { ...e.build, icon_badge: null } }, catalog);
     assert.equal(p.icon, ic);
     const stat = Object.keys(ICON_BADGES[ic].stats)[0] || (ICON_BADGES[ic].all ? 'speed' : null); // (Sharp Eye's is the green window)

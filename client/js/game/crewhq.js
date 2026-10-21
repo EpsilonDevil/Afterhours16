@@ -304,7 +304,13 @@ export class CrewHQ {
         if (go) { if (on >= RUN_MIN) this.startRun(); else this.ui.toast(`You need ${RUN_MIN} crew members online to run 5-on-5 (${on} on now). Add more friends to the crew, or come back when more of them are on.`, 'error'); }
       }
     } else if (near(HQ.rack.x, HQ.rack.z, 2.3) || near(this.side.origin[0], 6, 4)) { this.prompt = `${E} Shoot around`; if (go) this.startPractice(); }
-    if (inp.wasPressed('celebrate') && !me.action) me.startAction('celebrate', 1.6, { kind: this.app.catalog[this.char.equipment?.celebration]?.anim || 'flex' });
+    if (inp.wasPressed('celebrate') && !me.action) {
+      // (v0.4.8.7 qp7: and on the screens of the real people here: server/online.py emote, game/park.js Peers.emote)
+      const item = this.char.equipment?.celebration || null, anim = item ? this.app.catalog[item]?.anim : null;
+      me.startAction('celebrate', 1.6, { kind: anim || 'flex' });
+      const net = this.netHere();
+      if (net && net.people.size) net.emote(anim ? item : null, anim ? null : 'flex', 1.6);
+    }
     if (me.action) { me.action.t += dt; if (me.action.t > me.action.dur) me.action = null; }
   }
 
@@ -397,7 +403,8 @@ export class CrewHQ {
   onFocusLost() { if (this.mode === 'match' && this.session && !this.session.ended && !this.session.paused && !this.app.modalOpen()) this.ui.pauseGame(this); }
   deactivate() { }
   dispose() {
-    this.peers.clear();
+    this.disposed = true;
+    this.peers.detach(); // (v0.4.8.7 qp7: and stops listening for their emotes)
     if (this.live) this.live.dispose();
     for (const m of this.members) m.dispose();
     for (const s of this.shooters) s.session.dispose();
