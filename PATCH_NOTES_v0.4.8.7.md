@@ -104,3 +104,14 @@ In testing, 960 out of 960 open green layups went in, from every distance out to
 - **Next game:** auto-play stays on for your next online Pro-Am game, as it does offline. H always turns it off.
 - **Rewards:** it pays exactly the same as offline auto-play.
 - **Other online games:** online park and other online games still don't allow it ("Auto-play is only in online Pro-Am").
+
+## Quick patch 6 (Oct 21): Steal badges come quicker
+
+**Pick Pocket and Interceptor need 30% fewer steals at every tier.**
+
+| Badge | Bronze | Silver | Gold | Hall of Fame |
+| --- | --- | --- | --- | --- |
+| Pick Pocket | 11 (was 15) | 35 (was 50) | 84 (was 120) | 175 (was 250) |
+| Interceptor | 14 (was 20) | 42 (was 60) | 105 (was 150) | 210 (was 300) |
+
+Steals you've already made count. A build that has already reached a new mark moves up the next time the game loads your profile, as long as its build allows that tier.

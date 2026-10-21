@@ -2,6 +2,9 @@
 
 ## v0.4.8.7: the server runs the park
 
+### v0.4.8.7 quick patch 6 (Oct 21): steal badges
+`server/progression.py` BADGES: Pick Pocket 15/50/120/250 → 11/35/84/175, Interceptor 20/60/150/300 → 14/42/105/210 (30% lower, rounded half up); the client reads the tiers from /api/config; `sync_badges` raises builds already past a new mark on load. Tests: `tests/test_v0487_steal_badges.py`.
+
 ### v0.4.8.7 quick patch 5 (Oct 21): auto-play in online Pro-Am
 | Area | Where | Notes |
 |---|---|---|

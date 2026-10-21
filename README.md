@@ -10,6 +10,7 @@ Full list in `PATCH_NOTES_v0.4.8.7.docx`.
 - **Quick patch 3:** green layups go in: the shooter stays at the finishing distance while he has the ball (no drifting under the rim on a late one), shot planning never counts the rim's underside as a make and plans with the layup's real spin, and a green with no clean path goes through like a green jumper.
 - **Quick patch 4:** everyone at a park sees other players' games in progress, with their models (late arrivals catch up; a player's own game is shown too); activated badges show the tier you really have (your badges go out online as soon as a tier changes).
 - **Quick patch 5:** auto-play (H) in online Pro-Am, per seat, the same on every screen (AUTO by your name); still off in other online games.
+- **Quick patch 6:** Pick Pocket and Interceptor need 30% fewer steals at every tier (Pick Pocket 11/35/84/175, Interceptor 14/42/105/210); steals already made count on the next profile load.
 
 ## New in v0.4.8.6: the RIMRIFT identity
 
