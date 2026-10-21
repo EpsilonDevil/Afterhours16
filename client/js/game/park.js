@@ -28,6 +28,10 @@ import { MAX_ICONS_PER_AI_TEAM, isIconEntry } from '../sim/iconsquad.js';
 import { ParkLink } from './parklink.js';
 import { validAI, stepCost, TICK_UNITS } from './parkdirector.js';
 import { WORLD_CLOCK } from '../sim/world.js';
+import { Game } from '../sim/game.js';
+import { spreadGreens } from '../sim/bots.js';
+import { blankIntent } from '../sim/player.js';
+import { normIntent, intentDelta, takeInputs } from '../sim/wire.js';
 
 // v0.4.8.6 the ICON Squad: after their hour, the three don't drift back in one by one for a while (they just walked out);
 // their team on the scoreboard, the ticker and the court cards
@@ -373,6 +377,35 @@ function pushOut(p, b) {
   if (m === dl) p.x = b.x0 - r; else if (m === dr) p.x = b.x1 + r; else if (m === dn) p.z = b.z0 - r; else p.z = b.z1 + r;
 }
 
+// v0.4.8.7 qp4: your own game at a park (you alone there when it began: the AI with you and against you), out to everyone
+// else at the park as it's played (server/online.py local_*): its setup, then every tick's input as the change from the tick
+// before (sim/wire.js: a byte or two a tick, sent ten times a second), with the auto-play switch and your Lock-In grade
+// (the game reads both) and every 2 s its state hash. Your game gets the input exactly as it goes out (normIntent: the
+// stick to 1/1000, as in an online game), so theirs (ParkHub.localWatch) is the same game, tick for tick. It costs your game
+// nothing: no waiting on anyone, the sending is a few hundred bytes a second
+const BLANK_IT = blankIntent();
+export class LocalPub {
+  constructor(net) { this.net = net; this.k = 0; this.last = {}; this.buf = []; this.at = 0; this.on = false; this.done = false; }
+  begin(setup) { if (this.done || this.on) return; this.on = true; this.net.send({ t: 'lstart', setup }); }
+  // every tick: the input the game gets (null: none this tick, the game keeps the last one: so does theirs)
+  take(g, intent) {
+    const n = intent ? normIntent(intent) : null, { _a, _l, _h, _k, ...was } = this.last;
+    const rec = { ...(n || was), ...(n ? {} : { _k: 1 }), _a: g.assist ? 1 : 0, ...(g.lockIn ? { _l: g.lockIn.idx } : {}) };
+    if (++this.k % 120 === 0) rec._h = g.stateHash();
+    this.buf.push(intentDelta(this.last, rec)); this.last = rec;
+    this.flush();
+    return n && { ...BLANK_IT, ...n };
+  }
+  flush(force = false) {
+    if (!this.on || !this.buf.length) return;
+    const now = performance.now();
+    if (!force && now - this.at < 100) return;
+    this.net.send({ t: 'lin', k: this.k - this.buf.length + 1, b: this.buf });
+    this.buf = []; this.at = now;
+  }
+  stop() { if (this.done) return; this.flush(true); if (this.on) this.net.send({ t: 'lstop' }); this.done = true; this.on = false; }
+}
+
 // v0.4.8.7 a court's game in the director's park (ParkHub.dirCourts): the director's own game (parkdirector.js CourtRunner,
 // stepped by game/parklink.js), drawn by a background MatchSession only while the court can be seen (no athletes built for a
 // court nobody's looking at: they go back to the pool 4 s after it's out of sight). It stands in for c.session: game, opts
@@ -490,6 +523,26 @@ export class ParkHub {
     if (w && (w.follow != null || w.leaving > 0)) return out;
     for (const c of this.courts) if (c.session || c.mine || c.live || this.realBusy?.(c)) out.push(c.rect);
     return out;
+  }
+  // v0.4.8.7 qp2: a court with a game in progress on it: an AI game (c.session, the director's DirCourt included), a game
+  // you're watching live (c.live) or real players' hosted game (realBusy). Not a court you've only got next on.
+  gameOn(c) { return !!(c.session || c.live || this.realBusy?.(c)); }
+  // v0.4.8.7 qp2: real players can't walk onto a game in progress any more than the park-goers can (Walker.update). The
+  // court's edge (the playing surface plus its 0.6 m apron, courtPlayRect) is a wall to anyone walking in. Someone already
+  // standing on it when the game began is eased off to the nearest edge at a walk (3 m/s), never snapped across the
+  // court, and can't go deeper. Your own position goes out to the others' screens, so everyone sees you stay off it.
+  keepOffCourts(p, px, pz, dt) {
+    const r = p.phys.radius, inside = (b, x, z) => x > b.x0 - r && x < b.x1 + r && z > b.z0 - r && z < b.z1 + r;
+    const depth = (b, x, z) => Math.min(x - (b.x0 - r), (b.x1 + r) - x, z - (b.z0 - r), (b.z1 + r) - z);
+    for (const c of this.courts) {
+      if (c === this.myCourt || !this.gameOn(c)) continue; // (your own game's court is yours to walk onto)
+      const b = c.rect;
+      if (!inside(b, p.x, p.z)) continue;
+      if (!inside(b, px, pz)) { pushOut(p, b); continue; }
+      if (depth(b, p.x, p.z) > depth(b, px, pz)) { p.x = px; p.z = pz; }
+      const dl = p.x - (b.x0 - r), dr = (b.x1 + r) - p.x, dn = p.z - (b.z0 - r), df = (b.z1 + r) - p.z, m = Math.min(dl, dr, dn, df), step = Math.min(m, 3 * dt);
+      if (m === dl) p.x -= step; else if (m === dr) p.x += step; else if (m === dn) p.z -= step; else p.z += step;
+    }
   }
   // v0.4.5: add corner waypoints so a path goes around the shops and the wheel instead of into them
   // (v0.4.7.5 qp3: and around the live courts, so nobody needs the long way round through the plaza)
@@ -959,7 +1012,9 @@ export class ParkHub {
     const app = this.app, inp = app.input;
     this.viewTick();
     // athletes being built: a small slice per frame (a bigger one while your own game is getting ready)
-    if (this.pool.pending) this.pool.tick(this.mode === 'starting' ? 10 : 3);
+    // (v0.4.8.7 qp4: and a bigger one while a real player's game you're watching is still waiting on its people)
+    if (this.pool.pending) this.pool.tick(this.mode === 'starting' || this.courts.some(c => c.live?.visuals?.some(v => v.pending)) ? 10 : 3);
+    this.localPub?.flush(); // (qp4: your game's last few ticks out, even on a frame that played none)
     this.venue.update(dt);
     this.venue.practice.hoop.update(dt, this.practice ? null : null);
     // background courts
@@ -1041,12 +1096,14 @@ export class ParkHub {
     me.intent.mz = basis.rz * mv.x + basis.fz * mv.y;
     me.intent.sprint = inp.isDown('sprint');
     me.intent.face = null; me.intent.stickFace = true;
+    const px = me.x, pz = me.z;
     me.move(dt * GAME_SPEED, false, 0);
     me.stamina = Math.min(1, me.stamina + dt * 0.2);
     // stay in the park
     const b = this.venue.bounds;
     me.x = M.clamp(me.x, b.x0, b.x1); me.z = M.clamp(me.z, b.z0, b.z1);
     for (const s of this.venue.solids || []) pushOut(me, s);
+    this.keepOffCourts(me, px, pz, dt); // (v0.4.8.7 qp2: like the park-goers, no walking onto a court with a game on)
     // bump into people
     for (const w of this.walkers) this.separate(me, w.p);
     for (const c of this.courts) for (const s of [c.session, c.live]) if (s) for (const p of s.game.players) this.separate(me, { x: p.x + c.origin[0], z: p.z + c.origin[2], phys: p.phys }, true);
@@ -1420,11 +1477,16 @@ export class ParkHub {
     const teams = [{ name: this.aff.name, abbr: 'YOU', color: this.aff.color }, this.isUnit(opponents) ? { ...ICON_TEAM } : { name: 'Court Kings', abbr: 'KNG', color: '#e8e3d8' }]; // (v0.4.8.6: across from the ICON Squad)
     this.myCourt = c;
     this.myOpp = opponents;
+    // (v0.4.8.7 qp4: online at the park, the others here see this game as it's played: LocalPub, LocalWatch)
+    const net = this.netHere();
+    this.localPub?.stop(); this.localPub = net ? new LocalPub(net) : null;
     this.mySession = new MatchSession(app, {
       mode: 'park', full: !!c.full, hub: true, pool: this.pool, scene: this.scene, venue: this.venue, court: c, rosters: [mine, opp], teams, seed: ticket.seed,
-      target: ticket.meta.target, difficulty: ticket.meta.difficulty,
+      target: ticket.meta.target, difficulty: ticket.meta.difficulty, publish: this.localPub,
       onEnd: (summary, session) => this.myGameOver(summary, session),
     });
+    const g0 = this.mySession.game;
+    this.localPub?.begin({ court: this.courts.indexOf(c), full: !!c.full, seed: ticket.seed, rosters: [mine, opp], teams, target: ticket.meta.target, difficulty: ticket.meta.difficulty, assist: !!g0.assist, greenBonus: g0.greenBonus, names: { [net?.myId]: this.char.name } });
     this.mode = 'match';
     app.mode = 'match';
     music.duck(true); // v0.4.4: the soundtrack keeps going under park games
@@ -1436,6 +1498,7 @@ export class ParkHub {
   }
 
   async myGameOver(summary, session) {
+    this.localPub?.stop(); this.localPub = null; // (v0.4.8.7 qp4: its last ticks, then it's over on the others' screens too)
     const app = this.app;
     // v0.4.4: remember who you ran with and against (social phone: recent players)
     const won0 = summary.winner === summary.me.team;
@@ -1491,6 +1554,7 @@ export class ParkHub {
 
   leaveCourt(session, won) {
     const c = this.myCourt;
+    this.localPub?.stop(); this.localPub = null; // (v0.4.8.7 qp4: off the others' screens: a game left early too)
     this.reportCourt({ kings: false }); // (online: the court is free again)
     if (session) session.dispose();
     this.mySession = null;
@@ -1882,8 +1946,12 @@ export class ParkHub {
     if (!net?.on) return;
     // (the park as the server has it, if it has one: its state may have come before this park was made)
     if (net.connected && net.place === this.themeId) net.send({ t: 'pwant', place: this.themeId });
+    // (v0.4.8.7 qp4: and the games on here right now: they may have been offered before this park was made)
+    if (net.connected && net.place === this.themeId) net.send({ t: 'rewatch' });
     const st = m => this.onPState(m);
     this.dirOff = [net.on('pstate', st), net.on('presync', st), net.on('pepoch', st), net.on('pev', m => this.link?.event(m)), net.on('pt', m => this.link?.tick(m)),
+      // (v0.4.8.7 qp4: another player's own game here, as he plays it)
+      net.on('lwatch', m => this.localWatch(m)), net.on('lin', m => this.localIn(m)), net.on('lstop', m => this.localStop(m)),
       net.on('state', () => { if (net.state !== 'on' && this.link?.dir) this.dirLost = this.dirLost || performance.now(); }),
       // (back after the connection dropped, or the server restarted: hand it the park as it stands here)
       net.on('courts', () => {
@@ -2307,6 +2375,68 @@ export class ParkHub {
     c.live.animDt = (o, dt, x, z, r) => this.animDt(o, dt, x, z, r); // (qp3 perf: posed only when seen)
   }
   endWatch(g) { for (const c of this.courts) if (c.liveSetup?.game === g && !c.liveEndAt) c.liveEndAt = performance.now(); }
+
+  // ---- v0.4.8.7 qp4: another player's own game here (LocalPub on his screen), watched from the sideline ----
+  // The same game as on his screen: built from his setup, played from his inputs a few ticks behind the newest (arriving
+  // while it's on: the game so far first, played through quickly), with his models on the court. c.live like a hosted
+  // game you watch (the court shows the game, nobody walks onto it, his own walking self steps aside: inGameIds)
+  localWatch(m) {
+    const setup = m?.setup, c = this.courts[setup?.court], net = this.netHere();
+    if (!c || !net || m.from == null || m.from === net.myId || !Array.isArray(setup.rosters) || setup.rosters.length !== 2) return;
+    if (c === this.myCourt && (this.mySession || this.mode === 'starting')) return;
+    if (c.live) this.dropWatch(c, true);
+    if (c.session) this.vacate(c);
+    const rosters = structuredClone(setup.rosters);
+    for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, this.catalog);
+    const s = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'park', full: !!setup.full, scene: this.scene, venue: this.venue, court: c, rosters, teams: setup.teams, seed: setup.seed, target: setup.target, difficulty: setup.difficulty, assist: !!setup.assist });
+    // (his ring is a watched player's, white, not yours)
+    s.game.players.forEach((p, i) => { const v = s.visuals[i]; if (!p.human || !v) return; v.ringColor = '#f4f2ec'; if (v.ring) v.ring.material.color = M.hexLinear('#f4f2ec'); });
+    // (his game exactly as his screen made it: his auto-play and his green window, not this screen's settings)
+    const g = new Game({ mode: 'park', full: !!setup.full, seed: setup.seed, rosters, catalog: this.catalog, target: setup.target, surface: this.venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt', difficulty: setup.difficulty ?? 0.6, assist: !!setup.assist, greenBonus: setup.greenBonus || 1, multi: false, inputDelay: 0 });
+    g.teamsMeta = setup.teams; spreadGreens(g.players, this.catalog);
+    s.game = g;
+    s.animDt = (o, d0, x, z, r) => this.animDt(o, d0, x, z, r);
+    s.lw = { from: m.from, dec: { k: 0, it: {} }, recs: new Map(), maxK: 0, checked: 0, bad: 0 };
+    s.frame = dt => this.localWatchFrame(s, dt);
+    c.live = s; c.liveEndAt = 0;
+    c.liveSetup = { ...setup, rosters, local: true, from: m.from, slots: { [m.from]: 0 }, names: setup.names || {} };
+    this.peers.drop?.(m.from);
+    this.localIn({ from: m.from, k: m.k, b: m.b });
+  }
+  localIn(m) {
+    for (const c of this.courts) {
+      const s = c.live, lw = s?.lw;
+      if (!lw || lw.from !== m?.from || !Number.isInteger(m.k) || !Array.isArray(m.b)) continue;
+      takeInputs(lw.dec, m.k, m.b, (t, it) => { lw.recs.set(t, it); lw.maxK = t; });
+    }
+  }
+  localStop(m) { for (const c of this.courts) if (c.live?.lw && c.live.lw.from === m?.from && !c.liveEndAt) c.liveEndAt = performance.now(); }
+  // his game here: a few ticks behind his newest input at his pace; a long way behind (just arrived), through quickly
+  localWatchFrame(s, dt) {
+    const g = s.game, lw = s.lw, evs = s.frameEvents = [];
+    let n = 0;
+    if (lw.maxK - g.tick > 30) { while (n < 90 && g.tick < lw.maxK - 6) { this.localStep(s, evs); n++; } s.acc = 0; }
+    else {
+      s.acc = Math.min(s.acc + Math.min(0.1, dt) * (g.speed || 1), DT * 12);
+      while (s.acc >= DT && g.tick < lw.maxK - 2 && n < 8) { this.localStep(s, evs); s.acc -= DT; n++; }
+    }
+    if (g.over && !s.ended) { s.ended = true; s.endT = 0; }
+    if (s.ended) s.endT += dt;
+    s.lastEvents = evs;
+    s.render(dt);
+  }
+  localStep(s, evs) {
+    const g = s.game, lw = s.lw, k = g.tick + 1, rec = lw.recs.get(k) || {};
+    lw.recs.delete(k);
+    const { _a, _l, _h, _k, ...it } = rec;
+    if (_h != null) { lw.checked++; if (g.stateHash() !== _h && !lw.bad++) console.warn('[park] a game you watch went its own way at tick', k); }
+    g.assist = !!_a; g.lockIn = _l == null ? null : { id: g.human?.id, idx: _l };
+    if (!_k) g.setInput({ ...BLANK_IT, ...it }); // (_k: none that tick on his screen: the last one stands)
+    g.step(DT);
+    s.celebrationEffects(g.events); // (the part of the events that changes the game: as on his screen)
+    s.backgroundEvents(g.events);
+    for (const e of g.events) evs.push(e);
+  }
   dropWatch(c, now = false) {
     const s = c.live; if (!s) return;
     const g = s.game, setup = c.liveSetup;
@@ -2320,6 +2450,7 @@ export class ParkHub {
     this.disposed = true;
     this.peers.detach(); // (qp7: and stops listening for their emotes)
     for (const f of this.dirOff || []) f?.(); // (v0.4.8.7: and to the park director)
+    this.localPub?.stop(); this.localPub = null;
     for (const c of this.courts) if (c.live) c.live.dispose();
     for (const c of this.courts) if (c.fx) c.fx.dispose();
     for (const sp of this.spectators || []) sp.dispose();

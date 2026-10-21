@@ -255,8 +255,16 @@ export class MatchSession {
     // v0.4.3: team intros before park and Pro-Am games (not online: nobody waits on anybody's skip)
     this.intro = !this.background && !this.online && opts.intro !== false && (opts.mode === 'park' || opts.mode === 'proam') ? new GameIntro(this) : null;
     if (this.online) this.initOnline();
-    if (!this.background && this.game.assist && this.game.human) this.hud.pushFeed('Auto-play is ON (H to take over)');
+    // v0.4.8.7 qp5: online Pro-Am has auto-play of your own seat (for the breaks in a long grind): it rides in your inputs
+    // (it.auto), so every screen plays your player with the AI from the same tick. Your choice carries over from game to
+    // game as offline (settings.autoPlay). Online park and the other online games don't have it
+    this.autoOnline = !!(this.online && this.autoAllowed() && settings.autoPlay);
+    if (!this.background && this.game.human && (this.game.assist || this.autoOnline)) this.hud.pushFeed('Auto-play is ON (H to take over)');
   }
+  // qp5: online, auto-play is for Pro-Am alone (a player of yours on the floor, not watching)
+  autoAllowed() { return !!this.online && !this.spectate && !!this.game.human && this.game.mode === 'proam'; }
+  // whether the AI is playing your player right now: offline auto-play, or your seat's online (as the game has applied it)
+  meAuto() { const g = this.game; return !!g.assist || !!(this.online && g.human?.auto); }
   get inIntro() { return !!(this.intro && !this.intro.done); }
   // the user's own player (online, there are other people playing: p.human is true for them too)
   isMe(p) { return !!p && (this.online ? p === this.game.human : !!p.human); }
@@ -268,7 +276,7 @@ export class MatchSession {
   // are also kept for a short window, like a fighting-game input buffer)
   captureInput() {
     const inp = this.input, g = this.game, me = g.human;
-    if (!me || g.assist) { inp.ctx = 'offball'; return; }
+    if (!me || g.assist || this.autoOnline) { inp.ctx = 'offball'; return; } // (qp5: or your seat on auto-play, online)
     const P = this.pend;
     const has = g.ball.holder === me.id;
     // v0.4.7.5 fix: you're on defense whenever an opponent has the ball, whatever the possession flag says (it lags
@@ -396,7 +404,7 @@ export class MatchSession {
   // Intent for one 60 Hz step: live stick/button state + any buffered presses.
   stepIntent() {
     const inp = this.input, g = this.game, me = g.human;
-    if (!me || g.assist) return null;
+    if (!me || g.assist || this.autoOnline) return null;
     const has = g.ball.holder === me.id;
     const holder = g.holder ? g.holder() : null;
     const offense = holder ? holder.team === me.team : g.possession === me.team; // (as in captureInput)
@@ -486,8 +494,15 @@ export class MatchSession {
     if (!this.background) {
       if (inp.wasPressed('camera')) this.hud.showCam(CAM_LABEL[this.rig.cycle()]);
       if (inp.wasPressed('assist')) {
-        if (this.online) this.hud.pushFeed('Auto-play is off in online games');
-        else { toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)'); }
+        // (v0.4.8.7 qp5: online Pro-Am: your seat's own auto-play, from your next input on every screen; elsewhere online
+        // there's none)
+        if (this.online && !this.autoAllowed()) this.hud.pushFeed(this.spectate ? 'Auto-play is for the players in the game' : 'Auto-play is only in online Pro-Am');
+        else if (this.online) {
+          this.autoOnline = !this.autoOnline;
+          for (const k in this.pend) delete this.pend[k]; // (nothing you'd pressed goes after it)
+          settings.autoPlay = this.autoOnline; saveSettings();
+          this.hud.pushFeed(this.autoOnline ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)');
+        } else { toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)'); }
       }
       if (inp.wasPressed('help')) this.toggleHelp();
     }
@@ -513,7 +528,9 @@ export class MatchSession {
     const evs = this.frameEvents = [];
     while (this.acc >= DT && steps < (this.background ? 18 : 6)) {
       const intent = this.background ? null : this.stepIntent();
-      if (intent) g.setInput(intent);
+      // (v0.4.8.7 qp4: your own game at a park online, for the others there: each tick's input as it plays: park.js LocalPub)
+      const it = this.opts.publish ? this.opts.publish.take(g, intent) : intent; // (a tick with none, auto-play: it goes out too)
+      if (it) g.setInput(it);
       g.step(DT);
       if (!this.background) this.ageInput(DT);
       if (this.background) this.backgroundEvents(g.events); else { this.handleEvents(g.events); for (const e of g.events) logGameEvent(e, g); }
@@ -604,6 +621,9 @@ export class MatchSession {
     // in it is graded at the moment you let go, whatever your frames, a wait or a catch-up did in between. v0.4.8: exact
     // for every tick, where it used to be the send-ahead alone; sent while a shot or an alley-oop could use it)
     if (it && this.timingNow()) { const dl = t - lk.D - 1 - (lk.seen ?? this.game.tick); if (dl > 0) it.dl = Math.min(24, dl); }
+    // (v0.4.8.7 qp5: your seat on auto-play: that's all your input says, every tick, until H takes it off; the pause menu
+    // doesn't take it off. Every screen's game plays you with the AI from the tick it lands: Game.setAuto)
+    if (this.autoOnline) return normIntent({ auto: true });
     return it ? normIntent(it) : {};
   }
   // whether your input could be timing something: the shot button (or the attack bind) down or just pressed, a timed
@@ -618,7 +638,7 @@ export class MatchSession {
   // v0.4.8 online: the moment you let go of a timed shot on your screen, the meter there is kept as it is (updateHUD)
   noteLetGo() {
     const g = this.game, me = g.human, a = me?.action, inp = this.input;
-    if (!a || a.released || g.assist || (this.letGo && this.letGo.a === a)) return;
+    if (!a || a.released || this.meAuto() || (this.letGo && this.letGo.a === a)) return;
     if (inp.isDown('shoot') || inp.isDown('dunk') || (inp.gp?.dunkHeld && inp.ctx === 'offense')) return;
     const m = this.liveMeter(me, a);
     if (m) this.letGo = { a, m };
@@ -827,7 +847,7 @@ export class MatchSession {
     const me = g.human;
     const meW = me ? { x: me.x + ox, z: me.z + oz, facing: me.facing } : null;
     const side = g.attackDir[g.possession];
-    const focus = me && !g.assist && g.possession === me.team && g.ball.holder !== me.id ? { x: (b.x * 0.7 + me.x * 0.3), z: (b.z * 0.7 + me.z * 0.3) } : { x: b.x, z: b.z };
+    const focus = me && !this.meAuto() && g.possession === me.team && g.ball.holder !== me.id ? { x: (b.x * 0.7 + me.x * 0.3), z: (b.z * 0.7 + me.z * 0.3) } : { x: b.x, z: b.z };
     let hl = null;
     if (this.highlight) { this.highlight.t -= dt; const k = Math.min(1, this.highlight.t / 0.4) * Math.min(1, (this.highlight.dur - this.highlight.t) / 0.25); hl = { x: this.highlight.x, y: this.highlight.y, z: this.highlight.z, k: Math.max(0, k) * 0.6 }; if (this.highlight.t <= 0) this.highlight = null; }
     if (this.inIntro) this.intro.camera(dt);
@@ -895,7 +915,7 @@ export class MatchSession {
     }
     const A = this.arrows;
     const holder = g.holder ? g.holder() : null;
-    const onD = me && !g.assist && !g.over && !this.inIntro && settings.defArrows !== false && (holder ? holder.team !== me.team : g.possession !== me.team) && (g.phase === 'live' || g.phase === 'inbound' || g.phase === 'check');
+    const onD = me && !this.meAuto() && !g.over && !this.inIntro && settings.defArrows !== false && (holder ? holder.team !== me.team : g.possession !== me.team) && (g.phase === 'live' || g.phase === 'inbound' || g.phase === 'check');
     const man = onD ? g.ai.manOf(me) : null;
     const [ox, , oz] = this.origin;
     const pos = q => [M.lerp(q.prevX, q.x, alpha) + ox, M.lerp(q.prevZ, q.z, alpha) + oz];
@@ -1134,6 +1154,8 @@ export class MatchSession {
         // qp3 online: a teammate's big answers your screen call; someone dropped out and the AI has his player
         case 'screenCall': if (P === g.human) hud.pushFeed(`${g.players[e.big].name}: setting a screen`); break;
         case 'dropped': if (P) hud.pushFeed(`${this.online?.names?.[e.player] || P.name} left · the AI has his player`, 'neutral'); break;
+        // v0.4.8.7 qp5: a seat's auto-play, on every screen (his tag says AUTO while it's on)
+        case 'autoplay': if (P) hud.pushFeed(this.isMe(P) ? (e.on ? 'You\'re on auto-play: the AI has your player (H to take over)' : 'You\'re back in control') : `${this.online?.names?.[e.player] || P.name} ${e.on ? 'is on auto-play' : 'is back from auto-play'}`, 'neutral'); break;
       }
     }
     this.celebrationEffects(events);
@@ -1227,7 +1249,7 @@ export class MatchSession {
   // on screen is the window you get if you let go now. null: no timed shot in progress (close shots aren't timed).
   liveMeter(me, a) {
     const g = this.game;
-    if (!a || g.assist || a.released || !a.tRel) return null;
+    if (!a || g.assist || (this.online && me?.auto) || a.released || !a.tRel) return null; // (qp5: none on auto-play, yours online too)
     let W;
     if (a.type === 'ftshot') W = g.ftWindow(me);
     else if (a.type === 'layup' && (a.releaseAt != null || a.t <= 0.04)) return null;
@@ -1307,7 +1329,9 @@ export class MatchSession {
         const team = this.teams[p.team];
  const mine = this.isMe(p), friend = !mine && p.human; // (online: the other people in the game, by their username)
         const nm = friend ? (this.online?.names?.[p.id] || p.name.split(' ').slice(-1)[0]) : p.name.split(' ').slice(-1)[0];
-        const txt = !names ? this.iconPassGlyph(icon) : mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm);
+        // (v0.4.8.7 qp5: a person's player on auto-play says so by his name)
+        const auto = names && p.human && g.multi && p.auto ? ' <em class="ptag-auto">AUTO</em>' : '';
+        const txt = (!names ? this.iconPassGlyph(icon) : mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm)) + auto;
         list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (mine ? 'me ' : friend ? 'friend ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
       }
       hud.setTags(list);

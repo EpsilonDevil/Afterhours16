@@ -125,7 +125,7 @@ export const BADGE_ARCH_CAPS = {
   sharpshooter: [4, 4, 4, 4, 4, 4, 1, 2, 2, 2, 3, 4, 3, 3, 1, 2, 2, 2],
   slasher: [2, 2, 1, 1, 2, 3, 4, 4, 4, 4, 3, 4, 3, 4, 2, 4, 3, 3],
   playmaker: [3, 3, 2, 3, 3, 4, 1, 3, 4, 4, 4, 4, 4, 4, 1, 2, 1, 1],
-  lockdown: [3, 4, 4, 1, 2, 3, 2, 3, 2, 2, 2, 4, 4, 4, 4, 4, 4, 3],
+  lockdown: [2, 2, 2, 1, 2, 3, 2, 3, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4], // (v0.4.8.7: shooting Silver at best; Rebound Chaser HOF)
   two_way: [4, 4, 3, 2, 3, 4, 3, 4, 3, 3, 3, 3, 4, 4, 3, 4, 4, 3],
   glass_cleaner: [1, 1, 1, 1, 1, 2, 4, 4, 3, 1, 4, 2, 2, 3, 4, 4, 4, 4],
   stretch_big: [4, 4, 4, 3, 4, 4, 2, 3, 1, 1, 3, 2, 2, 3, 4, 3, 3, 4],
@@ -139,12 +139,16 @@ export const BADGE_HEIGHT_MAX = {
   small: { rim_protector: 2, rebound_chaser: 3, brick_wall: 3, posterizer: 3, chasedown: 3 }, medium: { rim_protector: 3 }, tall: {},
   big: { ankle_breaker: 3, handles_for_days: 3, limitless: 3 }, giant: { ankle_breaker: 2, handles_for_days: 2, limitless: 2, acrobat: 3, pick_pocket: 3 },
 };
+// v0.4.8.7: a Lockdown's defensive badges get past the height limits (mirrors server/builds.py ARCH_HEIGHT_FREE)
+const ALL_BANDS = ['small', 'medium', 'tall', 'big', 'giant'];
+export const ARCH_HEIGHT_FREE = { lockdown: { chasedown: ALL_BANDS, brick_wall: ALL_BANDS, rim_protector: ALL_BANDS.slice(1), pick_pocket: ['giant'] } };
 export const heightBand = h => (HEIGHT_BANDS.find(([, top]) => (h || 0) <= top) || ['giant'])[0];
 // {badge id: highest tier this build can reach}
 export function badgeCaps(b = {}) {
   const arch = b.archetype || STYLE_TO_ARCH[b.style] || 'two_way', base = BADGE_ARCH_CAPS[arch] || BADGE_ARCH_CAPS.two_way;
   const band = heightBand(b.height ?? 76), up = BADGE_HEIGHT_UP[band], top = BADGE_HEIGHT_MAX[band], out = {};
-  BADGE_IDS.forEach((k, i) => { out[k] = Math.max(1, Math.min(4, base[i] + (up.includes(k) ? 1 : 0), top[k] ?? 4)); });
+  const free = ARCH_HEIGHT_FREE[arch] || {};
+  BADGE_IDS.forEach((k, i) => { out[k] = Math.max(1, Math.min(4, base[i] + (up.includes(k) ? 1 : 0), (free[k] || []).includes(band) ? 4 : (top[k] ?? 4))); });
   return out;
 }
 // what a badge set plays at on a build: every tier clamped to the build's cap

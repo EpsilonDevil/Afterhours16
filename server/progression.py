@@ -335,8 +335,10 @@ def _raise_badges(char, todo):
             if reached_hof:
                 n = hof_count(char)
                 # the first 5 Hall of Fame badges each bring 5 cap breakers; the 7th unlocks the Icon badge
-                if n <= CAP_BREAKER_HOF_LIMIT:
-                    cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
+                # (v0.4.8.7: and only while the build has earned fewer than its Hall of Fame badges bring: a badge lowered to its
+                # cap and replaced by another Hall of Fame badge never pays its cap breakers twice)
+                cb = char.setdefault("cap_breakers", {"earned": 0, "available": 0, "applied": {}})
+                if n <= CAP_BREAKER_HOF_LIMIT and int(cb.get("earned", 0) or 0) < n * CAP_BREAKERS_PER_HOF:
                     cb["earned"] = cb.get("earned", 0) + CAP_BREAKERS_PER_HOF
                     cb["available"] = cb.get("available", 0) + CAP_BREAKERS_PER_HOF
                     cap_breakers_awarded += CAP_BREAKERS_PER_HOF
@@ -367,20 +369,28 @@ def sync_badges(char):
       way to the next tier (once), and a tier already earned is never taken away.
     * Then every badge whose progress meets a requirement (lowered ones included) moves up, with the usual rules: the
       build's badge caps, the Hall of Fame limit, cap breakers and the Icon badge.
-    Returns {"upgraded", "cap_breakers_awarded", "icon_unlocked"} (empty when nothing changed)."""
+    Returns {"upgraded", "cap_breakers_awarded", "icon_unlocked"} and, v0.4.8.7, "lowered" (empty when nothing changed)."""
     badges = char.setdefault("badges", {})
     if not char.get("badges_v0485"):
         char["badges_v0485"] = True
         bw = badges.get("brick_wall")
         if isinstance(bw, dict) and bw.get("progress", 0) > 0:
             bw["progress"] = convert_progress(bw.get("progress", 0), BRICK_WALL_GAMES_TIERS, BADGES["brick_wall"]["tiers"])
+    # v0.4.8.7: a badge above what its build can reach now (the Lockdown's shooting badges, Silver at best) is lowered to
+    # that cap. Its progress is kept, so it would come back if the cap ever rose again.
+    caps, lowered = badge_caps(char), []
+    for bid, b in badges.items():
+        if isinstance(b, dict) and b.get("tier", 0) > caps.get(bid, 4):
+            b["tier"] = caps.get(bid, 4)
+            lowered.append({"id": bid, "name": BADGES[bid]["name"] if bid in BADGES else bid, "tier": b["tier"]})
     games = int(char.get("progression", {}).get("games", 0) or 0)
     for bid, b in BADGES.items():
         if b["stat"] == "games" and games > 0:
             cur = badges.setdefault(bid, {"progress": 0, "tier": 0})
             cur["progress"] = max(int(cur.get("progress", 0) or 0), games)
     upgraded, cb, icon = _raise_badges(char, {})
-    return {"upgraded": upgraded, "cap_breakers_awarded": cb, "icon_unlocked": icon} if upgraded else {}
+    out = {"upgraded": upgraded, "cap_breakers_awarded": cb, "icon_unlocked": icon} if upgraded else {}
+    return {**out, "lowered": lowered} if lowered else out
 
 
 def apply_progress(char, summary, rw):

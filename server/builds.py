@@ -139,7 +139,7 @@ BADGE_ARCH_CAPS = {
     "sharpshooter": (4, 4, 4, 4, 4, 4, 1, 2, 2, 2, 3, 4, 3, 3, 1, 2, 2, 2),
     "slasher": (2, 2, 1, 1, 2, 3, 4, 4, 4, 4, 3, 4, 3, 4, 2, 4, 3, 3),
     "playmaker": (3, 3, 2, 3, 3, 4, 1, 3, 4, 4, 4, 4, 4, 4, 1, 2, 1, 1),
-    "lockdown": (3, 4, 4, 1, 2, 3, 2, 3, 2, 2, 2, 4, 4, 4, 4, 4, 4, 3),
+    "lockdown": (2, 2, 2, 1, 2, 3, 2, 3, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4),  # (v0.4.8.7: shooting Silver at best; Rebound Chaser HOF)
     "two_way": (4, 4, 3, 2, 3, 4, 3, 4, 3, 3, 3, 3, 4, 4, 3, 4, 4, 3),
     "glass_cleaner": (1, 1, 1, 1, 1, 2, 4, 4, 3, 1, 4, 2, 2, 3, 4, 4, 4, 4),
     "stretch_big": (4, 4, 4, 3, 4, 4, 2, 3, 1, 1, 3, 2, 2, 3, 4, 3, 3, 4),
@@ -155,6 +155,13 @@ BADGE_HEIGHT_MAX = {"small": {"rim_protector": 2, "rebound_chaser": 3, "brick_wa
                     "giant": {"ankle_breaker": 2, "handles_for_days": 2, "limitless": 2, "acrobat": 3, "pick_pocket": 3}}
 
 
+# v0.4.8.7: a Lockdown's Hall of Fame badges are defensive. Its shooting badges stop at Silver, and in their place its
+# defensive badges get past the height limits that hold other builds back: Chasedown and Brick Wall reach Hall of Fame
+# at every height, Rim Protector from 6'3" up, and Pick Pocket on a 7'1"+ build too.
+ARCH_HEIGHT_FREE = {"lockdown": {"chasedown": ("small", "medium", "tall", "big", "giant"), "brick_wall": ("small", "medium", "tall", "big", "giant"),
+                                 "rim_protector": ("medium", "tall", "big", "giant"), "pick_pocket": ("giant",)}}
+
+
 def height_band(height):
     for name, top in HEIGHT_BANDS:
         if (height or 0) <= top:
@@ -168,7 +175,8 @@ def badge_caps(char):
     base = BADGE_ARCH_CAPS.get(arch, BADGE_ARCH_CAPS["two_way"])
     band = height_band(char.get("height", 76))
     up, top = BADGE_HEIGHT_UP[band], BADGE_HEIGHT_MAX[band]
-    return {b: max(1, min(4, base[i] + (1 if b in up else 0), top.get(b, 4))) for i, b in enumerate(BADGE_IDS)}
+    free = ARCH_HEIGHT_FREE.get(arch, {})
+    return {b: max(1, min(4, base[i] + (1 if b in up else 0), 4 if band in free.get(b, ()) else top.get(b, 4))) for i, b in enumerate(BADGE_IDS)}
 
 
 def hof_capacity(char):

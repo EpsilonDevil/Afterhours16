@@ -92,7 +92,9 @@ test('driving finishes: the highest rating wins, the defense adjusts it', () => 
 
 test('passes reach their receiver (no teammate pick-offs, few drops)', () => {
   let passes = 0, done = 0;
-  for (const seed of [11, 12]) {
+  // (v0.4.8.7 qp3: four games, not two: the layup finish change replays these games differently, and seed 12 alone
+  // came in at 91%; over 24 seeds completion is about 97.6%, against 98.1% before. Same bar.)
+  for (const seed of [11, 12, 13, 14]) {
     const rng = new RNG(seed);
     const g = new Game({ mode: 'proam', seed, rosters: [makeTeam(rng, 5, { catalog, level: 0.6 }), makeTeam(rng, 5, { catalog, level: 0.6 })], catalog, quarterLen: 90, quarters: 4, difficulty: 0.6 });
     let open = null, steps = 0;

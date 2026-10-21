@@ -6,12 +6,13 @@ import unittest
 from server import builds, progression
 from tests.test_v0485 import char_for
 
-FULL = ("catch_shoot", "corner_specialist", "pick_pocket", "interceptor", "rim_protector", "chasedown", "brick_wall")
+# (v0.4.8.7: a 6'2" Sharpshooter; the Lockdown it used to be lost its Hall of Fame shooting badges)
+FULL = ("deadeye", "catch_shoot", "corner_specialist", "limitless", "green_machine", "clutch", "pick_pocket")
 
 
 class HallOfFame(unittest.TestCase):
     def lockdown(self, hfd):
-        ch = char_for("lockdown", height=80, games=200, badges={**{b: {"progress": 9999, "tier": 4} for b in FULL}, "handles_for_days": hfd})
+        ch = char_for("sharpshooter", height=72, games=200, badges={**{b: {"progress": 9999, "tier": 4} for b in FULL}, "handles_for_days": hfd})
         ch["badges_v0485"] = True
         return ch
 

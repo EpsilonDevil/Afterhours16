@@ -186,15 +186,19 @@ export function predictShot(ball, maxT = 4) {
   const b = cloneBall(ball);
   const ev = [];
   const dt = 1 / 60;
-  let made = false, t = 0;
+  let made = false, t = 0, above = b.y > COURT.rimY, under = false;
   while (t < maxT) {
     ev.length = 0;
     b.step(dt, ev);
     t += dt;
+    // (v0.4.8.7 qp3: a ball that touches the rim before it has ever been up over the rim's plane came at it from
+    // underneath: planShot never counts that as a make, however the bounce happens to come off it)
+    for (const e of ev) if (e.type === 'rim' && !above) under = true;
+    if (b.y > COURT.rimY) above = true;
     for (const e of ev) if (e.type === 'through') { made = true; }
     if (made) break;
     if (b.y < 1.5 && b.vy < 0 && b.floorBounces > 0) break;
     if (b.y <= BALL_R + 0.001 && t > 0.4) break;
   }
-  return { made, rim: b.touchedRim, board: b.touchedBoard, time: t };
+  return { made, rim: b.touchedRim, board: b.touchedBoard, time: t, under };
 }

@@ -14,6 +14,8 @@ import { bk } from './badges.js';
 import { MOVE_IDS, MOVES as MOVE_DEF, MOVE_STYLE, COMBOS } from './moves.js';
 const MOVE_FAM = Object.fromEntries(Object.entries(MOVE_DEF).map(([k, v]) => [k, v.fam]));
 const hyp = Math.hypot;
+// v0.4.8.7 qp5: a person's player on auto-play (offline: the game's assist; online: his own seat's, p.auto)
+const onAuto = (g, p) => (g.autoPlays ? g.autoPlays(p) : !!(p.human && g.assist));
 // v0.4.7.5 qp3: runners in the open court (AI.runnerAhead / passToRunner): how far from the rim a runner still
 // counts, how open he has to be, how wide the lane in front of him has to be clear, how fast he must be running at
 // the rim (m/s), how close for an alley-oop and with what share of the sprint budget, the chance the handler takes
@@ -163,7 +165,7 @@ export class AI {
   // v0.4.3: archetype tendencies (bots carry their own rolled copy; anyone else gets the archetype defaults)
   tend(p) {
     // v0.4.4: auto-play plays your player the way your career numbers say you do
-    if (p.human && this.g.assist && p.profile) return p.profile.tend;
+    if (onAuto(this.g, p) && p.profile) return p.profile.tend;
     if (!p._tend) { const b = p.entry.build || {}; p._tend = { ...tendenciesFor(b), ...(b.tendencies || {}) }; }
     return p._tend;
   }
@@ -432,7 +434,7 @@ export class AI {
     const win = S.layupWindowMs(attr, p.badges, { contest, lstyle: a.lstyle }), base = S.layupWindowMs(attr, p.badges, { lstyle: a.lstyle });
     let pGreen = base > 0 ? Math.max(0.02, Math.min(0.6, 0.1 + 0.32 * n(attr) + (this.iq(p) - 0.6) * 0.2)) * Math.pow(win / base, 0.8) : 0;
     let good = 0.86;
-    if (p.human && g.assist && p.profile) {
+    if (onAuto(g, p) && p.profile) {
       // auto-play: finish like your career twos say you do
       const prior = 0.3 + 0.24 * n(attr), k = Math.max(0.35, Math.min(2.4, p.profile.fg2 / prior));
       pGreen = Math.max(0.01, Math.min(0.9, pGreen * Math.pow(k, 1.4)));
@@ -466,7 +468,7 @@ export class AI {
     const base = S.timingWindowMs(attr, p.badges);
     let pGreen = Math.max(0.02, Math.min(attr >= 99 ? 0.88 : attr > 95 ? 0.72 : 0.65, (ft ? 0.26 : 0.13) + 0.3 * n(attr) + (this.iq(p) - 0.6) * 0.24)) * Math.pow(win / base, 0.8) * (three ? 1.0 : 1);
     let good = 0.86;
-    if (p.human && g.assist && p.profile) {
+    if (onAuto(g, p) && p.profile) {
       // auto-play: shoot it as well (or as badly) as your career twos / threes / free throws say. The prior is
       // what the AI would shoot with this rating; k > 1 means you shoot better than that.
       const pr = p.profile, prior = ft ? 0.45 + 0.38 * Math.min(1.1, n(attr)) : three ? 0.18 + 0.22 * n(attr) : 0.3 + 0.24 * n(attr);
@@ -1284,7 +1286,7 @@ export class AI {
         const tUp = Math.sqrt(2 * p.phys.vertical * 0.9 / GRAVITY);
         const want = (a.releaseAt ?? a.tRel) - tUp * 0.9;
         const err = g.rng.normal() * (0.12 - this.skill(p) * 0.05 - n(p.ratings.block) * 0.04);
-        if (a.t >= want + err) { if (!(p.human && g.assist && p.profile) || g.rng.next() < 0.35 + 0.65 * p.profile.tend.help) it.jump = true; p.cool.block = 1.0; }
+        if (a.t >= want + err) { if (!(onAuto(g, p) && p.profile) || g.rng.next() < 0.35 + 0.65 * p.profile.tend.help) it.jump = true; p.cool.block = 1.0; }
       }
     } else if ((a.type === 'layup' || a.type === 'dunk') && !a.released && !a.slammed) {
       const toRim = hyp(p.x - rim.x, p.z - rim.z);

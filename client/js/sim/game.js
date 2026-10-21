@@ -245,6 +245,9 @@ export const LAYUP_BODY = {
   spin: { open: [0.047, 0.022, 0], side: [0.07, 0.043, 0.038], front: [0.046, 0, 0], rim: [0.05, 0.087, 0, 0.005], trail: [0.054, 0.046, 0] },
 };
 
+// v0.4.8.7 qp3: the closest a layup's shooter gets to the rim's centre (m, on the floor plan) while he still has the ball
+export const LAYUP_FIN = 0.95;
+
 export class Game {
   constructor(cfg) {
     this.cfg = cfg;
@@ -487,7 +490,7 @@ export class Game {
   noteMeters() {
     for (const p of this.players) {
       const a = p.action;
-      if (!p.human || !a || a.released || (a.type !== 'shoot' && a.type !== 'layup')) continue;
+      if (!this.controlled(p) || !a || a.released || (a.type !== 'shoot' && a.type !== 'layup')) continue; // (qp5: not a seat on auto-play)
       const r = this.meterRead(p, a);
       if (!r) continue;
       const m = a.meters || (a.meters = []);
@@ -500,7 +503,7 @@ export class Game {
   // released as it lands, measured live: the same thing offline)
   seenRead(p, a, at) {
     const m = a.meters;
-    if (!this.multi || !p.human || !m || at == null) return null;
+    if (!this.multi || !this.controlled(p) || !m || at == null) return null;
     for (const r of m) if (r.t >= at - 1e-6) return r.t < a.t - 1e-6 && r.t < at + DT - 1e-6 ? r : null;
     return null;
   }
@@ -592,7 +595,24 @@ export class Game {
   sideFor(team) { return this.attackDir[team]; }
   opponents(p) { return this.teams[1 - p.team]; }
   mates(p) { return this.teams[p.team].filter(q => q !== p); }
-  isAI(p) { return !p.human || this.assist; }
+  isAI(p) { return !p.human || this.assist || !!p.auto; }
+  // v0.4.8.7 qp5: a person's player, played by him: not the AI's, not on auto-play (the game's, offline: assist; or his
+  // own seat's, online: p.auto, from his inputs: the same tick on every screen)
+  controlled(p) { return !!p && p.human && !this.assist && !p.auto; }
+  // a person's player the AI is playing for him (auto-play): it plays the way his numbers say (sim/profile.js)
+  autoPlays(p) { return !!p && p.human && (this.assist || !!p.auto); }
+  // qp5: a seat's auto-play goes on or off (Game.step, from his inputs). A shot or free throw of his already up when it
+  // goes on gets the AI's release, as one the AI started would (with the game's own rng, the same on every screen)
+  setAuto(p, on) {
+    p.auto = on;
+    p.autoC = null;
+    const a = p.action;
+    if (on && a && !a.released && a.releaseAt == null) {
+      if (a.type === 'shoot') { const r = this.ai.releaseTiming(p, a.tRel, false, { type: a.kind, d: a.dRim }); a.releaseAt = r.at; a.aiGrade = r.grade; a.aiContest = r.contest; }
+      else if (a.type === 'ftshot') { const r = this.ai.releaseTiming(p, a.tRel, true); a.releaseAt = r.at; a.aiGrade = r.grade; }
+    }
+    this.emit({ type: 'autoplay', player: p.id, on });
+  }
   live() { return this.phase === 'live'; }
 
   setup() {
@@ -736,7 +756,11 @@ export class Game {
     if (this.over) { this.overT = (this.overT || 0) + dt; for (const p of this.players) { p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); this.startFlips(); return; }
     this.time += dt; this.tick++;
     for (const p of this.players) {
-      if (p.human && !this.assist) { p.intent = this.multi ? this.multiIntent(p) : { ...this.humanIntent }; }
+      // (v0.4.8.7 qp5 online: each seat's auto-play rides in his inputs (it.auto), so it's on from the same tick on every
+      // screen: the AI plays him from there, with the game's own rng, until his inputs say it's off)
+      const mi = this.multi && p.human && !this.assist ? this.multiIntent(p) : null;
+      if (mi && !!mi.auto !== !!p.auto) this.setAuto(p, !!mi.auto);
+      if (this.controlled(p)) { p.intent = mi || { ...this.humanIntent }; }
       else p.intent = blankIntent();
       // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds. v0.4.7.5: every AI
       // player keeps a Lock-In grade of his own too (aiGrades), so good and bad play move their stamina as well
@@ -887,7 +911,7 @@ export class Game {
   updateAIGrades(dt) {
     if (this.practice) return;
     for (const p of this.players) {
-      if (p.human && !this.assist && !this.multi) continue;
+      if (this.controlled(p) && !this.multi) continue;
       if (!this.aiGrades.has(p.id)) this.aiGrades.set(p.id, new LockedInGrade(this, p.id));
     }
     for (const g of this.aiGrades.values()) {
@@ -970,7 +994,7 @@ export class Game {
   // nothing, so it never closes out for you, and any input of yours takes over at once. No jump: blocks stay yours.
   autoContest(p, it, has) {
     p.contestHand = null;
-    if (has || !p.human || this.assist || p.stance !== 'defense' || this.phase !== 'live' || p.airborne || !this.canAct(p)) { p.autoC = null; return; }
+    if (has || !this.controlled(p) || p.stance !== 'defense' || this.phase !== 'live' || p.airborne || !this.canAct(p)) { p.autoC = null; return; }
     const quiet = Math.hypot(it.mx || 0, it.mz || 0) < AUTO_CONTEST.deadzone && !it.handsUp && !it.handsSide && !it.jump && !it.steal && !it.shoot;
     const h = this.holder(), a = h && h.team !== p.team ? h.action : null;
     const live = a && (a.type === 'shoot' || a.type === 'layup') && !a.released ? a : null;
@@ -1015,7 +1039,7 @@ export class Game {
     // shooting, posting up or jumping ends it there and then (sim/snags.js)
     { const a = p.action; if (a && a.type === 'snag' && !p.airborne && snagCuttable(a) && (it.jump || it.pass || it.shoot === 'press' || it.move || it.post || Math.hypot(it.mx || 0, it.mz || 0) > 0.6)) p.action = null; }
     if (this.phase === 'ft' || this.phase === 'tip' || this.phase === 'dead') return;
-    if (p.human && !this.assist && !has) this.humanScreen(p, it); // (v0.4.8.5: hold B off the ball to set a screen)
+    if (this.controlled(p) && !has) this.humanScreen(p, it); // (v0.4.8.5: hold B off the ball to set a screen)
     // v0.4.5 posting up: backing a defender down near the rim (walking pace). v0.4.7.5: stamina-neutral for both
     if (has && p.speed < 2.2) {
       const rim = this.rimFor(p.team), dr = Math.hypot(rim.x - p.x, rim.z - p.z);
@@ -1024,7 +1048,7 @@ export class Game {
     }
     // v0.4.5 defensive assist (user only): guarding a post-up, the stick is gently pulled toward the spot
     // between the post player and the rim, so you stay attached without perfect positioning
-    if (!has && p.human && !this.assist && p.stance === 'defense') {
+    if (!has && this.controlled(p) && p.stance === 'defense') {
       const h = this.holder();
       if (h && h.team !== p.team && h.posting > 0 && h.dist(p) < 1.9) {
         const rim = this.rimFor(h.team), rx = rim.x - h.x, rz = rim.z - h.z, rl = Math.hypot(rx, rz) || 1;
@@ -1039,10 +1063,10 @@ export class Game {
     else if (p.postUp) { p.postUp = false; p.postDef = -1; }
     if (has) {
       const a = p.action;
-      if (a && a.type === 'shoot' && a.releaseAt == null && (it.shoot === 'release' || (p.human && !this.assist && !it.shootHeld && it.shoot !== 'press'))) a.releaseAt = this.relAt(p, a);
+      if (a && a.type === 'shoot' && a.releaseAt == null && (it.shoot === 'release' || (this.controlled(p) && !it.shootHeld && it.shoot !== 'press'))) a.releaseAt = this.relAt(p, a);
       // v0.4.5 timed layups: every layup is timed. Let go of the button at the top; let go during the gather and
       // it's flipped up early, right off the floor
-      if (a && a.type === 'layup' && !a.released && a.releaseAt == null && !a.untimed && p.human && !this.assist && !it.shootHeld && it.shoot !== 'press') {
+      if (a && a.type === 'layup' && !a.released && a.releaseAt == null && !a.untimed && this.controlled(p) && !it.shootHeld && it.shoot !== 'press') {
         a.releaseAt = this.relAt(p, a); a.timed = true;
       }
       // v0.4.2 bailout: pass out of a jumper any time before the release, on the floor or in the air
@@ -1449,7 +1473,7 @@ export class Game {
     let type = spec.type || 'chest';
     // v0.4.7.5: your passes go to the teammate closest to the direction you're aiming (the left stick, or where
     // you're looking without it): direction first, whoever is open or not. The AI still reads the floor.
-    const aimed = p.human && !this.assist;
+    const aimed = this.controlled(p);
     const pick = () => (aimed ? this.passTargetByDir(p, spec.dir) : this.ai.bestPassTarget(p, spec.dir));
     let target = spec.target != null ? this.players[spec.target] : pick();
     if (!target || target.team !== p.team || target === p) target = pick();
@@ -1458,10 +1482,10 @@ export class Game {
     // rise for the ball. Anyone further out gets a regular lob instead (no more flying in from half court).
     if (type === 'alley' && !this.oopReachable(p, target)) {
       type = 'lob';
-      if (p.human && !this.assist) this.feedMsg('Too far out for an alley-oop: lob pass');
+      if (this.controlled(p)) this.feedMsg('Too far out for an alley-oop: lob pass');
     }
     // (v0.4.8: and no alley-oop before the ball's been taken back: it goes up as a lob)
-    if (type === 'alley' && this.mustClear(p)) { type = 'lob'; if (p.human && !this.assist) this.clearFirst(p); }
+    if (type === 'alley' && this.mustClear(p)) { type = 'lob'; if (this.controlled(p)) this.clearFirst(p); }
     const flick = type === 'chest' && p.speed > 3.5;
     const P = PASS[type] || PASS.chest;
     p.spend(COST.pass); this.endMoveChain(p);
@@ -1578,7 +1602,7 @@ export class Game {
     this.lastPass = { from: p.id, to: target.id, time: this.time };
     p.dribble.used = false;
     if (type === 'alley') this.ai.startOop(target, a.oopTarget, b);
-    if (type === 'alley' && target.human && !this.assist && target.action?.type === 'oop') {
+    if (type === 'alley' && this.controlled(target) && target.action?.type === 'oop') {
       const oa = target.action;
       oa.qte = target.oopQte = { btn: this.rng.int(0, 3), t0: this.time, open: oa.jumpAt * OOP_QTE.open, close: oa.jumpAt + OOP_QTE.grace, result: null, at: null };
       this.emit({ type: 'oopPrompt', player: target.id, btn: oa.qte.btn, open: this.time + oa.qte.open, close: this.time + oa.qte.close });
@@ -1710,14 +1734,14 @@ export class Game {
       // attacks the ball
       const jumper = h && h.action?.type === 'shoot' && h.action.kind !== 'close';
       // v0.4.5: +3.75% positioning reach, and a slight assist for the user so he needn't be pixel-perfect
-      const assist = p.human && !this.assist ? 0.22 * DEF_ASSIST_K : 0;
+      const assist = this.controlled(p) ? 0.22 * DEF_ASSIST_K : 0;
       const maxL = (type === 'block'
         ? (jumper ? 0 : 0.18 + 0.36 * n(p.ratings.block) + pw * (0.26 * n(p.ratings.interior_d) + size * 0.8) + assist)
         : 0.18 + 0.38 * n(p.ratings[b.info && b.info.team === p.team ? 'off_rebound' : 'def_rebound']) + pw * 0.15 * n(p.ratings.interior_d) + assist) * DEF_K;
       const len = Math.min(dl - 0.4, maxL);
       if (len > 0.05) act.lunge = { x: dx / dl * len, z: dz / dl * len };
     }
-    if (p.human && !this.assist) act.steer = true; // gentle mid-air curve toward the ball (see tickAction)
+    if (this.controlled(p)) act.steer = true; // gentle mid-air curve toward the ball (see tickAction)
   }
 
   // ---------- action timeline ----------
@@ -1741,10 +1765,10 @@ export class Game {
           }
         }
         if (!a.released) {
-          if (p.human && !this.assist && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.3) a.releaseAt = a.t - this.lateBy(p);
+          if (this.controlled(p) && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.3) a.releaseAt = a.t - this.lateBy(p);
           if (a.releaseAt != null && a.t >= a.releaseAt) {
             // pump fake: released very early before leaving the floor
-            if (a.releaseAt < Math.min(0.16, a.takeoff * 0.8) && !a.jumped && p.human && !this.assist) {
+            if (a.releaseAt < Math.min(0.16, a.takeoff * 0.8) && !a.jumped && this.controlled(p)) {
               p.action = null; p.startAction('pumpfake', 0.42, {});
               this.emit({ type: 'pumpfake', player: p.id });
               this.ai.reactPumpFake(p);
@@ -1759,11 +1783,33 @@ export class Game {
       }
       case 'layup': {
         if (!a.jumped && a.t >= a.takeoff) {
+          const mvx = p.vx, mvz = p.vz;
           a.jumped = true; p.jump(a.jumpH);
           const rim = this.rimFor(p.team); const dx = rim.x - p.x, dz = rim.z - p.z, dl = Math.hypot(dx, dz) || 1;
           const air = 2 * Math.sqrt(2 * a.jumpH / GRAVITY);
-          const carry = Math.max(0, dl - 1.05) / (air * 0.5);
-          p.vx = dx / dl * Math.min(4.5, carry); p.vz = dz / dl * Math.min(4.5, carry);
+          if (dl < LAYUP_FIN - 0.05) {
+            // v0.4.8.7 qp3: a layup started right under the rim (late, at the end of a drive) would come up underneath it.
+            // He glides on through the way he was going (or straight back out if he'd stopped) and finishes from the
+            // finishing distance on that side, like a reverse
+            const ms = Math.hypot(mvx, mvz), ux = ms > 0.5 ? mvx / ms : -dx / dl, uz = ms > 0.5 ? mvz / ms : -dz / dl;
+            const tx = rim.x + ux * LAYUP_FIN, tz = rim.z + uz * LAYUP_FIN, k = 1 / (air * 0.5);
+            const cl = v => Math.max(-4.5, Math.min(4.5, v));
+            p.vx = cl((tx - p.x) * k); p.vz = cl((tz - p.z) * k);
+            a.finGuard = false;
+          } else {
+            const carry = Math.max(0, dl - 1.05) / (air * 0.5);
+            p.vx = dx / dl * Math.min(4.5, carry); p.vz = dz / dl * Math.min(4.5, carry);
+            a.finGuard = true;
+          }
+        }
+        // v0.4.8.7 qp3: still holding the ball in the air (a late release), his carry no longer takes him in under the rim:
+        // he hangs at the finishing distance (LAYUP_FIN) so the ball still comes out where it can go up and over the front
+        // of the rim, not into its underside
+        if (a.jumped && a.finGuard && !a.released && b.holder === p.id && p.airborne) {
+          const rim = this.rimFor(p.team), rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz) || 1;
+          const inward = -(p.vx * rx + p.vz * rz) / rl;
+          if (rl <= LAYUP_FIN + 0.02 && inward > 0) { p.vx += inward * rx / rl; p.vz += inward * rz / rl; }
+          if (rl < LAYUP_FIN) { p.x = rim.x + rx / rl * LAYUP_FIN; p.z = rim.z + rz / rl * LAYUP_FIN; }
         }
         // v0.4.5: a stronger finisher can push off a defender in his path on the way up (a bump, never a knockdown).
         // v0.4.7.5: Contact Finisher works like Posterizer's push-off on layups: with it even an equal or slightly
@@ -1785,7 +1831,7 @@ export class Game {
         }
         if (!a.released && b.holder === p.id) {
           // you're still holding it past the top: it comes out late
-          const timing = p.human && !this.assist && !a.untimed && a.releaseAt == null;
+          const timing = this.controlled(p) && !a.untimed && a.releaseAt == null;
           if (timing && a.t - this.lateBy(p) > a.release + 0.3) { a.releaseAt = a.t - this.lateBy(p); a.timed = true; }
           // (the ball can't leave before he's off the floor: an early let-go comes out just after the takeoff)
           const at = a.releaseAt != null ? Math.max(a.releaseAt, Math.min(a.release, a.takeoff + 0.06)) : (timing ? Infinity : a.release);
@@ -2069,9 +2115,11 @@ export class Game {
     if (W) this.sharpEyeSave(p, grade, err, W.total);
     const foul = this.checkShootingFoul(p, contest, 'layup');
     const made = !smothered && (sure || this.rng.next() < chance);
-    const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8, guarantee: sure });
+    // (v0.4.8.7 qp3: the layup's softer spin goes into the plan itself, so what it predicts is the flight it gets; and a
+    // green that had to go dead-center with no clean path (ghost) flies through the rim like a green jumper's does)
+    const plan = S.planShot(this.rng, P, rim, side, made, 64, { halfOnly: this.half, surface: b.surface, bank: Math.abs(p.x) > 0.8, guarantee: sure, spinK: 0.5 });
     b.setFlight(P.x, P.y, P.z, plan.vx, plan.vy, plan.vz, 'shot', { shooter: p.id, team: p.team, three: false, type: 'layup', made: plan.made, chance, side, contest, foul, released: this.time, d, oop: !!a.oop });
-    b.wx = plan.wx * 0.5; b.wz = plan.wz * 0.5;
+    b.wx = plan.wx; b.wz = plan.wz; b.ghost = !!plan.ghost;
     b.lastTouch = p.id; b.lastTeam = p.team;
     p.stats.fga++;
     this.lastShot = { shooter: p.id, team: p.team, time: this.time, three: false };
@@ -3623,8 +3671,8 @@ export class Game {
     const a = p.action;
     if (a && a.type === 'ftshot') {
       if (!a.released) {
-        if (p.human && !this.assist && a.releaseAt == null && (p.intent.shoot === 'release' || !p.intent.shootHeld)) a.releaseAt = this.relAt(p, a);
-        if (p.human && !this.assist && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.35) a.releaseAt = a.t - this.lateBy(p);
+        if (this.controlled(p) && a.releaseAt == null && (p.intent.shoot === 'release' || !p.intent.shootHeld)) a.releaseAt = this.relAt(p, a);
+        if (this.controlled(p) && a.releaseAt == null && a.t - this.lateBy(p) > a.tRel + 0.35) a.releaseAt = a.t - this.lateBy(p);
         if (a.releaseAt != null && a.t >= a.releaseAt) {
           a.released = true;
           const W = this.ftWindow(p), win = W.total;

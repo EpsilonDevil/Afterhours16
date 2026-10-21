@@ -2,6 +2,46 @@
 
 ## v0.4.8.7: the server runs the park
 
+### v0.4.8.7 quick patch 5 (Oct 21): auto-play in online Pro-Am
+| Area | Where | Notes |
+|---|---|---|
+| Sim | `sim/game.js` (`isAI` counts a seat on auto; `controlled(p)` replaces every `p.human && !this.assist`; `autoPlays(p)`; `setAuto(p, on)` emits `autoplay`; each human seat's online input read first to set `p.auto`), `sim/ai.js` (`onAuto(g, p)`: the AI plays your player by your own numbers online too), `sim/player.js` (`auto` in `blankIntent`, so on the wire) | rules change in lockstep: moves the port baseline; two simulated screens with a seat toggling auto stay hash-identical |
+| Session | `game/session.js` (H toggles it in online Pro-Am only; `auto: true` input; feed lines; AUTO tag; carry-over via settings.autoPlay), `css/app.css` | other online modes: "Auto-play is only in online Pro-Am" |
+
+Tests: `tests/v0487qp5autoplay.test.mjs`.
+
+### v0.4.8.7 quick patch 4 (Oct 21): watching other players' games; badge tiers
+| Area | Where | Notes |
+|---|---|---|
+| Watching | `server/online.py` (a hosted game's inputs kept for the whole game per seat (`WATCH_LOG_MAX`), so a late arrival gets the full log, who left, then the stream; `lstart`/`lin`/`lstop` relay a player's own game to the park; `rewatch` when the park finishes loading), `game/park.js` (`LocalPub`: your own game's input changes, auto-play and Lock-In grade, a hash every 2 s; `localWatch`/`localStep`: watchers run it as `c.live`, a late arrival catches up then trails ~150 ms; athletes build faster for a waiting watched game), `game/session.js` (your input goes through the publisher) | was: inputs kept only for a hosted game's first 60 s, and a player's own game was never sent; watching costs one game sim (~6–10 ms/s), 0.5–3.3 KB/s |
+| Badge tiers | `ui/online.js` (`entryKey(c)` / `aiSquadKey(ai)` include badge tiers as played, so your entry goes out again on a tier change) | the sim, caps and HUD art were already right |
+
+Tests: `tests/v0487qp4watch.test.mjs`, `tests/test_qp4_watch.py`, `tests/v0487qp4badgetier.test.mjs`.
+
+### v0.4.8.7 quick patch 3 (Oct 21): green layups go in
+| Area | Where | Notes |
+|---|---|---|
+| Positioning | `sim/game.js` (`LAYUP_FIN` 0.95 m: while the ball is held in the air the shooter's carry stops there; a takeoff under the rim glides through to it on the far side) | rules change: moves the port baseline |
+| Planning | `sim/ball.js` `predictShot` (`under`: rim touched before the ball was ever over the rim's plane), `sim/shots.js` `planShot` (never a make off the underside; `spinK`; a steeper last aim from close in), `sim/game.js` `releaseLayup` (plans with `spinK: 0.5`, sets `b.ghost`) | before: 121 of 864 green layups missed in a sweep (0.2–2.6 m, 2–6.5 m/s, release timings); after: 960 of 960 in |
+
+Tests: `tests/v0487layupfinish.test.mjs`; `tests/sim.test.mjs` pass completion over 4 games, not 2 (same 95% bar; 24-seed completion 97.6% vs 98.1% before).
+
+### v0.4.8.7 quick patch 2 (Oct 21): real players kept off games in progress
+| Area | Where | Notes |
+|---|---|---|
+| Roam | `game/park.js` (`gameOn(c)`: c.session (DirCourt included), c.live or realBusy; `keepOffCourts(p, px, pz, dt)` after the solids in the roam update: courtPlayRect edge is a wall walking in; already inside: eased to the nearest edge at 3 m/s, never deeper; myCourt exempt) | a court you only have next on stays open (c.mine isn't a game); peers follow their own clients' positions, so every screen agrees |
+
+Tests: `tests/v0487courtkeepout.test.mjs`.
+
+### v0.4.8.7 quick patch 1 (Oct 21): Lockdown badges
+| Area | Where | Notes |
+|---|---|---|
+| Caps | `server/builds.py` + `client/js/sim/builds.js` (lockdown row: Deadeye, Catch & Shoot, Corner Specialist 2; Rebound Chaser 4; new `ARCH_HEIGHT_FREE`: Chasedown and Brick Wall free of the height limits at every band, Rim Protector from medium, Pick Pocket at giant) | HOF capacity by band 5/7/7/6/6 (was 5/7/8/8/7); cap breakers 25 at every height; rules change: AI lockdowns change, moves the port baseline |
+| Existing builds | `server/progression.py` `sync_badges` (tiers above the cap lowered on load, progress kept, returns `lowered`), `_raise_badges` (cap breakers only while earned < hof_count × 5), `client/js/main.js` (the load toast says what was lowered) | earned cap breakers and an unlocked Icon badge kept |
+
+Tests: `tests/test_v0487_lockdown.py`; `tests/test_v0485.py` and `tests/test_v0487_hof.py` use a 6'2" Sharpshooter for the eight-HOF case; `tests/v0485clamp.test.mjs` plays a fourth seed (same ≥ 8 steals bar).
+
+
 Player-facing list: `PATCH_NOTES_v0.4.8.7.docx` (source `PATCH_NOTES_v0.4.8.7.md`).
 
 | Area | Files | Notes |

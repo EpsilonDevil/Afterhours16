@@ -101,9 +101,10 @@ class SyncTests(unittest.TestCase):
         progression.sync_badges(giant)
         self.assertEqual(giant["badges"]["handles_for_days"]["tier"], 2)
         # seven Hall of Fame badges already: v0.4.8.7, the eighth goes to Hall of Fame too (there's no limit any more:
-        # a 6'8" lockdown can take eight badges to Hall of Fame, and ICON status needs all eight)
-        full = {b: {"progress": 9999, "tier": 4} for b in ("catch_shoot", "corner_specialist", "pick_pocket", "interceptor", "rim_protector", "chasedown", "brick_wall")}
-        ch = char_for("lockdown", height=80, games=200, badges={**full, "handles_for_days": {"progress": 150, "tier": 3}})
+        # a 6'2" sharpshooter can take eight badges to Hall of Fame, and ICON status needs all eight; v0.4.8.7: this was a
+        # 6'8" lockdown until its shooting badges stopped at Silver)
+        full = {b: {"progress": 9999, "tier": 4} for b in ("deadeye", "catch_shoot", "corner_specialist", "limitless", "green_machine", "clutch", "pick_pocket")}
+        ch = char_for("sharpshooter", height=72, games=200, badges={**full, "handles_for_days": {"progress": 150, "tier": 3}})
         ch["badges_v0485"] = True
         self.assertEqual(builds.hof_capacity(ch), 8)
         self.assertEqual(builds.hof_count(ch), 7)

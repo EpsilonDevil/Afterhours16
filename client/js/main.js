@@ -121,6 +121,8 @@ function noteBadgeUpdates(app) {
   // (one line per build: the toast shows one message at a time)
   ups.forEach((u, k) => setTimeout(() => {
     const parts = (u.upgraded || []).map(b => `${b.name} is now ${names[b.tier] || 'up'}`);
+    // (v0.4.8.7: a badge above its build's cap now, like a Lockdown's shooting badges, which stop at Silver)
+    (u.lowered || []).forEach(b => parts.push(`${b.name} is now ${names[b.tier] || 'lower'} (the most this build can reach)`));
     if (u.icon_unlocked) parts.push(`Icon badge unlocked: ${app.config.icon_badges?.[u.icon_unlocked]?.name || u.icon_unlocked}`);
     if (u.cap_breakers_awarded) parts.push(`+${u.cap_breakers_awarded} cap breakers`);
     if (parts.length) toast(`${u.name}: ${parts.join(' · ')}`, 'good');

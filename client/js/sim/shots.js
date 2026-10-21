@@ -523,7 +523,8 @@ export function planShot(rng, P, rim, side, make, arc, opts = {}) {
     // backspin about axis perpendicular to travel in horizontal plane
     const hx = L.vx, hz = L.vz, hl = Math.hypot(hx, hz) || 1;
     b.wx = -hz / hl * 0; b.wz = 0; b.wy = 0;
-    b.wx = (hz / hl) * -14; b.wz = (hx / hl) * 14; // backspin
+    const spin = 14 * (opts.spinK ?? 1); // (v0.4.8.7 qp3: the spin the flight will really have, so the prediction is the flight)
+    b.wx = (hz / hl) * -spin; b.wz = (hx / hl) * spin; // backspin
     b.mode = 'flight'; b.touchedRim = false; b.touchedBoard = false; b.floorBounces = 0;
     const r = predictShot(b, 4);
     return { r, vel: { vx: b.vx, vy: b.vy, vz: b.vz, wx: b.wx, wy: b.wy, wz: b.wz } };
@@ -553,13 +554,14 @@ export function planShot(rng, P, rim, side, make, arc, opts = {}) {
     for (const arcUse of arcs) {
       for (const [ox, oz, oy] of tries) {
         const res = tryAim(ox, oz, oy, arcUse);
-        if (res.r.made) return { ...res.vel, made: true, bank: oy > 0, rim: res.r.rim };
+        if (res.r.made && !res.r.under) return { ...res.vel, made: true, bank: oy > 0, rim: res.r.rim }; // (qp3: never a make off the rim's underside)
       }
     }
-    const res = tryAim(0, 0, 0);
+    // (qp3: a steeper aim first: from close in under the rim's front a high soft one still drops in clean)
+    const res = tryAim(0, 0, 0, fl < 1.6 ? arc + 20 : arc);
     // a green must go in: if no clean physical solution was found, send it dead-center and let it drop
-    if (!res.r.made && opts.guarantee) return { ...res.vel, made: true, ghost: true, rim: false };
-    return { ...res.vel, made: res.r.made, rim: res.r.rim };
+    if ((!res.r.made || res.r.under) && opts.guarantee) return { ...res.vel, made: true, ghost: true, rim: false };
+    return { ...res.vel, made: res.r.made && !res.r.under, rim: res.r.rim };
   }
   // miss: choose a style
   for (let k = 0; k < 14; k++) {

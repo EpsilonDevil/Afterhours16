@@ -90,12 +90,11 @@ export async function initOnline(app) {
   setInterval(() => {
     if (!net.connected) { lastChar = null; lastAI = null; return; }
     net.where(whereNow(app));
-    // (another player picked, or a new look: the people where you are see you with it)
-    const c = app.char(), key = c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null;
+    // (another player picked, or a new look: the people where you are see you with it; entryKey)
+    const key = entryKey(app.char());
     if (key !== lastChar) { lastChar = key; net.sendEntry(); }
-    // (your AI squad mates: they walk with you on everyone's screen and run in your online squad)
-    // (v0.4.8.5 qp7: and what they wear: one who unlocks his Icon badge or puts on a prize is sent again)
-    const ai = myAISquad(app), aiKey = ai.map(a => `${a.id}:${a.entry.build.overall}:${a.entry.build.icon_badge || ''}:${Object.values(a.entry.build.equipment || {}).join('.')}`).join(',');
+    // (your AI squad mates: they walk with you on everyone's screen and run in your online squad; aiSquadKey)
+    const ai = myAISquad(app), aiKey = aiSquadKey(ai);
     if (aiKey !== lastAI) { lastAI = aiKey; net.send({ t: 'aisquad', members: ai }); }
   }, 1000);
   // where you're walking, for the others at the same park or HQ to see you there (5 times a second)
@@ -126,6 +125,15 @@ export function rttReport(net) {
 }
 // (straight away, when you arrive somewhere: the others see you, and you them, without waiting for the next second)
 export function touchWhere(app) { const net = app.net; if (net?.connected) net.where(whereNow(app)); }
+
+// what your entry is sent again for, once a second when it changes: another player picked, a new look (equipment),
+// overall, Pro-Am RP, boosts, Icon status. v0.4.8.7 qp4: and the badge tiers, as the build plays them (capped). The
+// others' copy of your entry is what a game one of them sets up plays you with, on every screen yours included: without
+// them here a badge that went up a tier in your last game played (and popped up) at its old tier in the next one
+export const entryKey = c => (c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(badgeTiers(c))}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null);
+// your AI squad mates', the same way (v0.4.8.5 qp7: one who unlocks his Icon badge or puts on a prize; qp4: or whose
+// badges change tier)
+export const aiSquadKey = ai => ai.map(a => `${a.id}:${a.entry.build.overall}:${a.entry.build.icon_badge || ''}:${Object.values(a.entry.build.equipment || {}).join('.')}:${JSON.stringify(a.entry.badges || {})}`).join(',');
 
 // your player as he goes into an online game: the same entry on every screen (so it plays the same everywhere)
 export function myEntry(app) {

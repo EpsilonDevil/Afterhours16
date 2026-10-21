@@ -43,6 +43,8 @@ MAX_FRIENDS = 100
 MAX_AI_SQUAD = 4       # (a player's own AI squad: four friends from his game's world)
 MAX_BATCH = 64        # (ticks of input in one message: a frame after a hitch can send several)
 WATCH_EVERY = 0.1     # watchers get a game's inputs in bundles, ten times a second (they play a moment behind)
+WATCH_LOG_MAX = 2_000_000  # (v0.4.8.7 qp4: a game's inputs kept for late watchers, in ticks across its seats: hours of game)
+LOCAL_BATCH = 600     # (v0.4.8.7 qp4: ticks in one message of a player's own game shown to the others: a hidden tab's catch-up)
 # v0.4.8.7: what each real player of a hosted game reported at its end (and its last scores and state hashes), kept for
 # the service's results check (app.py hosted_verdict): 15 minutes after the game, never more than RESULT_MAX at once
 RESULT_TTL = 900
@@ -371,6 +373,9 @@ class Hub:
         self.results = {}    # game id -> {"game", "run", "slots", "started", "ended", "reports", "scores", "hashes", "left"}
         self.results_cv = threading.Condition(self.lock)  # (signalled when a player reports, leaves, or the game ends)
         self.run_id = secrets.token_hex(6)
+        # v0.4.8.7 qp4: the games real players play on their own screens at a park (against the AI, nobody else in them), shown
+        # to everyone else there: aid -> {aid, where, court, setup, k0, b (every tick's input change so far)}
+        self.lgames = {}
         # v0.4.8.7: the online server runs the park (parkdir.py, RIMRIFT_PARK_DIRECTOR, on by default): no park host then (pop, host)
         self.parks = parkdir.ParkDirector(self, auto=True) if parkdir.enabled() else None
 
@@ -489,6 +494,7 @@ class Hub:
         conn.info["arrived"] = self.arrivals
         if old:
             self.send_to([c.aid for c in self.at(old)], {"t": "gone", "id": conn.aid, "place": old})
+            self.local_stop(conn)  # (v0.4.8.7 qp4: his own game there, if one was on, is gone from the others' screens)
             self.release_place(conn.aid, old)
             if self.parks:
                 self.parks.leave(conn.aid, old)  # (v0.4.8.7: the park director's: he's gone)
@@ -734,7 +740,7 @@ class Hub:
         gid = self.game_seq
         setup["game"] = gid
         g = {"id": gid, "where": place, "court": ci, "slots": slots, "players": set(slots), "last": {}, "setup": setup, "started": time.time(),
-             "log": [], "wbuf": [], "wsent": 0.0, "score": None, "names": [self.name_of(a) for a in slots],
+             "log": {}, "wbuf": [], "wsent": 0.0, "score": None, "names": [self.name_of(a) for a in slots],
              "teams": setup.get("sideIds") if isinstance(setup.get("sideIds"), list) else None}
         self.games[gid] = g
         self.results[gid] = {"game": gid, "run": self.run_id, "slots": dict(slots), "started": g["started"], "ended": None,
@@ -760,10 +766,50 @@ class Hub:
         return [{"game": g["id"], "court": g["court"], "names": g["names"], "score": g["score"]} for g in self.games.values() if g["where"] == place]
 
     def offer_watch(self, conn, place):
-        """Arriving where a game is on: the game so far (its first minute is kept for this), or just its score."""
+        """Arriving where a game is on: the game so far (v0.4.8.7 qp4: all of it: each seat's inputs, then who has left
+        it), or just its score. The watcher's screen plays it through quickly up to the present (session.js)."""
         for g in self.games.values():
             if g["where"] == place and conn.aid not in g["players"] and g["log"] is not None:
-                conn.send({"t": "watch", "setup": g["setup"], "log": g["log"]})
+                conn.send({"t": "watch", "setup": g["setup"], "log": [[s, run[0], run[1]] for s, run in g["log"].items()]})
+                for m in g.get("lefts", []):
+                    conn.send(m)
+        for lg in self.lgames.values():  # (and a player's own game, played on his screen and shown to the others here)
+            if lg["where"] == place and lg["aid"] != conn.aid:
+                conn.send({"t": "lwatch", "from": lg["aid"], "setup": lg["setup"], "k": lg["k0"], "b": lg["b"]})
+
+    # ---- v0.4.8.7 qp4: a player's own game, shown to the others at the park ----
+    # A game a real player plays on his own screen (alone at the park when it started: the AI with him and against him) is
+    # his game's to run, as always; it goes out to everyone else there the way a hosted game goes to its watchers: its
+    # setup once (lstart), then its input changes a tick at a time in bundles (lin, ten a second, a byte or two a tick:
+    # with them every screen plays the same game: game/park.js LocalWatch), and its end (lstop). Kept whole for whoever
+    # arrives while it's on. Nothing in it counts for anything here: his result goes through /api/matches as always.
+    def local_start(self, conn, msg):
+        place, setup = conn.info.get("park"), msg.get("setup")
+        if not parkdir.is_park(place) or conn.game or not isinstance(setup, dict) or not isinstance(setup.get("court"), int) or not 0 <= setup["court"] < 16:
+            return
+        if len(json.dumps(setup)) > MAX_MESSAGE:
+            return
+        self.local_stop(conn)
+        self.lgames[conn.aid] = lg = {"aid": conn.aid, "where": place, "court": setup["court"], "setup": setup, "k0": 1, "b": []}
+        self.send_to([c.aid for c in self.at(place, skip=conn.aid)], {"t": "lwatch", "from": conn.aid, "setup": setup, "k": lg["k0"], "b": []})
+
+    def local_in(self, conn, msg):
+        lg = self.lgames.get(conn.aid)
+        k, b = msg.get("k"), msg.get("b")
+        if not lg or lg["where"] != conn.info.get("park") or not isinstance(k, int) or isinstance(k, bool) or not isinstance(b, list) or not 0 < len(b) <= LOCAL_BATCH:
+            return
+        if k != lg["k0"] + len(lg["b"]) or not all(x == 0 or isinstance(x, dict) for x in b):
+            return  # (every tick once, in order)
+        if len(lg["b"]) + len(b) <= WATCH_LOG_MAX:
+            lg["b"].extend(b)
+        else:
+            lg["k0"], lg["b"] = k + len(b), []  # (hours in: nobody new picks it up from the start any more)
+        self.send_to([c.aid for c in self.at(lg["where"], skip=conn.aid)], {"t": "lin", "from": conn.aid, "k": k, "b": b})
+
+    def local_stop(self, conn, msg=None):
+        lg = self.lgames.pop(conn.aid, None)
+        if lg:
+            self.send_to([c.aid for c in self.at(lg["where"], skip=conn.aid)], {"t": "lstop", "from": conn.aid})
 
     def relay(self, conn, msg):
         """A player's inputs: b holds one entry per tick from tick k on (each one the change from the tick before it,
@@ -787,10 +833,17 @@ class Hub:
                     c.send_frame(fr)
         rec = [s, k, b]
         if g["log"] is not None:
-            if time.time() - g["started"] < 60:
-                g["log"].append(rec)
-            else:
-                g["log"] = None  # (past a minute in, late arrivals see the score instead of the game)
+            # (v0.4.8.7 qp4: the whole game, for whoever comes along while it's on: each seat's inputs as one run from its
+            # first tick, a byte or two a tick. It used to be the first minute only: anyone arriving later saw an empty
+            # court until the game was over)
+            run = g["log"].get(s)
+            if run is None:
+                g["log"][s] = [k, list(b)]
+            elif run[0] + len(run[1]) == k:
+                run[1].extend(b)
+            g["logn"] = g.get("logn", 0) + len(b)
+            if g["logn"] > WATCH_LOG_MAX:
+                g["log"] = None  # (a game hours long: late arrivals see the score)
         if g["where"]:
             g["wbuf"].append(rec)
             now = time.monotonic()
@@ -822,6 +875,7 @@ class Hub:
             rec["left"].append(conn.aid)  # (v0.4.8.7: nobody waits for his result now)
             self.results_cv.notify_all()
         msg = {"t": "left", "slot": slot, "last": g["last"].get(conn.aid, 0), "id": conn.aid, "reason": reason, "g": g["id"]}
+        g.setdefault("lefts", []).append(msg)  # (v0.4.8.7 qp4: for whoever starts watching later)
         self.send_to(set(g["players"]) | ({c.aid for c in self.at(g["where"])} if g["where"] else set()), msg, skip=conn.aid)
         if not g["players"]:
             self.finish(g, [])
@@ -1203,6 +1257,17 @@ class Hub:
                     self.send_to([c.aid for c in self.at(place, skip=conn.aid)], out)
             elif t == "emote":
                 self.emote(conn, msg)
+            elif t == "rewatch":  # (v0.4.8.7 qp4: the park just loaded on his screen: the games on here, again)
+                place = conn.info.get("park")
+                if place and time.monotonic() - conn.info.get("rewatch_at", 0) > 2:
+                    conn.info["rewatch_at"] = time.monotonic()
+                    self.offer_watch(conn, place)
+            elif t == "lstart":  # (v0.4.8.7 qp4: a player's own game at the park, for the others there to see)
+                self.local_start(conn, msg)
+            elif t == "lin":
+                self.local_in(conn, msg)
+            elif t == "lstop":
+                self.local_stop(conn)
             elif t in ("pact", "pcheck", "pwant", "presume"):  # (v0.4.8.7: the park director's; ignored with it off)
                 if self.parks:
                     self.parks.handle(conn, msg)

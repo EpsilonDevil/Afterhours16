@@ -5,6 +5,11 @@
 Full list in `PATCH_NOTES_v0.4.8.7.docx`.
 - **One park online:** the online server keeps every park's time and order of events, and every player's game works the park out from them, so friends see the same courts, games, lines, ICON Squad and park-goers. No player hosts the park any more (no handover jumps, less work per PC). `RIMRIFT_PARK_DIRECTOR=0` on the server restores v0.4.8.6's host mode.
 - **Results checked:** online park and Pro-Am results must match the other players' before anything pays; a mismatch voids the game for everyone in it and returns the ante. Offline and solo play are unchanged.
+- **Quick patch 1:** Lockdowns' Hall of Fame badges are defensive: Deadeye, Catch & Shoot and Corner Specialist stop at Silver; Rebound Chaser reaches Hall of Fame, Chasedown and Brick Wall at every height, Rim Protector from 6'3" and Pick Pocket at 7'1"+. Lockdowns above the new caps are lowered to Silver on load (progress, earned cap breakers and an unlocked Icon badge kept).
+- **Quick patch 2:** real players can't walk onto a court with a game in progress (an edge you stop at; anyone already on it when the game starts is walked off to the nearest sideline), like the park-goers.
+- **Quick patch 3:** green layups go in: the shooter stays at the finishing distance while he has the ball (no drifting under the rim on a late one), shot planning never counts the rim's underside as a make and plans with the layup's real spin, and a green with no clean path goes through like a green jumper.
+- **Quick patch 4:** everyone at a park sees other players' games in progress, with their models (late arrivals catch up; a player's own game is shown too); activated badges show the tier you really have (your badges go out online as soon as a tier changes).
+- **Quick patch 5:** auto-play (H) in online Pro-Am, per seat, the same on every screen (AUTO by your name); still off in other online games.
 
 ## New in v0.4.8.6: the RIMRIFT identity
 

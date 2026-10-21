@@ -38,6 +38,7 @@ export class Player {
     // (v0.4.7.5 quick patch: shooters and non-shooters have different green windows, shots.js isShooterArch)
     this.archetype = entry.build.archetype || ({ outside: 'sharpshooter', inside: 'slasher', balanced: 'two_way' }[entry.build.style]) || null;
     this.human = !!entry.human;
+    this.auto = false; // (v0.4.8.7 qp5: online, his seat on auto-play: Game.setAuto, from his inputs)
     // v0.4.5: `raw` is the build as shown in menus; `ratings` is what the sim plays with (the no-badge
     // penalty, Icon badge and takeover boosts applied). Gating checks (can he dunk at all) use raw.
     this.raw = { ...entry.build.attributes };
@@ -217,7 +218,7 @@ export class Player {
 }
 
 export function blankIntent() {
-  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null, post: false, postMove: null, postShot: null, postStick: null, forceDunk: false, forceLayup: false }; // (v0.4.8.7 qp7: the attack bind's forced dunk, the shoot button's forced layup on a drive)
+  return { mx: 0, mz: 0, sprint: false, defense: false, handsUp: false, face: null, stickFace: false, shoot: null, shootHeld: false, pass: null, move: null, steal: false, jump: false, call: false, screen: false, lob: false, pumpFake: false, celebrate: null, stealDir: null, stealLow: false, handsSide: null, post: false, postMove: null, postShot: null, postStick: null, forceDunk: false, forceLayup: false, auto: false }; // (v0.4.8.7 qp7: the attack bind's forced dunk, the shoot button's forced layup on a drive; qp5: auto, his seat on auto-play, online)
 }
 
 // Local (player-facing) → world offset

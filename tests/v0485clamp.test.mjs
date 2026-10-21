@@ -142,7 +142,8 @@ test('in games: every steal the holder makes shows a Clamp animation, nobody els
     return { log, miss, other };
   };
   let kinds = new Set(), anims = new Set(), steals = 0;
-  for (const seed of [21, 33, 47]) {
+  // (v0.4.8.7: a fourth seed, since the Lockdown's new badge caps (shooting at Silver) change how these games play out)
+  for (const seed of [21, 33, 47, 59]) {
     const r = play('the_clamp', seed);
     assert.deepEqual(r.miss, [], `seed ${seed}: steals without a Clamp animation: ${r.miss.join(', ')}`);
     assert.equal(r.other, 0);
