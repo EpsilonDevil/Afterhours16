@@ -25,6 +25,9 @@ import { BOUNTY_MIN, bountyFor, worldNow } from '../sim/world.js';
 import { myEntry, personOf, setupEntry, seatPeople, inputDelay, newSeed, crewMatesIn, reportCrewXP, squadAIPlayers } from '../ui/online.js';
 import { endWinStreak } from './iconfx.js';
 import { MAX_ICONS_PER_AI_TEAM, isIconEntry } from '../sim/iconsquad.js';
+import { ParkLink } from './parklink.js';
+import { validAI, stepCost, TICK_UNITS } from './parkdirector.js';
+import { WORLD_CLOCK } from '../sim/world.js';
 
 // v0.4.8.6 the ICON Squad: after their hour, the three don't drift back in one by one for a while (they just walked out);
 // their team on the scoreboard, the ticker and the court cards
@@ -92,7 +95,7 @@ export class Walker {
     if (T) {
       if (this.visual.pending) { p.setPos(T.x, T.z, T.f); return; }
       const dx = T.x - p.x, dz = T.z - p.z, d = Math.hypot(dx, dz);
-      if (d > 6) p.setPos(T.x, T.z, T.f);
+      if (d > (T.nj ? 22 : 6)) p.setPos(T.x, T.z, T.f); // (nj: one of the ICON Squad falling in behind his leader runs over)
       else if (d > 0.12) { const k = Math.min(1, Math.max(0.15, (T.m || 0) + (d - 0.4) * 0.6)); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = !!T.s && d > 0.4; } // (his pace there, a touch quicker to catch up)
       else it.face = T.f;
       p.move(dt * GAME_SPEED, false, 0); p.stamina = 1;
@@ -370,6 +373,40 @@ function pushOut(p, b) {
   if (m === dl) p.x = b.x0 - r; else if (m === dr) p.x = b.x1 + r; else if (m === dn) p.z = b.z0 - r; else p.z = b.z1 + r;
 }
 
+// v0.4.8.7 a court's game in the director's park (ParkHub.dirCourts): the director's own game (parkdirector.js CourtRunner,
+// stepped by game/parklink.js), drawn by a background MatchSession only while the court can be seen (no athletes built for a
+// court nobody's looking at: they go back to the pool 4 s after it's out of sight). It stands in for c.session: game, opts
+// (rosters, teams, seed), teams, lastEvents for the spectators
+class DirCourt {
+  constructor(hub, c, run, g) {
+    this.dir = true; this.hub = hub; this.c = c; this.run = run; this.game = run.game; this.seed = g.seed;
+    const team = (u, d0) => (u ? { ...ICON_TEAM } : d0);
+    this.teams = [team(g.tm?.[0], { name: 'Kings', abbr: 'KNG', color: '#ffd84a' }), team(g.tm?.[1], { name: 'Challengers', abbr: 'CHL', color: '#ff5a36' })];
+    this.opts = { rosters: run.entries.map(r => r.map(e => ({ ...e, look: e.look || resolveLook(e.build, hub.catalog) }))), teams: this.teams, seed: g.seed };
+    this.view = null; this.hidT = 0; this.rate = 1; this.lastEvents = null;
+  }
+  get ended() { return !!this.game.over; }
+  frame(dt) {
+    const hub = this.hub, run = this.run;
+    if (hub.courtSeen(this.c) && run.u >= hub.link.dir.k * TICK_UNITS) this.hidT = 0; else this.hidT += dt; // (a game still replaying to the present: not yet)
+    if (!this.view && this.hidT === 0) {
+      const v = this.view = new MatchSession(hub.app, { background: true, hub: true, pool: hub.pool, mode: 'park', full: !!this.c.full, scene: hub.scene, venue: hub.venue, court: this.c, rosters: this.opts.rosters, teams: this.teams, seed: this.seed, target: 11, difficulty: 0.6, assist: true });
+      v.game = this.game; v.game.teamsMeta = this.teams; // (its players drawn from the director's game: the same rosters, the same order)
+      v.animDt = (o, d0, x, z, r) => hub.animDt(o, d0, x, z, r);
+      run.keep = true; run.events.length = 0;
+    } else if (this.view && this.hidT > 4) { this.view.dispose(); this.view = null; run.keep = false; run.events.length = 0; }
+    const evs = run.keep ? run.take() : [];
+    this.lastEvents = evs.length ? evs : null;
+    const v = this.view;
+    if (!v) return;
+    v.backgroundEvents(evs); v.frameEvents = evs;
+    v.acc = DT * hub.link.alpha(run);
+    this.rate = 6 / stepCost(this.game); // (the pace it's played at: animated at its own pace)
+    v.render(dt * this.rate);
+  }
+  dispose() { if (this.view) this.view.dispose(); this.view = null; this.run.keep = false; this.disposed = true; }
+}
+
 export class ParkHub {
   constructor(app, themeId, ui) {
     this.app = app; this.r = app.renderer; this.ui = ui;
@@ -432,6 +469,7 @@ export class ParkHub {
     audio.setCrowd(0.1); audio.setIndoor(false);
     audio.surface = 'asphalt';
     this.r.prewarm(this.scene); // v0.4.5 stage 7: compile every shader the park needs while it loads
+    this.dirListen(); // (v0.4.8.7: online with the park director on, the server's park: dirSync)
   }
 
   // v0.4.5: nearest point outside every solid (with room to stand)
@@ -620,6 +658,7 @@ export class ParkHub {
   stays(e, t = Date.now()) {
     const id = e?.aiId;
     if (!id) return true;
+    if (this.dirOn()) { const d = this.link.dir; return d.stays(id, d.tl(d.k)); }
     const sq = this.world.squadOf?.(id, t);
     if (sq) return sq.park === this.themeId;
     if (this.icon?.formed && this.iconIds(t).has(id)) return false;
@@ -627,6 +666,7 @@ export class ParkHub {
   }
   // online at this park and not already doing something here (v0.4.8.6: and never one of the ICON Squad on his own)
   availableHere(t = Date.now()) {
+    if (this.dirOn()) { const d = this.link.dir, mine = new Set([...this.world.squad, ...this.dirHold.keys(), ...this.busyIds()]); return d.availableHere(d.tl(d.k)).filter(id => !mine.has(id)); } // (v0.4.8.7: the director's, less what you've just taken)
     const busy = this.busyIds(), squad = new Set(this.world.squad), icon = this.iconIds(t), theirs = this.peerAIIds();
     const ids = this.world.onlineAt(this.themeId, t);
     return ids.filter(id => !busy.has(id) && !squad.has(id) && !icon.has(id) && !theirs.has(id));
@@ -647,7 +687,7 @@ export class ParkHub {
     for (const id of ids) { if (out.length >= n) break; if (fits(this.world.entry(id, t))) out.push(this.entryFor(id)); }
     for (const w of free) { if (out.length >= n) break; if (fits(w.entry)) { out.push(w.entry); used.push(w); } }
     if (out.length < n) {
-      const ex2 = new Set([...ex, ...this.busyIds(), ...out.map(e => e.aiId), ...this.world.squad, ...this.iconIds(t)]);
+      const ex2 = new Set([...ex, ...this.busyIds(), ...out.map(e => e.aiId), ...this.world.squad, ...this.iconIds(t), ...(this.dirOn() ? this.link.dir.busy() : [])]);
       for (const id of this.world.closestOffline(this.themeId, n - out.length + MAX_ICONS_PER_AI_TEAM + 1, t, ex2)) { if (out.length >= n) break; if (fits(this.world.entry(id, t))) { hop.push(id); out.push(this.entryFor(id)); } }
     }
     if (out.length < n) return null;
@@ -694,6 +734,7 @@ export class ParkHub {
       this.walkers.push(w);
       if (!initial) { const from = this.world.status(id)?.park; this.ui.toast(`${w.entry.name} is on his way${from && from !== this.themeId ? ' over from ' + (parkInfo(from)?.park || 'another park') : ''}.`); }
     });
+    this.dirSquad(active); // (v0.4.8.7: the director's park keeps them out of everyone's games: they're with you)
   }
   // the social phone's park list: everyone online at this park, with what they're up to
   parkList() {
@@ -722,6 +763,7 @@ export class ParkHub {
   }
 
   newBackgroundGame(c, kings, force = false) {
+    if (this.dirOn()) return; // (v0.4.8.7: the park director decides what's played on its courts)
     if (c.session) { c.session.dispose(); c.session = null; }
     // (v0.4.7.5 qp3 online: real people hold this court, a game or kings between games: no AI game of ours on it)
     if (!force && (this.realHeld(c) || c.live)) { this.unitOff(c, kings); c.kings = null; c.kingsStreak = 0; return; }
@@ -778,6 +820,7 @@ export class ParkHub {
   // the squad's ids while their hour runs here and for a while after it (nobody takes one of them on his own; their
   // hour just begun and not ticked yet: theirs too)
   iconIds(t = Date.now()) {
+    if (this.dirOn()) { const d = this.link.dir; return d.iconIds(d.tl(d.k)); }
     const u = this.icon, sq = this.world.iconSquad?.(t), cool = !!u && t < (u.over || u.end) + ICON_COOL;
     if (sq && sq.park === this.themeId && u?.k !== sq.k) return new Set([...sq.ids, ...(cool ? u.ids : [])]);
     return cool ? u.ids : NO_IDS;
@@ -803,6 +846,7 @@ export class ParkHub {
   }
   // every couple of seconds (and as courts turn over): their hour starting, where they are, their hour ending
   squadTick(t = Date.now(), initial = false) {
+    if (this.dirOn()) return; // (v0.4.8.7: the director's ICON Squad)
     const sq = this.world.iconSquad?.(t) || null, u = this.icon;
     if (u && !u.over && sq?.k !== u.k) this.unitDone(u, t);
     if (!sq) return;
@@ -883,7 +927,7 @@ export class ParkHub {
   // it he's a regular again. → everyone else, for the usual walk-off
   unitOff(c, entries, at = null) {
     const u = this.icon, es = entries || [];
-    if (!u || !es.length) return es;
+    if (!u || !es.length || this.dirOn()) return es; // (v0.4.8.7: with the director the squad goes as one there: dirFree)
     const mine = es.filter(e => e?.aiId && u.ids.has(e.aiId)), live = this.iconLive();
     if (!mine.length) return es;
     if (mine.length === 3 && u.formed) {
@@ -919,8 +963,10 @@ export class ParkHub {
     this.venue.update(dt);
     this.venue.practice.hoop.update(dt, this.practice ? null : null);
     // background courts
-    const mirror = this.mirroring(); // (v0.4.8.7: the park's host runs its people; here they're played as he has them)
+    const dir = this.dirFrame(dt); // (v0.4.8.7: the park director runs the park, the same on every screen here)
+    const mirror = !dir && this.mirroring(); // (v0.4.8.7 qp7, the director off: the park's host runs its people; here they're played as he has them)
     for (const c of this.courts) {
+      if (c.session?.dir) { c.session.frame(dt); if (c.live) { c.live.frame(dt); if ((c.live.ended && c.live.endT > 2.5) || (c.liveEndAt && performance.now() - c.liveEndAt > 6000)) this.dropWatch(c); } continue; }
       if (c.session && mirror) { this.mirrorCourt(c, dt); continue; }
       if (c.session) {
         c.session.rate = this.courtRate(c);
@@ -953,8 +999,8 @@ export class ParkHub {
     // (v0.4.8.7: online with others here, the park's host decides who comes and goes, and the ICON Squad's moves; the
     // rest of you play his park: popTick)
     if (this.world !== this.app.ai) this.rebaseWorld();
-    if (this.popT <= 0) { this.popT = 20; if (mirror) this.syncSquad(); else this.populationTick(); }
-    if ((this.iconT -= dt) <= 0) { this.iconT = 2; if (!mirror) this.squadTick(); } // (v0.4.8.6 the ICON Squad: their hour, and where they are)
+    if (this.popT <= 0) { this.popT = 20; if (mirror || dir) this.syncSquad(); else this.populationTick(); }
+    if ((this.iconT -= dt) <= 0) { this.iconT = 2; if (!mirror && !dir) this.squadTick(); } // (v0.4.8.6 the ICON Squad: their hour, and where they are)
     this.popTick(dt);
     if (this.mode !== 'roam' && this.overview) this.setOverview(false);
     if (this.mode === 'roam') this.roam(dt);
@@ -1202,6 +1248,7 @@ export class ParkHub {
       this.markFull(c, l);
       if (!l.ready && this.nextLine(c)?.l === l && l.members.every(w => w.state === 'queued')) {
         l.ready = true; l.readyAt = performance.now(); this.ui.toast('Squad is ready. You run next!');
+        this.dirPact('ready', { c: this.courts.indexOf(c) }); // (v0.4.8.7: the director wraps the game on it up for you)
         // v0.4.4: an empty court (quiet hours): the squad on the other spot, or whoever's around, runs against you
         if (!c.session && !c.live && this.canStart(c)) this.startNext(c);
       }
@@ -1212,6 +1259,7 @@ export class ParkHub {
         if (i < 0) i = l.members.length - 1;
         const [w] = l.members.splice(i, 1);
         w.spot = null; w.state = 'idle'; w.t = 1; trimmed = true;
+        if (!this.world.inSquad(w.entry.aiId)) this.dirFree(c, [w.entry]); // (v0.4.8.7: a park-goer back to the director's park)
       }
       if (trimmed) { this.placeLine(c, r); this.syncSquad(); }
       return;
@@ -1228,6 +1276,7 @@ export class ParkHub {
       w = free[0];
       if (!w || this.rng.next() < 0.35) { const e = this.takeEntries(1, { topUp: true, walkers: false }); if (e) { w = this.spawnWalker(this.rng.range(-20, 20), -29, e[0]); this.walkers.push(w); } }
       if (!w) return;
+      this.dirLend(c, [w.entry], r); // (v0.4.8.7: on your spot on every screen, the director's park-goer no more)
     }
     l.members.push(w);
     this.markFull(c, l);
@@ -1347,6 +1396,7 @@ export class ParkHub {
     // (v0.4.8.5 qp8: kings you step up against bring their streak: an AI ICON's aura with it)
     for (const e of opponents || []) if (e?.build) e.build = { ...e.build, win_streak: this.myOppStreak };
     this.myOpp = opponents;
+    this.dirLend(c, [...mates, ...(opponents || [])]); // (v0.4.8.7: in your game, for everyone here: the director's court is yours)
     if (li >= 0) c.lines[li] = null;
     this.startSession(c, opponents, ticket);
   }
@@ -1428,6 +1478,7 @@ export class ParkHub {
     else challengers = this.takeEntries(c.format, { topUp: true, level: Math.min(0.97, 0.5 + 0.06 * (this.char.progression?.park?.streak || 0)) });
     for (const e of challengers) e.look = e.look || resolveLook(e.build, this.catalog);
     this.myOpp = challengers; this.myOppStreak = 0; // (challengers have no streak; you're the one holding the court)
+    this.dirFree(c, old); this.dirLend(c, [...(this.myMates || []), ...challengers]); // (v0.4.8.7: the director's park hears who's off and who's on)
     this.mode = 'starting';
     this.app.api.mutate('/api/matches', { character_id: this.char.id, mode: 'park', venue: this.themeId, format: c.format, target: this.app.settings.parkTarget, difficulty: this.app.settings.difficulty, ante: this.anteFor() })
       .then(ticket => {
@@ -1460,6 +1511,8 @@ export class ParkHub {
     // brought if they beat you, nothing if you won and walked off (or no game was played)
     c.kingsStreak = session && !won ? (this.myOppStreak || 0) + 1 : 0;
     const opp = this.myOpp; this.myOpp = [];
+    // (v0.4.8.7: the director's park hears it: your teammates walk off; the kings who beat you hold the court with one more)
+    this.dirFree(c, mates); this.dirFree(c, opp, session && !won ? 1 : 0, c.kingsStreak);
     // (v0.4.8.6: the ICON Squad you beat walks off as one: back in line while their hour runs, out together after it.
     // If they beat you they hold the court, as kings do, while their hour runs: newBackgroundGame, holds)
     if (won && opp) for (const e of this.unitOff(c, opp)) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] - 4, e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
@@ -1609,12 +1662,13 @@ export class ParkHub {
   // park-goers on a spot step off it (a real squad has it now)
   disperseLine(c, r) {
     const l = c.lines[r]; if (!l) return;
-    for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = this.rng.range(0.5, 3); }
+    if (!l.dir) for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = this.rng.range(0.5, 3); } // (the director's line: it breaks up there, for everyone)
     c.lines[r] = null;
   }
   // the AI game on a court ends where it stands: everybody on it walks off
   vacate(c) {
     const s = c.session; if (!s) return;
+    if (s.dir) { s.dispose(); c.session = null; return; } // (v0.4.8.7: the director walks them off, for everyone, when the court is taken)
     const g = s.game;
     // (v0.4.8.6: the ICON Squad on it walks off as one, and lines up somewhere else)
     const keep = s.opts.rosters.map((ro, ti) => this.unitOff(c, ro, i => { const p = g.teams[ti]?.[i]; return p ? { x: p.x + c.origin[0], z: p.z + c.origin[2] } : null; }));
@@ -1656,6 +1710,7 @@ export class ParkHub {
   }
   // playing the host's park right now (he's someone else, and he has been heard from lately)
   mirroring() {
+    if (this.dirOn()) { if (this.mirrorWas) this.leaveMirror(); this.mirrorWas = false; return false; } // (v0.4.8.7: the director's park: no host to mirror)
     const h = this.popHostId(), net = this.app.net;
     const on = h != null && h !== net?.myId && this.popLast?.from === h && performance.now() - this.popAt < 4000;
     if (!on && this.mirrorWas) this.leaveMirror();
@@ -1674,6 +1729,7 @@ export class ParkHub {
   popTick(dt) {
     if ((this.popSendT = (this.popSendT || 0) - dt) > 0) return;
     this.popSendT = 0.5;
+    if (this.dirOn()) return; // (the director runs this park: no host)
     const net = this.netHere();
     if (!net || this.popHostId() !== net.myId) return;
     net.send(this.popSnapshot());
@@ -1703,7 +1759,7 @@ export class ParkHub {
   }
   onPop(m) {
     const net = this.netHere();
-    if (!net || m?.place !== this.placeKey() || m.from == null || m.from !== this.popHostId() || m.from === net.myId) return;
+    if (!net || this.dirOn() || m?.place !== this.placeKey() || m.from == null || m.from !== this.popHostId() || m.from === net.myId) return;
     this.popLast = m; this.popAt = performance.now(); this.mirrorWas = true;
     this.applyPop(m);
   }
@@ -1812,6 +1868,183 @@ export class ParkHub {
     return s;
   }
 
+  // ---------------- v0.4.8.7: the park director (game/parkdirector.js, game/parklink.js, server/online.py) ----------------
+  // With the online server's park director on, nobody's PC hosts the park: the server sequences it (a tick a second, its
+  // epoch's seed, the real players' events in one order) and every screen plays the same director from the same snapshot.
+  // This screen is its view: the director's park-goers are walkers here going where it has them (dirWalker), its courts'
+  // games are DirCourts (the director's own game, drawn only while the court can be seen), its lines, kings, streaks, ICON
+  // Squad and hop-ons are this park's (dirCourts). What you do with its people goes back to it as pacts: the AI you take
+  // for a game or your Got Next spot (dirLend), the AI you hand back (dirFree: walking off, or kings who beat you holding
+  // the court), your squad's ready (dirPact ready), your own AI squad (dirSquad). Off (the flag off, an old server,
+  // offline), the park runs here as it always has, and with others here the v0.4.8.7 qp7 host mode.
+  dirListen() {
+    const net = this.app.net; this.dirHold = new Map(); this.dirOff = [];
+    if (!net?.on) return;
+    // (the park as the server has it, if it has one: its state may have come before this park was made)
+    if (net.connected && net.place === this.themeId) net.send({ t: 'pwant', place: this.themeId });
+    const st = m => this.onPState(m);
+    this.dirOff = [net.on('pstate', st), net.on('presync', st), net.on('pepoch', st), net.on('pev', m => this.link?.event(m)), net.on('pt', m => this.link?.tick(m)),
+      net.on('state', () => { if (net.state !== 'on' && this.link?.dir) this.dirLost = this.dirLost || performance.now(); }),
+      // (back after the connection dropped, or the server restarted: hand it the park as it stands here)
+      net.on('courts', () => {
+        if (net.place !== this.themeId) return;
+        if (this.link?.dir && this.dirLost) { this.dirLost = 0; this.link.net = net; this.link.resume(); }
+        else if (!this.link?.dir && !this.dirAsked) { this.dirAsked = true; net.send({ t: 'pwant', place: this.themeId }); } // (just arrived: in case its state came first)
+      })];
+  }
+  // the director runs this park now (a dropped connection keeps it for 20 s, waiting to hand the park back)
+  dirOn() {
+    const L = this.link;
+    if (!L?.dir) return false;
+    if (this.dirLost) return performance.now() - this.dirLost < 20000;
+    return !!this.netHere() && L.heard != null && L.serverNow() - L.heard < 10000;
+  }
+  onPState(m) {
+    const net = this.netHere();
+    if (!m || !net || this.disposed || m.place !== this.themeId || !this.world?.shared) return;
+    if (!this.link) this.link = new ParkLink(net, this.themeId, o => this.dirOpts(o), { out: evs => this.dirOut(evs), reset: () => { this.dirFresh = true; this.dirSqKey = null; } });
+    this.link.net = net;
+    if (this.link.state(m)) { this.dirLost = 0; this.dirSquad(this.world.activeSquad()); }
+  }
+  dirOpts({ epoch, t0, seed }) {
+    return {
+      world: this.world, park: this.themeId, catalog: this.catalog, epoch, t0, seed, surface: this.venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt',
+      layout: { courts: this.courts.map(c => ({ format: c.format, full: !!c.full, origin: c.origin, rows: c.rows, rect: c.rect })), solids: this.venue.solids || [] },
+      toLocal: ms => ms - WORLD_CLOCK.skew, // (the world's functions take this PC's clock and add the skew back)
+    };
+  }
+  dirFrame(dt) {
+    const L = this.link;
+    if (!L?.dir) return false;
+    if (!this.dirOn()) { this.dirStop(); return false; }
+    if (!this.dirLost) L.net = this.app.net;
+    L.frame(dt);
+    this.dirSync();
+    return true;
+  }
+  // off the director (the server stopped answering): this park runs itself again, from a fresh start
+  dirStop() {
+    this.link = null; this.dirHold.clear(); this.dirLost = 0;
+    for (const c of this.courts) if (c.session?.dir) { c.session.dispose(); c.session = null; }
+    this.rebaseWorld();
+  }
+  dirPact(a, f) { return this.dirOn() ? this.link.pact(a, f) : false; }
+  dirIds(es) { return [...new Set((es || []).map(e => (typeof e === 'string' ? e : e?.aiId)).filter(id => validAI(id) && !this.world.inSquad(id)))]; }
+  dirLend(c, es, r = null) {
+    if (!this.dirOn()) return;
+    const ids = this.dirIds(es), at = performance.now(); if (!ids.length) return;
+    for (const id of ids) this.dirHold.set(id, { a: 'lend', at });
+    this.link.pact('lend', { c: this.courts.indexOf(c), ...(r != null ? { r } : {}), ids });
+  }
+  dirFree(c, es, kings = 0, ks = 0) {
+    if (!this.dirOn() || !c) return;
+    const ids = this.dirIds(es), at = performance.now(); if (!ids.length) return;
+    for (const id of ids) this.dirHold.set(id, { a: 'free', at });
+    this.link.pact('free', { c: this.courts.indexOf(c), ids, ...(kings ? { kings: 1, ks } : {}) });
+  }
+  dirSquad(ids) { const key = (ids || []).join(); if (!this.dirOn() || key === this.dirSqKey) return; this.dirSqKey = key; this.link.pact('squad', { ids: ids.slice(0, 4) }); }
+  dirOut(evs) {
+    const L = this.link, fresh = L.dir.k >= Math.floor(L.tau()) - 3; // (not while catching up: that's history)
+    for (const e of evs) if (e.e === 'icon' && fresh && e.ids?.length === 3) {
+      const names = e.ids.map(id => this.world.entry(id)?.name || id);
+      this.ui.toast(`ICON SQUAD at ${this.aff?.park || parkInfo(this.themeId)?.park || 'the park'}: ${names.slice(0, -1).join(', ')} and ${names.at(-1)} · here for the next hour`);
+    }
+  }
+  // can the camera see court c (or is it near enough to)? Its game is drawn only then
+  courtSeen(c) {
+    if (this.overview) return true;
+    const cam = this.rig?.pos; if (!cam) return true;
+    const d = Math.hypot(c.origin[0] - cam[0], c.origin[2] - cam[2]);
+    if (d < 26) return true;
+    if (d > 110) return false;
+    return !this.vis || M.sphereInFrustum(this.vis.planes, c.origin[0], 1, c.origin[2], c.full ? 22 : 15);
+  }
+  // the director's park on this screen, every frame
+  dirSync() {
+    const d = this.link.dir, tau = this.link.tau(), now = performance.now(), me = this.app.net?.myId != null ? String(this.app.net.myId) : null;
+    for (const [id, x] of this.dirHold) if (now - x.at > 6000) this.dirHold.delete(id);
+    const sq = new Set(this.world.squad), inMine = new Set([...(this.myMates || []), ...(this.myOpp || [])].map(e => e?.aiId).filter(Boolean));
+    for (const id of this.squadInGame || []) inMine.add(id);
+    for (const c of this.courts) for (const r of c.liveSetup?.rosters || []) for (const e of r) if (e?.aiId) inMine.add(e.aiId);
+    const my = this.myLine(), myLine = new Set(my ? my.l.members.map(w => w.entry?.aiId) : []);
+    const lent = new Map(d.s.lent.map(l => [l[0], l]));
+    // (one of yours on your spot the director never took (he was playing elsewhere): off your spot)
+    if (my) for (const w of [...my.l.members]) { const id = w.entry?.aiId; if (id && !sq.has(id) && lent.get(id)?.[1] !== me && !this.dirHold.has(id)) { my.l.members = my.l.members.filter(x => x !== w); my.l.ready = false; my.l.fullAt = 0; myLine.delete(id); this.placeLine(my.c, my.r); } }
+    const dw = new Map();
+    for (const w of d.s.walkers) if (!sq.has(w.id) && !inMine.has(w.id) && !myLine.has(w.id) && this.dirHold.get(w.id)?.a !== 'lend') dw.set(w.id, w);
+    // the AI another squad has on its Got Next spot: after its people and their own AI squad mates
+    const onSpot = new Map(), seen = new Map(), net = this.netHere();
+    for (const l of d.s.lent) {
+      if (l[3] == null || l[1] === me || inMine.has(l[0])) continue;
+      const key = `${l[1]}|${l[2]}|${l[3]}`, i = seen.get(key) || 0; seen.set(key, i + 1);
+      const row = this.courts[l[2]]?.rows?.[l[3]], slot = 1 + (net?.aiOf(l[1])?.length || 0) + i;
+      if (row && slot < row.length) onSpot.set(l[0], { c: l[2], r: l[3], slot, i });
+    }
+    const byId = new Map(), keep = [];
+    for (const w of this.walkers) {
+      const id = w.entry?.aiId;
+      if (w.follow != null || !id) { keep.push(w); continue; }
+      const ok = !byId.has(id) && (dw.has(id) || onSpot.has(id) || myLine.has(id) || (lent.get(id)?.[1] === me && !inMine.has(id)) || this.dirHold.get(id)?.a === 'free');
+      if (!ok) { w.dispose(); continue; }
+      byId.set(id, w); keep.push(w);
+    }
+    this.walkers = keep;
+    for (const [id, x] of dw) {
+      let w = byId.get(id);
+      const p = d.posAt(x, tau);
+      if (!w) { w = this.spawnWalker(p[0], p[1], this.entryFor(id)); this.walkers.push(w); byId.set(id, w); }
+      this.dirWalker(w, x, p);
+    }
+    for (const [id, s] of onSpot) {
+      const c = this.courts[s.c], sp = c.rows[s.r][s.slot];
+      let w = byId.get(id);
+      if (!w) { w = this.spawnWalker(sp.x, sp.z, this.entryFor(id)); this.walkers.push(w); byId.set(id, w); }
+      w.mirror = { x: sp.x, z: sp.z, f: Math.atan2(c.origin[0] - sp.x, c.origin[2] + 8 - sp.z), m: 0.75 };
+      w.spot = { court: c, row: s.r, slot: s.slot }; w.state = 'queued'; w.exit = false; w.unit = null; w.watch = null;
+    }
+    for (const w of this.walkers) { const id = w.entry?.aiId; if (w.follow == null && id && !dw.has(id) && !onSpot.has(id) && w.mirror) { w.mirror = null; w.state = w.exit ? 'walk' : w.spot ? 'queued' : 'idle'; w.t = 1; } }
+    if (d.k !== this.dirK || this.dirFresh || this.dirCourtsAt !== this.dirCourtKey()) { this.dirK = d.k; this.dirFresh = false; this.dirCourts(d, byId, onSpot); this.dirCourtsAt = this.dirCourtKey(); }
+  }
+  // (what decides a court here besides the director: your game, a game you watch, the real people holding it)
+  dirCourtKey() { return this.courts.map(c => `${c.mine ? 1 : 0}${c.live ? 1 : 0}${this.realHeld(c) ? 1 : 0}${c.lines.map(l => (l?.mine ? 'm' : l?.remote ? 'r' : l ? 'a' : '-')).join('')}`).join() + `|${this.mode}|${this.myCourt ? this.courts.indexOf(this.myCourt) : -1}`; }
+  // one of the director's park-goers: where it has him right now (his leader's step, for the ICON Squad's other two)
+  dirWalker(w, x, p) {
+    const [px, pz, h, mv] = p;
+    let tx = px, tz = pz;
+    if (x.lead && x.st !== 'line') { const f = h ?? w.p.facing, lat = (x.slot % 2 ? 1 : -1) * 0.95; tx = px - Math.sin(f) * 1.35 + Math.cos(f) * lat; tz = pz - Math.cos(f) * 1.35 - Math.sin(f) * lat; }
+    const c = x.st === 'line' ? this.courts[x.c] : null, wc = x.watch >= 0 ? this.courts[x.watch] : null;
+    const face = mv ? h : c ? Math.atan2(c.origin[0] - tx, c.origin[2] + 8 - tz) : wc ? Math.atan2(wc.origin[0] - tx, 6 - tz) : h ?? w.p.facing;
+    const top = (w.p.phys?.jog || 4.6) * GAME_SPEED;
+    w.mirror = { x: tx, z: tz, f: face, m: mv ? Math.min(1, x.v / top) : 0, s: mv && x.v > top, nj: !!x.lead };
+    w.exit = x.st === 'exit'; w.unit = x.unit; w.lead = null; w.follow = null;
+    w.spot = c ? { court: c, row: x.r, slot: x.slot } : null;
+    w.state = c ? (mv ? 'walk' : 'queued') : mv ? 'walk' : 'idle';
+    w.watch = wc ? { x: wc.origin[0], z: 6 } : null;
+  }
+  dirCourts(d, byId, onSpot) {
+    this.courts.forEach((c, ci) => {
+      const dc = d.s.courts[ci], run = d.runners[ci], mine = c === this.myCourt && (this.mySession || this.mode === 'starting');
+      const real = !!(c.live || c.mine || mine || this.realHeld(c));
+      if (dc.g && run && !real) { if (!(c.session?.dir && c.session.seed === dc.g.seed)) { c.session?.dispose(); c.session = new DirCourt(this, c, run, dc.g); } }
+      else if (c.session) { c.session.dispose(); c.session = null; }
+      const kk = (dc.kings || []).join();
+      if (kk !== c.dirKings) { c.dirKings = kk; c.kings = dc.kings ? dc.kings.map(id => this.entryFor(id)) : null; }
+      c.kingsStreak = dc.ks || 0;
+      dc.lines.forEach((l, r) => {
+        const cur = c.lines[r];
+        if (cur?.mine) return;
+        if (cur?.remote) { cur.members = [...onSpot].filter(([, s]) => s.c === ci && s.r === r).sort((a, b) => a[1].i - b[1].i).map(([id]) => byId.get(id)).filter(Boolean); return; }
+        if (l) c.lines[r] = { members: l.ids.map(id => byId.get(id)).filter(Boolean), mine: false, ready: false, readyAt: 0, fullAt: l.full * 1024 + (l.n % 1024), dir: true, ...(l.icon != null ? { icon: l.icon } : {}) };
+        else if (cur) c.lines[r] = null;
+      });
+    });
+    // the ICON Squad (for the court cards, the ticker and the phone), the regulars who hopped on
+    const u = d.s.icon, tl = d.tl(d.k), sq = u ? d.squadAt(tl) : null;
+    this.icon = u ? { k: u.k, ids: new Set(u.ids), formed: !!u.formed, over: u.over ? d.tl(u.over) : 0, end: sq?.k === u.k ? sq.end : 0, last: u.last >= 0 ? this.courts[u.last] || null : null, idle: d.tl(u.idle || 0), park: this.themeId, sq } : null;
+    for (const [id, x] of [...this.world.extra]) if (x.park === this.themeId) this.world.extra.delete(id);
+    for (const [id, until] of d.s.extra) this.world.extra.set(id, { park: this.themeId, until: d.tl(until) });
+  }
+
   // ---- starting a game ----
   // your squad is set and the court is yours: the squad on the other spot (real or not) or whoever's around runs against you
   startNext(c) {
@@ -1819,6 +2052,8 @@ export class ParkHub {
     if (this.netHere() && this.remoteClaimLine(c)) { this.startMyGame(c, null, 0); return; }
     const o = c.lines.findIndex(x => x && !x.mine && !x.remote && this.lineSet(c, x));
     let opp = null;
+    // (v0.4.8.7: the director's kings, waiting on the court for you, with their streak)
+    if (this.dirOn() && c.kings?.length === c.format && !c.session) { this.startMyGame(c, c.kings.map(e => ({ ...e })), c.kingsStreak || 0); return; }
     if (o >= 0) { opp = c.lines[o].members.map(w => w.entry); this.takeLine(c, o); }
     else if (c.aiKings && performance.now() - c.aiKings.at < 60000) { opp = c.aiKings.entries; c.aiKings = null; } // (the AI who won the game you watched hold the court)
     else { const streak = this.char.progression?.park?.streak || 0; opp = this.takeEntries(c.format, { topUp: true, level: Math.min(0.95, 0.5 + 0.05 * streak) }); }
@@ -1880,6 +2115,7 @@ export class ParkHub {
     for (const e of aiMine) if (home.length < c.format && !this.world.squadOf?.(e.aiId)) home.push({ entry: e }); // (v0.4.8.6: not one whose ICON Squad's hour has begun)
     const oldOpp = this.onlineGame ? [] : this.myOpp || [];
     session.dispose(); this.mySession = null; this.onlineGame = null;
+    if (this.dirOn()) { const keep = new Set(aiMine.map(e => e.aiId)); this.dirFree(c, [...(this.myMates || []), ...(this.myOpp || [])].filter(e => !keep.has(e?.aiId))); } // (v0.4.8.7: off the court in the director's park; the next game's are lent with it: sendParkGame)
     for (const e of this.unitOff(c, oldOpp)) if (this.walkers.length < 16) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
     const rc = this.remoteClaimLine(c);
     let away, nm = 'Challengers';
@@ -1894,6 +2130,7 @@ export class ParkHub {
   }
   // AI who were going to play walk back into the park instead (v0.4.8.6: the ICON Squad as one)
   walkOff(c, entries) {
+    this.dirFree(c, entries || []); // (v0.4.8.7: and in the director's park)
     for (const e of this.unitOff(c, entries || [])) if (this.walkers.length < 16 && e?.aiId) { const w = this.spawnWalker(c.origin[0] + 10.5, c.origin[2] + this.rng.range(-4, 4), e); if (this.stays(e)) w.goTo(...Object.values(pickIn(this.rng, ZONES[0]))); else w.leave(); this.walkers.push(w); }
   }
   // sides: [[{entry, person?}], [..]] (team 0 first). The game starts on everyone's screen when the hosted game says so
@@ -1915,6 +2152,7 @@ export class ParkHub {
     this.myMates = sides[0].filter(x => !x.person && x.entry.aiId).map(x => x.entry);
     this.myOpp = sides[1].filter(x => !x.person && x.entry.aiId).map(x => x.entry);
     if (slots[net.myId] == null) { this.ui.toast('Could not set the game up.', 'error'); return; }
+    this.dirLend(c, [...this.myMates, ...this.myOpp]); // (v0.4.8.7: in this game, on every screen: the director's park lends them)
     this.myCourt = c; c.mine = true; this.mode = 'starting';
     this.awaitStart = { at: performance.now(), c };
     net.send({ t: 'start', setup });
@@ -1948,7 +2186,7 @@ export class ParkHub {
     // still on the last game's results (the kings ran it back): off that game first
     if (this.mySession) { this.mySession.dispose(); this.mySession = null; }
     // your own Got Next line, if you weren't the one who started this: its park-goers step off
-    for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) { const l = cc.lines[r]; if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } cc.lines[r] = null; cc.mine = false; } }
+    for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) { const l = cc.lines[r]; if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } this.dirFree(cc, l.members.map(w => w.entry).filter(e => !this.world.inSquad(e.aiId))); cc.lines[r] = null; cc.mine = false; } }
     if (!decided) { this.myMates = []; this.myOpp = []; }
     // your AI squad mates in it (your squad's game, or a friend's who set it up): off the park until it's over
     const me = app.net?.myId;
@@ -1998,7 +2236,11 @@ export class ParkHub {
     // (the AI from your world who ran with you: your AI squad mates and, if you set it up, your park's)
     const mates = [...new Set([...(this.squadInGame || []), ...(this.myMates || []).map(e => e.aiId).filter(Boolean)])].slice(0, 4);
     this.world.recordGame(mates, (this.myOpp || []).map(e => e.aiId).filter(Boolean), won);
-    const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates, crew_mates: Math.min(4, crewMates) }).catch(e => { this.ui.toast('Result not saved: ' + e.message, 'error'); return null; }) : Promise.resolve(null);
+    const saving = this.ticket ? app.api.mutate(`/api/matches/${this.ticket.id}/complete`, { summary, mates, crew_mates: Math.min(4, crewMates) }).catch(e => {
+      this.ui.toast('Result not saved: ' + e.message, 'error');
+      if (e.status === 409 && Number.isFinite(e.data?.balance)) app.setBalance(e.data.balance); // (v0.4.8.7: a disputed game: your ante's back, at once)
+      return null;
+    }) : Promise.resolve(null);
     await playOutro(app, { summary, session, result: saving });
     const result = await saving;
     if (result) { app.replaceChar(result.character); app.setBalance(result.balance); this.char = app.char(); reportCrewXP(app, result, { mode: 'park', venue: this.themeId, mates: crewMates }); }
@@ -2018,6 +2260,9 @@ export class ParkHub {
   leaveOnlineCourt(session, { release = true } = {}) {
     const c = this.myCourt, net = this.app.net;
     if (release && c) net?.send({ t: 'release', court: this.courts.indexOf(c) });
+    // (v0.4.8.7: the director's park: AI who won it, all AI, hold the court with the streak they had plus this one)
+    const g = session?.game, won = g?.over && g.winner != null ? session.opts.rosters[g.winner] : null;
+    if (c && won && this.dirOn() && won.every(e => !e.human && e.aiId)) this.dirFree(c, won, 1, (this.onlineGame?.streaks?.[g.winner] || 0) + 1);
     if (session) session.dispose();
     this.mySession = null; this.onlineGame = null;
     this.walkOff(c, [...(this.myMates || []), ...(this.myOpp || [])]);
@@ -2074,6 +2319,7 @@ export class ParkHub {
   dispose() {
     this.disposed = true;
     this.peers.detach(); // (qp7: and stops listening for their emotes)
+    for (const f of this.dirOff || []) f?.(); // (v0.4.8.7: and to the park director)
     for (const c of this.courts) if (c.live) c.live.dispose();
     for (const c of this.courts) if (c.fx) c.fx.dispose();
     for (const sp of this.spectators || []) sp.dispose();

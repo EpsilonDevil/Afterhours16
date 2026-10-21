@@ -9,7 +9,7 @@ export class API {
     } catch (e) { throw new APIError(0, 'Cannot reach the local game service. Is the server window still open?'); }
     let data = null;
     try { data = await res.json(); } catch { data = null; }
-    if (!res.ok) throw new APIError(res.status, data?.error || `Request failed (${res.status})`);
+    if (!res.ok) throw Object.assign(new APIError(res.status, data?.error || `Request failed (${res.status})`), { data }); // (v0.4.8.7: the body too: a disputed game's refunded balance)
     return data;
   }
   get(path) { return this.req('GET', path); }

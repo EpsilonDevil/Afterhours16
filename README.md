@@ -1,4 +1,10 @@
-# RIMRIFT — v0.4.8.6
+# RIMRIFT — v0.4.8.7
+
+## New in v0.4.8.7: the server runs the park
+
+Full list in `PATCH_NOTES_v0.4.8.7.docx`.
+- **One park online:** the online server keeps every park's time and order of events, and every player's game works the park out from them, so friends see the same courts, games, lines, ICON Squad and park-goers. No player hosts the park any more (no handover jumps, less work per PC). `RIMRIFT_PARK_DIRECTOR=0` on the server restores v0.4.8.6's host mode.
+- **Results checked:** online park and Pro-Am results must match the other players' before anything pays; a mismatch voids the game for everyone in it and returns the ante. Offline and solo play are unchanged.
 
 ## New in v0.4.8.6: the RIMRIFT identity
 

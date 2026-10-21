@@ -87,6 +87,10 @@ class SharedWorldTests(unittest.TestCase):
             c.close()
 
     def test_the_park_hosts_people_go_to_everyone_there_and_nowhere_else(self):
+        # (v0.4.8.7: the qp7 host mode, with the park director off: RIMRIFT_PARK_DIRECTOR=0; on, nobody hosts the park)
+        hub = self.service.hub
+        keep, hub.parks = hub.parks, None
+        self.addCleanup(setattr, hub, "parks", keep)
         a, b, x = self.player("sw_pop_a"), self.player("sw_pop_b"), self.player("sw_pop_x")
         for c, park in ((a, "harbor"), (b, "harbor"), (x, "brick")):
             self.assertEqual(c.connect(), 101)

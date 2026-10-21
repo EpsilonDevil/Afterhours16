@@ -779,7 +779,8 @@ export class MatchSession {
       this.ended = true; this.endT = 0;
       if (this.grade) this.app.lastGrade = this.grade.result();
       // (whoever finishes first ends it on the service: the people who won hold the court)
-      if (!spec && !lk.offline) net.send({ t: 'end', g: this.online.game, winners: this.winnersOnline() });
+      // (v0.4.8.7: with the final score: every real player's end goes on the game's record for the results check)
+      if (!spec && !lk.offline) net.send({ t: 'end', g: this.online.game, winners: this.winnersOnline(), score: [g.score[0], g.score[1]] });
     }
     this.lastEvents = evs;
     if (this.ended) { this.endT += dt; if (this.endT > 3.2 && this.onEnd) { const f = this.onEnd; this.onEnd = null; f(g.summary(), this); } }

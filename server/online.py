@@ -33,6 +33,8 @@ import struct
 import threading
 import time
 
+from . import parkdir  # (v0.4.8.7: the park director)
+
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_MESSAGE = 512 * 1024      # a game setup carries every roster entry (builds and looks): a few tens of kB
 MAX_SQUAD = 5          # you and four friends
@@ -41,6 +43,11 @@ MAX_FRIENDS = 100
 MAX_AI_SQUAD = 4       # (a player's own AI squad: four friends from his game's world)
 MAX_BATCH = 64        # (ticks of input in one message: a frame after a hitch can send several)
 WATCH_EVERY = 0.1     # watchers get a game's inputs in bundles, ten times a second (they play a moment behind)
+# v0.4.8.7: what each real player of a hosted game reported at its end (and its last scores and state hashes), kept for
+# the service's results check (app.py hosted_verdict): 15 minutes after the game, never more than RESULT_MAX at once
+RESULT_TTL = 900
+RESULT_MAX = 400
+RESULT_HASHES = 8     # (the last few state hashes each player sent: session.js, every 120 ticks)
 
 
 class WSClosed(Exception):
@@ -53,6 +60,13 @@ class AuthError(Exception):
     def __init__(self, code, text):
         super().__init__(text)
         self.code, self.text = code, text
+
+
+def score_pair(sc):
+    """v0.4.8.7: a reported score as [team 0, team 1] (whole points, 0-999), or None."""
+    if isinstance(sc, list) and len(sc) == 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 999 and v == int(v) for v in sc):
+        return [int(sc[0]), int(sc[1])]
+    return None
 
 
 def accept_key(key):
@@ -352,6 +366,13 @@ class Hub:
         self.courts = {}     # place -> {court index: {"lines": [claim|None, claim|None], "kings": claim|None, "busy": dict|None}}
         self.games = {}      # game id -> game dict
         self.game_seq = 0
+        # v0.4.8.7: hosted games' results, for the service's check (results_*; game ids count from 1 again after a
+        # restart, so a record is also marked with this run of the hub)
+        self.results = {}    # game id -> {"game", "run", "slots", "started", "ended", "reports", "scores", "hashes", "left"}
+        self.results_cv = threading.Condition(self.lock)  # (signalled when a player reports, leaves, or the game ends)
+        self.run_id = secrets.token_hex(6)
+        # v0.4.8.7: the online server runs the park (parkdir.py, RIMRIFT_PARK_DIRECTOR, on by default): no park host then (pop, host)
+        self.parks = parkdir.ParkDirector(self, auto=True) if parkdir.enabled() else None
 
     # ---- small helpers ----
     def world_payload(self):
@@ -437,7 +458,7 @@ class Hub:
                 self.drop(old, reason="replaced")
                 old.close(4000)
             self.conns[conn.aid] = conn
-        conn.send({"t": "hello", "you": {"id": conn.aid, "username": conn.username}, "friends": self.friends_payload(conn.aid), **self.world_payload()})
+        conn.send({"t": "hello", "you": {"id": conn.aid, "username": conn.username}, "friends": self.friends_payload(conn.aid), **self.world_payload(), **({"pd": 1} if self.parks else {})})
         self.push_presence(conn.aid)
         cid = crew_of(self.db, conn.aid)
         if cid:
@@ -469,9 +490,13 @@ class Hub:
         if old:
             self.send_to([c.aid for c in self.at(old)], {"t": "gone", "id": conn.aid, "place": old})
             self.release_place(conn.aid, old)
-            self.pick_host(old)
+            if self.parks:
+                self.parks.leave(conn.aid, old)  # (v0.4.8.7: the park director's: he's gone)
+            else:
+                self.pick_host(old)
         if place:
-            self.pick_host(place, quiet=conn.aid)
+            if not self.parks:
+                self.pick_host(place, quiet=conn.aid)
             others = self.at(place, skip=conn.aid)
             pop = self.pops.get(place)
             conn.send({"t": "here", "place": place, "players": [self.person(c) for c in others],
@@ -481,6 +506,8 @@ class Hub:
             if conn.entry:
                 self.send_to([c.aid for c in others], {"t": "pentry", **self.person(conn)})
             self.offer_watch(conn, place)
+            if self.parks:
+                self.parks.arrive(conn, place)  # (v0.4.8.7: the park as the server has it: pstate)
 
     # ---- v0.4.8.7 qp7: each park's host, picked here (one answer for everyone): whoever has been there longest ----
     def host_of(self, place):
@@ -627,6 +654,8 @@ class Hub:
 
     def push_courts(self, place):
         self.send_to([c.aid for c in self.at(place)], {"t": "courts", "place": place, "courts": self.courts_payload(place)})
+        if self.parks:
+            self.parks.courts_changed(place)  # (v0.4.8.7: the real players' courts, as the park director's events)
 
     def claim(self, conn, msg):
         place, ci, r = conn.info.get("park"), msg.get("court"), msg.get("spot")
@@ -708,6 +737,9 @@ class Hub:
              "log": [], "wbuf": [], "wsent": 0.0, "score": None, "names": [self.name_of(a) for a in slots],
              "teams": setup.get("sideIds") if isinstance(setup.get("sideIds"), list) else None}
         self.games[gid] = g
+        self.results[gid] = {"game": gid, "run": self.run_id, "slots": dict(slots), "started": g["started"], "ended": None,
+                             "reports": {}, "scores": {}, "hashes": {}, "left": []}  # (v0.4.8.7: the results check)
+        self.results_prune()
         for a in slots:
             self.conns[a].game = gid
         if place and ci is not None:
@@ -785,12 +817,24 @@ class Hub:
         self.flush_watch(g)  # (the watchers have his last inputs before they hear he's gone)
         slot = g["slots"].pop(conn.aid)
         g["players"].discard(conn.aid)
+        rec = self.results.get(g["id"])
+        if rec and conn.aid not in rec["left"]:
+            rec["left"].append(conn.aid)  # (v0.4.8.7: nobody waits for his result now)
+            self.results_cv.notify_all()
         msg = {"t": "left", "slot": slot, "last": g["last"].get(conn.aid, 0), "id": conn.aid, "reason": reason, "g": g["id"]}
         self.send_to(set(g["players"]) | ({c.aid for c in self.at(g["where"])} if g["where"] else set()), msg, skip=conn.aid)
         if not g["players"]:
             self.finish(g, [])
 
     def end_game(self, conn, msg):
+        # v0.4.8.7: every real player's own end (who won, the final score) goes on the game's record, the ones that come
+        # after the first ended it too (every client ends the game on the same tick)
+        rec = self.results.get(msg.get("g")) if isinstance(msg.get("g"), int) and not isinstance(msg.get("g"), bool) else None
+        if rec and conn.aid in rec["slots"] and conn.aid not in rec["reports"]:
+            sc = msg.get("score")
+            rec["reports"][conn.aid] = {"winners": [a for a in (msg.get("winners") or []) if isinstance(a, str) and a in rec["slots"]][:10],
+                                        "score": score_pair(sc), "t": time.time()}
+            self.results_cv.notify_all()
         g = self.games.get(msg.get("g"))
         if not g or conn.aid not in g["players"]:
             return
@@ -801,6 +845,10 @@ class Hub:
         if g.get("over"):
             return
         g["over"] = True
+        rec = self.results.get(g["id"])
+        if rec:
+            rec["ended"] = time.time()  # (v0.4.8.7)
+            self.results_cv.notify_all()
         self.flush_watch(g)
         for a in list(g["players"]):
             c = self.conns.get(a)
@@ -834,11 +882,54 @@ class Hub:
         if not g or not isinstance(sc, list) or len(sc) != 2:
             return
         g["score"] = sc
+        rec = self.results.get(g["id"])
+        if rec and score_pair(sc):
+            rec["scores"][conn.aid] = score_pair(sc)  # (v0.4.8.7: the last score each player relayed)
         if g["where"] and g["court"] is not None:
             ct = self.court(g["where"], g["court"])
             if ct["busy"] and ct["busy"].get("game") == g["id"]:
                 ct["busy"]["score"] = sc
             self.send_to([c.aid for c in self.at(g["where"]) if c.aid not in g["players"]], {"t": "courtscore", "court": g["court"], "score": sc, "names": g["names"]})
+
+    # ---- v0.4.8.7: hosted games' results, for the service's check (app.py hosted_verdict) ----
+    def results_prune(self, now=None):
+        """Bounded: a finished game's record goes RESULT_TTL after its end; past RESULT_MAX the oldest finished go first
+        (a game still on keeps its record). Under the lock."""
+        now = now or time.time()
+        for gid in [k for k, r in self.results.items() if r["ended"] is not None and now - r["ended"] > RESULT_TTL]:
+            del self.results[gid]
+        if len(self.results) > RESULT_MAX:
+            done = sorted((r["ended"] or r["started"], k) for k, r in self.results.items() if r["ended"] is not None or k not in self.games)
+            for _, gid in done[:len(self.results) - RESULT_MAX]:
+                del self.results[gid]
+
+    def game_of(self, aid):
+        """The hosted game this account is playing in right now, as {"game", "run", "started", "players"}, or None."""
+        with self.lock:
+            c = self.conns.get(aid)
+            g = self.games.get(c.game) if c and c.game else None
+            if not g or aid not in g["slots"]:
+                return None
+            return {"game": g["id"], "run": self.run_id, "started": g["started"], "players": sorted(g["slots"])}
+
+    def result_record(self, gid, run):
+        """A copy of a game's record (this run of the hub's), or None."""
+        with self.lock:
+            r = self.results.get(gid)
+            if not r or r["run"] != run:
+                return None
+            return json.loads(json.dumps(r))
+
+    def wait_results(self, gid, run, timeout):
+        """The game's record once every real player who hasn't left has reported its end (or the game's record is gone, or
+        `timeout` seconds have passed: then as it is). Waits on the hub's condition, so the lock is free meanwhile."""
+        def ready():
+            r = self.results.get(gid)
+            return not r or r["run"] != run or all(a in r["reports"] or a in r["left"] for a in r["slots"])
+        with self.results_cv:
+            self.results_cv.wait_for(ready, timeout)
+            self.results_prune()
+        return self.result_record(gid, run)
 
     # ---- invites: squads, Pro-Am challenges ----
     def sq_invite(self, conn, msg):
@@ -1106,12 +1197,15 @@ class Hub:
             elif t == "pop":  # (v0.4.8.7: the park's people as the park's host sees them, to everyone else there)
                 # (qp7: only from the host picked here, and kept a moment for whoever arrives next)
                 place = conn.info.get("park")
-                if place and msg.get("place") == place and self.hosts.get(place, self.host_of(place)) == conn.aid:
+                if place and not self.parks and msg.get("place") == place and self.hosts.get(place, self.host_of(place)) == conn.aid:
                     out = {**msg, "from": conn.aid}
                     self.pops[place] = (time.monotonic(), out)
                     self.send_to([c.aid for c in self.at(place, skip=conn.aid)], out)
             elif t == "emote":
                 self.emote(conn, msg)
+            elif t in ("pact", "pcheck", "pwant", "presume"):  # (v0.4.8.7: the park director's; ignored with it off)
+                if self.parks:
+                    self.parks.handle(conn, msg)
             elif t == "friend":  # (qp3: friend requests on the socket: a game from your own copy has no cookie here)
                 try:
                     if msg.get("action") not in ("add", "accept", "decline", "remove"):
@@ -1159,6 +1253,13 @@ class Hub:
             elif t == "hash":
                 g = self.games.get(conn.game)
                 if g:
+                    # (v0.4.8.7: his last few state hashes, for the results check of a game only he finished)
+                    rec, k, h = self.results.get(g["id"]), msg.get("k"), msg.get("h")
+                    if rec and isinstance(k, int) and not isinstance(k, bool) and isinstance(h, (int, str)) and not isinstance(h, bool) and len(str(h)) <= 32:
+                        hs = rec["hashes"].setdefault(conn.aid, {})
+                        hs[k] = h
+                        while len(hs) > RESULT_HASHES:
+                            del hs[min(hs)]
                     # (w: how long his screen waited on each seat's inputs since the last check: session.js lateReport)
                     w = msg.get("w") if isinstance(msg.get("w"), dict) and len(msg["w"]) <= 10 else None
                     w = {str(s)[:3]: v for s, v in w.items() if isinstance(v, (int, float)) and not isinstance(v, bool)} if w else None

@@ -625,7 +625,7 @@ export const WORLD_CLOCK = { shared: false, skew: 0, tz: null };
 export function setWorldClock(serverMs, tz = null, localMs = Date.now()) {
   if (serverMs == null) { const was = WORLD_CLOCK.shared; WORLD_CLOCK.shared = false; WORLD_TZ = null; return was; }
   if (!Number.isFinite(serverMs)) return false;
-  const k = serverMs - localMs, skew = Math.abs(k) < 6 * 3600000 ? k : 0, z = Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? Math.round(tz) : 0;
+  const k = Math.round(serverMs - localMs), skew = Math.abs(k) < 6 * 3600000 ? k : 0, z = Number.isFinite(tz) && Math.abs(tz) <= 14 * 60 ? Math.round(tz) : 0;
   const moved = !WORLD_CLOCK.shared || Math.abs(skew - CLOCK_SKEW) > 250 || z !== WORLD_TZ;
   if (!moved) return false;
   WORLD_CLOCK.shared = true; WORLD_CLOCK.skew = skew; WORLD_CLOCK.tz = z;

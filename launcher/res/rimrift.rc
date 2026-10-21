@@ -2,8 +2,8 @@
 1 ICON "rimrift.ico"
 1 RT_MANIFEST "rimrift.exe.manifest"
 1 VERSIONINFO
-FILEVERSION 0,4,8,6
-PRODUCTVERSION 0,4,8,6
+FILEVERSION 0,4,8,7
+PRODUCTVERSION 0,4,8,7
 FILEOS 0x40004
 FILETYPE 0x1
 BEGIN
@@ -13,12 +13,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Silverback Studios"
       VALUE "FileDescription", "RIMRIFT"
-      VALUE "FileVersion", "0.4.8.6"
+      VALUE "FileVersion", "0.4.8.7"
       VALUE "InternalName", "RIMRIFT"
       VALUE "LegalCopyright", "MIT License"
       VALUE "OriginalFilename", "RIMRIFT.exe"
       VALUE "ProductName", "RIMRIFT"
-      VALUE "ProductVersion", "0.4.8.6"
+      VALUE "ProductVersion", "0.4.8.7"
     END
   END
   BLOCK "VarFileInfo"

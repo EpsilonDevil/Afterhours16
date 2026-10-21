@@ -1,4 +1,22 @@
-# Status — v0.4.8.6, the RIMRIFT identity patch and its quick patch, the ICON Squad (the port baseline; v0.4.8.5 with its quick patches, v0.4.8 and v0.4.7.5 below)
+# Status — v0.4.8.7, the server runs the park (v0.4.8.6, the RIMRIFT identity patch and its quick patches, below; the port baseline moves with this patch)
+
+## v0.4.8.7: the server runs the park
+
+Player-facing list: `PATCH_NOTES_v0.4.8.7.docx` (source `PATCH_NOTES_v0.4.8.7.md`).
+
+| Area | Files | Notes |
+|---|---|---|
+| Park director (client) | `game/parkdirector.js` (new: park.js's park logic as a pure deterministic machine, one tick per server second at t0 + k s; own RNG seeded from park and epoch; courts run the real Game sims at a phase-only pace, 6/3/2 units per step; kings, streaks, AI lines, populationTick, walkers on analytic paths, hop-ons, ICON Squad unit; real-player events squad/gone/court/claim/ready/lend/free; canonical JSON, 32-bit hash with a per-court game digest), `game/parklink.js` (new: pstate/presync/pepoch, seq-checked pev with pwant, pt watermark, tick plays 1.5 s behind the server clock, pcheck hash every 10 ticks and state every 60, presume, pact), `game/park.js` (behind `dirOn()`: the park is a view of the director; DirCourt; a background MatchSession only while a court is visible, pooled 4 s after; your moves as pacts), `sim/world.js` (clock skew rounded to whole ms) | no Math.random/Date.now/performance.now/frame dt/timers in the director (source-guarded); newcomer catch-up 300 ms at arrival then 20 ms a frame |
+| Park director (server) | `server/parkdir.py` (new: epochs with 3 s grace for presume, 60 s linger; event series id per run; court and claim events from the hub's court state; pt watermark; pact checks: place, epoch, court, spot or court ownership, only AI you lent, ai-N ids, 30 pacts per 10 s; hash majority (ties to longest present), presync; snapshot every 60 ticks, state ≤ 256 KB, log ≤ 20,000), `server/online.py` (hooks: hello `pd`, arrive/leave in move(), push_courts, pick_host and pop only with the director off, pact/pcheck/pwant/presume pass-through) | `RIMRIFT_PARK_DIRECTOR` on unless 0/false/off/no; off = v0.4.8.6 host mode unchanged |
+| Results check | `server/online.py` (results record per hosted game under the hub lock: each player's own end with score, last relayed score, last 8 hashes, leavers; RESULT_TTL 15 min, RESULT_MAX 400; run_id; `game_of`, `result_record`, `wait_results`, `results_prune`, `score_pair`), `game/session.js` (end carries `score`), `server/app.py` (match bound to the hub game at open; at complete, wait ≤ 12 s on the hub Condition outside the DB transaction; agreed / disputed (409, nothing paid, ante refunded, match cancelled, logged) / single (validated against relayed score, hashes, game time, not left) / unverified (no record, paid, logged); dispute warning at 3+ different opponents in 24 h), `core/api.js` (409 message to the player) | ThreadingHTTPServer, so the wait doesn't stall other requests; offline, solo and linked copies unchanged |
+| Version | `package.json`, `server/app.py` VERSION, `launcher/main.go`, `launcher/res/rimrift.rc`, `launcher/res/rimrift.exe.manifest`, rebuilt `launcher/res/rimrift.res`, `launcher/rsrc_windows_amd64.syso`, `RIMRIFT.exe`, `tests/test_launcher.py`, `docs/ARCHITECTURE.md` | 0.4.8.7; a 0.4.8.6 copy can't join a 0.4.8.7 host |
+
+CPU, busy park (main-thread ms per s, software rendering): QP7 pair host 383 / non-host 410; director pair about 290 each; solo 293 → 271.
+
+Tests: `tests/v0487director.test.mjs`, `tests/v0487directorpark.test.mjs`, `tests/test_parkdir.py`, `tests/test_hosted_results.py`, `tests/v0487hostedresults.test.mjs`; `tests/test_qp7_online.py` and `tests/test_shared_world.py` turn the director off where they test host mode.
+
+Known limits: a newcomer's court games appear after catch-up (12–14 s in the sandbox at a low frame rate; about 2–3 s estimated at 60 fps, not measured); a lone client's snapshot is what a newcomer gets (park visuals only, nothing pays from it); a disputed park-event game shows the ante deducted until the next profile load; disputes void the honest side's game too; linked copies stay trust-based.
+
 
 ## v0.4.8.6: RIMRIFT identity
 

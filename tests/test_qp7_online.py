@@ -90,22 +90,45 @@ class OnlineChecksTests(unittest.TestCase):
             c.close()
 
     def test_the_park_host_is_picked_here_and_only_his_reports_go_out(self):
-        a = self.join("ho_ann", "foundry")
-        self.assertEqual(a.here["host"], a.id)
-        b = self.join("ho_ben", "foundry")
-        self.assertEqual(b.here["host"], a.id, "the one there longest")
-        b.send({"t": "pop", "place": "foundry", "courts": [], "walkers": []})  # (not the host: goes nowhere)
-        self.quiet(a, "pop")
-        a.send({"t": "pop", "place": "foundry", "courts": [None], "walkers": [["ai-1", 1, 2, 0, 0, 0, None, 0, None, 0]]})
-        self.assertEqual(b.until("pop")["from"], a.id)
-        c = self.join("ho_cal", "foundry")
-        self.assertEqual(c.here["host"], a.id)
-        self.assertEqual(c.here["pop"]["walkers"][0][0], "ai-1", "a newcomer gets the park as the host had it")
-        # the host goes: the next one there longest takes over, and everyone there hears it
-        a.send({"t": "where", "name": "A", "park": "harbor", "status": "park"})
-        self.assertEqual(b.until("host")["id"], b.id)
-        self.assertEqual(c.until("host")["id"], b.id)
-        for x in (a, b, c):
+        # (v0.4.8.7: with the park director off: RIMRIFT_PARK_DIRECTOR=0. With it on the server runs the park: no host)
+        hub = self.service.hub
+        keep, hub.parks = hub.parks, None
+        try:
+            a = self.join("ho_ann", "foundry")
+            self.assertEqual(a.here["host"], a.id)
+            b = self.join("ho_ben", "foundry")
+            self.assertEqual(b.here["host"], a.id, "the one there longest")
+            b.send({"t": "pop", "place": "foundry", "courts": [], "walkers": []})  # (not the host: goes nowhere)
+            self.quiet(a, "pop")
+            a.send({"t": "pop", "place": "foundry", "courts": [None], "walkers": [["ai-1", 1, 2, 0, 0, 0, None, 0, None, 0]]})
+            self.assertEqual(b.until("pop")["from"], a.id)
+            c = self.join("ho_cal", "foundry")
+            self.assertEqual(c.here["host"], a.id)
+            self.assertEqual(c.here["pop"]["walkers"][0][0], "ai-1", "a newcomer gets the park as the host had it")
+            # the host goes: the next one there longest takes over, and everyone there hears it
+            a.send({"t": "where", "name": "A", "park": "harbor", "status": "park"})
+            self.assertEqual(b.until("host")["id"], b.id)
+            self.assertEqual(c.until("host")["id"], b.id)
+            for x in (a, b, c):
+                x.close()
+        finally:
+            hub.parks = keep
+
+    def test_with_the_park_director_on_there_is_no_host(self):
+        # v0.4.8.7: the flag is on by default; the park is the server's (pstate), nobody hosts it and nobody's pop goes out
+        self.assertTrue(online.parkdir.enabled())
+        for v in ("0", "false", "off", "no", "OFF", " No "):
+            self.assertFalse(online.parkdir.enabled(v), v)
+        self.assertIsNotNone(self.service.hub.parks)
+        a = self.join("pd_ann", "brick")
+        b = self.join("pd_ben", "brick")
+        self.assertIsNone(a.here["host"])
+        self.assertIsNone(b.here["host"])
+        st = b.until("pstate", limit=400)
+        self.assertEqual((st["place"], st["pd"]), ("brick", 1))
+        a.send({"t": "pop", "place": "brick", "courts": [], "walkers": []})
+        self.quiet(b, "pop")
+        for x in (a, b):
             x.close()
 
 

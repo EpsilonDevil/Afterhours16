@@ -31,7 +31,7 @@ import (
 	"time"
 )
 
-const version = "0.4.8.6"
+const version = "0.4.8.7"
 
 type config struct {
 	Windowed bool   `json:"windowed"`

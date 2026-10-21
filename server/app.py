@@ -48,13 +48,71 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8.6"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset)
+VERSION = "0.4.8.7"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset; v0.4.8.7)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(env("TIME_SLACK", "30"))
 # v0.4.8.5 qp8: a game started this long ago can still be finished (a result reports up to 4 hours of play), so its build
 # can't be deleted until it's done or left. An older one still marked running was left for good (the page closed)
 GAME_OPEN_SECS = 4 * 3600
+# v0.4.8.7 hosted games' results: a game played through this service's online server (online.py) pays only when what the
+# player says happened matches what the other real players' games said (hosted_verdict). The service waits this long at
+# most for their ends to come in (on the hub's condition: no other request waits with it, and no database lock is held)
+HOSTED_WAIT = float(env("HOSTED_WAIT", "12"))
+DISPUTE_WINDOW = 24 * 3600  # (an account in disputes with this many different people in a day is named in the log)
+DISPUTE_WARN = 3
+
+
+def results_log(line):
+    """v0.4.8.7: the results check's log lines, on the service's console (and kept for the tests)."""
+    results_log.lines.append(line)
+    del results_log.lines[:-200]
+    print("[results] " + line, file=sys.stderr, flush=True)
+
+
+results_log.lines = []
+
+
+def judge_hosted(aid, rec, summary, now=None):
+    """v0.4.8.7: does a player's reported result for a hosted game hold up against the game's record on the online
+    server (online.py Hub.results: each real player's own end, the scores and state hashes they relayed)?
+      agreed      every other real player's game ended the same way (the score, and whether he won)
+      single      nobody else's end came in (they left, or lost the connection): his own end matches, the score is at
+                  least what the others last relayed, the state hashes they share agree, and the game took long enough
+      unverified  there's no record (the online server restarted, or it's long gone): paid, and logged
+      disputed    anything else: void (no rewards, the ante back), and logged
+    -> {"state", "why", "others": the real players whose ends disagree (for the dispute count)}"""
+    if not rec:
+        return {"state": "unverified", "why": "no record of the game on the online server", "others": []}
+    now = now or time.time()
+    claim_score, claim_won = list(summary["score"]), summary["winner"] == summary["team"] and not summary["forfeit"]
+
+    def same(r):
+        return (r.get("score") is None or r["score"] == claim_score) and ((aid in r.get("winners", [])) == claim_won)
+    reports = rec.get("reports", {})
+    mine = reports.get(aid)
+    if mine and not same(mine):
+        return {"state": "disputed", "why": "the result sent here isn't the one this player's own game ended with", "others": []}
+    others = {a: r for a, r in reports.items() if a != aid}
+    wrong = sorted(a for a, r in others.items() if not same(r))
+    if wrong:
+        return {"state": "disputed", "why": "the other players' games ended differently", "others": wrong}
+    if others:
+        return {"state": "agreed", "why": f"{len(others) + 1} players' games agree", "others": []}
+    # nobody else's end: what the online server saw of the game has to fit
+    if not mine and aid in rec.get("left", []):
+        return {"state": "disputed", "why": "this player left the game before its end", "others": []}
+    end = (mine or {}).get("t") or rec.get("ended") or now
+    if summary["duration"] > end - rec["started"] + TIME_SLACK:
+        return {"state": "disputed", "why": "the game took longer than it was on the online server", "others": []}
+    for a, sc in rec.get("scores", {}).items():
+        if a != aid and (sc[0] > claim_score[0] or sc[1] > claim_score[1]):
+            return {"state": "disputed", "why": f"the score is below what another player's game last relayed ({sc[0]}-{sc[1]})", "others": [a]}
+    my_h = rec.get("hashes", {}).get(aid, {})
+    for a, hs in rec.get("hashes", {}).items():
+        if a != aid and any(str(k) in my_h and my_h[str(k)] != h for k, h in hs.items()):
+            return {"state": "disputed", "why": "this player's game wasn't the same game as another player's", "others": [a]}
+    return {"state": "single", "why": "the only end that came in; it fits what the online server saw", "others": []}
 # Explicit types: Windows registry MIME entries are often wrong (e.g. .js as text/plain), which breaks ES modules.
 STATIC_EXT = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg",
               ".svg": "image/svg+xml", ".json": "application/json", ".ico": "image/x-icon", ".txt": "text/plain", ".woff2": "font/woff2",
@@ -419,6 +477,56 @@ class Service:
         out = progression.proam_forfeit(char, kind)
         c.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), char_id))
         return {**out, "character_id": char_id}
+
+    # ---- v0.4.8.7: hosted games' results (judge_hosted) ----
+    def hosted_verdict(self, aid, hg, summary):
+        """The verdict on a hosted game's reported result, once the other real players' ends are in (or HOSTED_WAIT has
+        passed). Called before the database transaction: the wait holds no lock."""
+        rec = self.hub.wait_results(hg.get("game"), hg.get("run"), HOSTED_WAIT) if self.hub else None
+        v = judge_hosted(aid, rec, summary)
+        if v["state"] != "agreed":
+            results_log(f"game {hg.get('game')} ({hg.get('run')}): {self.username_of(aid)} {v['state']}: {v['why']}"
+                        + (f" (with {', '.join(self.username_of(a) for a in v['others'])})" if v["others"] else ""))
+        return v
+
+    def username_of(self, aid):
+        row = self.db.query("SELECT username FROM accounts WHERE id=?", (aid,))
+        return row[0][0] if row else str(aid)
+
+    def void_disputed(self, c, aid, row, meta, verdict, match_id):
+        """A disputed hosted game: nothing paid, the ante back, the game cancelled with why. -> the response."""
+        balance = c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]
+        if meta.get("ante"):
+            balance = self.db.change_wallet(c, aid, meta["ante"], "cup_ante_refund", "ante_refund:" + match_id)
+            cw = meta.get("cup_window", cup.window_at())
+            entry = self.cup_entry(c, aid, cw)
+            entry["staked"] = max(0, entry["staked"] - meta["ante"])
+            entry["net"] += meta["ante"]
+            entry["games"] = max(0, entry["games"] - 1)
+            self.save_cup_entry(c, aid, cw, entry)
+        message = ("This game's result didn't match what the other players' games reported, so it wasn't counted"
+                   + (f" (your {meta['ante']:,} VC ante is back)" if meta.get("ante") else "") + ". It's been logged.")
+        result = {"cancelled": True, "reason": "disputed", "disputed": True, "reward": 0, "message": message, "balance": balance,
+                  "verdict": {"why": verdict["why"], "others": verdict["others"], "game": meta.get("hub_game")}}
+        c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
+        self.dispute_watch(c, aid)
+        return result
+
+    def dispute_watch(self, c, aid):
+        """An account in disputes with DISPUTE_WARN or more different people in a day is named in the log (a griefer, or
+        a broken game). Counted from the disputed games themselves: the people on either side of each."""
+        since = time.time() - DISPUTE_WINDOW
+        sides = {}
+        for r in c.execute("SELECT account_id, result FROM matches WHERE status='cancelled' AND updated_at>? AND result LIKE '%disputed%'", (since,)):
+            res = json.loads(r["result"] or "{}")
+            if not res.get("disputed"):
+                continue
+            party = {r["account_id"], *res.get("verdict", {}).get("others", [])}
+            for p in party:
+                sides.setdefault(p, set()).update(party - {p})
+        for p in {aid, *sides.get(aid, set())}:
+            if len(sides.get(p, ())) >= DISPUTE_WARN:
+                results_log(f"WARNING: {self.username_of(p)} ({p}) has been in disputed games with {len(sides[p])} different players in 24 hours")
 
     def cup_seed(self, conn, account_id):
         w = self.load_ai_world(conn, account_id)
@@ -1484,6 +1592,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(diff, (int, float)) or isinstance(diff, bool) or not 0.2 <= diff <= 1.0:
             raise builds.Invalid("Difficulty must be 0.2-1.0.")
         meta["difficulty"] = round(float(diff), 2)
+        # v0.4.8.7: a game played through this service's online server is bound to it here, by the server's own word (not
+        # a flag the game sends): its result is checked against the other real players' at the end (hosted_verdict)
+        hg = s.hub.game_of(aid) if mode in ("park", "proam") and s.hub else None
+        if hg:
+            meta["hub_game"] = {"game": hg["game"], "run": hg["run"], "started": hg["started"]}
 
         def create(c):
             # abandoning an unfinished game forfeits it (no reward, resets park streak)
@@ -1583,6 +1696,16 @@ class Handler(BaseHTTPRequestHandler):
             raise builds.Invalid("Invalid crew teammates.")
         if not isinstance(mates, list) or len(mates) > 4 or not all(isinstance(m, str) and progression.AI_ID.match(m) for m in mates):
             raise builds.Invalid("Invalid teammates.")
+        # v0.4.8.7: a hosted game's result is checked first, against what the other real players' games reported. The
+        # wait for their ends happens here, before the transaction (and only once: a repeat of the same request is
+        # answered from the first)
+        verdict = None
+        pre = db.query("SELECT status, mode, meta FROM matches WHERE id=? AND account_id=?", (match_id, aid))
+        pre_meta = json.loads(pre[0]["meta"] or "{}") if pre else {}
+        if pre and pre[0]["status"] == "running" and pre_meta.get("hub_game") and not db.query("SELECT 1 FROM requests WHERE account_id=? AND key=?", (aid, data.get("key"))):
+            first = progression.validate_summary(data.get("summary"), {"mode": pre[0]["mode"], "meta": pre_meta})
+            if not first["forfeit"]:  # (a forfeit pays nothing: nothing to check)
+                verdict = s.hosted_verdict(aid, pre_meta["hub_game"], first)
 
         def complete(c):
             row = c.execute("SELECT * FROM matches WHERE id=? AND account_id=?", (match_id, aid)).fetchone()
@@ -1591,12 +1714,17 @@ class Handler(BaseHTTPRequestHandler):
             if row["status"] == "completed":
                 return json.loads(row["result"])
             if row["status"] != "running":
+                old = json.loads(row["result"] or "null") or {}
+                if old.get("disputed"):
+                    return old  # (v0.4.8.7: asked again: the same answer)
                 raise builds.Invalid("This game was cancelled.")
             ticket = {"mode": row["mode"], "meta": json.loads(row["meta"] or "{}")}
             elapsed = time.time() - row["created_at"]
             summary = progression.validate_summary(data.get("summary"), ticket)
             if summary["duration"] > elapsed + TIME_SLACK:
                 raise builds.Invalid("Reported game time exceeds the time since the game started.")
+            if verdict and verdict["state"] == "disputed":
+                return s.void_disputed(c, aid, row, ticket["meta"], verdict, match_id)  # (v0.4.8.7: no rewards, the ante back)
             char = s.character(aid, row["character_id"], c)
             rw = progression.rewards(summary, ticket, char)
             # v0.4.8.5: Pro-Am RP (worked out before apply_progress counts this game in the build's record): win or loss,
@@ -1658,7 +1786,12 @@ class Handler(BaseHTTPRequestHandler):
                       "build_slot_unlocked": slot_opened, **({"build_slots": s.build_slots(c, aid)} if slot_opened else {})}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result
-        return self.respond(200, db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete))
+        out = db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete)
+        if out.get("disputed"):  # (v0.4.8.7: the game shows "Result not saved: <why>")
+            return self.respond(409, {"error": out["message"], "disputed": True, "balance": out.get("balance")})
+        if verdict:
+            out = {**out, "checked": verdict["state"]}
+        return self.respond(200, out)
 
 
 # v0.4.8.6 RIMRIFT: the save is data/rimrift.sqlite3. A game folder from before the rename has the old one: the first start
