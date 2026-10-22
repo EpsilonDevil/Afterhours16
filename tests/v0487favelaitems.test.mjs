@@ -161,7 +161,8 @@ test('the bandana\'s ends hang toward the ground and swing: they lag when he mov
   sw.step(at(40), out, 4.02); sw.step(at(40), out, 4.04);
   assert.ok(out.every(Number.isFinite) && Math.abs(dirOf(sw)[0]) < 0.1);
   const v2 = src('client/js/char/view.js');
-  assert.ok(v2.includes('this.tailSway = new TailSway(bt.pivot, bt.dir, bt.len)') && v2.includes('tm.bones = this.tailBones') && (v2.match(/if \(this\.tailSway\) this\.swing\(\);/g) || []).length === 2, 'swung every pose and every move');
+  assert.ok(v2.includes('this.tailSway = new TailSway(bt.pivot, bt.dir, bt.len, { samples: bt.samples })') && // (v0.4.8.9: with the points it keeps out of the head, tests/v0489bandana)
+     v2.includes('tm.bones = this.tailBones') && (v2.match(/if \(this\.tailSway\) this\.swing\(\);/g) || []).length === 2, 'swung every pose and every move');
 });
 
 // a celebration through the animator: the rig's joints at every frame (t: seconds into it)

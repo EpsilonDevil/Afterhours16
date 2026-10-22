@@ -1,4 +1,14 @@
-# RIMRIFT — v0.4.8.8
+# RIMRIFT — v0.4.8.9
+
+## New in v0.4.8.9: The Gauntlet
+
+Full list in `PATCH_NOTES_v0.4.8.9.docx`. Design contract: `docs/GAUNTLET.md`.
+- **The Gauntlet:** a turn-based basketball deckbuilder roguelike (Home → The Gauntlet). Four stats (Stamina = energy, Shooting, Defense = Stops, Health for the run), combos and Flow, Depth/Tight deck-size cards, 22 random match rules, three bracket phases (matches, Rivals, Coolers, Boost Shops, Mystery Stops) and a boss each, then the Final. The game plays out on a cinematic court above the cards. A nemesis system remembers the characters you meet across runs (grow, regress, remember, betray, ally). VC 140/300/900/2000 per match/Rival/boss/Final, capped at 8,000 per run and 180 per minute.
+- **Park cards:** sacrifice up to three ICON 99 builds (after 1, 3 with 3 players, and 5 completed runs) to make them permanent Gauntlet players and earn Common +1%, Rare +3% and Legendary +5% account-wide park boosts to an attribute from the sacrificed Icon. Park games only.
+- **Also:** a subtler ICON aura at levels 3 and 4; event park streak VC 75% smaller; the Favelas bandana no longer clips through the head.
+- **Quick patch 1:** the online server replays every Gauntlet run with an optional Node.js helper and pays only what the replay earned (✓ Verified on the summary); without Node it falls back to the count checks. The server installs Node itself (`deploy/`); player-hosted PCs need nothing.
+
+## Earlier: v0.4.8.8
 
 ## New in v0.4.8.8: The Pro-Am Overhaul
 

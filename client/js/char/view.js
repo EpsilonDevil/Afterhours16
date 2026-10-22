@@ -5,7 +5,7 @@ import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, 
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
 import { B } from './skeleton.js';
-import { TailSway } from './sway.js'; // (v0.4.8.7: the bandana's swinging ends)
+import { TailSway, drapeBodies } from './sway.js'; // (v0.4.8.7: the bandana's swinging ends; v0.4.8.9: draped over him)
 
 // v0.4.8 the Sharp Eye backflip: the whole body turned head over heels (angle about his own left-right axis; negative
 // is backwards) round a point py up from his feet, then placed and turned to face where he faces
@@ -148,7 +148,8 @@ export class AthleteView {
       const bt = this.model.bandanaTail;
       if (geo.bandanaTails && bt) {
         this.tailBones = new Float32Array(this.rig.skin.length);
-        this.tailSway = new TailSway(bt.pivot, bt.dir, bt.len);
+        this.tailSway = new TailSway(bt.pivot, bt.dir, bt.len, { samples: bt.samples });
+        this.tailHC = this.model.headCenter(); this.tailBodies = []; // (v0.4.8.9: the head, neck and shoulders it drapes over)
         const tm = add(geo.bandanaTails, bmat, 'bandana-ends');
         tm.bones = this.tailBones;
       }
@@ -243,7 +244,8 @@ export class AthleteView {
   swing() {
     const h = B.head * 16, t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
     this.tailBones.set(this.rig.skin);
-    this.tailSway.step(this.rig.skin.subarray(h, h + 16), this.tailBones.subarray(h, h + 16), t);
+    const bodies = drapeBodies(this.rig, this.world, this.tailHC, this.model.d.headR, this.tailBodies);
+    this.tailSway.step(this.rig.skin.subarray(h, h + 16), this.tailBones.subarray(h, h + 16), t, bodies);
   }
 
   // world position of a bone

@@ -279,6 +279,10 @@ export class Game {
       const mean = {}; for (const k in sum) mean[k] = sum[k] / cnt[k];
       for (const p of this.players) p.applyRealism(mean, REALISM);
     }
+    // v0.4.8.9 park cards (Gauntlet sacrifices): a park game at a park (cfg.parkCards: the session's, from the venue), each
+    // player's own (his entry's, or his build's park_cards), the same on every screen. Never Pro-Am, the Pro Run or crew runs
+    this.parkCards = !!cfg.parkCards && cfg.mode === 'park';
+    if (this.parkCards) for (const p of this.players) p.applyParkCards(p.entry.parkCards || p.entry.build?.park_cards);
     // v0.4.4: the user's lifetime numbers drive how auto-play plays his player
     for (const p of this.players) if (p.human) p.profile = statProfile(p.entry.build, this.mode);
     this.score = [0, 0];

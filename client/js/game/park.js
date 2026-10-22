@@ -2444,7 +2444,7 @@ export class ParkHub {
     // (his ring is a watched player's, white, not yours)
     s.game.players.forEach((p, i) => { const v = s.visuals[i]; if (!p.human || !v) return; v.ringColor = '#f4f2ec'; if (v.ring) v.ring.material.color = M.hexLinear('#f4f2ec'); });
     // (his game exactly as his screen made it: his auto-play and his green window, not this screen's settings)
-    const g = new Game({ mode: 'park', full: !!setup.full, seed: setup.seed, rosters, catalog: this.catalog, target: setup.target, surface: this.venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt', difficulty: setup.difficulty ?? 0.6, assist: !!setup.assist, greenBonus: setup.greenBonus || 1, multi: false, inputDelay: 0 });
+    const g = new Game({ mode: 'park', full: !!setup.full, seed: setup.seed, rosters, catalog: this.catalog, target: setup.target, surface: this.venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt', difficulty: setup.difficulty ?? 0.6, assist: !!setup.assist, greenBonus: setup.greenBonus || 1, multi: false, inputDelay: 0, parkCards: this.venue.theme?.kind === 'park' });
     g.teamsMeta = setup.teams; spreadGreens(g.players, this.catalog);
     s.game = g;
     s.animDt = (o, d0, x, z, r) => this.animDt(o, d0, x, z, r);

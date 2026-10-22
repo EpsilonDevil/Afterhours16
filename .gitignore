@@ -22,7 +22,6 @@ data/backups/
 /client/renderer.js
 /client/scene.js
 /client/style.css
-/docs/DEPLOYMENT.md
 /docs/RULES_AND_RECOVERY.md
 /docs/TEST_EVIDENCE.md
 /docs/renders/
@@ -49,3 +48,4 @@ data/backups/
 # v0.4.7.5 bug reports written by the game (send the file along; it stays out of the repo)
 /Afterhours16_Bug_Reports.txt
 /RIMRIFT_Bug_Reports.txt
+# (v0.4.8.9 qp1: docs/DEPLOYMENT.md is shared again: it now documents the server setup and the optional Node.js replay helper)

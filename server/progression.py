@@ -277,11 +277,13 @@ def rewards(summary, ticket, char):
     pot = 0
     if mode == "park":
         streak = ticket["meta"].get("streak", 0) + 1 if won else 0
-        mult = streak_multiplier(streak) if won else 1.0
+        rep_mult = streak_multiplier(streak) if won else 1.0
+        # (v0.4.8.9: at an event park the streak's VC multiplier is cut by 75%: event_streak_mult. Rep keeps the full one)
+        mult = event_streak_mult(rep_mult) if ticket["meta"].get("venue") in EVENT_VENUES else rep_mult
         vc = (160 + (180 if won else 40) + max(0, statline)) * VC_K
         vc = min(int(vc * mult), int(2200 * VC_K * mult))
         rep = (70 if won else 25) + s["pts"] * 2 + s["ast"] * 3 + s["reb"] * 2 + s["stl"] * 3 + s["blk"] * 3 + s["ankles"] * 6 + s["posters"] * 8
-        rep = int(rep * mult)
+        rep = int(rep * rep_mult)
         vc, rep = up(vc), up(rep)
         # v0.4.5 King Tut Cup ante-up: the stake was taken when the game started. A win pays it back plus the
         # other side's stake, boosted by the Cup streak multiplier; a loss pays nothing back.
@@ -316,7 +318,7 @@ def rewards(summary, ticket, char):
             gains[bid] = inc
     out = {"vc": int(vc), "rep": int(max(0, rep)), "won": won, "streak": streak, "badges": gains, "rank_boost": boost}
     if mode == "park":
-        out["streak_mult"] = streak_multiplier(streak) if won else 1.0
+        out["streak_mult"] = mult  # (v0.4.8.9: the VC multiplier, an event park's cut one)
         out["bounty"] = int(ticket["meta"].get("bounty") or 0) if won else 0
         if ticket["meta"].get("venue") in EVENT_VENUES:  # (v0.4.7.5 qp3: any park event, not only the Cup)
             out["cup"] = {"ante": int(ticket["meta"].get("ante") or 0), "pot": pot, "event": ticket["meta"].get("event")}
@@ -494,6 +496,14 @@ def bounty_for(streak):
     if not isinstance(streak, int) or isinstance(streak, bool) or streak < BOUNTY_MIN_STREAK:
         return 0
     return min(15000, 2500 + 750 * (streak - BOUNTY_MIN_STREAK))
+
+
+EVENT_STREAK_KEEP = 0.25
+
+
+def event_streak_mult(mult):
+    """v0.4.8.9: an event park's streak VC multiplier, 75% of its bonus cut: 1 + (mult - 1) x 0.25 (x4 becomes x1.75)."""
+    return round(1 + (mult - 1) * EVENT_STREAK_KEEP, 4)
 
 
 def streak_multiplier(streak):

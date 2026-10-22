@@ -1224,6 +1224,7 @@ SCENERY.cage = env => {
   const carGeo = ctx.geometry(G.merge(PR.car('#ffffff'), true)), traffic = [];
   for (let i = 0; i < 10; i++) { const L = lanes[i % 4], taxi = i % 3 === 1, m = new Mesh(carGeo, new Material({ color: lin(taxi ? '#f2c230' : fixed.pick(['#d8d4cc', '#1e1f22', '#7a1f1c', '#2a4a7a', '#5a6066'])), roughness: 0.4, metalness: 0.3 }), { castShadow: false, reflect: false }); scene.add(m); traffic.push({ L, s: fixed.range(-70, 70), v: fixed.range(6, 10), m }); }
   anim.push({ step(dt) { for (const c of traffic) { c.s += c.v * dt * c.L.dir; if (c.s > 70) c.s -= 140; if (c.s < -70) c.s += 140; const yaw = c.L.axis === 'z' ? (c.L.dir > 0 ? 0 : Math.PI) : (c.L.dir > 0 ? Math.PI / 2 : -Math.PI / 2); M.m4fromYaw(c.m.matrix, c.L.axis === 'z' ? c.L.c : c.s, 0, c.L.axis === 'z' ? c.s : c.L.c, yaw); } } });
+  anim.at(-1).step(0); // (on their lanes from the first frame, not parked at the origin until the first update)
   // people on the parked cars, a line at the hot-dog cart, a group by the metro, stoops along the side streets
   parkedAt.forEach(([x, z], i) => { if (i % 2 === 0) seats.push({ x: x - Math.sign(x) * 1.0, y: 0.86, z: z + 1.2, yaw: x > 0 ? -Math.PI / 2 : Math.PI / 2 }, { x: x - Math.sign(x) * 1.0, y: 0.86, z: z + 0.5, yaw: x > 0 ? -Math.PI / 2 : Math.PI / 2 }); });
   standRow(seats, 17.5 - 0.3, 20 - 1.4, 17.5 - 0.3, 20 - 4.4, 4, 0, [17.5, 20]); standRow(seats, 13.5, -20.2, 15.2, -19.6, 3, 0, [17, -22.5]);

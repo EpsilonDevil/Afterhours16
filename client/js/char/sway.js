@@ -5,7 +5,11 @@
 //   * it hangs toward the ground (most of the way: cloth with a little body to it), whatever the head is doing; and
 //   * its tip lags and swings: a damped spring on the tip's sideways offset, pushed by the pivot's acceleration (he
 //     starts to run: the ends fly back; he stops: they swing on past and settle, about one and a half swings a second).
-// Pure maths, no graphics (tests/v0487favelaitems.test.mjs runs it).
+// v0.4.8.9: and they drape over him instead of passing through: given the bodies (drapeBodies: the head, the neck, the
+// upper back and the shoulders, as a sphere and capsules from the rig), points along the ends (o.samples) that end up
+// inside one turn the piece out of it about the knot, and the spring's swing settles where the cloth comes to rest.
+// Pure maths, no graphics (tests/v0487favelaitems.test.mjs and tests/v0489bandana.test.mjs run it).
+import { B } from './skeleton.js';
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const len = a => Math.hypot(a[0], a[1], a[2]);
 const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
@@ -22,6 +26,24 @@ function turn(a, b) {
 }
 const mul3 = (A, B) => { const o = new Array(9); for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) o[c * 3 + r] = A[r] * B[c * 3] + A[3 + r] * B[c * 3 + 1] + A[6 + r] * B[c * 3 + 2]; return o; };
 const ap3 = (R, v) => [R[0] * v[0] + R[3] * v[1] + R[6] * v[2], R[1] * v[0] + R[4] * v[1] + R[7] * v[2], R[2] * v[0] + R[5] * v[1] + R[8] * v[2]];
+// the nearest point to p on a body's core (a segment a-b; a sphere has a = b)
+function nearest(p, a, b) {
+  const ab = sub(b, a), l2 = dot(ab, ab);
+  if (l2 < 1e-12) return a;
+  const t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / l2));
+  return [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t];
+}
+// the bodies the ends drape over, in world space, from the rig as it stands this frame (× the head's radius R): the head
+// (a sphere round its centre: the skull and the hair under the band), the neck, the upper back (the chest joint up to
+// the base of the neck) and the shoulders (across, joint to joint). hc: the head's centre in the bind pose.
+export const DRAPE = { head: 1.08, neck: 0.62, back: 1.0, shoulders: 0.7, gap: 0.03 };
+export function drapeBodies(rig, world, hc, R, out = []) {
+  const S = rig.skin.subarray(B.head * 16, B.head * 16 + 16), c = xf(S, hc), J = b => rig.jointWorld(world, b, [0, 0, 0]);
+  const neck = J(B.neck), head = J(B.head), chest = J(B.chest);
+  out.length = 0;
+  out.push({ a: c, b: c, r: DRAPE.head * R }, { a: neck, b: head, r: DRAPE.neck * R }, { a: chest, b: neck, r: DRAPE.back * R }, { a: J(B.upperL), b: J(B.upperR), r: DRAPE.shoulders * R });
+  return out;
+}
 
 export const SWAY = { hang: 0.75, freq: 1.5, damp: 0.22, push: 1, maxSwing: 0.9, step: 1 / 120 };
 
@@ -34,10 +56,12 @@ export class TailSway {
     this.u = [0, 0, 0]; this.v = [0, 0, 0]; // the tip's sideways offset from hanging straight, and its speed (world, m)
     this.last = null; this.prev = null; this.vel = [0, 0, 0];
     this.angle = 0; // (how far from the bone's own pose it hangs now, radians: for the tests)
+    this.samples = o.samples || null; // (points along the ends, bind pose: what's kept out of the bodies)
+    this.touching = false; // (resting on him this frame: for the tests)
   }
   reset() { this.u = [0, 0, 0]; this.v = [0, 0, 0]; this.last = null; this.prev = null; this.vel = [0, 0, 0]; }
-  // S: the bone's skin matrix (16, column-major); out: the piece's (16); t: seconds (any clock)
-  step(S, out, t) {
+  // S: the bone's skin matrix (16, column-major); out: the piece's (16); t: seconds (any clock); bodies: drapeBodies()
+  step(S, out, t, bodies = null) {
     const pw = xf(S, this.pivot), dw = norm(xd(S, this.dir));
     let dt = this.last == null ? 0 : t - this.last;
     this.last = t;
@@ -64,8 +88,10 @@ export class TailSway {
     const d1 = norm(slerpDir(dw, down, this.o.hang, ang));
     const R1 = turn(dw, d1);
     const d2 = norm([d1[0] * this.L + this.u[0], d1[1] * this.L + this.u[1], d1[2] * this.L + this.u[2]]);
-    const R = mul3(turn(d1, d2), R1);
-    this.angle = Math.acos(Math.max(-1, Math.min(1, dot(dw, d2))));
+    let R = mul3(turn(d1, d2), R1);
+    this.touching = false;
+    if (bodies && this.samples) R = this.drape(S, pw, R, bodies, dw, d1);
+    this.angle = Math.acos(Math.max(-1, Math.min(1, dot(dw, ap3(R, dw)))));
     // out = T(pw) R T(-pw) S
     const Rp = ap3(R, pw), tx = pw[0] - Rp[0], ty = pw[1] - Rp[1], tz = pw[2] - Rp[2];
     for (let c = 0; c < 4; c++) {
@@ -73,6 +99,35 @@ export class TailSway {
       out[c * 4] = r[0] + tx * w; out[c * 4 + 1] = r[1] + ty * w; out[c * 4 + 2] = r[2] + tz * w; out[c * 4 + 3] = w;
     }
     return out;
+  }
+  // the ends out of the bodies: the deepest point inside one turns the piece about the knot until it's on the surface (a
+  // few passes: off the head it may meet the shoulders). A body the knot itself is inside (a head thrown right back onto
+  // the upper back) is left out this frame: nothing about the knot could clear it. Then the spring is told where the
+  // cloth lies (the tip's offset), and loses any speed into the body, so it rests on him rather than pressing through
+  drape(S, pw, R, bodies, dw, d1) {
+    const live = bodies.filter(b => len(sub(pw, nearest(pw, b.a, b.b))) > b.r + 0.004);
+    if (!live.length) return R;
+    const rel = this.samples.map(p => sub(xf(S, p), pw)), gap = DRAPE.gap * this.L * 0.4;
+    let n = null;
+    for (let it = 0; it < 8; it++) {
+      let worst = 0, wv = null, wn = null;
+      for (const p of rel) {
+        const v = ap3(R, p), q = [pw[0] + v[0], pw[1] + v[1], pw[2] + v[2]];
+        for (const b of live) { const c = nearest(q, b.a, b.b), d = len(sub(q, c)), pen = b.r + gap - d; if (pen > worst) { worst = pen; wv = v; wn = d > 1e-6 ? sub(q, c).map(x => x / d) : [0, 0, -1]; } }
+      }
+      if (!wv) break;
+      const v2 = [wv[0] + wn[0] * (worst + 1e-3), wv[1] + wn[1] * (worst + 1e-3), wv[2] + wn[2] * (worst + 1e-3)];
+      R = mul3(turn(norm(wv), norm(v2)), R); n = wn;
+    }
+    if (n) {
+      this.touching = true;
+      const df = ap3(R, dw);
+      this.u = [(df[0] - d1[0]) * this.L, 0, (df[2] - d1[2]) * this.L];
+      const ul = len(this.u), mx = this.o.maxSwing * this.L; if (ul > mx) this.u = this.u.map(x => x * mx / ul);
+      const vn = dot(this.v, n); if (vn < 0) this.v = this.v.map((x, i) => x - n[i] * vn);
+      this.v[1] = 0;
+    }
+    return R;
   }
   // where its tip is now (world), for the tests
   tip(out) { return xf(out, [this.pivot[0] + this.dir[0] * this.L, this.pivot[1] + this.dir[1] * this.L, this.pivot[2] + this.dir[2] * this.L]); }

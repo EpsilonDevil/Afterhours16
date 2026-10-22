@@ -123,19 +123,23 @@ export class IconCursor {
 // (m), the layer's opacity, the violet edge's brightness, the flames' rise (texture tiles a second), the tips' flicker
 // (rad/s) and sway (half-widths), the outer roaring layer, the two sets of embers, black crackles (a second), the
 // shockwave on the floor
+// (v0.4.8.9: levels 3 and 4 are subtler than they were: still a step up from 2 and from each other, but fainter, a
+// softer edge, less width and reach over the head, a smaller outer layer, fewer and smaller embers and crackles, a
+// gentler floor pulse; they were 0.76/0.94 wide, rose 1.35/2.1 m, at 0.92/0.97 opacity with a 1.55/2.15 edge)
 export const ICON_AURA = {
-  width: [0.42, 0.54, 0.62, 0.76, 0.94],
-  rise: [0.25, 0.5, 0.8, 1.35, 2.1],
-  alpha: [0, 0.78, 0.84, 0.92, 0.97],
-  rim: [0.9, 1.0, 1.15, 1.55, 2.15],
-  speed: [0.3, 0.42, 0.55, 0.72, 1.0],
-  flicker: [3, 4, 5.5, 7.5, 11],
-  sway: [0, 0.07, 0.1, 0.13, 0.19],
-  outer: [0, 0, 0, 0.7, 1],
-  embers: [0, 0, 1, 1, 1],
-  embers2: [0, 0, 0, 1, 1],
-  crackle: [0, 0, 0, 0.4, 2.2],
+  width: [0.42, 0.54, 0.62, 0.69, 0.79],
+  rise: [0.25, 0.5, 0.8, 1.04, 1.36],
+  alpha: [0, 0.78, 0.84, 0.87, 0.9],
+  rim: [0.9, 1.0, 1.15, 1.3, 1.52],
+  speed: [0.3, 0.42, 0.55, 0.62, 0.74],
+  flicker: [3, 4, 5.5, 6.4, 7.8],
+  sway: [0, 0.07, 0.1, 0.115, 0.14],
+  outer: [0, 0, 0, 0.4, 0.62],
+  embers: [0, 0, 1, 0.8, 0.8],
+  embers2: [0, 0, 0, 0.55, 0.65],
+  crackle: [0, 0, 0, 0.25, 0.8],
   pulse: [0, 0, 0, 0, 1],
+  pulseSpan: 0.9, // (m the floor pulse spreads at level 4: was 1.5)
   order: 6,
 };
 const REF_H = 1.75; // (m, feet to the head joint of the reference body the geometry is laid out on)
@@ -226,7 +230,7 @@ export function auraGeometry() {
     });
   }
   // the shockwave on the floor: a ring whose inner and outer edges ride their own bones (it thins away at the end)
-  { const n = 48, rings = [[0, [0.12, 0.03, 0.24, 0]], [0.55, [0.015, 0, 0.03, 0.62]], [0.85, [0.28, 0.09, 0.56, 0.22]], [1, [0.28, 0.09, 0.56, 0]]], base = P.length / 3;
+  { const n = 48, rings = [[0, [0.12, 0.03, 0.24, 0]], [0.55, [0.015, 0, 0.03, 0.42]], [0.85, [0.28, 0.09, 0.56, 0.15]], [1, [0.28, 0.09, 0.56, 0]]] /* (v0.4.8.9: fainter: 0.62 / 0.22 alpha) */, base = P.length / 3;
     for (let i = 0; i <= n; i++) {
       const a = i / n * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
       for (const [w, c] of rings) { P.push(dx, 0, dz); N.push(0, 1, 0); U.push(su, 0.5); C.push(...c); J.push(AB.ringIn, AB.ringOut, 0, 0); W.push(1 - w, w, 0, 0); }
@@ -324,7 +328,7 @@ export class IconAura {
     const gp = Math.max(0, Math.min(1, lerpTab(A.pulse, lv)));
     if (gp > 0.01) {
       const P = 1.35, p = (t % P) / P, out = 1 - (1 - p) ** 2.2, inn = 1 - (1 - Math.max(0, (p - 0.22) / 0.78)) ** 1.6;
-      const r0 = 0.9, span = 1.5 * gp;
+      const r0 = 0.9, span = A.pulseSpan * gp;
       M.m4fromYaw(at(AB.ringOut), fx, 0.02, fz, 0, 1); const ro = r0 + span * out; at(AB.ringOut)[0] = ro; at(AB.ringOut)[10] = ro;
       M.m4fromYaw(at(AB.ringIn), fx, 0.02, fz, 0, 1); const ri = r0 + span * inn; at(AB.ringIn)[0] = ri; at(AB.ringIn)[10] = ri;
     } else { zero(at(AB.ringIn)); zero(at(AB.ringOut)); }
@@ -333,7 +337,7 @@ export class IconAura {
     mat.opacity = lerpTab(A.alpha, lv) * Math.min(1, lv / 0.6) * (0.93 + 0.05 * Math.sin(t * fl * 1.7) + 0.02 * Math.sin(t * 23));
     const rim = lerpTab(A.rim, lv); mat.color[0] = rim; mat.color[1] = rim; mat.color[2] = rim;
     mat.uvOffset[1] = ((mat.uvOffset[1] - lerpTab(A.speed, lv) * dt) % 1 + 1) % 1;
-    const o = mesh.boundsOverride; o.center[0] = (fx + hx) / 2; o.center[1] = fy + Hh * 0.7; o.center[2] = (fz + hz) / 2; o.radius = 1.4 + rise + (gp > 0.01 ? 1.2 : 0);
+    const o = mesh.boundsOverride; o.center[0] = (fx + hx) / 2; o.center[1] = fy + Hh * 0.7; o.center[2] = (fz + hz) / 2; o.radius = 1.4 + rise + (gp > 0.01 ? 0.6 + A.pulseSpan * 0.6 : 0);
   }
   dispose() { this.scene.remove(this.mesh); this.ctx.disposeGeometry?.(this.mesh.geo); this.mesh = null; }
 }

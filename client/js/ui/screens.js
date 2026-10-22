@@ -68,6 +68,8 @@ function drawScreen(app, name, params, ui) {
     // (v0.4.8.8 The Pro-Am Overhaul: the Pro-Am tab is your team's (ui/proam.js); the old pickup screen: {classic: true})
     case 'proam': return params.classic ? Modes.proam(app, root, params) : import('./proam.js').then(P => P.render(app, root, params));
     case 'prorun': return ProRun.render(app, root, params);
+    // (v0.4.8.9 The Gauntlet: the deckbuilder's screens and its cinematic court, ui/gauntlet.js)
+    case 'gauntlet': return import('./gauntlet.js').then(G => G.render(app, root, params));
     case 'practice': return Modes.practice(app, root, params);
     case 'stats': return Stats.render(app, root, params);
     case 'codes': return Codes.render(app, root, params);
@@ -177,6 +179,7 @@ function home(app, root) {
         <button class="tile big park" data-go="park" style="--c:${aff ? aff.color : '#ff4d24'}"><span class="tile-k">THE PARK</span><b>${aff ? esc(aff.park) : 'Choose your affiliation'}</b><small>${aff ? esc(aff.name) + ' · squad spots · Got Next' : 'Harbor Kings · Old Brick Society · Foundry Rivets'}</small>${app.config?.event && EVENTS[app.config.event.id] ? `<span class="tile-event" style="--c:${EVENTS[app.config.event.id].color}">${esc(EVENTS[app.config.event.id].eyebrow)} · LIVE</span>` : ''}</button>
         <button class="tile t-prorun" data-go="prorun"><span class="tile-k">THE PRO RUN</span><b>${pro ? esc(pro) : 'College → Draft → League'}</b><small>${pro ? 'Your career' : '82 games · playoffs · Finals'}</small></button>
         <button class="tile t-proam" data-go="proam"><span class="tile-k">PRO-AM</span><b>${team ? esc(team.name) : '5v5 Arena'}</b><small>${team ? `${team.wins}-${team.losses} · 5v5` : 'Build your team'}</small></button>
+        <button class="tile t-gauntlet" data-go="gauntlet"><span class="tile-k">THE GAUNTLET</span><b>Deck runs</b><small>Brackets · bosses · rivals who remember</small></button>
         <button class="tile t-mp" data-go="myplayer"><span class="tile-k">MYPLAYER</span><b>Upgrades</b><small>${c.cap_breakers_available ? `${c.cap_breakers_available} cap breakers to place` : `Max upgrade ${money(c.max_upgrade_cost)} VC`}</small></button>
         <button class="tile t-store" data-go="store"><span class="tile-k">VC STORE</span><b>Gear</b><small>${Object.keys(app.catalog).length} items</small></button>
         <button class="tile t-practice" data-go="practice"><span class="tile-k">PRACTICE</span><b>The Gym</b><small>Shootaround · 1-on-1</small></button>

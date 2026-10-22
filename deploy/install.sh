@@ -79,6 +79,9 @@ wait_for_updates
 apt_ update
 apt_ install git python3 curl ca-certificates gnupg ufw unattended-upgrades openssl
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || die "Python 3.10 or newer is needed."
+# v0.4.8.9 qp1: Node.js for the Gauntlet's replay checks (server/verify/gauntlet_replay.mjs: the deck engine replays each
+# run before it's paid; v14 or newer, Ubuntu 24.04's package is 18). Optional: without it runs are checked by their counts
+apt_ install nodejs || echo "(Node.js didn't install: Gauntlet runs are checked by their counts until it does. Try later: sudo apt-get install -y nodejs)"
 if ! command -v caddy >/dev/null 2>&1; then
   # Caddy's own repository (its latest release), else Ubuntu's package
   if curl -fsSL --max-time 30 https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \

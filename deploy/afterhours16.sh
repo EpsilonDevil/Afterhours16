@@ -66,6 +66,7 @@ update() {
     if [ -n "$h" ] && [ "${games:-0}" != 0 ]; then echo "A new version is on GitHub; waiting for the ${games} game(s) being played to end."; return 0; fi
   fi
   as_app git -C "$APP" reset --quiet --hard FETCH_HEAD || return 1
+  ensure_node  # (v0.4.8.9 qp1: the Gauntlet's replay checks; never stops the update)
   # (the server's own files may have changed too)
   install -m 755 "$APP/deploy/afterhours16.sh" /usr/local/bin/afterhours16
   for u in "$APP"/deploy/systemd/*; do install -m 644 "$u" "/etc/systemd/system/$(basename "$u")"; done
@@ -73,6 +74,26 @@ update() {
   systemctl restart afterhours16
   for _ in $(seq 1 20); do hosting >/dev/null && break; sleep 1; done
   echo "Updated ${old:0:7} -> ${new:0:7}: $(git -C "$APP" log -1 --format='%s'). Version now: $(hosting | awk '$1=="BUILD" {print $2" "$3}')"
+}
+
+# v0.4.8.9 qp1: Node.js for the Gauntlet's replay checks (server/verify/gauntlet_replay.mjs). A server set up before it
+# picks it up with its next update: one try at installing Ubuntu's package (it never stops the update), then a hint each
+# update after that. Without Node the service checks runs by their counts (its start banner and logs say which)
+ensure_node() {
+  command -v node >/dev/null 2>&1 && return 0
+  local mark=/var/lib/afterhours16/.node-tried
+  if [ -e "$mark" ]; then
+    echo "(Node.js isn't installed: Gauntlet runs are checked by their counts. For replay checks: sudo apt-get install -y nodejs)"
+    return 0
+  fi
+  mkdir -p /var/lib/afterhours16 2>/dev/null && touch "$mark" 2>/dev/null || true
+  echo "Installing Node.js for the Gauntlet's replay checks (once)..."
+  if { apt-get -o DPkg::Lock::Timeout=300 -qq update && apt-get -o DPkg::Lock::Timeout=300 -y -qq install nodejs; } >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    echo "Node.js $(node --version) installed: Gauntlet runs are replayed before they're paid."
+  else
+    echo "(Node.js didn't install: Gauntlet runs are checked by their counts. Try: sudo apt-get install -y nodejs)"
+  fi
+  return 0
 }
 
 joincode() {
@@ -104,6 +125,12 @@ backup() {
 # the network settings for games (deploy/sysctl-afterhours16.conf), applied quietly; never fails the service start
 tune() {
   [ "$(id -u)" = 0 ] || return 0
+  # (v0.4.8.9 qp1: the once-only Node.js install, off to one side so it never holds the service's start up: this runs
+  # as root each time the service starts, so a server that was set up before picks it up with the restart of its next
+  # update, nobody running anything. The service finds node the moment it's there)
+  if ! command -v node >/dev/null 2>&1 && [ ! -e /var/lib/afterhours16/.node-tried ]; then
+    (setsid bash -c "$(declare -f ensure_node); ensure_node" >>/var/log/afterhours16-node.log 2>&1 &) || true
+  fi
   [ -f "$APP/deploy/sysctl-afterhours16.conf" ] || return 0
   modprobe tcp_bbr >/dev/null 2>&1 || true
   install -m 644 "$APP/deploy/sysctl-afterhours16.conf" /etc/sysctl.d/90-afterhours16.conf 2>/dev/null || return 0

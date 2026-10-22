@@ -1,4 +1,33 @@
-# Status — v0.4.8.8, The Pro-Am Overhaul (v0.4.8.7, the server runs the park, and its quick patches below; the port baseline moves with this update)
+# Status — v0.4.8.9, The Gauntlet (v0.4.8.8, The Pro-Am Overhaul, and earlier below; the port baseline moves with this update)
+
+## v0.4.8.9: The Gauntlet
+
+### v0.4.8.9 quick patch 1 (Oct 22): Gauntlet replay checks
+| Area | Files | Notes |
+|---|---|---|
+| Replay (Deck agent) | `deck/replay.js` (`replay(start, choices)` → ok, counts, outcome hash, error at index; `act`, `applyChoice`, `recordChoice`, `CHOICE_KINDS` node/play/end/reward/cooler/shopBuy/shopRemove/leave/event; ≤ 20,000 choices; never throws; prototype-free tables), `deck/run.js` (identities and styles only from an engine AIWorld on `world.aiSeed`; `ai`/`now` cosmetic), `outcomeHash`, `tools/deck_sim.mjs` (`playRun` → `{start, log}`) | a completed run replays in ~30 ms warm, ~250 ms cold |
+| Server (Server/UI) | `server/verify/gauntlet_replay.mjs` (new), `server/gauntlet.py` (`replay_check`: RIMRIFT_NODE or PATH, ≥ v14, RIMRIFT_REPLAY=0; no shell, minimal env, 160 MB heap, no string code generation, 5 s timeout, POSIX CPU/DATA/CORE/FSIZE limits, 160 KB in / 64 KB out, 2 at a time; start snapshot `{seed, player, world (aiSeed = shared AI seed), unlocks}`; finish pays from replay counts, 409 on a bad replay or mismatch, else fallback `verified: false`), `server/migrations/018_v0489qp1_gauntlet_replay.sql`, `server/app.py` (409s, banner line), `deploy/install.sh` + `deploy/afterhours16.sh` (`ensure_node`, one non-fatal apt install, also from the root ExecStartPre step so the existing droplet installs it after this update), `docs/DEPLOYMENT.md` (new) | Ubuntu 24.04 nodejs is v18; player-hosted PCs fall back |
+| Client (Hub agent) | `ui/gauntlet.js` (every state change through `D.act`, log saved with the run, newRun from the start response's world/unlocks, choices sent at finish, Verified tick, 409 reason), `ui/gauntletview.js`, `css/gauntlet.css` | browser e2e: failed, completed (capped) and converted-after-reload runs all verified |
+
+Tests: `tests/v0489replay.test.mjs`, `tests/test_v0489qp1_replay.py`, `tests/fixtures/gauntlet_play.mjs`; `v0489gauntletui` extended; `test_v0489_gauntlet.py` runs its choice-less runs with replay off; `test_server.py` migration 018.
+
+Player-facing list: `PATCH_NOTES_v0.4.8.9.docx` (source `.md`). Contract: `docs/GAUNTLET.md` (David's brief and answers: a sacrifice removes the build from the park; park cards boost the sacrificed Icon's stats; the 4 resources are the 4 stats).
+
+| Area | Files | Notes |
+|---|---|---|
+| Engine (Deck agent, new) | `client/js/deck/` (`index.js` API, `rng.js`, `cards.js` 107 + 8 Fatigue with upgrades, `combat.js` (energy, Stops, statuses, combos, Flow, Depth/Tight, intents, `REPUTATION` +25% Heart and damage against converted players, `SHADOW`), `foes.js`, `rules.js` (22), `map.js`, `abilities.js` (43), `events.js` (26, 9 nemesis; `EFFECT_KINDS`), `bosses.js` (9 + 3 Finals + Nemesis, each at its own Pro-Am park), `nemesis.js` (ranks, traits, memories, relationships; `worldAfterRun`, `worldTick`, `charLine`; ≤ 80 chars, ~56 KB), `rewards.js`, `run.js`, `runlib.js`, `anims.js`), `tools/deck_sim.mjs` | pure and seeded; smart policy completes 20% with a starter, ~50% converted; ~70 min per completed run; bosses are the walls |
+| UI and court (Hub agent) | `client/js/ui/gauntlet.js` (controller, localStorage save/resume, server calls with retry), `ui/gauntletview.js` (every screen as HTML from engine state), `game/deckcine.js` (cinematic court: real athletes and animator from scripted actions, real ball flights, broadcast camera with cuts, queued plays with skip and fast-forward), `css/gauntlet.css`, `ui/screens.js` (Home tile and route) | browser e2e on a scratch server: failed run, completed run (capped 8,000), sacrifice → converted player in setup, resume after reload |
+| Server (Server/UI agent) | `server/gauntlet.py` (new: profile, start, finish (count-consistency checks, ≥ 30 s per match won, 7-day limit, idempotent, 160 KB body), sacrifice (gates 1 / 3 with 3 distinct / 5, at most three, ICON 99 + Icon badge, `Service.remove_build`, seeded park card from `ICON_CARD_STATS`)), `server/migrations/017_v0489_gauntlet.sql`, `server/app.py` (routes, park card sync, `remove_build` factored out of delete-build), `server/progression.py` (`event_streak_mult`: 1 + (mult − 1) × 0.25 at event parks, VC and pot) | VC from counts 140/300/900/2000, caps 8,000 per run and 180 per real minute; calibration in the gauntlet.py docstring |
+| Park cards | `sim/player.js` (`applyParkCards`: known attribute at 1/3/5%, at most three, on `played` and phys; raw untouched), `sim/game.js` (only with cfg.parkCards and mode park), `game/session.js` (parkCards only at park-kind venues: parks and event parks, not Crew HQ, Pro-Am parks, arenas or practice), `game/park.js` (watched local games), `ui/online.js` (`parkCards` in the entry and key), `ui/sacrifice.js` (new: MyPLAYER row, sacrifice screen, 5-second hold, reveal), `ui/myplayer.js`, `ui/hold.js` (verb) | rules change in park games: moves the port baseline |
+| Aura | `game/iconfx.js` (levels 3 and 4 smaller, fainter, lower; `ICON_AURA.pulseSpan` 0.9 m) | levels 1–2 unchanged |
+| Bandana | `char/sway.js` (`drapeBodies`: head sphere, neck, upper back and shoulder capsules; `TailSway` samples turned out about the knot), `char/athlete.js`, `char/view.js` | before: up to 0.94 head radii inside, 8 of 29 celebrations clipped; after: none |
+| The Cage | `world/proamparks.js` (traffic starts on its lanes) | |
+| Version | 0.4.8.9: `package.json`, `server/app.py`, `launcher/*`, rebuilt `RIMRIFT.exe`, `tests/test_launcher.py`, `docs/ARCHITECTURE.md` | |
+
+Tests (new): `tests/v0489deck.test.mjs`, `v0489deck_combat`, `v0489deck_map`, `v0489deck_bosses`, `v0489deck_nemesis`, `v0489gauntletui`, `v0489parkcards`, `v0489bandana`, `tests/test_v0489_gauntlet.py`. Updated for changed rules: `test_server.py` (migration 017; the Cup pot under the event streak cut), `v0487favelaitems` (TailSway takes samples).
+
+Known limits: the server checks a run's counts and time, not a replay (no JavaScript runtime on the service); the Icon badge names shown on the sacrifice screen include two that name real people (Oprah, Sexy Red), which the planned clearance patch renames.
+
 
 ## v0.4.8.8: The Pro-Am Overhaul
 

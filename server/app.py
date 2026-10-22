@@ -21,7 +21,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from . import builds, progression, cup, crew, bugs, online, upnp, proam
+from . import builds, progression, cup, crew, bugs, online, upnp, proam, gauntlet
 from . import reset as season
 from .database import Database, encode
 
@@ -48,7 +48,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8.8"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset; v0.4.8.7; v0.4.8.8 The Pro-Am Overhaul)
+VERSION = "0.4.8.9"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset; v0.4.8.7; v0.4.8.8 The Pro-Am Overhaul; v0.4.8.9 The Gauntlet)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(env("TIME_SLACK", "30"))
@@ -252,6 +252,7 @@ class Service:
         # v0.4.8.8 The Pro-Am Overhaul (server/proam.py, docs/PROAM-OVERHAUL.md): Season 1 begins the first time this
         # runs; the AI Pro-Am teams are made, and the season items added to the catalog
         self.proam = proam.ProAm(self, CATALOG)
+        self.gauntlet = gauntlet.Gauntlet(self)  # (v0.4.8.9 The Gauntlet: runs, the nemesis world, sacrifices, park cards)
         self.proam.boot()
 
     def maybe_reset(self, now=None):
@@ -323,6 +324,22 @@ class Service:
             chars.append(ch)
         return builds.build_slots(chars, Service.kept_slots(c, account_id))
 
+    # v0.4.8.5 qp8 deleting a build (v0.4.8.9: and sacrificing one into the Gauntlet, the same way): not while it's in a
+    # game still running; an ICON's slot stays the account's (icon_slots); its games and Pro Run career go with it.
+    # -> {"icon_slot_kept", "removed"}
+    @staticmethod
+    def remove_build(c, aid, char, what="delete the build"):
+        char_id = char["id"]
+        if c.execute("SELECT 1 FROM matches WHERE character_id=? AND status='running' AND created_at>?", (char_id, time.time() - GAME_OPEN_SECS)).fetchone():
+            raise builds.Invalid(f"{char.get('name') or 'This build'} is in a game that's still running. Finish it or leave it first, then {what}.")
+        kept = builds.holds_icon_slot(char)
+        if kept:
+            c.execute("INSERT OR IGNORE INTO icon_slots(account_id, character_id, name, deleted_at) VALUES(?,?,?,?)", (aid, char_id, char.get("name"), time.time()))
+        removed = {"matches": c.execute("DELETE FROM matches WHERE character_id=?", (char_id,)).rowcount,
+                   "prorun_careers": c.execute("DELETE FROM prorun_careers WHERE character_id=?", (char_id,)).rowcount}
+        c.execute("DELETE FROM characters WHERE id=? AND account_id=?", (char_id, aid))
+        return {"icon_slot_kept": kept, "removed": removed}
+
     # v0.4.8.5 qp8: the ICON slots deleted builds left open for the account (icon_slots: one row each, counted once)
     @staticmethod
     def kept_slots(c, account_id):
@@ -350,8 +367,15 @@ class Service:
             stored, marked_before, marked_now = [], kept, 0
             pa_season = proam.current_season(conn)["n"]  # (v0.4.8.8)
             self.proam.sync_catalog(pa_season)
+            pcards = gauntlet.park_cards(conn, account_id)  # (v0.4.8.9: the account's park cards, on every build: park_cards)
+            ecards = gauntlet.entry_cards(pcards)
             for cid, data in rows:
                 char = builds.normalize(json.loads(data))
+                if (char.get("park_cards") or []) != ecards:
+                    char["park_cards"] = ecards
+                    if not ecards:
+                        char.pop("park_cards")
+                    conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
                 # v0.4.8.5: badges catch up with the current requirements as the profile loads (a lowered Hall of Fame
                 # mark, Handles for Days counting the games already played, Brick Wall's move to screens), not a game later
                 had_v0485 = bool(char.get("badges_v0485"))
@@ -415,6 +439,7 @@ class Service:
                     # v0.4.8.5 qp7: 4 base + 1 a build holding an ICON slot, up to 8 (and the slots this load opened, if any)
                     "build_slots": builds.build_slots(stored, kept),
                     "build_slot_unlocked": builds.slot_opened(marked_before, marked_now),
+                    "park_cards": pcards, "gauntlet_unlocks": gauntlet.unlocks(conn, account_id),  # (v0.4.8.9: the MyPLAYER row)
                     "proam_team": json.loads(team[0]) if team else None,
                     "badge_updates": badge_updates,
                     "daily_spin": self.spin_status(conn, account_id),
@@ -831,7 +856,8 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             raise HTTPError(400, "Invalid request length.")
-        limit = PRORUN_MAX + 4096 if urlsplit(self.path).path == "/api/prorun" else 65536
+        # (v0.4.8.9: a Gauntlet run's finish carries the nemesis world, up to gauntlet.MAX_WORLD_BYTES, with its summary)
+        limit = PRORUN_MAX + 4096 if urlsplit(self.path).path == "/api/prorun" else 160 * 1024 if urlsplit(self.path).path == "/api/gauntlet/finish" else 65536
         if not 0 < length <= limit:
             raise HTTPError(413, "Request body exceeds limit or is empty.")
         try:
@@ -953,6 +979,9 @@ class Handler(BaseHTTPRequestHandler):
             # v0.4.8.8 The Pro-Am Overhaul (server/proam.py): the season, your team and builds; search; a team
             if path == "/api/proam":
                 return self.respond(200, s.proam.status(self.account()))
+            # v0.4.8.9 The Gauntlet (server/gauntlet.py): converted players, the nemesis world, unlocks, stats, the feed
+            if path == "/api/gauntlet/profile":
+                return self.respond(200, s.gauntlet.profile(self.account()))
             if path == "/api/proam/search":
                 self.account()
                 return self.respond(200, s.proam.search((parse_qs(urlsplit(self.path).query).get("q") or [""])[0]))
@@ -1202,6 +1231,9 @@ class Handler(BaseHTTPRequestHandler):
                     char = builds.normalize({**build, "id": str(uuid.uuid4()), "attributes": builds.starting_attributes(build),
                                              "equipment": dict(builds.DEFAULT_EQUIPMENT), "schema": 3, "badges": {}, "affiliation": None,
                                              "progression": {"games": 0, "wins": 0, "xp": 0, "rep": 0, "park": {"games": 0, "wins": 0, "streak": 0, "best_streak": 0}, "proam": {"games": 0, "wins": 0, "rp": 0, "best_rp": 0}, "career": {}}})
+                    pc = gauntlet.entry_cards(gauntlet.park_cards(c, aid))  # (v0.4.8.9: a new build carries the account's park cards too)
+                    if pc:
+                        char["park_cards"] = pc
                     c.execute("INSERT INTO characters VALUES(?,?,?,?)", (char["id"], aid, encode(char), time.time()))
                     return {"character": s.describe(char), "build_slots": {**slots, "used": slots["used"] + 1}}
                 return self.respond(200, db.once(aid, data.get("key"), "character_create", build, create))
@@ -1273,6 +1305,16 @@ class Handler(BaseHTTPRequestHandler):
             pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup)", path)
             if pa_route:
                 return self.respond(200, s.proam.action(aid, pa_route.group(1), data))
+            # v0.4.8.9 The Gauntlet: a run's start and finish (paid once), and the sacrifices (server/gauntlet.py)
+            if path == "/api/gauntlet/start":
+                return self.respond(200, s.gauntlet.start(aid, data))
+            if path == "/api/gauntlet/finish":
+                try:
+                    return self.respond(200, s.gauntlet.finish(aid, data))
+                except gauntlet.Conflict as e:  # (v0.4.8.9 qp1: the run's replay refused its payout)
+                    return self.respond(409, {"error": str(e), **e.detail})
+            if path == "/api/gauntlet/sacrifice":
+                return self.respond(200, s.gauntlet.sacrifice(aid, data))
             if path == "/api/prorun":
                 return self.save_prorun(aid, data)
             if path == "/api/cup/claim":
@@ -1317,16 +1359,9 @@ class Handler(BaseHTTPRequestHandler):
 
         def run(c):
             char = s.character(aid, char_id, c)  # (404 for another account's build, or one already gone)
-            if c.execute("SELECT 1 FROM matches WHERE character_id=? AND status='running' AND created_at>?", (char_id, time.time() - GAME_OPEN_SECS)).fetchone():
-                raise builds.Invalid(f"{char.get('name') or 'This build'} is in a game that's still running. Finish it or leave it first, then delete the build.")
-            kept = builds.holds_icon_slot(char)
-            if kept:
-                c.execute("INSERT OR IGNORE INTO icon_slots(account_id, character_id, name, deleted_at) VALUES(?,?,?,?)", (aid, char_id, char.get("name"), time.time()))
-            removed = {"matches": c.execute("DELETE FROM matches WHERE character_id=?", (char_id,)).rowcount,
-                       "prorun_careers": c.execute("DELETE FROM prorun_careers WHERE character_id=?", (char_id,)).rowcount}
-            c.execute("DELETE FROM characters WHERE id=? AND account_id=?", (char_id, aid))
+            gone = s.remove_build(c, aid, char)
             rest = [s.describe(builds.normalize(json.loads(r[0]))) for r in c.execute("SELECT data FROM characters WHERE account_id=? ORDER BY created_at", (aid,)).fetchall()]
-            return {"deleted": {"id": char_id, "name": char.get("name"), "icon_slot_kept": kept, "removed": removed},
+            return {"deleted": {"id": char_id, "name": char.get("name"), **gone},
                     "build_slots": s.build_slots(c, aid), "characters": rest}
         return self.respond(200, db.once(aid, data.get("key"), "delete:" + char_id, {}, run))
 
@@ -1958,6 +1993,7 @@ def main():
     server.service = service
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{server.server_address[1]}/"
     print(f"RIMRIFT v{VERSION}\nOpen {url}\nPress Ctrl+C to stop.", flush=True)
+    print(f"Gauntlet replay checks: {gauntlet.replay_banner()}", flush=True)  # (v0.4.8.9 qp1: Node.js found or not)
     if args.online and not args.no_upnp:
         # qp3: the router forwards the port to this PC by itself (UPnP), for as long as the service runs
         service.upnp = upnp.PortMapper(server.server_address[1], "RIMRIFT")  # (v0.4.8.6: the router's port-mapping list says RIMRIFT)

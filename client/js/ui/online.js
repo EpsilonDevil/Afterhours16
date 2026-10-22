@@ -132,7 +132,7 @@ export function touchWhere(app) { const net = app.net; if (net?.connected) net.w
 // overall, Pro-Am RP, boosts, Icon status. v0.4.8.7 qp4: and the badge tiers, as the build plays them (capped). The
 // others' copy of your entry is what a game one of them sets up plays you with, on every screen yours included: without
 // them here a badge that went up a tier in your last game played (and popped up) at its old tier in the next one
-export const entryKey = c => (c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(entryProam(c, settings.paRecord === true))}|${JSON.stringify(badgeTiers(c))}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null); // (v0.4.8.8: and the season rank, the record and whether it shows)
+export const entryKey = c => (c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(entryProam(c, settings.paRecord === true))}|${JSON.stringify(c.park_cards || [])}|${JSON.stringify(badgeTiers(c))}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null); // (v0.4.8.8: and the season rank, the record and whether it shows)
 // your AI squad mates', the same way (v0.4.8.5 qp7: one who unlocks his Icon badge or puts on a prize; qp4: or whose
 // badges change tier)
 export const aiSquadKey = ai => ai.map(a => `${a.id}:${a.entry.build.overall}:${a.entry.build.icon_badge || ''}:${Object.values(a.entry.build.equipment || {}).join('.')}:${JSON.stringify(a.entry.badges || {})}`).join(',');
@@ -146,7 +146,7 @@ export function myEntry(app) {
   // (v0.4.8.5: proam_rp: your Pro-Am RP, for your squad's rank check and the other team's strength in a Pro-Am game)
   // (v0.4.8.8: proam, his season rank: {tier, div, record, showRecord}, for the rank icon by his name, his card's
   // borderplate, and his record over his head in the park when he shows it: Settings → Pro-Am record)
-  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false, proam: entryProam(c, settings.paRecord === true), proam_rp: rpOf(c) };
+  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false, proam: entryProam(c, settings.paRecord === true), parkCards: cleanParkCards(c.park_cards), proam_rp: rpOf(c) };
 }
 
 const statusText = p => !p || !p.online ? 'Offline' : p.playing || p.status === 'game' ? 'In a game' : p.park ? `At ${parkName(p.park)}${p.status === 'busy' ? ' · busy' : ''}` : 'In the menus';
@@ -179,7 +179,7 @@ export function setupEntry(app, e, human, username = null) {
   // v0.4.8.5: his level, and a real player's Pro-Am RP, rate the team for Pro-Am RP: sim/ranks.js teamRating)
   for (const k of ['iq', 'number', 'icon', 'level']) if (e[k] != null) out[k] = e[k];
   if (e.sq) out.sq = e.sq; // (an AI squad mate: whose, and who he is in his owner's game)
-  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; if (entryRP(e) != null) out.proam_rp = entryRP(e); if (e.proam) out.proam = cleanProam(e.proam); }
+  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; if (entryRP(e) != null) out.proam_rp = entryRP(e); if (e.proam) out.proam = cleanProam(e.proam); if (e.parkCards) out.parkCards = cleanParkCards(e.parkCards); }
   return out;
 }
 // slots, names and shot-meter settings of a setup's people: rosters are team 0 then team 1; people: [{id, username}]
@@ -207,6 +207,9 @@ export function memberRank(app, id) {
   const net = app.net, rp = id === net?.myId ? rpOf(app.char()) : entryRP(net?.entryOf(id));
   return rp == null ? null : rankOf(rp);
 }
+// v0.4.8.9: the account park cards (Gauntlet sacrifices) as an entry carries them: [{attr, pct}], three at most, 1, 3 or
+// 5% (the game checks them again: sim/player.js applyParkCards, park games only)
+export const cleanParkCards = cards => (Array.isArray(cards) ? cards : []).filter(k => k && typeof k.attr === 'string' && k.attr.length <= 24 && [0.01, 0.03, 0.05].includes(k.pct)).slice(0, 3).map(k => ({ attr: k.attr, pct: k.pct }));
 // v0.4.8.8: an entry's season rank as another player sent it, kept to its fields and their ranges
 export function cleanProam(p) {
   if (!p || typeof p !== 'object') return null;

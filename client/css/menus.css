@@ -907,3 +907,34 @@ select { background-color: rgba(255,255,255,.06); }
 .banner-big { min-width: 64px; padding: 8px 10px 22px; } .banner-big b { font-size: 26px; } .banner-big small { font-size: 11px; }
 .pa-hub-btn { margin-left: auto; align-self: center; }
 .pa-custom .chips { margin-bottom: 4px; }
+
+/* ---------------- v0.4.8.9 The Gauntlet: account park cards, sacrifices (ui/sacrifice.js) ---------------- */
+.pc-sac { align-self: flex-start; width: auto; flex: none; margin: 3px 0 1px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; border: 1px solid rgba(255,190,80,.5); background: rgba(255,170,40,.12); color: #ffd28a; cursor: pointer; }
+.pc-sac:hover, .pc-sac:focus-visible { background: rgba(255,170,40,.28); color: #fff; }
+.park-cards-row { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); }
+.park-cards { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-top: 6px; }
+.park-card { display: inline-flex; flex-direction: column; min-width: 108px; padding: 8px 12px; border-radius: 10px; border: 1px solid; line-height: 1.15; }
+.park-card b { font-family: var(--display, inherit); font-size: 20px; }
+.park-card span { font-size: 13px; }
+.park-card small { font-size: 9px; letter-spacing: .14em; opacity: .75; margin-top: 3px; }
+.park-card.t-common { border-color: rgba(200,210,220,.45); background: rgba(200,210,220,.08); }
+.park-card.t-rare { border-color: rgba(90,170,255,.6); background: rgba(90,170,255,.12); color: #cfe6ff; }
+.park-card.t-legendary { border-color: rgba(255,196,64,.75); background: linear-gradient(135deg, rgba(255,196,64,.2), rgba(255,120,40,.12)); color: #ffe7b0; box-shadow: 0 0 14px rgba(255,180,60,.18); }
+.park-next { display: inline-flex; flex-direction: column; justify-content: center; padding: 8px 12px; border-radius: 10px; border: 1px dashed rgba(255,255,255,.18); font-size: 13px; }
+.park-next small { font-size: 9px; letter-spacing: .14em; color: var(--muted); }
+.park-next em { font-style: normal; font-size: 11px; color: #9fe8b4; margin-top: 2px; }
+.park-next.ready { border-color: rgba(120,230,160,.55); }
+.sac-warn { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: rgba(255,80,60,.1); border: 1px solid rgba(255,90,70,.45); font-size: 13px; line-height: 1.45; }
+.sac-brings { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.sac-brings > small { font-size: 10px; letter-spacing: .16em; color: var(--muted); }
+.sac-brings .park-card { align-self: flex-start; }
+.card-reveal { text-align: center; }
+.reveal-card { display: inline-flex; flex-direction: column; margin: 12px auto; padding: 18px 30px; border-radius: 14px; border: 2px solid; animation: cardReveal .9s cubic-bezier(.2,.9,.25,1.2) both; }
+.reveal-card b { font-family: var(--display, inherit); font-size: 40px; }
+.reveal-card span { font-size: 18px; }
+.reveal-card small { font-size: 11px; letter-spacing: .12em; opacity: .7; margin-top: 4px; }
+.card-reveal.t-common .reveal-card { border-color: rgba(200,210,220,.6); }
+.card-reveal.t-rare .reveal-card { border-color: rgba(90,170,255,.8); color: #cfe6ff; box-shadow: 0 0 22px rgba(90,170,255,.3); }
+.card-reveal.t-legendary .reveal-card { border-color: #ffc440; color: #ffe7b0; box-shadow: 0 0 30px rgba(255,180,60,.45); }
+@keyframes cardReveal { 0% { transform: rotateY(90deg) scale(.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .reveal-card { animation: none; } }

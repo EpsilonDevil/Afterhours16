@@ -145,6 +145,20 @@ export class Player {
     this.refreshRatings();
     this.phys = physical({ ...this.entry.build, attributes: played });
   }
+  // v0.4.8.9 park cards (the account's, from Gauntlet sacrifices: server/gauntlet.py): +pct on an attribute, in park games
+  // only (Game, cfg.parkCards). Like the Icon's %, on the attributes he plays with and the physics they drive; raw (what
+  // gating checks read) is untouched. cards: [{attr, pct}], checked here: a known attribute, 1, 3 or 5%, three at most
+  applyParkCards(cards) {
+    const ok = (Array.isArray(cards) ? cards : []).filter(c => c && typeof c.attr === 'string' && Number.isFinite(this.raw[c.attr]) && [0.01, 0.03, 0.05].includes(c.pct)).slice(0, 3);
+    if (!ok.length) return false;
+    const played = { ...(this.played || this.raw) };
+    for (const c of ok) played[c.attr] = played[c.attr] * (1 + c.pct);
+    this.played = played;
+    this.parkCards = ok;
+    this.refreshRatings();
+    this.phys = physical({ ...this.entry.build, attributes: this.icon && this.iconFx !== false ? iconAttributes(played, this.icon) : played });
+    return true;
+  }
   // v0.4.5 stamina multipliers. Drain: repeated moves × repeated negative plays × cold (1.5) × low grade.
   // Recovery: positive-play bonus (2x, doesn't stack) × hot (1.5) × high grade. All of them stack.
   get drainK() { const s = this.stam; return s.moveK * s.negK * (this.cold ? 1.5 : 1) * (GRADE_DRAIN[s.grade] || 1); }

@@ -1301,7 +1301,7 @@ export class AthleteModel {
     // the two ends: out of the knot, hanging down the back of the head, a little apart, each a flat strip widening to a
     // square-cut tip. Their own mesh (this.bandanaTailGeo, on the head bone like the rest) so they can swing: view.js
     // hangs them from the knot (this.bandanaTail: the pivot, their mean direction and length) on a spring (char/sway.js)
-    const tgb = new GB(), tips = [];
+    const tgb = new GB(), tips = [], samples = [];
     for (const sg of [1, -1]) {
       const pts = [], rad = [];
       for (let i = 0; i <= 6; i++) {
@@ -1310,11 +1310,17 @@ export class AthleteModel {
         rad.push([0.012 * R, (0.07 + 0.08 * t) * R]);
       }
       tips.push(pts[6]);
+      // (v0.4.8.9: points down each end's inner face, its middle and its two edges, that char/sway.js keeps out of the
+      // head, the neck and the shoulders)
+      for (let i = 1; i <= 6; i++) {
+        const T = norm(sub(pts[Math.min(6, i + 1)], pts[i - 1])), U = norm(sub(out, scale(T, dot(out, T)))), Sd = cross(T, U), inner = addS(pts[i], U, -rad[i][0]);
+        samples.push(inner, addS(inner, Sd, rad[i][1] * 0.95), addS(inner, Sd, -rad[i][1] * 0.95));
+      }
       tgb.tube(pts, rad, out, { cols: 8, uv: (t, cc) => [0.82 + 0.16 * cc, 0.05 + 0.9 * t], capUv: () => [0.9, 0.95], w: () => w, capStart: false });
     }
     this.bandanaTailGeo = tgb.finish();
     const mid = scale(add(tips[0], tips[1]), 0.5), dir = sub(mid, kc);
-    this.bandanaTail = { pivot: kc, dir: norm(dir), len: Math.hypot(...dir) };
+    this.bandanaTail = { pivot: kc, dir: norm(dir), len: Math.hypot(...dir), samples };
     return gb.finish();
   }
 

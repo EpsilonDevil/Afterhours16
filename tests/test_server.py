@@ -389,7 +389,7 @@ class LegacySaveTests(unittest.TestCase):
             svc = server_app.Service(p, dev_accounts=False)
             try:
                 db = svc.db
-                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 16)  # (v0.4.8.5 qp8: 013 icon_slots; v0.4.8.6 qp: 014 resets; v0.4.8.7: 015 shared_world; v0.4.8.8: 016 proam)
+                self.assertEqual(db.query("SELECT max(version) FROM schema_migrations")[0][0], 18)  # (v0.4.8.5 qp8: 013 icon_slots; v0.4.8.6 qp: 014 resets; v0.4.8.7: 015 shared_world; v0.4.8.8: 016 proam; v0.4.8.9: 017 gauntlet; qp1: 018 replay)
                 self.assertEqual(db.query("SELECT balance FROM wallets")[0][0], 996500)
                 self.assertEqual(len(db.query("SELECT * FROM ledger WHERE kind='welcome_grant'")), 1)
                 self.assertEqual(db.query("SELECT item_id FROM inventory")[0][0], "jersey_coral")
@@ -403,7 +403,7 @@ class LegacySaveTests(unittest.TestCase):
             # reopening is a no-op
             svc = server_app.Service(p, dev_accounts=False)
             try:
-                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 16)  # (v0.4.8.6 qp: 014 resets; v0.4.8.7: 015 shared_world; v0.4.8.8: 016 proam)
+                self.assertEqual(svc.db.query("SELECT count(*) FROM schema_migrations")[0][0], 18)  # (v0.4.8.6 qp: 014 resets; v0.4.8.7: 015 shared_world; v0.4.8.8: 016 proam; v0.4.8.9: 017 gauntlet; qp1: 018 replay)
             finally:
                 svc.close()
 
@@ -783,7 +783,7 @@ class ApiTests(unittest.TestCase):
                 t2 = self.call("/api/matches", {"key": self.key(), **base, "ante": 1000})
                 self.assertEqual(t2["meta"]["streak"], 1)
                 r2 = self.call(f"/api/matches/{t2['id']}/complete", {"key": self.key(), "summary": summary(pts=11, fgm=4, fga=9, tpm=3, tpa=5, duration=420)})
-                self.assertEqual(r2["cup"]["pot"], 1000 + int(1000 * 1.3))
+                self.assertEqual(r2["cup"]["pot"], 1000 + int(1000 * 1.075))  # (v0.4.8.9: an event park's streak bonus cut by 75%: 1.3 -> 1.075)
                 # a loss keeps nothing of the stake and ends the Cup streak
                 t3 = self.call("/api/matches", {"key": self.key(), **base, "ante": 500})
                 r3 = self.call(f"/api/matches/{t3['id']}/complete", {"key": self.key(), "summary": summary(score=(15, 21), winner=1, pts=6, fgm=3, fga=9, duration=420)})

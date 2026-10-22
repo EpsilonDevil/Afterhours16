@@ -40,7 +40,8 @@ export class HoldGate {
 
 // what to hold on the device in use: "✕" on PlayStation, "A" on Xbox (and the bottom button on Switch), Enter / click
 // and hold on a keyboard and mouse
-export function holdPrompt(input, glyph) {
-  if (input?.usingPad) return { pad: true, html: `Hold ${glyph(input.gp.family, 'A')} to delete`, cancel: `${glyph(input.gp.family, 'B')} Cancel` };
-  return { pad: false, html: 'Hold <kbd>Enter</kbd> (or click and hold) to delete', cancel: '<kbd>Esc</kbd> Cancel' };
+// (verb: what the hold does: 'delete' a build; v0.4.8.9 'sacrifice' one into the Gauntlet)
+export function holdPrompt(input, glyph, verb = 'delete') {
+  if (input?.usingPad) return { pad: true, html: `Hold ${glyph(input.gp.family, 'A')} to ${verb}`, cancel: `${glyph(input.gp.family, 'B')} Cancel` };
+  return { pad: false, html: `Hold <kbd>Enter</kbd> (or click and hold) to ${verb}`, cancel: '<kbd>Esc</kbd> Cancel' };
 }

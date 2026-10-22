@@ -195,6 +195,8 @@ export class MatchSession {
       greenBonus: !opts.background && settings.shotMeter === false ? 1.1 : 1,
       multi: !!this.online, inputDelay: this.online?.delay || 0,
       realism: !!opts.realism, // (v0.4.8.8: Pro-Am's realism: no Icon effects, badges and the overall gap 10% smaller, +10% difficulty)
+      // (v0.4.8.9: the account park cards play in park games at a park only: not the Crew HQ, the Pro-Am parks or arenas)
+      parkCards: opts.mode === 'park' && this.venue?.theme?.kind === 'park',
     });
     this.game.teamsMeta = this.teams;
     if (this.online) {
