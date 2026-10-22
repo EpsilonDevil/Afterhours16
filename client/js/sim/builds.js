@@ -57,14 +57,24 @@ function baseCaps(b) {
   for (const k of ATTRS) out[k] = c[k] + (bonus[k] || 0) * ARCH_SCALE;
   return out;
 }
+// The caps: the build's base curve scaled by the first step k = 0.5 + i × 0.0025 (i = 0..1199) whose overall reaches
+// the goal (else the last step). perf: a binary search over those same steps. Every attribute only rises with k (or
+// stays at the 40 floor), overall's weights are all positive and every rounding in it is monotone, so "overall >= goal"
+// is false, false, ..., then true from some step on, and the search lands on exactly the step the old scan stopped at
+// (about 11 overall() calls instead of up to 1,200: this runs for every hooper made, at every park and AI world load)
+const CAP_STEPS = 1200;
+const capsAt = (base, i) => {
+  const k = 0.5 + i * 0.0025, out = {};
+  for (const a of ATTRS) out[a] = Math.max(40, Math.min(99, Math.round(40 + (base[a] - 40) * k)));
+  return out;
+};
 export function caps(b, target = null) {
   const base = baseCaps(b), pos = b.position || 'SF', goal = target ?? maxOvr(b);
-  let out = null;
-  for (let i = 0; i < 1200; i++) {
-    const k = 0.5 + i * 0.0025;
-    out = {};
-    for (const a of ATTRS) out[a] = Math.max(40, Math.min(99, Math.round(40 + (base[a] - 40) * k)));
-    if (overall(out, pos) >= goal) break;
+  let out = capsAt(base, CAP_STEPS - 1);
+  if (overall(out, pos) >= goal) {
+    let lo = 0, hi = CAP_STEPS - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (overall(capsAt(base, mid), pos) >= goal) hi = mid; else lo = mid + 1; }
+    out = capsAt(base, lo);
   }
   const applied = b.cap_breakers?.applied || {};
   for (const [a, n] of Object.entries(applied)) if (out[a] != null && n > 0) out[a] = Math.min(99, out[a] + n);

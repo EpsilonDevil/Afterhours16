@@ -15,6 +15,7 @@
 //    30% a run you don't cross paths (after 2 idle runs), so a world settles at roughly a fifth of its people sore at you.
 //  * Betrayal: a helped character betrays only when one of his rivals holds a grudge against you (35% + 15% per
 //    grudge level), otherwise he's an ally (5% background). Helping is a good bet, wronging people with friends isn't.
+// Called by: run.js newRun (the cast and the plot), events.js (lines); the UI and the server through index.js (worldAfterRun, worldTick, charLine).
 import * as R from './rng.js';
 import { RANKS, TRAITS, TRAIT_IDS, READ_TRAIT, styleFor } from './foes.js';
 

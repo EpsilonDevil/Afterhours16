@@ -10,8 +10,9 @@
 //    bad Phase 1 meaningful).
 //  * COOLER: 30% of max Health (§5), the genre's rest.
 //  * CONVERTED players (§1): a build's rating mapped onto 6-10, rolled each run in [base-2, base+1], clamped 1-10.
+// Called by: index.js (the UI's whole run flow) and replay.js.
 import * as R from './rng.js';
-import { STARTER_DECK, cardDef, canUpgrade, upgraded, known, cardInfo } from './cards.js';
+import { STARTER_DECK, cardDef, canUpgrade, known, cardInfo } from './cards.js';
 import { maxHpFor, gainAbility, ABILITIES, bumpStat } from './abilities.js';
 import { startMatch } from './combat.js';
 import { genPhase, pickBoss } from './map.js';

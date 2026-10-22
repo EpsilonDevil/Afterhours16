@@ -33,7 +33,6 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
 const toRim = (x, z) => Math.atan2(RIM.x - x, RIM.z - z);
-const ease = t => t * t * (3 - 2 * t);
 
 // ---------------- what each animation tag plays ----------------
 // role: who the actor is in the play (offense: he has the ball; defense: he guards the man with it; solo: alone).
@@ -59,7 +58,6 @@ export const PLAYS = {
   gassed: { role: 'solo', base: 1.2, label: 'gassed' },
   foul: { role: 'defense', base: 1.5, label: 'foul' },
 };
-export const PLAY_ANIMS = Object.keys(PLAYS);
 // what a court event plays: the play, who does it, against whom, and whether the ball goes in. A shot the Stops ate
 // (made, but no points) is a miss on the court: the defense got there. null: nothing to play (a text-only event)
 export function playFor(ev, opts = {}) {
@@ -181,7 +179,8 @@ export class DeckCourt {
     this.ballMesh = null;
     if (this.r) {
       const ctx = this.r.ctx;
-      const bt = cachedTexture(ctx, 'ballC', () => T.ballTexture().color, {}), bn = cachedTexture(ctx, 'ballN', () => T.ballTexture().normal, { srgb: false });
+      let ball = null; // (one painting for both maps)
+      const bt = cachedTexture(ctx, 'ballC', () => (ball ||= T.ballTexture()).color, {}), bn = cachedTexture(ctx, 'ballN', () => (ball ||= T.ballTexture()).normal, { srgb: false });
       this.ballMesh = new Mesh(ctx.geometry(G.sphere(BALL_R, 24, 16)), new Material({ map: bt, normalMap: bn, normalScale: 0.8, roughness: 0.6, color: [1, 1, 1] }));
       this.scene.add(this.ballMesh);
       this.ballQ = M.q4();

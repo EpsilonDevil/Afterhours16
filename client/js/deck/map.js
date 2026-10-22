@@ -8,13 +8,13 @@
 // Cooler before round 5, no Shop before round 3, no Cooler right before the Cooler row, and a node never repeats its
 // parent's kind when that kind is a Rival, a Cooler or a Shop: the genre's rule, no two rests in a row) cut the rarer
 // kinds, so their weights sit above the target. Measured over 2,000 phases (tests/v0489deck_map.test.mjs): 45.1% matches, 10.0% Rivals, 14.6% Coolers, 9.9% Shops, 20.5% Stops.
+// Called by: run.js newRun (one bracket per phase).
 import * as R from './rng.js';
 import { pickRules } from './rules.js';
 import { BOSS_POOLS } from './bosses.js';
 
 export const ROUNDS = 13; // per phase, the boss's round included
 export const MID_WEIGHTS = { match: 34, rival: 19, cooler: 17, shop: 13, event: 19 };
-export const MIX = { match: 0.45, rival: 0.10, cooler: 0.15, shop: 0.10, event: 0.20 };
 const NO_REPEAT = new Set(['rival', 'cooler', 'shop']);
 
 // edges between two rows (counts a, b) that never cross and leave no node unreachable

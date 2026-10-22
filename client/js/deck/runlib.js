@@ -1,4 +1,5 @@
 // Small run-state primitives the run, the events and the shop share. Pure; they only touch the run object.
+// Called by: run.js and events.js.
 import { cardDef, canUpgrade, upgraded, known, baseId } from './cards.js';
 import { gainAbility, bumpStat } from './abilities.js';
 

@@ -3,9 +3,9 @@
 // deltoids, biceps/triceps, quads, calves, glutes…), a separate high-resolution head with carved eye
 // openings, real eyeballs, nose/lips/ears geometry, then hair, apparel and footwear as their own meshes.
 // Everything is generated from the build (height / weight / wingspan / archetype) and look settings.
-import { B, BONES, ARM_ANGLE, bodyDims, bindOffsets, bindPositions } from './skeleton.js';
+import { B, ARM_ANGLE, bodyDims, bindOffsets, bindPositions } from './skeleton.js';
 import { computeNormals } from '../gfx/geometry.js';
-import { RNG, hashString } from '../core/rng.js';
+import { hashString } from '../core/rng.js';
 import { hexToRgb, hexLinear } from '../core/math.js';
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -173,6 +173,27 @@ export function torsoTable(yf) {
     });
   }
   return T[T.length - 1].slice(1);
+}
+// torsoTable into `out` (5 numbers), with no new arrays: the rig's limb clearance asks it dozens of times a frame per
+// player. The same interpolation, term for term, as torsoTable.
+export function torsoTableInto(yf, out) {
+  const T = TORSO;
+  let row = null;
+  if (yf <= T[0][0]) row = T[0];
+  else {
+    for (let i = 1; i < T.length; i++) if (yf <= T[i][0]) {
+      const a = T[i - 1], b = T[i], k = (yf - a[0]) / (b[0] - a[0]);
+      const p0 = T[Math.max(0, i - 2)], p3 = T[Math.min(T.length - 1, i + 1)];
+      for (let j = 0; j < 5; j++) {
+        const P0 = p0[j + 1], P1 = a[j + 1], P2 = b[j + 1], P3 = p3[j + 1], t = k, t2 = t * t, t3 = t2 * t;
+        out[j] = 0.5 * ((2 * P1) + (-P0 + P2) * t + (2 * P0 - 5 * P1 + 4 * P2 - P3) * t2 + (-P0 + 3 * P1 - 3 * P2 + P3) * t3);
+      }
+      return out;
+    }
+    row = T[T.length - 1];
+  }
+  for (let j = 0; j < 5; j++) out[j] = row[j + 1];
+  return out;
 }
 const sePow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), 2 / e);
 // v0.4.7.5 quick patch, tank straps (buildStraps): where they leave the panels (aI .. aO, radians from the centre

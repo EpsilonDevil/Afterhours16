@@ -199,6 +199,9 @@ function decalMesh(ctx, mk) {
 // ---- the ground ----
 let streetTex = null;
 const streetMaps = () => streetTex || (streetTex = T.street({ meters: 16 }));
+// the row buildings' two detailed facades (brick and stone: their colour and window-light maps and their window layout)
+let rowFac = null;
+const rowFacades = () => rowFac || (rowFac = { brick: T.facade({ wall: '#6a4034', seed: 3, lit: 0.42, detail: { kind: 'brick', fireEscape: 0.34 } }), stone: T.facade({ wall: '#5a5c62', seed: 9, lit: 0.36, detail: { kind: 'stone', fireEscape: 0 } }) });
 export function streetGround(ctx, scene, theme) {
   const color = cachedTexture(ctx, 'street-c', () => streetMaps().color, { aniso: 16 });
   const normal = cachedTexture(ctx, 'street-n', () => streetMaps().normal, { srgb: false, aniso: 16 });
@@ -303,10 +306,10 @@ export function cityStreets(ctx, scene, rng) {
   put(matte, G.box(ROW.x1 - ROW.x0, 0.02, 0.2), 0, 0.01, ROW.z1 + 0.1, kerb);
 
   // buildings
-  const fBrick = T.facade({ wall: '#6a4034', seed: 3, lit: 0.42, detail: { kind: 'brick', fireEscape: 0.34 } });
-  const fStone = T.facade({ wall: '#5a5c62', seed: 9, lit: 0.36, detail: { kind: 'stone', fireEscape: 0 } });
-  const mBrick = new Material({ map: ctx.texture(fBrick.color, { aniso: 8 }), emissiveMap: ctx.texture(fBrick.emissive, { aniso: 8 }), emissive: [2.1, 1.9, 1.6], roughness: 0.86 });
-  const mStone = new Material({ map: ctx.texture(fStone.color, { aniso: 8 }), emissiveMap: ctx.texture(fStone.emissive, { aniso: 8 }), emissive: [1.9, 1.85, 1.75], roughness: 0.7 });
+  // (the two facades are drawn once and uploaded once: coming back to the park reuses them)
+  const { brick: fBrick, stone: fStone } = rowFacades();
+  const mBrick = new Material({ map: cachedTexture(ctx, 'street-fb-c', () => fBrick.color, { aniso: 8 }), emissiveMap: cachedTexture(ctx, 'street-fb-e', () => fBrick.emissive, { aniso: 8 }), emissive: [2.1, 1.9, 1.6], roughness: 0.86 });
+  const mStone = new Material({ map: cachedTexture(ctx, 'street-fs-c', () => fStone.color, { aniso: 8 }), emissiveMap: cachedTexture(ctx, 'street-fs-e', () => fStone.emissive, { aniso: 8 }), emissive: [1.9, 1.85, 1.75], roughness: 0.7 });
   const wBrick = [], wStone = [], fronts = [];
   const tints = { brick: ['#ffffff', '#efdcd2', '#d8c4bc', '#f4e6d8'], stone: ['#ffffff', '#dcdfe8', '#efe6d6', '#c8ccd2'] };
   const building = (x, z, w, d, floors, kind, face) => {

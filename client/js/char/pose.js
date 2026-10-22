@@ -11,14 +11,19 @@ export const GROUP_SIZE = {
   elbowL: 3, elbowR: 3, wristL: 3, wristR: 3, footL: 3, footR: 3, yawL: 1, yawR: 1, pitchL: 1, pitchR: 1,
   toeL: 1, toeR: 1, kneeL: 3, kneeR: 3,
 };
-export const ANGLE_GROUPS = new Set(['pelvis', 'spine', 'chest', 'neck', 'head', 'clavL', 'clavR', 'wristL', 'wristR', 'yawL', 'yawR', 'pitchL', 'pitchR', 'toeL', 'toeR']);
-export const GROUPS = Object.keys(GROUP_SIZE);
 const D = Math.PI / 180;
 
 export function newPose() { return new Float32Array(P.N); }
 
-// Neutral standing pose (reference 2.0 m athlete)
+// Neutral standing pose (reference 2.0 m athlete). (QOL+perf: the animator resets its target to this every frame for
+// every player: it's built once and copied in.)
+let NEUTRAL = null;
 export function neutral(out = newPose()) {
+  if (!NEUTRAL) NEUTRAL = buildNeutral(newPose());
+  out.set(NEUTRAL);
+  return out;
+}
+function buildNeutral(out) {
   out.fill(0);
   out.set([0.235, 1.0, 0.04], P.handL); out.set([-0.235, 1.0, 0.04], P.handR);
   out.set([0.35, -0.2, -1], P.elbowL); out.set([-0.35, -0.2, -1], P.elbowR);
@@ -26,31 +31,6 @@ export function neutral(out = newPose()) {
   out[P.yawL] = 8 * D; out[P.yawR] = -8 * D;
   out.set([0.15, 0, 1], P.kneeL); out.set([-0.15, 0, 1], P.kneeR);
   out.set([0, 0, 6 * D], P.wristL); out.set([0, 0, -6 * D], P.wristR);
-  return out;
-}
-
-// Convert authored key {group: [..] in degrees for angle groups} to a full vector + mask
-export function compileKey(key, base) {
-  const v = base ? base.slice() : neutral();
-  const mask = new Float32Array(P.N);
-  for (const [g, val] of Object.entries(key)) {
-    if (!(g in P) || g === 'N') continue;
-    const o = P[g], n = GROUP_SIZE[g], arr = Array.isArray(val) ? val : [val];
-    for (let i = 0; i < n; i++) {
-      v[o + i] = ANGLE_GROUPS.has(g) ? (arr[i] ?? 0) * D : (arr[i] ?? 0);
-      mask[o + i] = 1;
-    }
-  }
-  return { v, mask };
-}
-
-export function blendInto(out, src, w, mask) {
-  if (w <= 0) return out;
-  if (w >= 1 && !mask) { out.set(src); return out; }
-  for (let i = 0; i < P.N; i++) {
-    const k = mask ? w * mask[i] : w;
-    if (k > 0) out[i] += (src[i] - out[i]) * k;
-  }
   return out;
 }
 

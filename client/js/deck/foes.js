@@ -18,6 +18,7 @@
 //  * RIVALS: 1.6x Heart and 1.0x damage plus a style special that hits harder: ~2.5 turns, ~7 Health for a good
 //    player, for an ability. (At 1.25x damage a Phase 1 Barrage was a third of a starter's Health in one swing.)
 //  * RANK (Streetballer → Legend): +10% Heart and +1 Shooting a rank; a Legend is ~1.4x a Streetballer.
+// Called by: combat.js (opponents and traits in a match), nemesis.js (styles, ranks, traits).
 
 export const RANKS = ['Streetballer', 'Contender', 'Rival', 'Nemesis', 'Legend'];
 export const PHASE_HEART = [0.55, 0.78, 0.92, 1.0];
@@ -70,7 +71,6 @@ export const STYLES = {
   },
 };
 Object.setPrototypeOf(STYLES, null);
-export const STYLE_IDS = Object.keys(STYLES);
 // which style an AI player plays, from his archetype / position (his AIWorld entry)
 export function styleFor(arch = '', pos = '') {
   const a = String(arch).toLowerCase();

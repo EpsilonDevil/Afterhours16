@@ -8,6 +8,7 @@
 //  * Boss abilities are +1 energy (≈ +30% output) with a real cost, as in the genre: the choice is which cost your
 //    deck can live with.
 //  * Shop abilities are economy: they pay back over the next 2-3 shops.
+// Called by: combat.js (what they do in a match), run.js (Coolers, Shops, coins); the UI through index.js abilityInfo.
 
 export const ABILITY_LIST = [
   // common
@@ -68,7 +69,6 @@ export function abilityInfo(id) {
   const a = ABILITIES[id];
   return a ? { id: a.id, name: a.name, rarity: a.rarity, text: a.text } : { id, name: String(id), rarity: 'common', text: '' };
 }
-export const hasAbility = (run, id) => !!run?.abilities?.includes(id);
 export const maxHpFor = health => 30 + 6 * health; // §2
 export const energyFor = stamina => (stamina >= 9 ? 5 : stamina >= 5 ? 4 : 3); // §2
 

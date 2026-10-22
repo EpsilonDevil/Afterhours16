@@ -219,8 +219,16 @@ export function favelaGround(ctx, scene, theme) {
   const gutter = (x0, x1, z0, z1) => dash.push({ geo: G.plane(x1 - x0, z1 - z0), matrix: Tm((x0 + x1) / 2, -0.002, (z0 + z1) / 2), color: gut });
   const kw = 0.16, gw = 0.32;
   // (the outer kerbs run right round the corners; the inner ones stop at the crossing streets)
-  for (const zc of [R0.s, R0.n]) for (const sd of [-1, 1]) { const ze = zc + sd * hh, out = sd === (zc === R0.n ? 1 : -1), [a, b] = out ? [R0.w - hh - kw, R0.e + hh + kw] : [R0.w + hh, R0.e - hh]; kerb(a, b, Math.min(ze, ze + sd * kw), Math.max(ze, ze + sd * kw)); gutter(a + (out ? kw : 0), b - (out ? kw : 0), Math.min(ze, ze - sd * gw), Math.max(ze, ze - sd * gw)); }
-  for (const xc of [R0.w, R0.e]) for (const sd of [-1, 1]) { const xe = xc + sd * hh, out = sd === (xc === R0.e ? 1 : -1), [a, b] = out ? [R0.s - hh, R0.n + hh] : [R0.s + hh, R0.n - hh]; kerb(Math.min(xe, xe + sd * kw), Math.max(xe, xe + sd * kw), a, b); gutter(Math.min(xe, xe - sd * gw), Math.max(xe, xe - sd * gw), a + (out ? gw : 0), b - (out ? gw : 0)); }
+  for (const zc of [R0.s, R0.n]) for (const sd of [-1, 1]) {
+    const ze = zc + sd * hh, out = sd === (zc === R0.n ? 1 : -1), [a, b] = out ? [R0.w - hh - kw, R0.e + hh + kw] : [R0.w + hh, R0.e - hh];
+    kerb(a, b, Math.min(ze, ze + sd * kw), Math.max(ze, ze + sd * kw));
+    gutter(a + (out ? kw : 0), b - (out ? kw : 0), Math.min(ze, ze - sd * gw), Math.max(ze, ze - sd * gw));
+  }
+  for (const xc of [R0.w, R0.e]) for (const sd of [-1, 1]) {
+    const xe = xc + sd * hh, out = sd === (xc === R0.e ? 1 : -1), [a, b] = out ? [R0.s - hh, R0.n + hh] : [R0.s + hh, R0.n - hh];
+    kerb(Math.min(xe, xe + sd * kw), Math.max(xe, xe + sd * kw), a, b);
+    gutter(Math.min(xe, xe - sd * gw), Math.max(xe, xe - sd * gw), a + (out ? gw : 0), b - (out ? gw : 0));
+  }
   const paint = new Mesh(ctx.geometry(G.merge(dash)), new Material({ color: [1, 1, 1], roughness: 0.8 }), { castShadow: false, reflect: false });
   paint.order = -1; scene.add(paint);
   return [ground, m, paint, paving, street];
@@ -435,18 +443,33 @@ export function favelaTown(ctx, scene, rng, theme, park) {
     }
     // up on the laje: the water tank, a dish, plants in pots, laundry, string lights
     if (h.roof.tank && h.row < 5) { const lx = rng.range(-hw + 0.8, hw - 0.8), lz = -rng.range(1.2, hd - 1.2); detail.push({ geo: G.cylinder(0.6, 0.52, 1.05, 8, { y0: true }), matrix: F.M(lx, H + 0.2, lz), color: c4(HUE.tank) }); }
-    if (h.roof.dish && h.row < 5) { const lx = rng.range(-hw + 0.5, hw - 0.5); detail.push({ geo: G.cylinder(0.36, 0.06, 0.16, 8, { open: true }), matrix: mul(F.M(lx, H + 1.0, -0.4), Rx(-1.0)), color: c4('#d8d8d4') }, { geo: G.box(0.04, 0.8, 0.04), matrix: F.M(lx, H + 0.6, -0.5), color: c4('#8a8a8a') }); }
-    if (h.roof.plants && h.row < 4) for (let k = 0; k < 2; k++) { const lx = -hw + 0.5 + k * (h.w - 1); detail.push({ geo: G.cylinder(0.18, 0.13, 0.28, 5, { y0: true }), matrix: F.M(lx, H + 0.2, -0.3), color: c4('#b8582e') }, { geo: G.sphere(0.3, 5, 3), matrix: F.M(lx, H + 0.62, -0.3), color: c4(rng.pick(['#3f8a3a', '#2f6a2a', '#5aa040'])) }); }
+    if (h.roof.dish && h.row < 5) {
+      const lx = rng.range(-hw + 0.5, hw - 0.5);
+      detail.push({ geo: G.cylinder(0.36, 0.06, 0.16, 8, { open: true }), matrix: mul(F.M(lx, H + 1.0, -0.4), Rx(-1.0)), color: c4('#d8d8d4') }, { geo: G.box(0.04, 0.8, 0.04), matrix: F.M(lx, H + 0.6, -0.5), color: c4('#8a8a8a') });
+    }
+    if (h.roof.plants && h.row < 4) for (let k = 0; k < 2; k++) {
+      const lx = -hw + 0.5 + k * (h.w - 1);
+      detail.push({ geo: G.cylinder(0.18, 0.13, 0.28, 5, { y0: true }), matrix: F.M(lx, H + 0.2, -0.3), color: c4('#b8582e') }, { geo: G.sphere(0.3, 5, 3), matrix: F.M(lx, H + 0.62, -0.3), color: c4(rng.pick(['#3f8a3a', '#2f6a2a', '#5aa040'])) });
+    }
     if (h.roof.laundry && laundryRig.length < 22) {
       const b = laundryRig.length, lz = -rng.range(1.5, hd - 1.5), a = F.P(-hw + 0.4, H + 1.7, lz), c = F.P(hw - 0.4, H + 1.7, lz);
       for (const lx of [-hw + 0.4, hw - 0.4]) detail.push({ geo: G.box(0.05, 1.5, 0.05), matrix: F.M(lx, H + 0.95, lz), color: c4('#6a6a6a') });
       detail.push({ geo: G.tube([a, c], 0.012, 3), color: c4('#e8e8e0') });
       // the clothes hang from the line on its bone (the bone's origin on the line: they swing round it)
       const n = Math.max(2, Math.floor((h.w - 1) / 0.75)), yaw = h.yaw;
-      for (let k = 0; k < n; k++) { const t = (k + 0.5) / n, w = rng.range(0.35, 0.6), hh = rng.range(0.4, 0.75); laundry.push({ geo: G.box(w, hh, 0.02), matrix: mul(Tm((t - 0.5) * (h.w - 0.8), -hh / 2, 0)), color: c4(rng.pick(['#f4f2ec', '#e86aa0', '#2f6fd0', '#f2c230', '#d8302a', '#9ad13a', '#3a3a3a', '#7ac8e8'])), bone: b }); }
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n, w = rng.range(0.35, 0.6), hh = rng.range(0.4, 0.75);
+        laundry.push({ geo: G.box(w, hh, 0.02), matrix: mul(Tm((t - 0.5) * (h.w - 0.8), -hh / 2, 0)), color: c4(rng.pick(['#f4f2ec', '#e86aa0', '#2f6fd0', '#f2c230', '#d8302a', '#9ad13a', '#3a3a3a', '#7ac8e8'])), bone: b });
+      }
       laundryRig.push({ x: (a[0] + c[0]) / 2, y: a[1], z: (a[2] + c[2]) / 2, yaw, ph: rng.range(0, 6), s: rng.range(0.6, 1.3) });
     }
-    if (h.roof.lights) { const pts = []; for (let k = 0; k <= 10; k++) { const t = k / 10; pts.push(F.P(-hw + 0.3 + t * (h.w - 0.6), H + 2.0 - Math.sin(t * Math.PI) * 0.4, -hd * 0.5 + Math.sin(t * 6) * 0.3)); } for (const p of pts) lightsOn.push({ geo: G.sphere(0.07, 5, 3), matrix: Tm(p[0], p[1], p[2]), color: c4(rng.pick(['#ffd060', '#ff6a8a', '#7ae0ff', '#a8ff7a', '#ffffff']), 1) }); detail.push({ geo: G.tube(pts, 0.01, 3), color: c4('#2a2a2a') }); for (const lx of [-hw + 0.3, hw - 0.3]) detail.push({ geo: G.box(0.05, 2.0, 0.05), matrix: F.M(lx, H + 1.1, -hd * 0.5), color: c4('#5a5a5a') }); }
+    if (h.roof.lights) {
+      const pts = [];
+      for (let k = 0; k <= 10; k++) { const t = k / 10; pts.push(F.P(-hw + 0.3 + t * (h.w - 0.6), H + 2.0 - Math.sin(t * Math.PI) * 0.4, -hd * 0.5 + Math.sin(t * 6) * 0.3)); }
+      for (const p of pts) lightsOn.push({ geo: G.sphere(0.07, 5, 3), matrix: Tm(p[0], p[1], p[2]), color: c4(rng.pick(['#ffd060', '#ff6a8a', '#7ae0ff', '#a8ff7a', '#ffffff']), 1) });
+      detail.push({ geo: G.tube(pts, 0.01, 3), color: c4('#2a2a2a') });
+      for (const lx of [-hw + 0.3, hw - 0.3]) detail.push({ geo: G.box(0.05, 2.0, 0.05), matrix: F.M(lx, H + 1.1, -hd * 0.5), color: c4('#5a5a5a') });
+    }
   }
   // the stairways: treads and risers up each one, a rail on one side
   const steps = [];
@@ -469,7 +492,11 @@ export function favelaTown(ctx, scene, rng, theme, park) {
   const poleAt = [];
   for (let x = ROAD.w + 6; x < ROAD.e; x += 17) { poleAt.push([x, ROAD.n + ROAD.half + 0.6, 'n']); poleAt.push([x + 6, ROAD.s - ROAD.half - 0.6, 's']); }
   for (let z = ROAD.s + 8; z < ROAD.n - 4; z += 17) { poleAt.push([ROAD.e + ROAD.half + 0.6, z, 'e']); poleAt.push([ROAD.w - ROAD.half - 0.6, z + 5, 'w']); }
-  for (const [x, z] of poleAt) { poles.push({ geo: G.cylinder(0.11, 0.14, 8, 6, { y0: true }), matrix: Tm(x, 0, z), color: c4('#8a8478') }, { geo: G.box(1.4, 0.1, 0.1), matrix: Tm(x, 7.4, z), color: c4('#6a645a') }); park.lamps.push({ geo: G.cylinder(0.12, 0.18, 0.28, 8, { y0: true }), matrix: Tm(x, 6.6, z), color: [1, 0.72, 0.4, 1] }); poles.push({ geo: G.box(0.06, 0.06, 0.7), matrix: mul(Tm(x, 6.9, z)), color: c4('#4a4a4a') }); }
+  for (const [x, z] of poleAt) {
+    poles.push({ geo: G.cylinder(0.11, 0.14, 8, 6, { y0: true }), matrix: Tm(x, 0, z), color: c4('#8a8478') }, { geo: G.box(1.4, 0.1, 0.1), matrix: Tm(x, 7.4, z), color: c4('#6a645a') });
+    park.lamps.push({ geo: G.cylinder(0.12, 0.18, 0.28, 8, { y0: true }), matrix: Tm(x, 6.6, z), color: [1, 0.72, 0.4, 1] });
+    poles.push({ geo: G.box(0.06, 0.06, 0.7), matrix: mul(Tm(x, 6.9, z)), color: c4('#4a4a4a') });
+  }
   const sag = (a, b, s, n = 6) => { const p = []; for (let k = 0; k <= n; k++) { const t = k / n; p.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * s, a[2] + (b[2] - a[2]) * t]); } return p; };
   const byside = s => poleAt.filter(p => p[2] === s);
   for (const s of ['n', 's', 'e', 'w']) { const ps = byside(s); for (let i = 0; i < ps.length - 1; i++) for (const dy of [7.4, 7.1, 6.85]) wires.push({ geo: G.tube(sag([ps[i][0], dy, ps[i][1]], [ps[i + 1][0], dy, ps[i + 1][1]], 0.5 + rng.next() * 0.3), 0.018, 3), color: c4('#1a1a1a') }); }
@@ -618,7 +645,10 @@ export function favelaLife(env) {
   const swing = new Set((town.doors || []).map(d => d.h));
   const doors = town.houses.filter(h => h.side === 'n' && h.row === 0 && !h.shop && Math.abs(h.along) < 50 && !swing.has(h)).slice(0, 8);
   const NB = 4, neighbours = castOf(add, ctx, skinMat, Array.from({ length: NB }, () => personSpec(rng)), 'nb'), nb = [];
-  for (let i = 0; i < NB && doors.length > 1; i++) { const h = doors[Math.floor(i / 2) * 3 % doors.length], F = houseFrame(h), s = i % 2 ? 1 : -1, [x, y, z] = F.P(-h.w * 0.22 + s * 0.45, 0, 1.0); nb.push({ x, y, z, yaw: h.yaw + Math.PI + s * Math.PI / 2, ph: rng.range(0, 6), k: rng.range(0.9, 0.98) }); }
+  for (let i = 0; i < NB && doors.length > 1; i++) {
+    const h = doors[Math.floor(i / 2) * 3 % doors.length], F = houseFrame(h), s = i % 2 ? 1 : -1, [x, y, z] = F.P(-h.w * 0.22 + s * 0.45, 0, 1.0);
+    nb.push({ x, y, z, yaw: h.yaw + Math.PI + s * Math.PI / 2, ph: rng.range(0, 6), k: rng.range(0.9, 0.98) });
+  }
   // people up on the lajes: two hanging out, kids flying kites (the kites and their strings a mesh of their own, a bone
   // each, out over the hill)
   const tops = town.houses.filter(h => h.row >= 1 && h.row <= 3 && (h.side === 'n' || h.side === 'e' || h.side === 'w') && Math.abs(h.along) < 70 && !h.roof.laundry && !h.roof.lights);
@@ -628,7 +658,10 @@ export function favelaLife(env) {
   for (let k = 0; k < NK; k++) kParts.push(...kiteParts(HUE.kite[k % HUE.kite.length], 1.3, k, 7));
   for (let k = 0; k < NK; k++) kParts.push({ geo: G.box(0.025, 1, 0.025), matrix: Tm(0, 0.5, 0), color: c4('#f4f2ec', 1), bone: NK + k });
   const kites = rig(kParts, NK * 2);
-  for (let i = 0; i < NR && tops.length; i++) { const h = tops.splice(rng.int(0, tops.length - 1), 1)[0], F = houseFrame(h), [x, y, z] = F.P(rng.range(-h.w / 4, h.w / 4), h.storeys * ROW.storey + 0.2, -1.2); rt.push({ x, y, z, yaw: h.yaw + rng.range(-0.6, 0.6), ph: rng.range(0, 6), k: i < NK ? 0.7 : 0.95, kite: i < NK ? { ph: rng.range(0, 6), r: rng.range(16, 26), up: rng.range(16, 24) } : null }); }
+  for (let i = 0; i < NR && tops.length; i++) {
+    const h = tops.splice(rng.int(0, tops.length - 1), 1)[0], F = houseFrame(h), [x, y, z] = F.P(rng.range(-h.w / 4, h.w / 4), h.storeys * ROW.storey + 0.2, -1.2);
+    rt.push({ x, y, z, yaw: h.yaw + rng.range(-0.6, 0.6), ph: rng.range(0, 6), k: i < NK ? 0.7 : 0.95, kite: i < NK ? { ph: rng.range(0, 6), r: rng.range(16, 26), up: rng.range(16, 24) } : null });
+  }
   // the doors that open (town.doors): now and then one swings out, a neighbour steps out onto the street, stands about or
   // chats with whoever else is out, goes back in, and the door shuts behind them. A few at a time
   const DL = { max: 3, slots: 4, gap: [3, 11], open: 1.0, walk: 1.5, stay: [5, 12], close: 1.0, step: 1.2 };

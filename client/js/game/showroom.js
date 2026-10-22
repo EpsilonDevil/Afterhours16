@@ -1,4 +1,6 @@
 // 3D studio used by menus, the builder and the VC Store (try-ons + animation previews).
+// main.js makes one (app.showroom) and it is the controller whenever a menu screen is up; game/preview.js plays the
+// animation previews it shows.
 import { Scene, Material, Mesh } from '../gfx/renderer.js';
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
@@ -70,8 +72,9 @@ export class Showroom {
     s.lights.push({ pos: [0, 4.5, 3.5], range: 12, color: [1, 0.97, 0.92], intensity: 6, dir: [0, -0.6, -1], cos: 0.6 });
     s.shadowFocus = { center: [0, 1, 0], radius: 3 };
     // ball
-    const bt = cachedTexture(ctx, 'ballC', () => T.ballTexture().color, {});
-    const bn = cachedTexture(ctx, 'ballN', () => T.ballTexture().normal, { srgb: false });
+    let ball = null; // (one painting for both maps)
+    const bt = cachedTexture(ctx, 'ballC', () => (ball ||= T.ballTexture()).color, {});
+    const bn = cachedTexture(ctx, 'ballN', () => (ball ||= T.ballTexture()).normal, { srgb: false });
     this.ball = new Mesh(ctx.geometry(G.sphere(BALL_R, 28, 18)), new Material({ map: bt, normalMap: bn, normalScale: 0.8, roughness: 0.6, color: [1, 1, 1] }));
     s.add(this.ball);
     this.ballQ = M.q4();

@@ -8,7 +8,7 @@ import math
 import re
 import time
 from .cup import EVENT_VENUES
-from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, HOF_LIMIT, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, COST_K, LEGEND_GAMES_PER_OVR, legend_raise
+from .builds import Invalid, strict_keys, integer, hof_count, hof_init, badge_caps, icon_need, max_ovr, prorun_completed, CAP_BREAKER_HOF_LIMIT, CAP_BREAKERS_PER_HOF, ICON_FOR_ARCH, LEGEND_GAMES_PER_OVR, legend_raise
 
 VC_K = 1.35  # v0.4.5: every game pays 35% more VC
 
@@ -82,10 +82,6 @@ def rep_info(points):
     lvl = rep_level(points)
     nxt = REP_THRESHOLDS[lvl + 1] if lvl + 1 < len(REP_THRESHOLDS) else None
     return {"points": points, "level": lvl, "label": rep_label(lvl), "floor": REP_THRESHOLDS[lvl], "next": nxt}
-
-
-def badge_tiers(char):
-    return {k: v.get("tier", 0) for k, v in char.get("badges", {}).items() if v.get("tier", 0) > 0}
 
 
 # ---------------- v0.4.8.5: Pro-Am ranks (per build) ----------------

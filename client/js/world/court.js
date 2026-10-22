@@ -1,4 +1,5 @@
-// Court floor + hoop assemblies (rim, glass board, stanchion, verlet net).
+// Court floor + hoop assemblies (rim, glass board, stanchion, verlet net), and the shared texture cache every venue
+// builder uses (cachedTexture). Called by world/venues.js, world/proamparks.js and world/proamhubs.js.
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
 import { Material, Mesh } from '../gfx/renderer.js';
@@ -132,12 +133,27 @@ export function buildHoop(ctx, side, style = 'park', opts = {}) {
   return hoop;
 }
 
-// Floor + markings. spec from venue; returns {meshes, hoops}
+// A court's floor overlay (its lines, paint, logo and wear) is a big canvas (about 2100 x 3600 px at 110 px a metre:
+// 30-40 MB on the GPU) and the same picture every time for the same spec (courtOverlay is a pure function of it). So it
+// is drawn and uploaded once per spec and shared: a park built again (you come back to it) reuses its six courts'
+// overlays instead of drawing six new ones and leaving the old ones on the GPU. The keys are the specs as JSON.
+const overlayCache = new Map();
+function courtOverlayTexture(ctx, spec) {
+  const key = JSON.stringify(spec);
+  let o = overlayCache.get(key);
+  if (!o || o.ctx !== ctx) {
+    const ov = T.courtOverlay(spec);
+    o = { ctx, tex: ctx.texture(ov.canvas, { wrap: 'clamp', aniso: 16 }), ov: { rect: ov.rect, width: ov.width, length: ov.length } };
+    overlayCache.set(key, o);
+  }
+  return o;
+}
+
+// Floor + markings. spec from venue; returns {meshes, floor, overlay: {rect, width, length}}
 export function buildCourt(ctx, spec, origin = [0, 0, 0], rotY = 0) {
   const meshes = [];
   const surface = spec.surface || 'asphalt';
-  const ov = T.courtOverlay(spec);
-  const overlayTex = ctx.texture(ov.canvas, { wrap: 'clamp', aniso: 16 });
+  const { tex: overlayTex, ov } = courtOverlayTexture(ctx, spec);
   let map, normalMap, roughness, uvScale, reflective = false;
   if (surface === 'wood') {
     const wood = woodTextures(ctx, spec.woodTone);

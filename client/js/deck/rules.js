@@ -4,6 +4,7 @@
 // Balance reasoning: each rule is a nudge worth roughly ±10% of a match's outcome, never a hard counter, so a deck
 // that doesn't like tonight's rules still wins with care, and a deck that does gets a good night. Rules that are
 // pure upside for you (Home Crowd, Make-It-Take-It) are paired with a downside draw half the time by pickRules.
+// Called by: combat.js (what each rule does), map.js (pickRules for each match node).
 
 export const RULES = [
   { id: 'make_it_take_it', name: 'Make-It-Take-It', text: 'Draw 1 after you score (up to 2 a turn).', good: true },

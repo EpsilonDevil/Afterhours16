@@ -1,4 +1,6 @@
 // Procedural canvas textures. Every texture here is original, generated at load time.
+// Pure painters (a canvas or {width, height, data} out): world/ and game/ turn them into GPU textures through
+// gl.js texture(), most of them once per GL context (world/court.js cachedTexture).
 import { RNG, makeNoise2D } from '../core/rng.js';
 import { COURT } from '../sim/constants.js';
 import { RIMRIFT_MARK, BRAND } from './brandmark.js';
@@ -483,20 +485,6 @@ export function chainlink(size = 256) {
   for (let i = -1; i <= n; i++) {
     g.beginPath(); g.moveTo(i * s, 0); g.lineTo(i * s + size, size); g.stroke();
     g.beginPath(); g.moveTo(i * s + size, 0); g.lineTo(i * s, size); g.stroke();
-  }
-  return c;
-}
-
-export function netTexture(w = 256, h = 256) {
-  const c = canvas(w, h), g = ctx2d(c);
-  g.clearRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(250,250,250,1)'; g.lineWidth = w / 70; g.lineCap = 'round';
-  const cols = 6, rows = 4;
-  for (let r = 0; r <= rows; r++) for (let k = 0; k <= cols; k++) {
-    const x = k / cols * w, y = r / rows * h, x2 = (k + 0.5) / cols * w, y2 = (r + 0.5) / rows * h;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.lineTo(x + w / cols, y); g.stroke();
-    g.beginPath(); g.moveTo(x2, y2); g.lineTo(x, y + h / rows); g.stroke();
-    g.beginPath(); g.moveTo(x2, y2); g.lineTo(x + w / cols, y + h / rows); g.stroke();
   }
   return c;
 }

@@ -22,6 +22,7 @@
 // (names and looks) and aren't part of the start: compare runs with outcomeHash, which leaves the cosmetics out.
 //
 // The UI logs through act(run, log, kind, ...args): it makes the call and logs it only if it succeeded.
+// Called by: index.js: ui/gauntlet.js logs through act(); server/verify/gauntlet_replay.mjs runs replay().
 import { newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopBuy, shopRemove, leaveNode, eventChoose, runOver } from './run.js';
 import { playCard, endTurn, canPlay } from './combat.js';
 import { normWorld } from './nemesis.js';

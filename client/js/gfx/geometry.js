@@ -1,4 +1,5 @@
 // Procedural geometry primitives. All return {position, normal, uv, index} typed arrays (+ optional color).
+// Pure (no GL): world/ builds venues out of them and hands the result to gl.js geometry().
 import { m3normalFromM4 } from '../core/math.js';
 import { COURT } from '../sim/constants.js';
 
@@ -205,14 +206,6 @@ export function lathe(profile, seg = 24, opts = {}) {
 
 export function translate(g, x, y, z) {
   for (let i = 0; i < g.position.length; i += 3) { g.position[i] += x; g.position[i + 1] += y; g.position[i + 2] += z; }
-  return g;
-}
-export function scaleGeo(g, sx, sy, sz) {
-  for (let i = 0; i < g.position.length; i += 3) { g.position[i] *= sx; g.position[i + 1] *= sy; g.position[i + 2] *= sz; }
-  for (let i = 0; i < g.normal.length; i += 3) {
-    const x = g.normal[i] / sx, y = g.normal[i + 1] / sy, z = g.normal[i + 2] / sz, l = Math.hypot(x, y, z) || 1;
-    g.normal[i] = x / l; g.normal[i + 1] = y / l; g.normal[i + 2] = z / l;
-  }
   return g;
 }
 export function transformGeo(g, m) {

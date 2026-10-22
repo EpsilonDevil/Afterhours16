@@ -1,5 +1,7 @@
 // Humanoid skeleton with build-driven proportions. Bind orientations are identity (world-aligned),
 // character faces +Z, left side is +X. Arms are in a 40° A-pose in bind.
+// (the sim reads bodyDims too: sim/player.js and sim/ratings.js size a player's reach and body from it, so its numbers
+// feed the game's hash; OVERHEAD_LIFT likewise for sim/game.js)
 import { INCH } from '../sim/constants.js';
 
 export const BONES = [

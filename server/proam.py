@@ -773,10 +773,6 @@ def nearest_ai(c, div, season, avoid=None, salt=""):
 
 
 # ---------------- the service's side (app.py routes and hooks) ----------------
-def zero_stats():
-    return {k: 0 for k in progression.STAT_KEYS}
-
-
 class ProAm:
     """The Pro-Am meta layer on a Service: its routes (status, search, teams, the draft, the queue) and the hooks the
     match flow calls (a ticket's series game, a result, a forfeit, a profile load)."""

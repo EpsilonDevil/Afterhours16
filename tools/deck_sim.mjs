@@ -4,7 +4,7 @@
 //                           [--boss=<id>] (that boss in its phase on every run: a boss's own win rate) [--world]
 // It's also a module: the tests use its policies (a good deck has to be able to beat every boss).
 import * as G from '../client/js/deck/index.js';
-import { cardDef, POOL, canUpgrade, CARDS } from '../client/js/deck/cards.js';
+import { cardDef, canUpgrade } from '../client/js/deck/cards.js';
 import { stream, next, shuffle, int } from '../client/js/deck/rng.js';
 import { oppHit } from '../client/js/deck/combat.js';
 import { BOSSES } from '../client/js/deck/bosses.js';

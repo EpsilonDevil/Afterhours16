@@ -326,7 +326,10 @@ export function horrorTown(ctx, scene, rng, theme, park) {
         put(town, bar, TR(x, y + 0.9, z), iron); put(town, tip, TR(x, y + 1.8, z), iron);
       }
       for (const h of [0.3, 1.55]) for (let k = 0; k < Math.ceil(len / 12); k++) { const t0 = k * 12 / len, t1 = Math.min(1, (k + 1) * 12 / len), xa = x0 + (x1 - x0) * t0, za = z0 + (z1 - z0) * t0, xb = x0 + (x1 - x0) * t1, zb = z0 + (z1 - z0) * t1;
-        if (gate !== null && Math.abs((xa + xb) / 2 - gate) < 6 && Math.min(xa, xb) < gate + 2.1 && Math.max(xa, xb) > gate - 2.1) { for (const [p, q] of [[Math.min(xa, xb), gate - 2.1], [gate + 2.1, Math.max(xa, xb)]]) if (q - p > 0.2) put(town, G.box(q - p, 0.05, 0.05), TR((p + q) / 2, gy((p + q) / 2, za) + h, za, 0), iron); continue; }
+        if (gate !== null && Math.abs((xa + xb) / 2 - gate) < 6 && Math.min(xa, xb) < gate + 2.1 && Math.max(xa, xb) > gate - 2.1) {
+          for (const [p, q] of [[Math.min(xa, xb), gate - 2.1], [gate + 2.1, Math.max(xa, xb)]]) if (q - p > 0.2) put(town, G.box(q - p, 0.05, 0.05), TR((p + q) / 2, gy((p + q) / 2, za) + h, za, 0), iron);
+          continue;
+        }
         put(town, G.box(0.05, 0.05, Math.hypot(xb - xa, zb - za)), TR((xa + xb) / 2, (gy(xa, za) + gy(xb, zb)) / 2 + h, (za + zb) / 2, yaw), iron); }
     };
     run(C.x0, C.fence, C.x1, C.fence, C.gate); run(C.x0, C.fence, C.x0, C.z1 + 2); run(C.x1, C.fence, C.x1, C.z1 + 2);
@@ -350,8 +353,14 @@ export function horrorTown(ctx, scene, rng, theme, park) {
       taken.push([px, pz, 0.6]);
       if (rng.next() < 0.1) { glow.push({ geo: G.cylinder(0.035, 0.035, 0.16, 5, { y0: true }), matrix: TR(px + 0.3, y, pz + 0.35), color: c4('#fff0d0') }); flick[0].push({ geo: G.cylinder(0.005, 0.03, 0.08, 4, { y0: true }), matrix: TR(px + 0.3, y + 0.17, pz + 0.35), color: c4('#ffb347') }); }
     }
-    for (const [x, z] of GRAVES) { const y = gy(x, z); put(town, G.sphere(1, 8, 5), mul(TR(x, y - 0.1, z), Sc(0.9, 0.32, 1.5)), '#2e241c'); put(town, G.box(1.2, 0.04, 2.2), TR(x, y + 0.02, z, 0), '#120e0c'); for (const q of tombstone(0, 1.1, '#6a6672')) town.push({ geo: q.geo, matrix: mul(TR(x, y, z - 1.7, 0.1), Rz(0.12), q.matrix), color: q.color }); }
-    put(town, G.box(0.05, 1.3, 0.05), mul(TR(GRAVES[1][0] + 0.8, gy(GRAVES[1][0], GRAVES[1][1]) + 0.5, GRAVES[1][1] + 0.6), Rz(0.3)), '#5a4630'); put(town, G.box(0.25, 0.32, 0.03), mul(TR(GRAVES[1][0] + 1.0, gy(GRAVES[1][0], GRAVES[1][1]) + 0.05, GRAVES[1][1] + 0.6), Rz(0.3)), '#6a6a70'); // a shovel left in a mound
+    for (const [x, z] of GRAVES) {
+      const y = gy(x, z);
+      put(town, G.sphere(1, 8, 5), mul(TR(x, y - 0.1, z), Sc(0.9, 0.32, 1.5)), '#2e241c');
+      put(town, G.box(1.2, 0.04, 2.2), TR(x, y + 0.02, z, 0), '#120e0c');
+      for (const q of tombstone(0, 1.1, '#6a6672')) town.push({ geo: q.geo, matrix: mul(TR(x, y, z - 1.7, 0.1), Rz(0.12), q.matrix), color: q.color });
+    }
+    put(town, G.box(0.05, 1.3, 0.05), mul(TR(GRAVES[1][0] + 0.8, gy(GRAVES[1][0], GRAVES[1][1]) + 0.5, GRAVES[1][1] + 0.6), Rz(0.3)), '#5a4630');
+    put(town, G.box(0.25, 0.32, 0.03), mul(TR(GRAVES[1][0] + 1.0, gy(GRAVES[1][0], GRAVES[1][1]) + 0.05, GRAVES[1][1] + 0.6), Rz(0.3)), '#6a6a70'); // a shovel left in a mound
     // the path's lanterns
     for (const t of [0.25, 0.7]) { const z = 38 + (MAUSOLEUM.z - 4 - 38) * t, x = C.gate + (z - 38) * 0.35 + 1.4; lantern(x, z, 2.6, '#c8ff9a', 0.55, '#7cff4f'); }
     // the mausoleum: steps, four columns, a pediment, a bronze door ajar with green light in the gap
@@ -397,7 +406,10 @@ export function horrorTown(ctx, scene, rng, theme, park) {
     for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) put(town, G.cylinder(0.02, 0.32, 1.6, 4, { y0: true }), mul(TR(tw.x + dx * (tw.s / 2), by + 4.2, tw.z + dz * (tw.s / 2)), Ry(Math.PI / 4)), '#3a3842');
     put(town, G.cylinder(0.04, tw.s * 0.62, tw.spire, 4, { y0: true }), mul(TR(tw.x, by + 4.25, tw.z), Ry(Math.PI / 4)), '#22202a');
     const top = by + 4.25 + tw.spire; put(town, G.box(0.1, 1.6, 0.1), TR(tw.x, top + 0.7, tw.z), '#2a2830'); put(town, G.box(0.8, 0.1, 0.1), TR(tw.x, top + 1.0, tw.z), '#2a2830');
-    for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2 + rng.range(-0.2, 0.2), r = tw.s / 2 + 0.22; put(town, G.box(0.08, 0.18, 0.08), TR(tw.x + Math.max(-r, Math.min(r, Math.cos(a) * r * 1.4)), by - 0.35, tw.z + Math.max(-r, Math.min(r, Math.sin(a) * r * 1.4))), '#0c0a0e'); } // bats roosting under the belfry's ledge
+    for (let k = 0; k < 9; k++) { // bats roosting under the belfry's ledge
+      const a = k / 9 * Math.PI * 2 + rng.range(-0.2, 0.2), r = tw.s / 2 + 0.22;
+      put(town, G.box(0.08, 0.18, 0.08), TR(tw.x + Math.max(-r, Math.min(r, Math.cos(a) * r * 1.4)), by - 0.35, tw.z + Math.max(-r, Math.min(r, Math.sin(a) * r * 1.4))), '#0c0a0e');
+    }
     put(town, G.box(1.8, 2.8, 0.12), mul(TL, Tm(0, 0.8 + 1.4, 0.04)), '#2a1e16');
     for (const s2 of [-1, 1]) glow.push({ geo: G.box(0.22, 0.34, 0.22), matrix: mul(TL, Tm(s2 * 1.5, 3.0, 0.3)), color: c4('#ffc870') });
     pool(tw.x, tw.z - tw.s / 2 - 2, 4, '#ffb060', 0.6); pool(Cc.x, Cc.z - Cc.d / 2 - 2, 4, '#ffb060', 0.5);
@@ -454,7 +466,11 @@ export function horrorTown(ctx, scene, rng, theme, park) {
   {
     const P = PATCH;
     // a split-rail fence along its front, a gap with the sign
-    for (let x = P.x0; x < P.x1 - 0.1; x += 3) { if (Math.abs(x + 1.5 - (P.x0 + P.x1) / 2) < 2) continue; for (const [dx] of [[0]]) put(town, G.box(0.14, 1.2, 0.14), TR(x + dx, 0.6, P.z0 - 0.5), '#4a3626'); for (const yy of [0.45, 0.95]) put(town, G.box(3.0, 0.1, 0.08), mul(TR(x + 1.5, yy, P.z0 - 0.5), Rz(rng.range(-0.04, 0.04))), '#5a4430'); }
+    for (let x = P.x0; x < P.x1 - 0.1; x += 3) {
+      if (Math.abs(x + 1.5 - (P.x0 + P.x1) / 2) < 2) continue;
+      for (const [dx] of [[0]]) put(town, G.box(0.14, 1.2, 0.14), TR(x + dx, 0.6, P.z0 - 0.5), '#4a3626');
+      for (const yy of [0.45, 0.95]) put(town, G.box(3.0, 0.1, 0.08), mul(TR(x + 1.5, yy, P.z0 - 0.5), Rz(rng.range(-0.04, 0.04))), '#5a4430');
+    }
     sign('PUMPKIN PATCH', (P.x0 + P.x1) / 2 + 3.4, 1.8, P.z0 - 0.6, Math.PI, 3.2, 0.7); put(town, G.box(0.12, 2.0, 0.12), TR((P.x0 + P.x1) / 2 + 1.9, 1.0, P.z0 - 0.5), '#4a3626'); put(town, G.box(0.12, 2.0, 0.12), TR((P.x0 + P.x1) / 2 + 4.9, 1.0, P.z0 - 0.5), '#4a3626');
     const spots = [];
     for (let i = 0; i < 74; i++) {
@@ -484,7 +500,11 @@ export function horrorTown(ctx, scene, rng, theme, park) {
       if (Math.abs(x - CORN.gap) < 2 && z < CORN.z0 + 12) continue;
       if (Math.hypot(x - CARNIVAL.wheel.x, z - CARNIVAL.wheel.z) < 18) continue;
       const y = gy(x, z), h = rng.range(2.3, 2.9), a = rng.range(0, Math.PI);
-      for (const yaw of [a, a + Math.PI / 2]) { const q = G.quad(1.4, h, { bottom: true }); if (rng.next() < 0.5) for (let v = 0; v < 4; v++) q.uv[v * 2] = 1 - q.uv[v * 2]; corn.push({ geo: q, matrix: TR(x + rng.range(-0.3, 0.3), y - 0.05, z + rng.range(-0.3, 0.3), yaw), color: c4(rng.pick(['#c8b890', '#b8a880', '#d0c098']), 1) }); }
+      for (const yaw of [a, a + Math.PI / 2]) {
+        const q = G.quad(1.4, h, { bottom: true });
+        if (rng.next() < 0.5) for (let v = 0; v < 4; v++) q.uv[v * 2] = 1 - q.uv[v * 2];
+        corn.push({ geo: q, matrix: TR(x + rng.range(-0.3, 0.3), y - 0.05, z + rng.range(-0.3, 0.3), yaw), color: c4(rng.pick(['#c8b890', '#b8a880', '#d0c098']), 1) });
+      }
     }
     sign('CORN MAZE', CORN.gap, 2.4, CORN.z0 - 0.7, Math.PI, 3.6, 0.7); for (const s of [-1, 1]) put(town, G.box(0.12, 2.6, 0.12), TR(CORN.gap + s * 1.7, gy(CORN.gap, CORN.z0) + 1.3, CORN.z0 - 0.6), '#4a3626');
   }
@@ -633,7 +653,11 @@ export function horrorTown(ctx, scene, rng, theme, park) {
       put(town, bar(0.04, h, 0.04), mul(TR(x, y + h / 2 - 0.3, z), Rz(rng.range(-0.2, 0.2))), '#4a5a2e');
       if (rng.next() < 0.4) put(town, bar(0.07, 0.22, 0.07), TR(x, y + h - 0.24, z), '#3a2414');
     }
-    for (let i = 0; i < 28; i++) { const x = LAKE.x + rng.range(-0.8, 0.8) * LAKE.rx, z = LAKE.z + rng.range(-0.8, 0.8) * LAKE.rz; if (((x - LAKE.x) / LAKE.rx) ** 2 + ((z - LAKE.z) / LAKE.rz) ** 2 > 0.7) continue; put(town, G.cylinder(rng.range(0.3, 0.6), rng.range(0.3, 0.6), 0.02, 7), TR(x, LAKE.y + 0.02, z), rng.pick(['#2a4a22', '#34522a'])); }
+    for (let i = 0; i < 28; i++) {
+      const x = LAKE.x + rng.range(-0.8, 0.8) * LAKE.rx, z = LAKE.z + rng.range(-0.8, 0.8) * LAKE.rz;
+      if (((x - LAKE.x) / LAKE.rx) ** 2 + ((z - LAKE.z) / LAKE.rz) ** 2 > 0.7) continue;
+      put(town, G.cylinder(rng.range(0.3, 0.6), rng.range(0.3, 0.6), 0.02, 7), TR(x, LAKE.y + 0.02, z), rng.pick(['#2a4a22', '#34522a']));
+    }
     { const x0 = -92, z = 14; for (let k = 0; k < 6; k++) put(town, G.box(2.0, 0.12, 0.3), TR(x0 - 0.6 - k * 0.32 * 0 - 1, 0.2, z - 1.5 + k * 0.36 * 0 + k * 0.5), '#4a3a2a'); put(town, G.box(5.5, 0.12, 2.0), TR(x0 - 3.2, 0.25, z), '#4a3a2a'); for (const [dx, dz] of [[-0.5, -0.9], [-0.5, 0.9], [-5.5, -0.9], [-5.5, 0.9]]) put(town, G.box(0.18, 1.6, 0.18), TR(x0 + dx, -0.4, z + dz), '#3a2a1a');
       put(town, G.box(1.2, 0.45, 3.2), mul(TR(x0 - 4, LAKE.y + 0.18, z + 2.2, 0.3), Rz(0.05)), '#3a2a1e'); put(town, G.box(0.9, 0.06, 2.8), TR(x0 - 4, LAKE.y + 0.42, z + 2.2, 0.3), '#2a1e14'); }
     for (let z = -28; z <= 28; z += 14) lantern(-79.5, z, 2.8, '#c8ff9a', 0.45, '#7cff4f');
@@ -828,7 +852,11 @@ function carnivalRides(ctx, scene, wheelYaw, ride) {
   const carousel = mk(cp, lit, NH + 1, cb0), carBulbs = mk(cb, bulbMat, 1, cb0); carBulbs.bones = carousel.bones;
   // the ride's doors: bone 0 the left one, bone 1 the right, hinged at their outer edges
   const dp = [];
-  for (const [s, b] of [[1, 0], [-1, 1]]) { dp.push({ geo: G.box(2.6, 4.1, 0.14), matrix: Tm(s * 1.3, 2.05, 0), color: c4('#3a0a14'), bone: b }); for (let k = 0; k < 4; k++) dp.push({ geo: G.box(0.12, 0.6 + k * 0.3, 0.04), matrix: Tm(s * (0.5 + k * 0.5), 3.6 - (0.3 + k * 0.15), 0.08), color: c4('#7cff4f'), bone: b }); dp.push({ geo: G.sphere(0.14, 6, 5), matrix: Tm(s * 2.2, 2.0, 0.1), color: c4('#d8d0bc'), bone: b }); }
+  for (const [s, b] of [[1, 0], [-1, 1]]) {
+    dp.push({ geo: G.box(2.6, 4.1, 0.14), matrix: Tm(s * 1.3, 2.05, 0), color: c4('#3a0a14'), bone: b });
+    for (let k = 0; k < 4; k++) dp.push({ geo: G.box(0.12, 0.6 + k * 0.3, 0.04), matrix: Tm(s * (0.5 + k * 0.5), 3.6 - (0.3 + k * 0.15), 0.08), color: c4('#7cff4f'), bone: b });
+    dp.push({ geo: G.sphere(0.14, 6, 5), matrix: Tm(s * 2.2, 2.0, 0.1), color: c4('#d8d0bc'), bone: b });
+  }
   const doors = mk(dp, lit, 2, { center: [CARNIVAL.ride.x, 2, CARNIVAL.ride.z], radius: 6 });
   let wa = 0, ca = 0;
   return {
@@ -850,7 +878,13 @@ export function hearse() {
   const p = [], B = (w, h, d, x, y, z, col, m = null) => p.push({ geo: G.box(w, h, d), matrix: m || Tm(x, y, z), color: c4(col) }), blk = '#0e0e12', ch = '#c8ccd2';
   B(2.0, 0.55, 6.3, 0, 0.62, 0, blk); B(1.96, 0.3, 1.9, 0, 1.02, 2.15, blk); B(1.9, 1.15, 4.0, 0, 1.45, -1.0, blk);
   p.push({ geo: G.box(1.82, 0.7, 0.06), matrix: mul(Tm(0, 1.4, 1.12), Rx(-0.45)), color: c4('#1a1c24') });
-  for (const s of [-1, 1]) { B(0.04, 0.55, 0.9, s * 0.96, 1.48, 0.45, '#1a1c24'); B(0.04, 0.6, 2.2, s * 0.965, 1.5, -1.5, '#24182c'); p.push({ geo: G.tube([[s * 0.98, 1.85, -2.2], [s * 0.98, 1.55, -1.9], [s * 0.98, 1.75, -1.4], [s * 0.98, 1.4, -1.1]], 0.025, 4), color: c4(ch) }); B(0.1, 0.2, 1.0, s * 0.9, 1.1, -2.85, blk); B(0.03, 0.05, 6.0, s * 1.005, 0.78, 0, ch); }
+  for (const s of [-1, 1]) {
+    B(0.04, 0.55, 0.9, s * 0.96, 1.48, 0.45, '#1a1c24');
+    B(0.04, 0.6, 2.2, s * 0.965, 1.5, -1.5, '#24182c');
+    p.push({ geo: G.tube([[s * 0.98, 1.85, -2.2], [s * 0.98, 1.55, -1.9], [s * 0.98, 1.75, -1.4], [s * 0.98, 1.4, -1.1]], 0.025, 4), color: c4(ch) });
+    B(0.1, 0.2, 1.0, s * 0.9, 1.1, -2.85, blk);
+    B(0.03, 0.05, 6.0, s * 1.005, 0.78, 0, ch);
+  }
   for (const sz of [-1, 1]) B(2.1, 0.16, 0.18, 0, 0.42, sz * 3.18, ch);
   B(1.3, 0.3, 0.05, 0, 0.75, 3.16, ch);
   for (const [x, z] of [[-0.9, 2.0], [0.9, 2.0], [-0.9, -2.0], [0.9, -2.0]]) { const m = mul(Tm(x, 0.36, z), Rz(Math.PI / 2)); p.push({ geo: G.cylinder(0.36, 0.36, 0.24, 10), matrix: m, color: c4('#0a0a0c') }, { geo: G.cylinder(0.2, 0.2, 0.26, 8), matrix: m, color: c4(ch) }); }
@@ -1048,7 +1082,10 @@ export function zombieRoutine(b) {
   const bar = Math.floor(b / 8) % 4, f = b % 1, bt = Math.floor(b) % 8, hit = Math.pow(1 - f, 3), sgn = bt % 2 ? 1 : -1;
   if (bar === 0) return { P: { aL: [1.2, 1.2 + 0.3 * sgn, 1.6], aR: [1.2, 1.2 - 0.3 * sgn, 1.6], lL: [0.3 * (sgn > 0), 0.35, 0.5], lR: [0.3 * (sgn < 0), 0.35, 0.5], drop: 0.12 + 0.06 * hit, side: 0.18 * sgn, head: [0.2, 0.3 * sgn, 0.3 * sgn] }, dx: Math.sin(b * Math.PI / 4) * 0.5 };
   if (bar === 1) return { P: { aL: [0.3, 0.3 + 0.5 * (bt % 2 === 0) * hit, 1.9], aR: [0.3, 0.3 + 0.5 * (bt % 2 === 1) * hit, 1.9], lL: [0.1, 0.1, 0.25], lR: [0.1, 0.1, 0.25], drop: 0.08, twist: 0.25 * sgn * hit, head: [0.1 * hit, 0, 0] }, dx: 0 };
-  if (bar === 2) { const a = b * Math.PI / 4; return { P: { aL: [0.8 + Math.sin(a) * 0.6, 1.0 + Math.cos(a) * 0.5, 0.4], aR: [0.8 - Math.sin(a) * 0.6, 1.0 - Math.cos(a) * 0.5, 0.4], lL: [0.2, 0.2, 0.4], lR: [0.2, 0.2, 0.4], drop: 0.1, head: [Math.cos(a) * 0.4, Math.sin(a) * 0.5, Math.sin(a) * 0.4], side: Math.sin(a) * 0.15 }, dx: 0 }; }
+  if (bar === 2) {
+    const a = b * Math.PI / 4;
+    return { P: { aL: [0.8 + Math.sin(a) * 0.6, 1.0 + Math.cos(a) * 0.5, 0.4], aR: [0.8 - Math.sin(a) * 0.6, 1.0 - Math.cos(a) * 0.5, 0.4], lL: [0.2, 0.2, 0.4], lR: [0.2, 0.2, 0.4], drop: 0.1, head: [Math.cos(a) * 0.4, Math.sin(a) * 0.5, Math.sin(a) * 0.4], side: Math.sin(a) * 0.15 }, dx: 0 };
+  }
   return { P: bt < 4 ? { lL: [0.9 * hit * (bt % 2), 0.1, 1.2 * hit * (bt % 2)], lR: [0.9 * hit * (1 - bt % 2), 0.1, 1.2 * hit * (1 - bt % 2)], aL: [1.4, 0.2, 0.2], aR: [1.4, 0.2, 0.2], lean: 0.2, head: [0.3, 0, 0] } : { aR: [1.6, 0.1, 0.05], aL: [0.4, 0.4, 1.6], lL: [0.4, 0.3, 0.6], lR: [0, 0.2, 0.1], drop: 0.1, lean: 0.1, head: [-0.1, 0, 0.2] }, dx: 0 };
 }
 
@@ -1105,7 +1142,10 @@ export function batGeo(n = 8, s = 1) {
     const b = i * 3;
     p.push({ geo: G.sphere(0.05 * s, 6, 4, { sz: 1.6 }), matrix: Tm(0, 0, 0), color: c4('#0e0a0e'), bone: b });
     for (const sx of [-1, 1]) p.push({ geo: G.cylinder(0.002, 0.018 * s, 0.05 * s, 3, { y0: true }), matrix: Tm(sx * 0.022 * s, 0.03 * s, 0.05 * s), color: c4('#0e0a0e'), bone: b });
-    for (const [sx, wb] of [[1, b + 1], [-1, b + 2]]) { const w = [[0, 0, 0.04], [0.14, 0.02, 0.06], [0.3, 0.0, 0.03], [0.34, 0, -0.06], [0.22, 0, -0.03], [0.14, 0, -0.08], [0.04, 0, -0.06]].map(([x, y, z]) => [x * sx * s, y * s, z * s]); for (let k = 1; k < w.length - 1; k++) tri(w[0], sx > 0 ? w[k] : w[k + 1], sx > 0 ? w[k + 1] : w[k], wb); }
+    for (const [sx, wb] of [[1, b + 1], [-1, b + 2]]) {
+      const w = [[0, 0, 0.04], [0.14, 0.02, 0.06], [0.3, 0.0, 0.03], [0.34, 0, -0.06], [0.22, 0, -0.03], [0.14, 0, -0.08], [0.04, 0, -0.06]].map(([x, y, z]) => [x * sx * s, y * s, z * s]);
+      for (let k = 1; k < w.length - 1; k++) tri(w[0], sx > 0 ? w[k] : w[k + 1], sx > 0 ? w[k + 1] : w[k], wb);
+    }
   }
   return skinGeo(p);
 }

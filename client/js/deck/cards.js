@@ -23,6 +23,7 @@
 //  * 0-cost cards trade raw value for tempo (draw, setups), so a hand of them never out-damages a real Shot.
 //  * Depth adds +2 per 4 cards past 10 (a 22-card deck: +6), Tight adds ~+60% at 12 or fewer: the two ends of the
 //    deck-size choice pay about the same at their best.
+// Called by: every deck module; the UI through index.js cardInfo / canUpgrade.
 
 export const TAGS = ['Handle', 'Drive', 'Post', 'Perimeter', 'Pass', 'Hustle'];
 export const TYPES = ['shot', 'defense', 'move', 'play', 'mentality', 'fatigue'];
@@ -173,8 +174,6 @@ export const CARD_LIST = [
 
 export const CARDS = Object.assign(Object.create(null), Object.fromEntries(CARD_LIST.map(c => [c.id, c]))); // (no prototype: '__proto__' is just unknown)
 export const STARTER_DECK = ['jumper', 'jumper', 'jumper', 'jumper', 'closeout', 'closeout', 'closeout', 'closeout', 'crossover', 'outlet_pass'];
-export const FATIGUE_TEMP = CARD_LIST.filter(c => c.type === 'fatigue' && c.temp).map(c => c.id);
-export const FATIGUE_CURSE = CARD_LIST.filter(c => c.type === 'fatigue' && !c.temp).map(c => c.id);
 export const POOL = r => CARD_LIST.filter(c => c.rarity === r).map(c => c.id);
 
 export const baseId = ref => String(ref || '').replace(/\+$/, '');

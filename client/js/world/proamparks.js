@@ -355,7 +355,10 @@ function traffic(env, lanes, n, opts = {}) {
   const { ctx, scene, fixed, look } = env, lit = look.tod === 'day' ? 0.35 : look.tod === 'dusk' ? 1.4 : 2.6;
   const kinds = [{ geo: G.merge(PR.car('#ffffff'), true), lights: G.merge(PR.carLights(4.4), true) }, { geo: G.merge(PR.bus('#ffffff'), true), lights: G.merge(PR.busLights(), true), bus: true }];
   const groups = [[], []];
-  for (let i = 0; i < n; i++) { const L = lanes[i % lanes.length], b = i < (opts.buses || 0) ? 1 : 0; groups[b].push({ lane: L, s: fixed.range(-L.len / 2, L.len / 2), v: fixed.range(opts.vmin || 10, opts.vmax || 18) * (b ? 0.8 : 1), paint: b ? fixed.pick(['#2457a5', '#d8d4cc', '#c8302a', '#e8a82a']) : fixed.pick(PAINTS) }); }
+  for (let i = 0; i < n; i++) {
+    const L = lanes[i % lanes.length], b = i < (opts.buses || 0) ? 1 : 0;
+    groups[b].push({ lane: L, s: fixed.range(-L.len / 2, L.len / 2), v: fixed.range(opts.vmin || 10, opts.vmax || 18) * (b ? 0.8 : 1), paint: b ? fixed.pick(['#2457a5', '#d8d4cc', '#c8302a', '#e8a82a']) : fixed.pick(PAINTS) });
+  }
   const sets = kinds.map((K, ki) => {
     const list = groups[ki]; if (!list.length) return null;
     const body = ctx.geometry(K.geo), lg = ctx.geometry(K.lights);
@@ -478,7 +481,10 @@ SCENERY.overpass = env => {
     deck.push({ geo: texBox(21, SLAB1 - CAP1, 240, 6, 6), matrix: TR(xc, (CAP1 + SLAB1) / 2, 0), color: [1, 1, 1, 1] });
     for (const gx of [-8.2, -2.8, 2.8, 8.2]) deck.push({ geo: texBox(1.3, CAP1 - CAP0, 240, 4, 4), matrix: TR(xc + gx, (CAP0 + CAP1) / 2, 0), color: [0.78, 0.78, 0.76, 1] });
     for (const ex of [-10.2, 10.2]) deck.push({ geo: texBox(0.6, 1.05, 240, 4, 4), matrix: TR(xc + ex, SLAB1 + 0.52, 0), color: [0.92, 0.92, 0.9, 1] });
-    for (let z = -108; z <= 108; z += 36) { metal.push({ geo: G.cylinder(0.12, 0.16, 9, 8, { y0: true }), matrix: TR(xc + sx * 10.2, SLAB1 + 1, z), color: c4('#4a5056') }, { geo: G.box(2.2, 0.16, 0.4), matrix: TR(xc + sx * 9.2, SLAB1 + 10, z), color: c4('#4a5056') }); glow.push({ geo: G.box(0.8, 0.1, 0.36), matrix: TR(xc + sx * 8.4, SLAB1 + 9.9, z), color: [1, 0.7, 0.36, 1] }); }
+    for (let z = -108; z <= 108; z += 36) {
+      metal.push({ geo: G.cylinder(0.12, 0.16, 9, 8, { y0: true }), matrix: TR(xc + sx * 10.2, SLAB1 + 1, z), color: c4('#4a5056') }, { geo: G.box(2.2, 0.16, 0.4), matrix: TR(xc + sx * 9.2, SLAB1 + 10, z), color: c4('#4a5056') });
+      glow.push({ geo: G.box(0.8, 0.1, 0.36), matrix: TR(xc + sx * 8.4, SLAB1 + 9.9, z), color: [1, 0.7, 0.36, 1] });
+    }
     // sodium lamps under the girders, over the court and its surrounds
     for (const gx of [-5.5, 0, 5.5]) for (let z = -30; z <= 30; z += 10) glow.push({ geo: G.box(0.5, 0.14, 0.8), matrix: TR(xc + gx, CAP0 + 0.4, z), color: [1, 0.6, 0.22, 1] });
   }
@@ -504,7 +510,11 @@ SCENERY.overpass = env => {
   standRow(seats, -fx + 2, fz + 1, fx - 2, fz + 1, 16); standRow(seats, -fx + 2, -fz - 1, fx - 2, -fz - 1, 16);
   for (const z of [-12, 12]) for (const x of [-CX, CX]) sitRow(seats, x + (x > 0 ? -1.75 : 1.75), z - 1.2, x + (x > 0 ? -1.75 : 1.75), z + 1.2, 3, 0.9);
   // parked cars along the west (people sitting on two of them), a dumpster, crates
-  for (let i = 0; i < 5; i++) { for (const p of PR.car(fixed.pick(['#7a1f1c', '#2a4a7a', '#d8d4cc', '#1e1f22', '#5a6b3a']))) matte.push({ ...p, matrix: M.m4mul(M.m4(), TR(-fx - 6, 0, -16 + i * 7.5, Math.PI / 2), p.matrix || M.m4()) }); solids.push({ x0: -fx - 7.2, x1: -fx - 4.8, z0: -18.4 + i * 7.5, z1: -13.6 + i * 7.5, h: 1.5 }); if (i % 2) seats.push({ x: -fx - 4.6, y: 0.86, z: -16 + i * 7.5 + 0.8, yaw: Math.PI / 2 }, { x: -fx - 4.6, y: 0.86, z: -16 + i * 7.5 - 0.4, yaw: Math.PI / 2 }); }
+  for (let i = 0; i < 5; i++) {
+    for (const p of PR.car(fixed.pick(['#7a1f1c', '#2a4a7a', '#d8d4cc', '#1e1f22', '#5a6b3a']))) matte.push({ ...p, matrix: M.m4mul(M.m4(), TR(-fx - 6, 0, -16 + i * 7.5, Math.PI / 2), p.matrix || M.m4()) });
+    solids.push({ x0: -fx - 7.2, x1: -fx - 4.8, z0: -18.4 + i * 7.5, z1: -13.6 + i * 7.5, h: 1.5 });
+    if (i % 2) seats.push({ x: -fx - 4.6, y: 0.86, z: -16 + i * 7.5 + 0.8, yaw: Math.PI / 2 }, { x: -fx - 4.6, y: 0.86, z: -16 + i * 7.5 - 0.4, yaw: Math.PI / 2 });
+  }
   put(matte, G.box(3.4, 1.6, 1.8), fx + 3.5, 0.8, -12, '#2f5a3a');
   for (let i = 0; i < 6; i++) matte.push({ geo: G.box(0.5, 0.32, 0.36), matrix: TR(fx + 2.2 + (i % 3) * 0.55, 0.16 + Math.floor(i / 3) * 0.32, 15 + (i % 2) * 0.1), color: c4(['#2457a5', '#c8302a', '#2f8a4a'][i % 3]) });
   // the city past the highway: towers to the north and south
@@ -585,14 +595,21 @@ SCENERY.longbeach = env => {
   { const pz = -46, x0 = 26, x1 = 160, py = 3.4;
     matte.push({ geo: G.box(x1 - x0, 0.4, 9), matrix: TR((x0 + x1) / 2, py, pz), color: c4('#8a6a46') });
     for (let x = x0 + 2; x < x1; x += 6) for (const sz of [-4, 4]) matte.push({ geo: G.cylinder(0.25, 0.25, py + 2, 6, { y0: true }), matrix: TR(x, -2, pz + sz), color: c4('#5a4430') });
-    for (const sz of [-4.4, 4.4]) { metal.push({ geo: G.tube([[x0, py + 1.1, pz + sz], [x1, py + 1.1, pz + sz]], 0.05, 4), color: c4('#e8e3d8') }); for (let x = x0; x <= x1; x += 12) { metal.push({ geo: G.cylinder(0.07, 0.09, 4.2, 6, { y0: true }), matrix: TR(x, py, pz + sz), color: c4('#2a3a40') }); glow.push({ geo: G.sphere(0.24, 8, 6), matrix: TR(x, py + 4.35, pz + sz), color: [1, 0.86, 0.6, 1] }); } }
+    for (const sz of [-4.4, 4.4]) {
+      metal.push({ geo: G.tube([[x0, py + 1.1, pz + sz], [x1, py + 1.1, pz + sz]], 0.05, 4), color: c4('#e8e3d8') });
+      for (let x = x0; x <= x1; x += 12) { metal.push({ geo: G.cylinder(0.07, 0.09, 4.2, 6, { y0: true }), matrix: TR(x, py, pz + sz), color: c4('#2a3a40') }); glow.push({ geo: G.sphere(0.24, 8, 6), matrix: TR(x, py + 4.35, pz + sz), color: [1, 0.86, 0.6, 1] }); }
+    }
     matte.push({ geo: G.box(8, 0.5, 4), matrix: TR(x0 - 3, 1.6, pz), color: c4('#8a6a46') }); // (the ramp up from the sand)
     blocks(ctx, scene, [{ x: x1 - 8, y: py, z: pz, w: 10, d: 7, h: 4.2, tint: '#f2d9c0' }], 'pierhouse', { wall: '#efe4d2', glass: '#3a6a7a', lit: 0.6, emissive: win(look, 1.2), tu: 8, tv: 12, seed: 35 });
     sign(ctx, scene, 'piersign', 'BAIT & TACKLE', { w: 512, h: 112, bg: '#2f8a8c', color: '#fbf5e6', size: 56 }, x1 - 13.05, py + 3.4, pz, -Math.PI / 2, 4, 0.85);
     const wx = 118, wy = py + 13.5, R = 11.5, wheel = [], bulbs = [];
     const flat = (g, m) => ({ geo: g, matrix: m });
     for (const sz of [-1.1, 1.1]) wheel.push({ ...flat(G.torus(R, 0.22, 48, 6), M.m4mul(M.m4(), TR(0, 0, sz), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2), [1, 1, 1]))), color: c4('#f4f4f0') });
-    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, rz = M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, a), [1, 1, 1]); for (const sz of [-1.1, 1.1]) wheel.push({ geo: G.box(0.1, R, 0.1), matrix: M.m4mul(M.m4(), rz, TR(0, R / 2, sz)), color: c4('#e8e3d8') }); wheel.push({ geo: G.box(1.3, 1.2, 1.6), matrix: M.m4mul(M.m4(), rz, TR(0, R + 0.5, 0)), color: c4(['#e8513a', '#2fb8b0', '#f2c230', '#5a8ac8'][i % 4]) }); }
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * Math.PI * 2, rz = M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, a), [1, 1, 1]);
+      for (const sz of [-1.1, 1.1]) wheel.push({ geo: G.box(0.1, R, 0.1), matrix: M.m4mul(M.m4(), rz, TR(0, R / 2, sz)), color: c4('#e8e3d8') });
+      wheel.push({ geo: G.box(1.3, 1.2, 1.6), matrix: M.m4mul(M.m4(), rz, TR(0, R + 0.5, 0)), color: c4(['#e8513a', '#2fb8b0', '#f2c230', '#5a8ac8'][i % 4]) });
+    }
     for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; bulbs.push({ geo: G.sphere(0.14, 6, 4), matrix: TR(Math.sin(a) * (R + 0.1), Math.cos(a) * (R + 0.1), 1.25), color: [1, 0.85 - (i % 3) * 0.2, 0.5 + (i % 2) * 0.3, 1] }); }
     wheel.push({ geo: G.cylinder(0.6, 0.6, 3, 12), matrix: M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2), [1, 1, 1]), color: c4('#9aa0a6') });
     const wm = new Mesh(ctx.geometry(G.merge(wheel)), new Material({ color: [1, 1, 1], roughness: 0.5, metalness: 0.3 }), { castShadow: false, reflect: false });
@@ -604,7 +621,10 @@ SCENERY.longbeach = env => {
     placeWheel(); anim.push({ step(dt) { spin += dt * 0.09; placeWheel(); } });
   }
   // the crowd: beach chairs and towels by the sidelines, a row at the boardwalk rail, a row behind each baseline
-  for (let i = 0; i < 18; i++) { const z = -14 + i * 1.6, s = i % 2 ? -1 : 1; for (const side of [-1, 1]) { const x = side * (W2 + 3.2 + (i % 3) * 0.9); matte.push({ geo: G.box(0.6, 0.06, 1.3), matrix: TR(x, 0.03, z, s * 0.1), color: c4(fixed.pick(['#e8513a', '#2fb8b0', '#f2c230', '#f4efe4'])) }); seats.push({ x, y: 0, z, yaw: side > 0 ? -Math.PI / 2 : Math.PI / 2 }); } }
+  for (let i = 0; i < 18; i++) {
+    const z = -14 + i * 1.6, s = i % 2 ? -1 : 1;
+    for (const side of [-1, 1]) { const x = side * (W2 + 3.2 + (i % 3) * 0.9); matte.push({ geo: G.box(0.6, 0.06, 1.3), matrix: TR(x, 0.03, z, s * 0.1), color: c4(fixed.pick(['#e8513a', '#2fb8b0', '#f2c230', '#f4efe4'])) }); seats.push({ x, y: 0, z, yaw: side > 0 ? -Math.PI / 2 : Math.PI / 2 }); }
+  }
   standRow(seats, -30.6, -26, -30.6, 26, 32, 0.55, [0, 0]);
   standRow(seats, -W2 + 1, L2 + 3.6, W2 - 1, L2 + 3.6, 12); standRow(seats, -W2 + 1, -L2 - 3.6, W2 - 1, -L2 - 3.6, 12);
   // string lights over the court (lit at dusk and night), on poles at the corners
@@ -657,7 +677,10 @@ SCENERY.aau = env => {
   for (let i = -4; i <= 4; i++) {
     metal.push({ geo: G.box(XW + W, 0.4, 0.3), matrix: TR(mid, H - 1.2, i * 6.5), color: c4('#2e3135') });
     for (let x = -W + 2; x < XW - 1; x += 16) metal.push({ geo: G.tube([[x, H - 1.2, i * 6.5], [x + 8, H - 2.6, i * 6.5], [x + 16, H - 1.2, i * 6.5]], 0.06, 4), color: c4('#2e3135') });
-    for (const sx of [-8, 0, 8, C2 - 8, C2, C2 + 8, C3 - 8, C3, C3 + 8]) { metal.push({ geo: G.cylinder(0.5, 0.3, 0.45, 12, { y0: true }), matrix: TR(sx, H - 2.6, i * 6.5), color: c4('#2e3135') }); glow.push({ geo: G.cylinder(0.48, 0.48, 0.02, 12, { y0: true }), matrix: TR(sx, H - 2.62, i * 6.5), color: [1, 1, 1, 1] }); }
+    for (const sx of [-8, 0, 8, C2 - 8, C2, C2 + 8, C3 - 8, C3, C3 + 8]) {
+      metal.push({ geo: G.cylinder(0.5, 0.3, 0.45, 12, { y0: true }), matrix: TR(sx, H - 2.6, i * 6.5), color: c4('#2e3135') });
+      glow.push({ geo: G.cylinder(0.48, 0.48, 0.02, 12, { y0: true }), matrix: TR(sx, H - 2.62, i * 6.5), color: [1, 1, 1, 1] });
+    }
   }
   // the divider curtains: vinyl to head height, mesh above it up to the trusses, pleated
   const meshMat = new Material({ map: cachedTexture(ctx, 'chainlink', () => T.chainlink(256), {}), alphaTest: 0.5, doubleSided: true, color: [0.32, 0.34, 0.4] }); // (open netting: the courts beyond show through it)
@@ -683,7 +706,11 @@ SCENERY.aau = env => {
     matte.push({ geo: G.box(0.9, 0.06, 6.4), matrix: TR(tx, 0.76, 0), color: c4('#2b2f36') });
     for (const dz of [-3, 3]) for (const dx of [-0.38, 0.38]) metal.push({ geo: G.box(0.05, 0.74, 0.05), matrix: TR(tx + dx, 0.37, dz), color: c4('#9aa0a6') });
     const sk = new Mesh(ctx.geometry(G.quad(6.4, 0.68)), env.bannerMats.name, { castShadow: false }); M.m4fromYaw(sk.matrix, tx - 0.46, 0.4, 0, -Math.PI / 2); scene.add(sk); env.banners.push(sk);
-    for (const dz of [-2, 0, 2]) { matte.push({ geo: G.box(0.34, 0.02, 0.48), matrix: TR(tx + 0.05, 0.8, dz), color: c4('#1a1c20') }, { geo: G.box(0.02, 0.3, 0.46), matrix: TRP(tx + 0.2, 0.94, dz, 0, 0), color: c4('#2a3a4a') }); metal.push({ geo: G.box(0.44, 0.04, 0.44), matrix: TR(tx + 0.85, 0.45, dz), color: c4('#3a3f47') }); seats.push({ x: tx + 0.85, y: 0.45, z: dz, yaw: -Math.PI / 2 }); }
+    for (const dz of [-2, 0, 2]) {
+      matte.push({ geo: G.box(0.34, 0.02, 0.48), matrix: TR(tx + 0.05, 0.8, dz), color: c4('#1a1c20') }, { geo: G.box(0.02, 0.3, 0.46), matrix: TRP(tx + 0.2, 0.94, dz, 0, 0), color: c4('#2a3a4a') });
+      metal.push({ geo: G.box(0.44, 0.04, 0.44), matrix: TR(tx + 0.85, 0.45, dz), color: c4('#3a3f47') });
+      seats.push({ x: tx + 0.85, y: 0.45, z: dz, yaw: -Math.PI / 2 });
+    }
     const sc = new Mesh(ctx.geometry(G.quad(0.9, 0.42)), new Material({ map: cachedTexture(ctx, 'aaushot', () => T.ledBoard('24', '#ff4a2a', '#ffe45c'), {}), shading: 'unlit', color: [1.3, 1.3, 1.3] }), { castShadow: false });
     matte.push({ geo: G.box(0.3, 0.5, 1.0), matrix: TR(tx, 1.04, 1.0), color: c4('#14161a') }); M.m4fromYaw(sc.matrix, tx - 0.16, 1.04, 1.0, -Math.PI / 2); scene.add(sc);
     for (const sz of [-1, 1]) for (let i = 0; i < 6; i++) { matte.push({ geo: G.box(0.5, 0.45, 0.5), matrix: TR(W2 + 2.2, 0.225, sz * (4.6 + i * 0.6)), color: c4('#3a3f47') }); if (fixed.next() < 0.7) seats.push({ x: W2 + 2.2, y: 0.45, z: sz * (4.6 + i * 0.6), yaw: -Math.PI / 2 }); }
@@ -730,16 +757,27 @@ SCENERY.rooftop = env => {
   below.matrix[13] = -60; scene.add(below);
   blocks(ctx, scene, [{ x: 0, y: -60, z: 0, w: RW * 2 + 2, d: RL * 2 + 2, h: 59.8 }], 'roofbldg', { wall: '#7a5a4a', lit: 0.4, emissive: win(look, 0.9), seed: 61 });
   // the parapet and a safety fence on it (lower on the south side: the skyline view)
-  for (const [x, z, w, d] of [[0, -RL, RW * 2 + 1, 0.5], [0, RL, RW * 2 + 1, 0.5], [-RW, 0, 0.5, RL * 2], [RW, 0, 0.5, RL * 2]]) { matte.push({ geo: G.box(w, 1.1, d), matrix: TR(x, 0.55, z), color: c4('#8a7a6e') }); solids.push({ x0: x - w / 2 - 0.2, x1: x + w / 2 + 0.2, z0: z - d / 2 - 0.2, z1: z + d / 2 + 0.2, h: 3 }); }
+  for (const [x, z, w, d] of [[0, -RL, RW * 2 + 1, 0.5], [0, RL, RW * 2 + 1, 0.5], [-RW, 0, 0.5, RL * 2], [RW, 0, 0.5, RL * 2]]) {
+    matte.push({ geo: G.box(w, 1.1, d), matrix: TR(x, 0.55, z), color: c4('#8a7a6e') });
+    solids.push({ x0: x - w / 2 - 0.2, x1: x + w / 2 + 0.2, z0: z - d / 2 - 0.2, z1: z + d / 2 + 0.2, h: 3 });
+  }
   const fenceMat = new Material({ map: cachedTexture(ctx, 'chainlink', () => T.chainlink(256), {}), alphaTest: 0.5, doubleSided: true, roughness: 0.5, metalness: 0.6 }), fp = [];
-  for (const [x0, z0, x1, z1] of [[-RW, -RL, RW, -RL], [-RW, RL, RW, RL], [-RW, -RL, -RW, RL], [RW, -RL, RW, RL]]) { const m = PR.fenceMesh(x0, z0, x1, z1, 2.6); fp.push({ geo: m.geo, matrix: M.m4mul(M.m4(), TR(0, 1.1, 0), m.matrix) }); metal.push(...PR.fenceFrame(x0, z0, x1, z1, 2.6, '#3a4046').map(p => ({ ...p, matrix: M.m4mul(M.m4(), TR(0, 1.1, 0), p.matrix || M.m4()) }))); }
+  for (const [x0, z0, x1, z1] of [[-RW, -RL, RW, -RL], [-RW, RL, RW, RL], [-RW, -RL, -RW, RL], [RW, -RL, RW, RL]]) {
+    const m = PR.fenceMesh(x0, z0, x1, z1, 2.6);
+    fp.push({ geo: m.geo, matrix: M.m4mul(M.m4(), TR(0, 1.1, 0), m.matrix) });
+    metal.push(...PR.fenceFrame(x0, z0, x1, z1, 2.6, '#3a4046').map(p => ({ ...p, matrix: M.m4mul(M.m4(), TR(0, 1.1, 0), p.matrix || M.m4()) })));
+  }
   scene.add(new Mesh(ctx.geometry(G.merge(fp, false)), fenceMat, { castShadow: false }));
   // the water tower on its legs (north-west), AC units and vents
   const wx = -RW + 4.5, wz = RL - 4.5;
   for (const [sx, sz] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]]) metal.push({ geo: G.cylinder(0.12, 0.14, 6, 6, { y0: true }), matrix: TR(wx + sx, 0, wz + sz), color: c4('#2a2d30') });
   matte.push({ geo: G.cylinder(2.6, 2.6, 4.6, 18, { y0: true }), matrix: TR(wx, 6, wz), color: c4('#8a6a4a') }, { geo: G.cylinder(0.2, 2.9, 1.6, 18, { y0: true }), matrix: TR(wx, 10.6, wz), color: c4('#5a4636') });
   solids.push({ x0: wx - 2.8, x1: wx + 2.8, z0: wz - 2.8, z1: wz + 2.8, h: 12 });
-  for (const [x, z] of [[RW - 3, RL - 3], [RW - 3, RL - 6.5], [RW - 3, -RL + 4]]) { matte.push({ geo: G.box(2.4, 1.6, 2), matrix: TR(x, 0.8, z), color: c4('#b8bcc0') }); metal.push({ geo: G.cylinder(0.7, 0.7, 0.1, 14, { y0: true }), matrix: TR(x, 1.6, z), color: c4('#3a3f44') }); solids.push({ x0: x - 1.3, x1: x + 1.3, z0: z - 1.1, z1: z + 1.1, h: 1.7 }); }
+  for (const [x, z] of [[RW - 3, RL - 3], [RW - 3, RL - 6.5], [RW - 3, -RL + 4]]) {
+    matte.push({ geo: G.box(2.4, 1.6, 2), matrix: TR(x, 0.8, z), color: c4('#b8bcc0') });
+    metal.push({ geo: G.cylinder(0.7, 0.7, 0.1, 14, { y0: true }), matrix: TR(x, 1.6, z), color: c4('#3a3f44') });
+    solids.push({ x0: x - 1.3, x1: x + 1.3, z0: z - 1.1, z1: z + 1.1, h: 1.7 });
+  }
   for (let i = 0; i < 5; i++) metal.push({ geo: G.cylinder(0.25, 0.25, 1.4, 10, { y0: true }), matrix: TR(-RW + 1.5, 0, -8 + i * 4), color: c4('#9aa0a6') });
   // the skyline: towers on every side, some taller than us; a billboard on the next roof with the home team's name
   const city = [];
@@ -753,8 +791,15 @@ SCENERY.rooftop = env => {
   nearB.forEach((b, i) => {
     const top = b.y + b.h;
     matte.push({ geo: G.box(b.w + 0.6, 0.6, b.d + 0.6), matrix: TR(b.x, top + 0.3, b.z), color: c4(i % 2 ? '#5a3a30' : '#6a6660') });
-    if (i % 3 === 0) { matte.push({ geo: G.cylinder(2, 2, 3.4, 12, { y0: true }), matrix: TR(b.x + b.w / 4, top + 2.4, b.z), color: c4('#7a6248') }, { geo: G.cylinder(0.2, 2.2, 1.1, 12, { y0: true }), matrix: TR(b.x + b.w / 4, top + 5.8, b.z), color: c4('#4a3a2e') }); for (const [sx, sz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) metal.push({ geo: G.box(0.14, 2.4, 0.14), matrix: TR(b.x + b.w / 4 + sx, top + 1.2, b.z + sz), color: c4('#2a2d30') }); }
-    if (i % 3 === 1 && top > -10) { const yaw = Math.atan2(-b.x, -b.z); sign(ctx, scene, 'roofword-' + (i % roofWords.length), roofWords[i % roofWords.length], { w: 512, h: 128, bg: '#14100e', color: ['#ff4a5a', '#ffd23f', '#5ad8ff'][i % 3], size: 80 }, b.x - Math.sin(-yaw) * 0, top + 2.6, b.z, yaw, 8, 2); for (const dx of [-3.4, 3.4]) metal.push({ geo: G.box(0.2, 2.6, 0.2), matrix: TR(b.x + Math.cos(yaw) * dx, top + 1.3, b.z - Math.sin(yaw) * dx), color: c4('#2a2d30') }); }
+    if (i % 3 === 0) {
+      matte.push({ geo: G.cylinder(2, 2, 3.4, 12, { y0: true }), matrix: TR(b.x + b.w / 4, top + 2.4, b.z), color: c4('#7a6248') }, { geo: G.cylinder(0.2, 2.2, 1.1, 12, { y0: true }), matrix: TR(b.x + b.w / 4, top + 5.8, b.z), color: c4('#4a3a2e') });
+      for (const [sx, sz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) metal.push({ geo: G.box(0.14, 2.4, 0.14), matrix: TR(b.x + b.w / 4 + sx, top + 1.2, b.z + sz), color: c4('#2a2d30') });
+    }
+    if (i % 3 === 1 && top > -10) {
+      const yaw = Math.atan2(-b.x, -b.z);
+      sign(ctx, scene, 'roofword-' + (i % roofWords.length), roofWords[i % roofWords.length], { w: 512, h: 128, bg: '#14100e', color: ['#ff4a5a', '#ffd23f', '#5ad8ff'][i % 3], size: 80 }, b.x - Math.sin(-yaw) * 0, top + 2.6, b.z, yaw, 8, 2);
+      for (const dx of [-3.4, 3.4]) metal.push({ geo: G.box(0.2, 2.6, 0.2), matrix: TR(b.x + Math.cos(yaw) * dx, top + 1.3, b.z - Math.sin(yaw) * dx), color: c4('#2a2d30') });
+    }
   });
   metal.push({ geo: G.box(0.3, 6, 0.3), matrix: TR(-14, 3, -RL - 16), color: c4('#2a2d30') }, { geo: G.box(0.3, 6, 0.3), matrix: TR(-4, 3, -RL - 16), color: c4('#2a2d30') });
   bannerQuad(ctx, scene, env.bannerMats.name, -9, 7.5, -RL - 15.8, 0, 13, 3.3, env.banners);
@@ -840,7 +885,11 @@ SCENERY.projects = env => {
     matte.push({ geo: G.cylinder(2.2, 2.2, 3.6, 12, { y0: true }), matrix: TR(tx, t.h + 2.4, tz), color: c4('#7a6248') }, { geo: G.cylinder(0.2, 2.4, 1.2, 12, { y0: true }), matrix: TR(tx, t.h + 6, tz), color: c4('#4a3a2e') });
     for (const [sx, sz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) metal.push({ geo: G.box(0.14, 2.4, 0.14), matrix: TR(tx + sx, t.h + 1.2, tz + sz), color: c4('#2a2d30') });
     // a lit entrance canopy at the foot of the nearer ones
-    if (Math.hypot(t.x, t.z) < 90) { const f = Math.abs(t.x) > Math.abs(t.z) ? [t.x - Math.sign(t.x) * (t.w / 2 + 1), t.z, Math.PI / 2] : [t.x, t.z - Math.sign(t.z) * (t.d / 2 + 1), 0]; matte.push({ geo: G.box(f[2] ? 2.2 : 5, 0.25, f[2] ? 5 : 2.2), matrix: TR(f[0], 3.2, f[1]), color: c4('#3a3f44') }); glow.push({ geo: G.box(0.8, 0.06, 0.8), matrix: TR(f[0], 3.05, f[1]), color: [1, 0.86, 0.6, 1] }); }
+    if (Math.hypot(t.x, t.z) < 90) {
+      const f = Math.abs(t.x) > Math.abs(t.z) ? [t.x - Math.sign(t.x) * (t.w / 2 + 1), t.z, Math.PI / 2] : [t.x, t.z - Math.sign(t.z) * (t.d / 2 + 1), 0];
+      matte.push({ geo: G.box(f[2] ? 2.2 : 5, 0.25, f[2] ? 5 : 2.2), matrix: TR(f[0], 3.2, f[1]), color: c4('#3a3f44') });
+      glow.push({ geo: G.box(0.8, 0.06, 0.8), matrix: TR(f[0], 3.05, f[1]), color: [1, 0.86, 0.6, 1] });
+    }
   }
   // stoops at the nearer towers' doors: people sitting out on the steps, a few standing about in front
   for (const t of towers) if (Math.hypot(t.x, t.z) < 90) {
@@ -933,7 +982,11 @@ SCENERY.riverside = env => {
   for (const x of [-40, -14, 20, 32, 44]) metal.push(...PR.bench(x, bank - 2.4, 0, '#6a5038', '#1e2a30'));
   for (const x of [-40, 20, 32, 44]) sitRow(seats, x - 0.7, bank - 2.45, x + 0.7, bank - 2.45, 3, 0.46, [x, bank + 10]);
   // planters with trees along the promenade, past the sidelines
-  for (const [x, z] of [[-28, -8], [-28, 4], [22, -20], [24, 20], [-30, -22], [36, -6]]) { matte.push({ geo: G.box(2.4, 0.6, 2.4), matrix: TR(x, 0.3, z), color: c4('#7a766e') }); foliage.push(...PR.tree(x, z, 0.85, fixed, '#3f6a3a')); solids.push({ x0: x - 1.3, x1: x + 1.3, z0: z - 1.3, z1: z + 1.3, h: 0.6 }); }
+  for (const [x, z] of [[-28, -8], [-28, 4], [22, -20], [24, 20], [-30, -22], [36, -6]]) {
+    matte.push({ geo: G.box(2.4, 0.6, 2.4), matrix: TR(x, 0.3, z), color: c4('#7a766e') });
+    foliage.push(...PR.tree(x, z, 0.85, fixed, '#3f6a3a'));
+    solids.push({ x0: x - 1.3, x1: x + 1.3, z0: z - 1.3, z1: z + 1.3, h: 0.6 });
+  }
   // across the river: the city, tall and lit, its lights on the water
   const city = [];
   for (let i = 0; i < 34; i++) { const x = -230 + i * 14 + fixed.range(-4, 4), z = fixed.range(165, 230), h = fixed.range(26, 130); city.push({ x, z, w: fixed.range(12, 20), d: fixed.range(12, 20), h, tint: fixed.pick(TINTS) }); }
@@ -1052,7 +1105,10 @@ SCENERY.warehouse = env => {
     for (let i = 0; i < 9; i++) matte.push({ geo: G.box(0.7, 0.3, 0.04), matrix: TR(dx - 2.8 + i * 0.7, 5.6, L - 0.2), color: c4(i % 2 ? '#1e1e1e' : '#f2c230') });
     const fk = [-14, L - 6];
     matte.push({ geo: G.box(1.3, 1.1, 2.2), matrix: TR(fk[0], 0.75, fk[1]), color: c4('#e8a82a') }, { geo: G.box(1.2, 0.08, 1.4), matrix: TR(fk[0], 2.2, fk[1] + 0.2), color: c4('#1e1e1e') });
-    for (const sx of [-0.5, 0.5]) { metal.push({ geo: G.box(0.1, 2.4, 0.1), matrix: TR(fk[0] + sx, 1.2, fk[1] - 1.15), color: c4('#2a2a2a') }, { geo: G.box(0.12, 0.05, 1.1), matrix: TR(fk[0] + sx * 0.6, 0.1, fk[1] - 1.7), color: c4('#2a2a2a') }); for (const sz of [-0.7, 0.7]) matte.push({ geo: G.cylinder(0.3, 0.3, 0.24, 10), matrix: TRP(fk[0] + sx * 1.4, 0.3, fk[1] + sz, Math.PI / 2, Math.PI / 2), color: c4('#1a1a1a') }); }
+    for (const sx of [-0.5, 0.5]) {
+      metal.push({ geo: G.box(0.1, 2.4, 0.1), matrix: TR(fk[0] + sx, 1.2, fk[1] - 1.15), color: c4('#2a2a2a') }, { geo: G.box(0.12, 0.05, 1.1), matrix: TR(fk[0] + sx * 0.6, 0.1, fk[1] - 1.7), color: c4('#2a2a2a') });
+      for (const sz of [-0.7, 0.7]) matte.push({ geo: G.cylinder(0.3, 0.3, 0.24, 10), matrix: TRP(fk[0] + sx * 1.4, 0.3, fk[1] + sz, Math.PI / 2, Math.PI / 2), color: c4('#1a1a1a') });
+    }
     solids.push({ x0: fk[0] - 0.9, x1: fk[0] + 0.9, z0: fk[1] - 2.3, z1: fk[1] + 1.2, h: 2.3 });
     for (const [x, z, k] of [[W - 3, L - 3, 4], [W - 5.5, L - 2.5, 2], [-W + 3, 8, 3], [W - 3, -L + 6, 3]]) for (let j = 0; j < k; j++) matte.push({ geo: G.box(1.2, 0.14, 1.0), matrix: TR(x, 0.07 + j * 0.15, z, 0.1 * j), color: c4('#9a7a52') });
     for (const [x, z, c] of [[W - 2, -6, '#2f5a8a'], [W - 2.7, -5.4, '#8a2f2a'], [W - 2, -4.6, '#2f5a8a'], [-W + 2, 18, '#3a6a3a']]) matte.push({ geo: G.cylinder(0.3, 0.3, 0.9, 12, { y0: true }), matrix: TR(x, 0, z), color: c4(c) });
@@ -1063,7 +1119,11 @@ SCENERY.warehouse = env => {
   // the seats: a bleacher on the east side, crate stacks and an old couch on the west
   matte.push(...PR.bleacher(W2 + 3.4, 0, -Math.PI / 2, 22, 6, '#3a3632', '#8a6a46')); bleacherSeats(seats, W2 + 3.4, 0, -Math.PI / 2, 22, 6);
   solids.push({ x0: W2 + 3, x1: W2 + 7.4, z0: -11, z1: 11, h: 3 });
-  for (let i = 0; i < 9; i++) { const z = -12 + i * 3, x = -W2 - 3.6; matte.push({ geo: G.box(1.2, 0.9, 1.2), matrix: TR(x, 0.45, z, fixed.range(-0.1, 0.1)), color: c4(fixed.pick(['#8a6a46', '#7a5a3a', '#9a7a52'])) }, { geo: G.box(1.2, 0.9, 1.2), matrix: TR(x - 1.3, 0.45, z, fixed.range(-0.1, 0.1)), color: c4('#7a5a3a') }, { geo: G.box(1.1, 0.8, 1.1), matrix: TR(x - 1.3, 1.3, z, 0.2), color: c4('#8a6a46') }); seats.push({ x, y: 0.9, z: z - 0.3, yaw: Math.PI / 2 }, { x, y: 0.9, z: z + 0.3, yaw: Math.PI / 2 }, { x: x - 1.3, y: 1.7, z, yaw: Math.PI / 2 }); }
+  for (let i = 0; i < 9; i++) {
+    const z = -12 + i * 3, x = -W2 - 3.6;
+    matte.push({ geo: G.box(1.2, 0.9, 1.2), matrix: TR(x, 0.45, z, fixed.range(-0.1, 0.1)), color: c4(fixed.pick(['#8a6a46', '#7a5a3a', '#9a7a52'])) }, { geo: G.box(1.2, 0.9, 1.2), matrix: TR(x - 1.3, 0.45, z, fixed.range(-0.1, 0.1)), color: c4('#7a5a3a') }, { geo: G.box(1.1, 0.8, 1.1), matrix: TR(x - 1.3, 1.3, z, 0.2), color: c4('#8a6a46') });
+    seats.push({ x, y: 0.9, z: z - 0.3, yaw: Math.PI / 2 }, { x, y: 0.9, z: z + 0.3, yaw: Math.PI / 2 }, { x: x - 1.3, y: 1.7, z, yaw: Math.PI / 2 });
+  }
   solids.push({ x0: -W2 - 5.6, x1: -W2 - 2.9, z0: -13, z1: 13, h: 1.7 });
   matte.push(...PR.couch(-W2 - 3.4, 16.5, Math.PI / 2, '#6a3a2a', 2.6)); sitRow(seats, -W2 - 3.4, 15.6, -W2 - 3.4, 17.4, 3, 0.42);
   standRow(seats, -W + 2, -L + 1.6, -8, -L + 1.6, 9); standRow(seats, 0, -L + 1.6, W - 2, -L + 1.6, 12); standRow(seats, -W2, L - 1.6, W2, L - 1.6, 16);
@@ -1222,7 +1282,11 @@ SCENERY.cage = env => {
   parkedAt.forEach(([x, z], i) => { const taxi = i % 3 === 0, paint = taxi ? '#f2c230' : fixed.pick(['#1e1f22', '#d8d4cc', '#2a4a7a', '#7a1f1c']); for (const p of [...PR.car(paint), ...(taxi ? cabRoof() : [])]) matte.push({ ...p, matrix: M.m4mul(M.m4(), TR(x, 0, z, 0), p.matrix || M.m4()) }); });
   const lanes = [{ axis: 'z', c: 27, dir: 1 }, { axis: 'z', c: -29, dir: -1 }, { axis: 'x', c: 31, dir: -1 }, { axis: 'x', c: -33, dir: 1 }];
   const carGeo = ctx.geometry(G.merge(PR.car('#ffffff'), true)), traffic = [];
-  for (let i = 0; i < 10; i++) { const L = lanes[i % 4], taxi = i % 3 === 1, m = new Mesh(carGeo, new Material({ color: lin(taxi ? '#f2c230' : fixed.pick(['#d8d4cc', '#1e1f22', '#7a1f1c', '#2a4a7a', '#5a6066'])), roughness: 0.4, metalness: 0.3 }), { castShadow: false, reflect: false }); scene.add(m); traffic.push({ L, s: fixed.range(-70, 70), v: fixed.range(6, 10), m }); }
+  for (let i = 0; i < 10; i++) {
+    const L = lanes[i % 4], taxi = i % 3 === 1, m = new Mesh(carGeo, new Material({ color: lin(taxi ? '#f2c230' : fixed.pick(['#d8d4cc', '#1e1f22', '#7a1f1c', '#2a4a7a', '#5a6066'])), roughness: 0.4, metalness: 0.3 }), { castShadow: false, reflect: false });
+    scene.add(m);
+    traffic.push({ L, s: fixed.range(-70, 70), v: fixed.range(6, 10), m });
+  }
   anim.push({ step(dt) { for (const c of traffic) { c.s += c.v * dt * c.L.dir; if (c.s > 70) c.s -= 140; if (c.s < -70) c.s += 140; const yaw = c.L.axis === 'z' ? (c.L.dir > 0 ? 0 : Math.PI) : (c.L.dir > 0 ? Math.PI / 2 : -Math.PI / 2); M.m4fromYaw(c.m.matrix, c.L.axis === 'z' ? c.L.c : c.s, 0, c.L.axis === 'z' ? c.s : c.L.c, yaw); } } });
   anim.at(-1).step(0); // (on their lanes from the first frame, not parked at the origin until the first update)
   // people on the parked cars, a line at the hot-dog cart, a group by the metro, stoops along the side streets
@@ -1322,19 +1386,30 @@ SCENERY.rec = env => {
   { const tx = W - 0.5, tz = 22.4;
     matte.push({ geo: G.box(0.9, 0.9, 5), matrix: TR(tx, 0.45, tz), color: c4('#6a4a30') }, { geo: G.box(0.9, 0.12, 5), matrix: TR(tx, 2.95, tz), color: c4('#6a4a30') });
     for (const y of [1.4, 2.1]) metal.push({ geo: G.box(0.7, 0.03, 4.8), matrix: TR(tx, y, tz), color: c4('#d8dde4') });
-    for (let i = 0; i < 9; i++) { const y = i < 5 ? 0.9 : i < 7 ? 1.43 : 2.13, z = tz - 2 + (i < 5 ? i : i < 7 ? (i - 5) * 2 + 1 : (i - 7) * 2 + 1.2); matte.push({ geo: G.cylinder(0.08, 0.12, 0.12, 8, { y0: true }), matrix: TR(tx, y, z), color: c4('#3a2a1a') }, { geo: G.cylinder(0.07, 0.03, 0.3, 8, { y0: true }), matrix: TR(tx, y + 0.12, z), color: c4('#e8c15a') }, { geo: G.sphere(0.09, 8, 6), matrix: TR(tx, y + 0.5, z), color: c4('#e8c15a') }); }
+    for (let i = 0; i < 9; i++) {
+      const y = i < 5 ? 0.9 : i < 7 ? 1.43 : 2.13, z = tz - 2 + (i < 5 ? i : i < 7 ? (i - 5) * 2 + 1 : (i - 7) * 2 + 1.2);
+      matte.push({ geo: G.cylinder(0.08, 0.12, 0.12, 8, { y0: true }), matrix: TR(tx, y, z), color: c4('#3a2a1a') }, { geo: G.cylinder(0.07, 0.03, 0.3, 8, { y0: true }), matrix: TR(tx, y + 0.12, z), color: c4('#e8c15a') }, { geo: G.sphere(0.09, 8, 6), matrix: TR(tx, y + 0.5, z), color: c4('#e8c15a') });
+    }
     glow.push({ geo: G.box(0.02, 2, 5), matrix: TR(tx - 0.46, 1.95, tz), color: [0.16, 0.18, 0.2, 1] }); }
   for (let i = 0; i < 2; i++) { const z = -18 + i * 1.3; matte.push({ geo: G.box(0.8, 1.9, 1.1), matrix: TR(W - 0.5, 0.95, z), color: c4(['#c8302a', '#2f5a9a'][i]) }); glow.push({ geo: G.box(0.03, 1.2, 0.8), matrix: TR(W - 0.91, 1.15, z), color: [0.9, 0.95, 1, 1] }); }
   matte.push({ geo: G.box(0.5, 0.9, 0.6), matrix: TR(W - 0.3, 0.45, -14), color: c4('#c9ced6') });
   // seats: pull-out bleachers on the east, folding chairs on the west, people standing at the south end
   matte.push(...PR.bleacher(W2 + 3.2, 0, -Math.PI / 2, 22, 6, '#6a5a48', '#d8b07a')); bleacherSeats(seats, W2 + 3.2, 0, -Math.PI / 2, 22, 6);
   solids.push({ x0: W2 + 2.8, x1: W2 + 7, z0: -11, z1: 11, h: 3 });
-  for (const dx of [3, 3.9]) for (let i = 0; i < 14; i++) { const x = -W2 - dx, z = -9.5 + i * 1.45; metal.push({ geo: G.box(0.44, 0.04, 0.44), matrix: TR(x, 0.45, z), color: c4('#3a3f47') }, { geo: G.box(0.44, 0.4, 0.04), matrix: TR(x - 0.2, 0.67, z), color: c4('#3a3f47') }); seats.push({ x, y: 0.42, z, yaw: Math.PI / 2 }); }
+  for (const dx of [3, 3.9]) for (let i = 0; i < 14; i++) {
+    const x = -W2 - dx, z = -9.5 + i * 1.45;
+    metal.push({ geo: G.box(0.44, 0.04, 0.44), matrix: TR(x, 0.45, z), color: c4('#3a3f47') }, { geo: G.box(0.44, 0.4, 0.04), matrix: TR(x - 0.2, 0.67, z), color: c4('#3a3f47') });
+    seats.push({ x, y: 0.42, z, yaw: Math.PI / 2 });
+  }
   standRow(seats, -4, -L + 1.4, W - 3, -L + 1.4, 14);
   // the community touches: the centre's name painted up the east wall, fold-up practice hoops on it, a banner over the
   // stage, volleyball lines across the floor, a ping-pong and a foosball table in the south-east corner
   sign(ctx, scene, 'recname', 'MAPLEWOOD COMMUNITY CENTER', { w: 1536, h: 160, bg: '#e8e2d4', color: '#2f7a8a', size: 92, stripe: '#e8822a' }, W - 0.07, 6.6, -2, -Math.PI / 2, 15, 1.56, false);
-  for (const z of [-24, 9.5]) { const y = 3.05; matte.push({ geo: G.box(0.06, 1.0, 1.7), matrix: TR(W - 0.95, y + 0.45, z), color: c4('#f4f4f0') }, { geo: G.box(0.05, 0.45, 0.55), matrix: TR(W - 0.92, y + 0.3, z), color: c4('#e8822a') }); metal.push({ geo: G.box(0.9, 0.06, 0.06), matrix: TR(W - 0.5, y + 0.2, z - 0.6), color: c4('#3a3f44') }, { geo: G.box(0.9, 0.06, 0.06), matrix: TR(W - 0.5, y + 0.2, z + 0.6), color: c4('#3a3f44') }, { geo: G.torus(0.23, 0.015, 16, 4), matrix: TR(W - 1.2, y, z), color: c4('#e8501c') }); }
+  for (const z of [-24, 9.5]) {
+    const y = 3.05;
+    matte.push({ geo: G.box(0.06, 1.0, 1.7), matrix: TR(W - 0.95, y + 0.45, z), color: c4('#f4f4f0') }, { geo: G.box(0.05, 0.45, 0.55), matrix: TR(W - 0.92, y + 0.3, z), color: c4('#e8822a') });
+    metal.push({ geo: G.box(0.9, 0.06, 0.06), matrix: TR(W - 0.5, y + 0.2, z - 0.6), color: c4('#3a3f44') }, { geo: G.box(0.9, 0.06, 0.06), matrix: TR(W - 0.5, y + 0.2, z + 0.6), color: c4('#3a3f44') }, { geo: G.torus(0.23, 0.015, 16, 4), matrix: TR(W - 1.2, y, z), color: c4('#e8501c') });
+  }
   sign(ctx, scene, 'recstage', 'TALENT SHOW · FRIDAY 7PM', { w: 1024, h: 140, bg: '#f2c14e', color: '#6a141a', size: 72 }, 0, 7.6, L - 0.25, Math.PI, 8.6, 1.15, false);
   for (const [x0, z0, x1, z1] of [[-9, -4.5, 9, -4.5], [-9, 4.5, 9, 4.5], [-9, -4.5, -9, 4.5], [9, -4.5, 9, 4.5], [0, -4.5, 0, 4.5]]) matte.push({ geo: G.plane(Math.abs(x1 - x0) + 0.06, Math.abs(z1 - z0) + 0.06), matrix: TR((x0 + x1) / 2, 0.006, (z0 + z1) / 2, Math.PI / 2), color: c4('#e8c040') });
   { const px = 14.5, pz = -25.5;
@@ -1392,7 +1467,13 @@ SCENERY.desert = env => {
       foliage.push({ geo: G.tube([[x + ux * r * 0.6, ay, z + uz * r * 0.6], [x + ux * out, ay + 0.15, z + uz * out], [x + ux * out, ay + 0.6, z + uz * out], [x + ux * out, ay + up, z + uz * out]], r * 0.7, 8), color: c4(cactus) }, { geo: G.sphere(r * 0.7, 8, 6), matrix: TR(x + ux * out, ay + up, z + uz * out), color: c4(cactus) });
     }
   }
-  for (let i = 0, n = 0; i < 160 && n < 46; i++) { const a = fixed.range(0, Math.PI * 2), d = fixed.range(20, 90), x = Math.sin(a) * d, z = Math.cos(a) * d; if (!clear(x, z, 0)) continue; n++; if (n % 3) rock(matte, x, z, fixed.range(0.5, 2.2), fixed.pick(['#8a5a40', '#7a4a34', '#9a6a4a']), fixed); else matte.push({ geo: G.sphere(1, 7, 5), matrix: TRS(x, 0.3, z, 0, fixed.range(0.5, 1), fixed.range(0.35, 0.6), fixed.range(0.5, 1)), color: c4(fixed.pick(['#7a7a4a', '#8a8a5a', '#6a6a3e'])) }); }
+  for (let i = 0, n = 0; i < 160 && n < 46; i++) {
+    const a = fixed.range(0, Math.PI * 2), d = fixed.range(20, 90), x = Math.sin(a) * d, z = Math.cos(a) * d;
+    if (!clear(x, z, 0)) continue;
+    n++;
+    if (n % 3) rock(matte, x, z, fixed.range(0.5, 2.2), fixed.pick(['#8a5a40', '#7a4a34', '#9a6a4a']), fixed);
+    else matte.push({ geo: G.sphere(1, 7, 5), matrix: TRS(x, 0.3, z, 0, fixed.range(0.5, 1), fixed.range(0.35, 0.6), fixed.range(0.5, 1)), color: c4(fixed.pick(['#7a7a4a', '#8a8a5a', '#6a6a3e'])) });
+  }
   // the windmill and its tank, north-west
   { const wx = -36, wz = 30, top = 11.5;
     for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) metal.push({ geo: G.tube([[wx + sx * 1.7, 0, wz + sz * 1.7], [wx + sx * 0.35, top, wz + sz * 0.35]], 0.07, 4), color: c4('#5a5a58') });
@@ -1413,8 +1494,17 @@ SCENERY.desert = env => {
   // the crowd: hay bales on the west, lawn chairs on the east, cars pulled up behind them
   for (let i = 0; i < 9; i++) { const z = -12 + i * 3; for (const dx of [3, 4.4]) { const x = -W2 - dx; matte.push({ geo: G.box(1.0, 0.55, 2.4), matrix: TR(x, 0.275, z), color: c4(i % 2 ? '#c8a050' : '#d4ac5c') }); sitRow(seats, x, z - 0.8, x, z + 0.8, 3, 0.55); } }
   solids.push({ x0: -W2 - 5, x1: -W2 - 2.5, z0: -13.4, z1: 13.4, h: 0.6 });
-  for (let i = 0; i < 12; i++) { const z = -11 + i * 2, x = W2 + 3.2 + (i % 2) * 0.6, c = fixed.pick(['#2fb8b0', '#e8513a', '#f2c230', '#5a8ac8']); matte.push({ geo: G.box(0.55, 0.05, 0.55), matrix: TR(x, 0.38, z), color: c4(c) }, { geo: G.box(0.55, 0.6, 0.05), matrix: TR(x + 0.26, 0.66, z, Math.PI / 2), color: c4(c) }); seats.push({ x, y: 0.36, z, yaw: -Math.PI / 2 }); }
-  for (let i = 0; i < 4; i++) { const z = -15 + i * 9; for (const p of PR.car(fixed.pick(['#8a2f1e', '#d8d4cc', '#2a4a5a', '#5a4a3a', '#c8a050']))) matte.push({ ...p, matrix: M.m4mul(M.m4(), TR(W2 + 10.5, 0, z, Math.PI / 2 + fixed.range(-0.3, 0.3)), p.matrix || M.m4()) }); solids.push({ x0: W2 + 8, x1: W2 + 13, z0: z - 1.4, z1: z + 1.4, h: 1.5 }); standRow(seats, W2 + 7.8, z - 1.2, W2 + 7.8, z + 1.2, 2); }
+  for (let i = 0; i < 12; i++) {
+    const z = -11 + i * 2, x = W2 + 3.2 + (i % 2) * 0.6, c = fixed.pick(['#2fb8b0', '#e8513a', '#f2c230', '#5a8ac8']);
+    matte.push({ geo: G.box(0.55, 0.05, 0.55), matrix: TR(x, 0.38, z), color: c4(c) }, { geo: G.box(0.55, 0.6, 0.05), matrix: TR(x + 0.26, 0.66, z, Math.PI / 2), color: c4(c) });
+    seats.push({ x, y: 0.36, z, yaw: -Math.PI / 2 });
+  }
+  for (let i = 0; i < 4; i++) {
+    const z = -15 + i * 9;
+    for (const p of PR.car(fixed.pick(['#8a2f1e', '#d8d4cc', '#2a4a5a', '#5a4a3a', '#c8a050']))) matte.push({ ...p, matrix: M.m4mul(M.m4(), TR(W2 + 10.5, 0, z, Math.PI / 2 + fixed.range(-0.3, 0.3)), p.matrix || M.m4()) });
+    solids.push({ x0: W2 + 8, x1: W2 + 13, z0: z - 1.4, z1: z + 1.4, h: 1.5 });
+    standRow(seats, W2 + 7.8, z - 1.2, W2 + 7.8, z + 1.2, 2);
+  }
   standRow(seats, -W2, -L2 - 4, W2, -L2 - 4, 14); standRow(seats, -W2, L2 + 4, W2, L2 + 4, 14);
   // the clubhouse: the adobe ranch house, vigas out of its walls, a shade porch (a ramada) in front of the door
   const cx = 26, cz = 8, cw = 8, cd = 11, ch = 3.8;
@@ -1476,11 +1566,18 @@ SCENERY.market = env => {
       for (let j = 1; j < 6; j++) { const t = j / 6; glow.push({ geo: G.sphere(1, 8, 6), matrix: TRS(ax, 5.4 - Math.sin(t * Math.PI) * 0.7 - 0.36, az + (bz - az) * t, 0, 0.22, 0.3, 0.22), color: cols[k++ % 3] }); }
     }
     // and short strings from each post out to the stalls' roofs
-    for (const [x, z] of posts) for (const dz of [-2.4, 2.4]) { const path = [[x, 5.4, z], [(x + SXs) / 2, 4.6, z + dz / 2], [SXs - 1.2, 3.4, z + dz]]; metal.push({ geo: G.tube(path, 0.01, 3), color: c4('#1e1e1e') }); glow.push({ geo: G.sphere(1, 8, 6), matrix: TRS((x + SXs) / 2, 4.3, z + dz / 2, 0, 0.18, 0.24, 0.18), color: cols[k++ % 3] }); }
+    for (const [x, z] of posts) for (const dz of [-2.4, 2.4]) {
+      const path = [[x, 5.4, z], [(x + SXs) / 2, 4.6, z + dz / 2], [SXs - 1.2, 3.4, z + dz]];
+      metal.push({ geo: G.tube(path, 0.01, 3), color: c4('#1e1e1e') });
+      glow.push({ geo: G.sphere(1, 8, 6), matrix: TRS((x + SXs) / 2, 4.3, z + dz / 2, 0, 0.18, 0.24, 0.18), color: cols[k++ % 3] });
+    }
   }
   // the shophouses all round, their signs lit
   const houses = [], words = ['TEA HOUSE', 'BAKERY', 'GIFTS', 'NOODLE HOUSE', 'KARAOKE', 'FLOWERS', 'BOOKS', 'HERBS', 'TAILOR', 'CAFE'];
-  for (let i = 0; i < 9; i++) { houses.push({ x: -34, z: -40 + i * 10, w: 12, d: 9.6, h: fixed.range(2, 4) * 3.4, tint: fixed.pick(['#f2d8c0', '#d8e8d8', '#f0e0b0', '#e8c8c8', '#d0d8e8']) }); houses.push({ x: 34, z: -40 + i * 10, w: 12, d: 9.6, h: fixed.range(2, 4) * 3.4, tint: fixed.pick(['#f2d8c0', '#d8e8d8', '#f0e0b0', '#e8c8c8', '#d0d8e8']) }); }
+  for (let i = 0; i < 9; i++) {
+    houses.push({ x: -34, z: -40 + i * 10, w: 12, d: 9.6, h: fixed.range(2, 4) * 3.4, tint: fixed.pick(['#f2d8c0', '#d8e8d8', '#f0e0b0', '#e8c8c8', '#d0d8e8']) });
+    houses.push({ x: 34, z: -40 + i * 10, w: 12, d: 9.6, h: fixed.range(2, 4) * 3.4, tint: fixed.pick(['#f2d8c0', '#d8e8d8', '#f0e0b0', '#e8c8c8', '#d0d8e8']) });
+  }
   for (let i = 0; i < 6; i++) { houses.push({ x: -25 + i * 10, z: 40, w: 9.6, d: 12, h: fixed.range(2, 5) * 3.4, tint: fixed.pick(TINTS) }); houses.push({ x: -25 + i * 10, z: -40, w: 9.6, d: 12, h: fixed.range(2, 5) * 3.4, tint: fixed.pick(TINTS) }); }
   blocks(ctx, scene, houses, 'shophouses', { wall: '#a88a70', lit: 0.55, emissive: win(look, 1.1), seed: 121, detail: { bays: 3, floors: 2, kind: 'stone' } });
   houses.forEach((h, i) => { if (i % 2 && i > 3) return; const face = Math.abs(h.x) > Math.abs(h.z) ? [h.x - Math.sign(h.x) * (h.w / 2 + 0.06), h.z, h.x > 0 ? -Math.PI / 2 : Math.PI / 2] : [h.x, h.z - Math.sign(h.z) * (h.d / 2 + 0.06), h.z > 0 ? Math.PI : 0]; sign(ctx, scene, 'mktshop-' + (i % words.length), words[i % words.length], { w: 512, h: 112, bg: '#1a1012', color: ['#ff4a5a', '#ffd23f', '#5ad8ff', '#7dff9a'][i % 4], size: 62 }, face[0], 4.2, face[1], face[2], 4.4, 0.95); });

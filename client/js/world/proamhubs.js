@@ -31,7 +31,6 @@ import { PROAM_IDS, proamInfo } from './proamparks.js';
 const lin = hex => M.hexLinear(hex);
 const c4 = hex => [...lin(hex), 1];
 const TR = (x, y, z, yaw = 0, s = 1) => M.m4fromYaw(M.m4(), x, y, z, yaw, s);
-const W2 = COURT.width / 2, L2 = COURT.length / 2;
 const HEX = /^#[0-9a-f]{6}$/i;
 const okHex = (v, d) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d);
 const luma = hex => { const c = M.hexToRgb(hex); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
@@ -695,7 +694,16 @@ function dressBronze(B) {
   B.solid(2.6, 3.3, 18.6, 19.5, 1.4);
   const cork = T.canvas(512, 384), cg = cork.getContext('2d'), r = new RNG(8);
   cg.fillStyle = '#b48a5a'; cg.fillRect(0, 0, 512, 384);
-  for (let i = 0; i < 9; i++) { cg.fillStyle = ['#f6f2e8', '#fff3a8', '#cfe8ff', '#ffd6d6'][i % 4]; cg.save(); cg.translate(40 + (i % 3) * 160 + r.next() * 20, 50 + Math.floor(i / 3) * 120 + r.next() * 10); cg.rotate(r.range(-0.1, 0.1)); cg.fillRect(0, 0, 120, 90); cg.fillStyle = 'rgba(40,40,60,0.6)'; for (let k = 0; k < 5; k++) cg.fillRect(10, 14 + k * 14, 70 + r.next() * 30, 3); cg.restore(); }
+  for (let i = 0; i < 9; i++) {
+    cg.fillStyle = ['#f6f2e8', '#fff3a8', '#cfe8ff', '#ffd6d6'][i % 4];
+    cg.save();
+    cg.translate(40 + (i % 3) * 160 + r.next() * 20, 50 + Math.floor(i / 3) * 120 + r.next() * 10);
+    cg.rotate(r.range(-0.1, 0.1));
+    cg.fillRect(0, 0, 120, 90);
+    cg.fillStyle = 'rgba(40,40,60,0.6)';
+    for (let k = 0; k < 5; k++) cg.fillRect(10, 14 + k * 14, 70 + r.next() * 30, 3);
+    cg.restore();
+  }
   B.sign(cork, 1.4, 1.0, of.x0 + 0.03, 1.9, 18.0, Math.PI / 2, { cloth: true });
   queuePanel(B, of.x0 + 0.02, 1.45, o.queue.z, Math.PI / 2, look.primary);
   // the window from the office onto the gym gets blinds
@@ -866,7 +874,11 @@ function dressGold(B, plat) {
   B.box('trim', 6.4, 0.08, 0.6, 5, 2.5, hall.z0 + 0.32);
   for (let i = 0; i < 9; i++) { const x = 2.2 + i * 0.7, hh = 0.3 + (i % 3) * 0.14; B.put('trim', G.cylinder(0.1, 0.06, hh, 12, { y0: true }), x, 0.92, hall.z0 + 0.32); B.put('trim', G.sphere(0.09, 10, 8), x, 0.92 + hh + 0.06, hall.z0 + 0.32); }
   B.solid(1.7, 8.3, hall.z0, hall.z0 + 0.65, 2.6);
-  for (const [x, z] of [[-11.2, -19.2], [12.6, -19.2], [30.2, -19.2], [-11.2, 17.2]]) { B.put('matte', G.cylinder(0.32, 0.26, 0.6, 12, { y0: true }), x, 0, z, '#1d2024'); B.L.matte.push(...PR.tree(x, z, 0.3, new RNG(Math.round(x * 7 + z)), '#3f6b3a')); B.solid(x - 0.4, x + 0.4, z - 0.4, z + 0.4, 1.4); }
+  for (const [x, z] of [[-11.2, -19.2], [12.6, -19.2], [30.2, -19.2], [-11.2, 17.2]]) {
+    B.put('matte', G.cylinder(0.32, 0.26, 0.6, 12, { y0: true }), x, 0, z, '#1d2024');
+    B.L.matte.push(...PR.tree(x, z, 0.3, new RNG(Math.round(x * 7 + z)), '#3f6b3a'));
+    B.solid(x - 0.4, x + 0.4, z - 0.4, z + 0.4, 1.4);
+  }
   // a ball rack by each court
   for (const [x, z] of [[10.9, 14.6], [13.2, 5]]) { B.L.metal.push(...PR.ballRack(x, z, Math.PI / 2)); for (let i = 0; i < 4; i++) for (const y of [0.7, 1.1]) B.put('matte', G.sphere(0.12, 10, 8), x, y, z - 0.5 + i * 0.33, '#c8601f'); B.solid(x - 0.3, x + 0.3, z - 0.8, z + 0.8, 1.1); }
   // ---- the office: large, a glass front onto the lounge ----

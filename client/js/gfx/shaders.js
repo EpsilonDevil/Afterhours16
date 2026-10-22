@@ -1,4 +1,5 @@
 // GLSL ES 3.00 sources. Variants are selected with #defines from the material.
+// Compiled by gfx/gl.js program() for gfx/renderer.js (std / shadow / sky / post / particles).
 export const STD_VS = /* glsl */`
 precision highp float;
 layout(location=0) in vec3 aPos;

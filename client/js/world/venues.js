@@ -617,7 +617,10 @@ function jungleScenery(ctx, scene, rng, matte, metal, foliage, lamps) {
     title: 'JUNGLE BALLERS', bg: '#1b2a14', titleColor: '#ffd23f', subColor: '#ff8a1f', rowColor: '#e8f0d8', meColor: '#2ec4ff', meBg: 'rgba(46,196,255,0.18)', barColor: '#ff8a1f',
     bgDraw(g, W, H) { g.strokeStyle = 'rgba(255,255,255,0.06)'; g.lineWidth = 3; for (let i = 0; i < 12; i++) { g.beginPath(); g.moveTo(0, 20 + i * 42); g.lineTo(W, 24 + i * 42); g.stroke(); } },
     frame(bx, bz, bw, bh) {
-      for (const sx of [-1, 1]) { metal.push({ geo: G.cylinder(0.18, 0.2, 8.4, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, 0, bz), color: c4('#b8a060') }); for (let k = 1; k < 7; k++) metal.push({ geo: G.cylinder(0.205, 0.205, 0.06, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, k * 1.2, bz), color: c4('#8a7a40') }); }
+      for (const sx of [-1, 1]) {
+        metal.push({ geo: G.cylinder(0.18, 0.2, 8.4, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, 0, bz), color: c4('#b8a060') });
+        for (let k = 1; k < 7; k++) metal.push({ geo: G.cylinder(0.205, 0.205, 0.06, 8, { y0: true }), matrix: M.m4translation(M.m4(), bx + sx * 4.9, k * 1.2, bz), color: c4('#8a7a40') });
+      }
       matte.push({ geo: G.box(bw + 0.6, bh + 0.6, 0.35), matrix: M.m4translation(M.m4(), bx, 3.2 + bh / 2, bz - 0.22), color: c4('#5a3f26') });
       matte.push({ geo: G.box(bw + 1.6, 0.5, 2.4), matrix: M.m4translation(M.m4(), bx, 8.3, bz - 0.4), color: c4('#8a7a40') }); // thatch
       matte.push({ geo: G.box(bw + 1.2, 0.3, 2.0), matrix: M.m4translation(M.m4(), bx, 8.7, bz - 0.4), color: c4('#a08a4a') });
@@ -679,14 +682,18 @@ function horrorScenery(ctx, scene, rng, matte, metal, foliage, lamps, neon, them
       const w = bw + 1.4, top = 3.2 + bh + 0.5, z = bz - 0.32, stone = '#3a3644';
       matte.push({ geo: G.box(w + 1.2, 0.9, 1.6), matrix: M.m4translation(M.m4(), bx, 0.45, z), color: c4('#2a2632') });
       matte.push({ geo: G.box(w, top - 0.9, 0.5), matrix: M.m4translation(M.m4(), bx, 0.9 + (top - 0.9) / 2, z), color: c4(stone) });
-      const arch = G.cylinder(w / 2, w / 2, 0.5, 24); matte.push({ geo: arch, matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx, top, z), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.42, 1]), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2)))), color: c4(stone) });
+      const arch = G.cylinder(w / 2, w / 2, 0.5, 24);
+      matte.push({ geo: arch, matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx, top, z), M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.42, 1]), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, Math.PI / 2)))), color: c4(stone) });
       const pts = [[bx - w / 2 - 0.05, 1.0], [bx - w / 2 - 0.05, top]]; for (let k = 1; k < 24; k++) { const a = Math.PI - k / 24 * Math.PI; pts.push([bx + Math.cos(a) * (w / 2 + 0.05), top + Math.sin(a) * (w / 2 + 0.05) * 0.42]); } pts.push([bx + w / 2 + 0.05, top], [bx + w / 2 + 0.05, 1.0]);
       for (let k = 0; k < pts.length - 1; k++) edge([pts[k][0], pts[k][1], z + 0.27], [pts[k + 1][0], pts[k + 1][1], z + 0.27], '#7cff4f');
       // a skull on the top, jack-o'-lanterns and a cobweb at its foot (in the town's flicker batch: the faces are lit)
       const sy = top + w / 2 * 0.42 - 0.1;
       matte.push({ geo: G.sphere(0.55, 10, 8), matrix: M.m4translation(M.m4(), bx, sy + 0.45, z), color: c4('#e8e2d0') }, { geo: G.box(0.6, 0.32, 0.5), matrix: M.m4translation(M.m4(), bx, sy + 0.05, z + 0.08), color: c4('#e8e2d0') });
       for (const sx of [-0.2, 0.2]) neon.push({ geo: G.sphere(0.13, 6, 5), matrix: M.m4translation(M.m4(), bx + sx, sy + 0.42, z + 0.46), color: c4('#7cff4f') });
-      for (const [dx, r] of [[-w / 2 - 0.2, 0.42], [-w / 2 + 0.7, 0.3], [w / 2 + 0.3, 0.38]]) { matte.push({ geo: G.sphere(r, 10, 7), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx + dx, r * 0.8, z + 1.0), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.82, 1])), color: c4('#e86a10') }); neon.push({ geo: G.box(r * 0.7, r * 0.22, 0.04), matrix: M.m4translation(M.m4(), bx + dx, r * 0.72, z + 1.0 + r * 0.98), color: c4('#ffb347') }); }
+      for (const [dx, r] of [[-w / 2 - 0.2, 0.42], [-w / 2 + 0.7, 0.3], [w / 2 + 0.3, 0.38]]) {
+        matte.push({ geo: G.sphere(r, 10, 7), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), bx + dx, r * 0.8, z + 1.0), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [1, 0.82, 1])), color: c4('#e86a10') });
+        neon.push({ geo: G.box(r * 0.7, r * 0.22, 0.04), matrix: M.m4translation(M.m4(), bx + dx, r * 0.72, z + 1.0 + r * 0.98), color: c4('#ffb347') });
+      }
     },
   });
   board.solids = [{ x0: -38 - 6.4, x1: -38 + 6.4, z0: -33.6 - 1.2, z1: -33.6 + 0.3, h: 12 }];
@@ -722,11 +729,12 @@ function favelaScenery(ctx, scene, rng, matte, metal, foliage, lamps, neon, them
 
 // v0.4.8.5: the streets, the row buildings with their windows, shopfronts, signals and lights are street.js; the park
 // keeps its two brick walls
+let cityBrick = null, foundryFacade = null;
 function cityScenery(ctx, scene, rng, matte, metal, theme) {
   const streets = cityStreets(ctx, scene, rng);
   // brick wall segments
-  const br = T.brick({});
-  const brickMat = new Material({ map: ctx.texture(br.color), normalMap: ctx.texture(br.normal, { srgb: false }), roughness: 0.9 });
+  const br = cityBrick || (cityBrick = T.brick({})); // (drawn once, uploaded once: cachedTexture)
+  const brickMat = new Material({ map: cachedTexture(ctx, 'city-brick-c', () => br.color), normalMap: cachedTexture(ctx, 'city-brick-n', () => br.normal, { srgb: false }), roughness: 0.9 });
   // (v0.4.8.5: the walls stop at the avenues' kerbs instead of running across the traffic lanes)
   const wall = G.box(126.6, 3, 0.5); for (let i = 0; i < wall.uv.length; i += 2) { wall.uv[i] *= 46 * 126.6 / 140; wall.uv[i + 1] *= 1.2; }
   const w1 = new Mesh(ctx.geometry(wall), brickMat); M.m4translation(w1.matrix, 0, 1.5, 33); scene.add(w1);
@@ -735,8 +743,8 @@ function cityScenery(ctx, scene, rng, matte, metal, theme) {
 }
 
 function industrialScenery(ctx, scene, rng, matte, metal, theme) {
-  const f = T.facade({ wall: '#4a4642', lit: 0.12, seed: 21, cols: 4, rows: 4, glass: '#2a2f33' });
-  const m = new Material({ map: ctx.texture(f.color), emissiveMap: ctx.texture(f.emissive), emissive: [2.2, 1.5, 0.8], roughness: 0.8 });
+  const f = foundryFacade || (foundryFacade = T.facade({ wall: '#4a4642', lit: 0.12, seed: 21, cols: 4, rows: 4, glass: '#2a2f33' })); // (drawn once, uploaded once)
+  const m = new Material({ map: cachedTexture(ctx, 'foundry-fac-c', () => f.color), emissiveMap: cachedTexture(ctx, 'foundry-fac-e', () => f.emissive), emissive: [2.2, 1.5, 0.8], roughness: 0.8 });
   const b = [];
   for (let i = 0; i < 6; i++) b.push(PR.building(-70 + i * 28, -52, 24, 18, 12 + rng.range(0, 6)));
   for (let i = 0; i < 5; i++) b.push(PR.building(-60 + i * 30, 48, 26, 16, 10 + rng.range(0, 8)));
@@ -1052,7 +1060,10 @@ function buildGym(r, scene, theme, opts) {
   // trusses + hanging lights
   for (let i = -3; i <= 3; i++) {
     metal.push({ geo: G.box(W * 2, 0.35, 0.25), matrix: M.m4translation(M.m4(), 0, Hh - 1.2, i * 5), color: [...lin('#2e3135'), 1] });
-    for (const sx of [-6, 0, 6]) { metal.push({ geo: G.cylinder(0.45, 0.25, 0.4, 12, { y0: true }), matrix: M.m4translation(M.m4(), sx, Hh - 2.4, i * 5), color: [...lin('#2e3135'), 1] }); lamps.push({ geo: G.cylinder(0.43, 0.43, 0.02, 12, { y0: true }), matrix: M.m4translation(M.m4(), sx, Hh - 2.42, i * 5), color: [1, 1, 1, 1] }); }
+    for (const sx of [-6, 0, 6]) {
+      metal.push({ geo: G.cylinder(0.45, 0.25, 0.4, 12, { y0: true }), matrix: M.m4translation(M.m4(), sx, Hh - 2.4, i * 5), color: [...lin('#2e3135'), 1] });
+      lamps.push({ geo: G.cylinder(0.43, 0.43, 0.02, 12, { y0: true }), matrix: M.m4translation(M.m4(), sx, Hh - 2.42, i * 5), color: [1, 1, 1, 1] });
+    }
   }
   // pulled-out bleachers along both sidelines: backs to the walls, seats facing the court (v0.4.2)
   matte.push(...PR.bleacher(-(COURT.width / 2 + 2.4), 0, Math.PI / 2, 22, 6, '#6b4a2e', '#a57a4c'));

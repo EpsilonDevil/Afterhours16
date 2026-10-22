@@ -1,4 +1,5 @@
 // Basketball camera rigs: 2K-style elevated end view, broadcast sideline, behind-player, and roam.
+// Used by game/session.js (the game camera) and game/park.js (roaming); CAM_MODES is the cycle the camera button walks.
 import * as M from '../core/math.js';
 import { COURT } from '../sim/constants.js';
 

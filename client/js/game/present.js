@@ -7,7 +7,6 @@ import { badgeChip, nameRankIcon, seasonBanner } from '../ui/badgeart.js';
 import { entryRankTier, borderplate } from '../sim/ranks.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const TIER_CLS = ['none', 'bronze', 'silver', 'gold', 'hof'];
 export const ftIn = inches => inches ? `${Math.floor(inches / 12)}'${Math.round(inches % 12)}"` : '';
 
 // badges ranked by tier, then by how much they've been used (badge progress)

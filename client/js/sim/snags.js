@@ -137,7 +137,6 @@ export function trunkPoint(H, b, rel) {
 const CHIN = H => [0, 0.085 * H, 0.12 * H];
 const CHEST = H => [0, -0.02 * H, 0.14 * H];
 const BELLY = H => [0, -0.12 * H, 0.15 * H];
-const B0 = { c: 0, sp: 0, cp: 0, tw: 0 };
 
 // The styles. air(k): the rip (k 0..1, its share done) and the hold after it; gest(g): the gesture, g s after it
 // starts. Each returns { ball (m, his frame, before the spin), body (the trunk numbers), grip (1 two hands, 0 the

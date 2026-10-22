@@ -1,4 +1,6 @@
-// Thin WebGL2 resource layer: programs (with define variants), geometry VAOs, textures, render targets.
+// Thin WebGL2 resource layer: programs (with define variants), geometry VAOs, textures, render targets, and the few
+// pieces of GL state worth tracking (the bound program, the texture on each unit). Owned by gfx/renderer.js Renderer
+// (renderer.ctx); world/, char/ and game/ code makes its textures and geometry through it.
 export const ATTR = { position: 0, normal: 1, uv: 2, color: 3, joints: 4, weights: 5, i0: 6, i1: 7, i2: 8, i3: 9, icolor: 10 };
 
 export class GLContext {
@@ -20,6 +22,11 @@ export class GLContext {
     this.onNewProgram = null;
     this.stats = { draws: 0, tris: 0 };
     this.lost = false;
+    // the texture bound on each unit and the active unit, as set through bindTex (QOL+perf: a material switch used to
+    // re-bind every sampler even when the same texture was already there). Anything that binds a texture another way
+    // (making or updating one, a render target) calls forgetTextures().
+    this.unit = -1;
+    this.bound = [];
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.lost = true; });
   }
 
@@ -79,7 +86,7 @@ export class GLContext {
       uniforms[nm] = { loc, type: info.type, size: info.size, unit: sampler ? unit++ : -1 };
     }
     gl.useProgram(prog);
-    for (const u of Object.values(uniforms)) if (u.unit >= 0) gl.uniform1i(u.loc, u.unit);
+    for (const u of Object.values(uniforms)) if (u.unit >= 0) gl.uniform1i(u.loc, u.unit); // (each sampler's unit, set once here)
     this.current = null;
     p.uniforms = uniforms; p.ready = true; p.srcs = null;
     gl.deleteShader(p.vso); gl.deleteShader(p.fso); p.vso = p.fso = null;
@@ -88,17 +95,23 @@ export class GLContext {
 
   use(p) { if (this.current !== p) { this.gl.useProgram(p.prog); this.current = p; } return p; }
 
+  // a 2D texture on a unit, skipped when it's already there
+  bindTex(unit, tex) {
+    if (this.bound[unit] === tex) return;
+    const gl = this.gl;
+    if (this.unit !== unit) { gl.activeTexture(gl.TEXTURE0 + unit); this.unit = unit; }
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    this.bound[unit] = tex;
+  }
+  forgetTextures() { this.unit = -1; this.bound.length = 0; }
+
   // Set a uniform by name if the program uses it. Values: number, array, Float32Array, texture object.
+  // (a sampler's unit is fixed when the program is linked: only the texture is bound here)
   set(p, name, v) {
     const u = p.uniforms[name];
     if (!u) return;
     const gl = this.gl, t = u.type;
-    if (u.unit >= 0) {
-      gl.activeTexture(gl.TEXTURE0 + u.unit);
-      gl.bindTexture(gl.TEXTURE_2D, v ? (v.tex || v) : null);
-      gl.uniform1i(u.loc, u.unit);
-      return;
-    }
+    if (u.unit >= 0) { this.bindTex(u.unit, v ? (v.tex || v) : null); return; }
     switch (t) {
       case gl.FLOAT: if (u.size > 1) gl.uniform1fv(u.loc, v); else gl.uniform1f(u.loc, v); break;
       case gl.INT: case gl.BOOL: gl.uniform1i(u.loc, v); break;
@@ -176,6 +189,7 @@ export class GLContext {
 
   texture(source, opts = {}) {
     const gl = this.gl, tex = gl.createTexture();
+    this.forgetTextures();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
@@ -200,6 +214,7 @@ export class GLContext {
 
   updateTexture(t, source) {
     const gl = this.gl;
+    this.forgetTextures();
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, t.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -208,6 +223,7 @@ export class GLContext {
   // Render target. opts: {float, depth: 'tex'|'rb'|false, samples, mipmaps, linear}
   target(w, h, opts = {}) {
     const gl = this.gl;
+    this.forgetTextures();
     const rt = { w, h, opts, fb: gl.createFramebuffer() };
     const float = opts.float && this.floatRT;
     const fmt = float ? gl.RGBA16F : gl.RGBA8, type = float ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
@@ -264,6 +280,7 @@ export class GLContext {
   disposeTarget(rt) {
     if (!rt) return;
     const gl = this.gl;
+    this.forgetTextures();
     gl.deleteFramebuffer(rt.fb);
     if (rt.color) gl.deleteTexture(rt.color);
     if (rt.depth) gl.deleteTexture(rt.depth);
@@ -279,7 +296,7 @@ export class GLContext {
     if (g.instanceBuffer) gl.deleteBuffer(g.instanceBuffer);
   }
 
-  disposeTexture(t) { if (t && t.tex) this.gl.deleteTexture(t.tex); }
+  disposeTexture(t) { if (t && t.tex) { this.gl.deleteTexture(t.tex); this.forgetTextures(); } }
 
   bindTarget(rt) {
     const gl = this.gl;

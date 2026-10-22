@@ -1,4 +1,7 @@
 // Runtime athlete: GPU meshes + materials + rig. Placed in world by (x, y, z, yaw).
+// Built from an AthleteModel (char/athlete.js geometry) and the looks painters (char/looks.js); posed every frame by
+// the animator (char/animator.js) through update(), or only moved (move()) when it's far away. Used by
+// game/session.js PlayerVisual, the showroom, the park's people and the Gauntlet court.
 import { AthleteModel } from './athlete.js';
 import { Rig } from './rig.js';
 import { paintFace, paintBodySkin, paintHair, paintTop, paintShorts, paintShoe, paintChain, paintPendant, detailNormal, paintMocap, paintGorilla, paintShell, paintBones, paintBoneGlove, paintLantern, paintShoeGlow, paintBandana } from './looks.js';
@@ -111,7 +114,9 @@ export class AthleteView {
     const eyes = add(geo.eyes, eyeMat, 'eyes');
     let hair = null;
     if (geo.hair) {
-      const hairTex = own(paintHair(look), { aniso: 4 });
+      // (one GPU copy per hair style and colour, shared by everyone with that hair: paintHair keeps one canvas per
+      // the same key)
+      const hairTex = sharedTex(ctx, 'hair:' + (look.hair || 'crop') + (look.hair_color || ''), () => paintHair(look), { aniso: 4 });
       yield;
       const hairMat = new Material({ map: hairTex, color: [1, 1, 1], roughness: 0.62, specular: 0.7, shading: 'cloth', sheen: [0.1, 0.09, 0.08], alphaTest: 0.32, character: true });
       hair = add(geo.hair, hairMat, 'hair');
@@ -226,8 +231,7 @@ export class AthleteView {
     else M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
     if (this.tailSway) this.swing(); // (v0.4.8.7: the bandana's ends)
-    const c = [x, y + this.H * 0.5, z];
-    for (const m of this.meshes) { m.boundsOverride.center = c; }
+    this.setCenter(x, y, z);
   }
 
   // v0.4.7.5 qp3 perf: move him without posing him again (the people far away are posed every other frame, moved
@@ -236,8 +240,14 @@ export class AthleteView {
     M.m4fromYaw(this.world, x, y, z, yaw);
     this.rig.updateSkin(this.world);
     if (this.tailSway) this.swing(); // (v0.4.8.7: the bandana's ends)
-    const c = [x, y + this.H * 0.5, z];
-    for (const m of this.meshes) { m.boundsOverride.center = c; }
+    this.setCenter(x, y, z);
+  }
+
+  // the bounds every one of his meshes is culled and LOD-picked by: one centre, shared, moved in place
+  setCenter(x, y, z) {
+    let c = this._center;
+    if (!c) { c = this._center = [0, 0, 0]; for (const m of this.meshes) m.boundsOverride.center = c; }
+    c[0] = x; c[1] = y + this.H * 0.5; c[2] = z;
   }
 
   // v0.4.8.7: the bandana's ends hang from its knot and swing (char/sway.js): the rig's skin with the head's matrix turned

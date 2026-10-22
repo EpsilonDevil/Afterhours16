@@ -1,4 +1,5 @@
 // Texture painters for athletes: skin/face atlas, hair, jerseys/tops, shorts. All original artwork.
+// Called by char/view.js AthleteView (and the store's thumbnails); pure canvas painting, no GL.
 import { canvas } from '../gfx/textures.js';
 import { RNG, makeNoise2D } from '../core/rng.js';
 import { hexToRgb } from '../core/math.js';

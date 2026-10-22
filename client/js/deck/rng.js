@@ -2,6 +2,7 @@
 // run (or the match), so a run saved to localStorage and resumed keeps drawing the same numbers, and the same seed with
 // the same choices always replays the same run (the server re-checks summaries).
 // mulberry32 (the same generator as core/rng.js), on a state object instead of a class instance.
+// Called by: every deck module (seeded streams), replay.js and the UI (stateHash, outcomeHash).
 
 export function hash(...parts) {
   let h = 2166136261 >>> 0;

@@ -1,4 +1,8 @@
 // Forward HDR renderer: shadow map, planar floor reflection, MSAA, bloom, ACES, particles.
+// Owns Material, Mesh, Camera, Scene and the Renderer itself (one per canvas: main.js makes it; every mode's controller
+// hands it a Scene and a Camera each frame through render()). gl.js is the resource layer under it, shaders.js the GLSL.
+// (QOL+perf: the per-frame passes reuse their matrices, vectors and uniform arrays instead of allocating them, skip GL
+// state that's already set, and the particles are written straight into their buffers.)
 import { GLContext } from './gl.js';
 import { STD_VS, STD_FS, SHADOW_VS, SHADOW_FS, FS_VS, SKY_FS, DOWN_FS, UP_FS, COMPOSITE_FS, PART_VS, PART_FS } from './shaders.js';
 import * as M from '../core/math.js';
@@ -147,6 +151,11 @@ export class Renderer {
     this.tmpSphere = new Float32Array(4);
     this.planes = new Float32Array(24);
     this.lightPos = new Float32Array(32); this.lightColor = new Float32Array(32); this.lightDir = new Float32Array(32);
+    // per-frame scratch (frameUniforms, shadowPass, reflectionPass, post)
+    this._sunColor = new Float32Array(3); this._shadowTexel = new Float32Array(2); this._viewport = new Float32Array(2);
+    this._texel = new Float32Array(2);
+    this._sdir = M.v3(); this._scenter = M.v3(); this._seye = M.v3(); this._sview = M.m4(); this._sproj = M.m4(); this.lightViewProj = M.m4();
+    this._rR = M.m4(); this._rview = M.m4(); this.reflViewProj = M.m4(); this.reflCamPos = M.v3();
     this.emptyVAO = this.gl.createVertexArray();
     this.particles = new Particles(this.ctx);
     // 1x1 fallback env
@@ -226,6 +235,7 @@ export class Renderer {
     gl.generateMipmap(gl.TEXTURE_2D);
     this._floatMips = gl.getError() === 0;
     gl.deleteTexture(t);
+    this.ctx.forgetTextures();
     return this._floatMips;
   }
 
@@ -298,15 +308,17 @@ export class Renderer {
     c.set(p, 'uViewProj', pass === 'reflect' ? this.reflViewProj : pass === 'shadow' ? this.lightViewProj : cam.viewProj);
     if (pass === 'shadow') return;
     c.set(p, 'uCamPos', pass === 'reflect' ? this.reflCamPos : cam.pos);
-    const s = scene.sun;
+    const s = scene.sun, sc = this._sunColor;
     c.set(p, 'uSunDir', s.dir);
-    c.set(p, 'uSunColor', [s.color[0] * s.intensity, s.color[1] * s.intensity, s.color[2] * s.intensity]);
+    sc[0] = s.color[0] * s.intensity; sc[1] = s.color[1] * s.intensity; sc[2] = s.color[2] * s.intensity;
+    c.set(p, 'uSunColor', sc);
     c.set(p, 'uSkyColor', scene.ambient.sky);
     c.set(p, 'uGroundColor', scene.ambient.ground);
     c.set(p, 'uEnvIntensity', scene.envIntensity);
     c.set(p, 'uShadowOn', this.shadowRT && this.shadowReady ? 1 : 0);
     c.set(p, 'uShadowMat', this.shadowMat);
-    c.set(p, 'uShadowTexel', [1 / this.q.shadow, 1 / this.q.shadow]);
+    this._shadowTexel[0] = this._shadowTexel[1] = 1 / this.q.shadow;
+    c.set(p, 'uShadowTexel', this._shadowTexel);
     c.set(p, 'uLightPos', this.lightPos);
     c.set(p, 'uLightColor', this.lightColor);
     c.set(p, 'uLightDir', this.lightDir);
@@ -315,9 +327,10 @@ export class Renderer {
     c.set(p, 'uExposure', scene.exposure);
     c.set(p, 'uTime', this.time);
     c.set(p, 'uHype', scene.hype || 0);
-    c.set(p, 'uCrowd', scene.crowdFx || [0, 0, 1.6, 0]);
+    c.set(p, 'uCrowd', scene.crowdFx || NO_CROWD);
     c.set(p, 'uClipY', pass === 'reflect' ? -0.001 : -1e9);
-    c.set(p, 'uViewport', [this.iw, this.ih]);
+    this._viewport[0] = this.iw; this._viewport[1] = this.ih;
+    c.set(p, 'uViewport', this._viewport);
   }
 
   materialUniforms(p, m, pass) {
@@ -343,16 +356,18 @@ export class Renderer {
     if (m.roughMap) c.set(p, 'uRoughMap', m.roughMap);
     if (m.emissiveMap) c.set(p, 'uEmissiveMap', m.emissiveMap);
     if (m.detailMap) { c.set(p, 'uDetailMap', m.detailMap); c.set(p, 'uDetail', m.detail); }
-    if (m.floor) { c.set(p, 'uOverlay', m.floor.overlay); c.set(p, 'uOverlayRect', m.floor.rect); c.set(p, 'uFloorTile', m.floor.tile || [1, 1]); c.set(p, 'uFloorSwap', m.floor.swap ? 1 : 0); }
+    if (m.floor) { c.set(p, 'uOverlay', m.floor.overlay); c.set(p, 'uOverlayRect', m.floor.rect); c.set(p, 'uFloorTile', m.floor.tile || ONE_TILE); c.set(p, 'uFloorSwap', m.floor.swap ? 1 : 0); }
     if (m.reflective) c.set(p, 'uReflectStrength', this.reflRT && this.reflOn ? m.reflectStrength : 0);
     c.set(p, 'uFogDensity', m.fog ? this.fogDensity : 0);
     if (m.flame) { c.set(p, 'uFlame', m.flame); c.set(p, 'uFlameT', m.flameT); }
     if (m.rain) c.set(p, 'uRain', m.rain);
   }
 
+  // (the blend mode, depth mask and depth test are set only when a material changes them: null is "not set yet in
+  // this list", so the first material always sets all three)
   drawList(list, scene, cam, pass) {
     const gl = this.gl, c = this.ctx;
-    let lastMat = null, lastProg = null, cullState = null, layerState = 0;
+    let lastMat = null, lastProg = null, cullState = null, layerState = 0, blendState = null, maskState = null, testState = null;
     for (const mesh of list) {
       const m = mesh.material;
       const p = this.programFor(mesh, pass);
@@ -362,12 +377,16 @@ export class Renderer {
       if (m !== lastMat) {
         this.materialUniforms(p, m, pass);
         if (pass !== 'shadow') {
-          if (m.blend === 'add') { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE); }
-          else if (m.blend === 'multiply') { gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); }
-          else if (m.blend) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); }
-          else gl.disable(gl.BLEND);
-          gl.depthMask(m.depthWrite);
-          if (m.depthTest) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+          const bm = m.blend || 'none';
+          if (bm !== blendState) {
+            if (bm === 'add') { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE); }
+            else if (bm === 'multiply') { gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); }
+            else if (bm !== 'none') { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); }
+            else gl.disable(gl.BLEND);
+            blendState = bm;
+          }
+          if (m.depthWrite !== maskState) { gl.depthMask(m.depthWrite); maskState = m.depthWrite; }
+          if (m.depthTest !== testState) { if (m.depthTest) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST); testState = m.depthTest; }
         }
         const wantCull = !m.doubleSided;
         if (wantCull !== cullState) { wantCull ? gl.enable(gl.CULL_FACE) : gl.disable(gl.CULL_FACE); cullState = wantCull; }
@@ -403,7 +422,7 @@ export class Renderer {
         const c = mesh.boundsOverride ? mesh.boundsOverride.center : null;
         if (c) { const dx = c[0] - eye[0], dy = c[1] - eye[1], dz = c[2] - eye[2]; if ((dx * dx + dy * dy + dz * dz > far2 * (mesh.lodK || 1)) === (mesh.lod === 1)) continue; }
       }
-      if (mesh.cull) { mesh.worldSphere(s); if (!M.sphereInFrustum(this.planes, s[0], s[1], s[2], s[3])) continue; mesh._depth = s; }
+      if (mesh.cull) { mesh.worldSphere(s); if (!M.sphereInFrustum(this.planes, s[0], s[1], s[2], s[3])) continue; }
       (mesh.material.blend ? blend : opaque).push(mesh);
     }
     opaque.sort(OPAQUE_ORDER);
@@ -419,17 +438,17 @@ export class Renderer {
   shadowPass(scene) {
     this.shadowReady = false;
     if (!this.shadowRT) return;
-    const gl = this.gl, f = scene.shadowFocus, d = M.v3norm(M.v3(), scene.sun.dir);
+    const gl = this.gl, f = scene.shadowFocus, d = M.v3norm(this._sdir, scene.sun.dir);
     const r = f.radius;
-    const center = M.v3(f.center[0], f.center[1], f.center[2]);
-    const eye = M.v3(center[0] + d[0] * 60, center[1] + d[1] * 60, center[2] + d[2] * 60);
-    const view = M.m4lookAt(M.m4(), eye, center, Math.abs(d[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0]);
+    const center = this._scenter; center[0] = f.center[0]; center[1] = f.center[1]; center[2] = f.center[2];
+    const eye = this._seye; eye[0] = center[0] + d[0] * 60; eye[1] = center[1] + d[1] * 60; eye[2] = center[2] + d[2] * 60;
+    const view = M.m4lookAt(this._sview, eye, center, Math.abs(d[1]) > 0.99 ? UP_Z : UP_Y);
     // Texel snapping to avoid shimmering
     const texel = (2 * r) / this.q.shadow;
     view[12] = Math.round(view[12] / texel) * texel;
     view[13] = Math.round(view[13] / texel) * texel;
-    const proj = M.m4ortho(M.m4(), -r, r, -r, r, 1, 140);
-    this.lightViewProj = M.m4mul(M.m4(), proj, view);
+    const proj = M.m4ortho(this._sproj, -r, r, -r, r, 1, 140);
+    M.m4mul(this.lightViewProj, proj, view);
     M.m4copy(this.shadowMat, this.lightViewProj);
     this.ctx.bindTarget(this.shadowRT);
     gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -446,10 +465,10 @@ export class Renderer {
   reflectionPass(scene, cam) {
     if (!this.reflRT || !scene.reflectionPlane) return;
     const gl = this.gl;
-    const R = M.m4(); R[5] = -1;
-    const view = M.m4mul(M.m4(), cam.view, R);
-    this.reflViewProj = M.m4mul(M.m4(), cam.proj, view);
-    this.reflCamPos = M.v3(cam.pos[0], -cam.pos[1], cam.pos[2]);
+    const R = this._rR; R[5] = -1; // (the identity with y mirrored: set in the constructor's m4(), only [5] changes)
+    const view = M.m4mul(this._rview, cam.view, R);
+    M.m4mul(this.reflViewProj, cam.proj, view);
+    const rc = this.reflCamPos; rc[0] = cam.pos[0]; rc[1] = -cam.pos[1]; rc[2] = cam.pos[2];
     this.ctx.bindTarget(this.reflRT);
     gl.clearColor(scene.fog.color[0] * 0.5, scene.fog.color[1] * 0.5, scene.fog.color[2] * 0.5, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -460,7 +479,7 @@ export class Renderer {
     this.sortBlend(blend, cam);
     this.drawList(blend, scene, cam, 'reflect');
     gl.frontFace(gl.CCW);
-    gl.bindTexture(gl.TEXTURE_2D, this.reflRT.color);
+    this.ctx.bindTex(0, this.reflRT.color);
     gl.generateMipmap(gl.TEXTURE_2D);
   }
 
@@ -491,11 +510,13 @@ export class Renderer {
     // lights
     this.fogDensity = scene.fog.density;
     this.lightCount = Math.min(8, scene.lights.length);
+    const lp = this.lightPos, lc = this.lightColor, ld = this.lightDir;
     for (let i = 0; i < this.lightCount; i++) {
-      const L = scene.lights[i];
-      this.lightPos.set([L.pos[0], L.pos[1], L.pos[2], L.range], i * 4);
-      this.lightColor.set([L.color[0], L.color[1], L.color[2], L.intensity], i * 4);
-      this.lightDir.set(L.dir ? [L.dir[0], L.dir[1], L.dir[2], L.cos ?? 0.5] : [0, -1, 0, -2], i * 4);
+      const L = scene.lights[i], o = i * 4;
+      lp[o] = L.pos[0]; lp[o + 1] = L.pos[1]; lp[o + 2] = L.pos[2]; lp[o + 3] = L.range;
+      lc[o] = L.color[0]; lc[o + 1] = L.color[1]; lc[o + 2] = L.color[2]; lc[o + 3] = L.intensity;
+      if (L.dir) { ld[o] = L.dir[0]; ld[o + 1] = L.dir[1]; ld[o + 2] = L.dir[2]; ld[o + 3] = L.cos ?? 0.5; }
+      else { ld[o] = 0; ld[o + 1] = -1; ld[o + 2] = 0; ld[o + 3] = -2; }
     }
     this.reflOn = !!scene.reflectionPlane;
     this.shadowPass(scene);
@@ -533,7 +554,7 @@ export class Renderer {
       for (let i = 0; i < bl.length; i++) {
         c.bindTarget(bl[i]);
         c.set(pd, 'uSrc', src.color);
-        c.set(pd, 'uTexel', [1 / src.w, 1 / src.h]);
+        c.set(pd, 'uTexel', texelOf(src));
         c.set(pd, 'uPrefilter', i === 0 ? 1 : 0);
         c.set(pd, 'uThreshold', scene.bloom.threshold);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -545,7 +566,7 @@ export class Renderer {
       for (let i = bl.length - 1; i > 0; i--) {
         c.bindTarget(bl[i - 1]);
         c.set(pu, 'uSrc', bl[i].color);
-        c.set(pu, 'uTexel', [1 / bl[i].w, 1 / bl[i].h]);
+        c.set(pu, 'uTexel', texelOf(bl[i]));
         c.set(pu, 'uRadius', scene.bloom.radius);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       }
@@ -565,12 +586,13 @@ export class Renderer {
     c.set(pc, 'uFlash', this.flash);
     c.set(pc, 'uFlashColor', this.flashColor);
     c.set(pc, 'uDesat', this.desat);
-    c.set(pc, 'uTexel', [1 / this.iw, 1 / this.ih]);
+    this._texel[0] = 1 / this.iw; this._texel[1] = 1 / this.ih;
+    c.set(pc, 'uTexel', this._texel);
     c.set(pc, 'uFXAA', this.q.fxaa ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
     // unbind post textures so no render target stays attached to a sampler (feedback loops)
-    for (let i = 0; i < 4; i++) { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
+    for (let i = 0; i < 4; i++) c.bindTex(i, null);
   }
 
   // World → CSS pixel coordinates of the canvas
@@ -586,8 +608,13 @@ export class Renderer {
   }
 }
 const IDENTITY = M.m4();
+const NO_CROWD = new Float32Array([0, 0, 1.6, 0]), ONE_TILE = new Float32Array([1, 1]);
+const UP_Y = [0, 1, 0], UP_Z = [0, 0, 1];
+// a render target's texel size, kept on it (its size never changes: resize() makes new targets)
+const texelOf = rt => rt._texel || (rt._texel = new Float32Array([1 / rt.w, 1 / rt.h]));
 
-// Simple CPU particle system rendered as additive billboards
+// Simple CPU particle system rendered as additive billboards (two triangles a particle, corners in the normal's xy)
+const CORNER_X = [-1, 1, 1, -1, 1, -1], CORNER_Y = [-1, -1, 1, -1, 1, 1];
 class Particles {
   constructor(ctx) {
     this.ctx = ctx;
@@ -616,25 +643,29 @@ class Particles {
     if (this.preDraw) this.preDraw(dt); // (v0.4.7.5: the green release effects schedule their particles here)
     if (!this.list.length) return;
     const gl = this.ctx.gl, c = this.ctx;
-    let n = 0;
-    const corners = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
-    for (let i = this.list.length - 1; i >= 0; i--) {
-      const p = this.list[i];
+    const list = this.list, pos = this.pos, nrm = this.nrm, col = this.col;
+    let n = 0, dead = 0;
+    // (newest first, as always; the expired ones are dropped in one pass afterwards, keeping the order of the rest)
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
       p.age += dt;
-      if (p.age >= p.life) { this.list.splice(i, 1); continue; }
+      if (p.age >= p.life) { dead++; continue; }
       p.vy += p.g * dt;
       const k = Math.exp(-p.drag * dt);
       p.vx *= k; p.vy *= k; p.vz *= k;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       const t = p.age / p.life, a = (p.hold ? Math.min(1, (1 - t) * 5, p.age * 20) : 1 - t) * p.fade * (p.flick ? 0.55 + 0.45 * Math.sin(p.age * p.flick * 6.283 + p.ph) : 1);
       const size = p.size * Math.max(0, 1 + p.grow * t);
+      const pc = p.color;
       for (let j = 0; j < 6; j++) {
-        this.pos.set([p.x, p.y, p.z], (n * 6 + j) * 3);
-        this.nrm.set([corners[j][0], corners[j][1], size], (n * 6 + j) * 3);
-        this.col.set([p.color[0], p.color[1], p.color[2], a], (n * 6 + j) * 4);
+        const v3 = (n * 6 + j) * 3, v4 = (n * 6 + j) * 4;
+        pos[v3] = p.x; pos[v3 + 1] = p.y; pos[v3 + 2] = p.z;
+        nrm[v3] = CORNER_X[j]; nrm[v3 + 1] = CORNER_Y[j]; nrm[v3 + 2] = size;
+        col[v4] = pc[0]; col[v4 + 1] = pc[1]; col[v4 + 2] = pc[2]; col[v4 + 3] = a;
       }
       n++;
     }
+    if (dead) { let w = 0; for (let i = 0; i < list.length; i++) { const p = list[i]; if (p.age < p.life) list[w++] = p; } list.length = w; }
     if (!n) return;
     if (!this.geo) {
       this.geo = c.geometry({ position: this.pos, normal: this.nrm, color: this.col }, true);
@@ -646,10 +677,11 @@ class Particles {
     this.geo.count = n * 6;
     const p = c.program('particles', PART_VS, PART_FS);
     c.use(p);
-    const v = cam.view;
+    const v = cam.view, cr = this._right || (this._right = new Float32Array(3)), cu = this._up || (this._up = new Float32Array(3));
+    cr[0] = v[0]; cr[1] = v[4]; cr[2] = v[8]; cu[0] = v[1]; cu[1] = v[5]; cu[2] = v[9];
     c.set(p, 'uViewProj', cam.viewProj);
-    c.set(p, 'uCamRight', [v[0], v[4], v[8]]);
-    c.set(p, 'uCamUp', [v[1], v[5], v[9]]);
+    c.set(p, 'uCamRight', cr);
+    c.set(p, 'uCamUp', cu);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false); gl.disable(gl.CULL_FACE);
     c.draw(this.geo);
     gl.disable(gl.BLEND); gl.depthMask(true);

@@ -98,7 +98,10 @@ function smokestack(out, glow, s) {
   out.push({ geo: G.cylinder(s.rt + 0.3, s.rt + 0.3, 1.2, 16, { y0: true }), matrix: TR(s.x, s.h - 0.6, s.z), color: c4('#2a2826') });
   for (const f of [0.45, 0.78]) out.push({ geo: G.cylinder(rAt(s.h * f) + 1.6, rAt(s.h * f) + 1.6, 0.4, 16, { y0: true }), matrix: TR(s.x, s.h * f, s.z), color: c4('#4a4c4e') });
   // aviation lights: four round the top and at two levels below
-  for (const f of [1, 0.66, 0.33]) for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4, y = s.h * f - (f === 1 ? 1.2 : 0), r = rAt(y) + 0.6; glow.push({ geo: G.sphere(f === 1 ? 1.1 : 0.9, 6, 5), matrix: TR(s.x + Math.cos(a) * r, y, s.z + Math.sin(a) * r), color: [1, 0.05, 0.03, 1] }); }
+  for (const f of [1, 0.66, 0.33]) for (let k = 0; k < 4; k++) {
+    const a = k / 4 * Math.PI * 2 + 0.4, y = s.h * f - (f === 1 ? 1.2 : 0), r = rAt(y) + 0.6;
+    glow.push({ geo: G.sphere(f === 1 ? 1.1 : 0.9, 6, 5), matrix: TR(s.x + Math.cos(a) * r, y, s.z + Math.sin(a) * r), color: [1, 0.05, 0.03, 1] });
+  }
   return [s.x, s.h, s.z];
 }
 // a lattice tower (pylon or derrick): 4 legs from half-width b0 at the ground to b1 at h, girts every `step`,
@@ -221,7 +224,12 @@ function stsCrane(out, glow, x, z) {
   // the boom: out over the water side (-z) and back over the land (+z)
   for (const sx of [-1, 1]) out.push({ geo: G.box(1.6, 3, 112), matrix: TR(x + sx * 3, 44, z - 22), color: c4(col) });
   for (let i = 0; i < 14; i++) beam(out, [x - 3, 45.5, z - 76 + i * 8], [x + 3, 45.5, z - 72 + i * 8], 0.5, 0.5, col);
-  for (const sx of [-1, 1]) { beam(out, [x + sx * W, 41, z + D], [x + sx * 3, 66, z + 4], 1.2, 1.2, col); beam(out, [x + sx * W, 41, z - D], [x + sx * 3, 66, z + 4], 1.2, 1.2, col); beam(out, [x + sx * 3, 66, z + 4], [x + sx * 3, 45, z - 74], 0.5, 0.5, '#d8d4c8'); beam(out, [x + sx * 3, 66, z + 4], [x + sx * 3, 45, z + 32], 0.5, 0.5, '#d8d4c8'); }
+  for (const sx of [-1, 1]) {
+    beam(out, [x + sx * W, 41, z + D], [x + sx * 3, 66, z + 4], 1.2, 1.2, col);
+    beam(out, [x + sx * W, 41, z - D], [x + sx * 3, 66, z + 4], 1.2, 1.2, col);
+    beam(out, [x + sx * 3, 66, z + 4], [x + sx * 3, 45, z - 74], 0.5, 0.5, '#d8d4c8');
+    beam(out, [x + sx * 3, 66, z + 4], [x + sx * 3, 45, z + 32], 0.5, 0.5, '#d8d4c8');
+  }
   out.push({ geo: G.box(10, 6, 12), matrix: TR(x, 49, z + 18), color: c4('#e8e4dc') });
   out.push({ geo: G.box(3, 3, 3.5), matrix: TR(x, 41.5, z - 18), color: c4('#e8e4dc') }); // the trolley cab
   glow.push({ geo: G.sphere(0.9, 6, 5), matrix: TR(x, 67.2, z + 4), color: [1, 0.05, 0.03, 1] });
@@ -350,7 +358,13 @@ export function industrialSprawl(ctx, scene, rng0) {
   }
   // west: the refinery's columns and racks (racks above), the cement silos and their conveyor
   for (const [x, z, r, h] of P.columns) column(far, glow, x, z, r, h);
-  for (let i = 0; i < 4; i++) { const sx = P.silos.x + (i % 2) * 11, sz = P.silos.z + Math.floor(i / 2) * 11; put(far, G.cylinder(4.8, 4.8, 26, 16, { y0: true }), sx, 6, sz, '#c8c4bc'); put(far, G.cylinder(0.6, 4.8, 5, 16, { y0: true }), sx, 32, sz, '#b8b4ac'); put(far, G.cylinder(1, 4.8, 6, 16, { y0: true, open: true }), sx, 0, sz, '#8a8680'); for (const [lx, lz] of [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]]) put(far, G.box(0.6, 6, 0.6), sx + lx, 3, sz + lz, '#6a6862'); }
+  for (let i = 0; i < 4; i++) {
+    const sx = P.silos.x + (i % 2) * 11, sz = P.silos.z + Math.floor(i / 2) * 11;
+    put(far, G.cylinder(4.8, 4.8, 26, 16, { y0: true }), sx, 6, sz, '#c8c4bc');
+    put(far, G.cylinder(0.6, 4.8, 5, 16, { y0: true }), sx, 32, sz, '#b8b4ac');
+    put(far, G.cylinder(1, 4.8, 6, 16, { y0: true, open: true }), sx, 0, sz, '#8a8680');
+    for (const [lx, lz] of [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]]) put(far, G.box(0.6, 6, 0.6), sx + lx, 3, sz + lz, '#6a6862');
+  }
   put(far, G.box(8, 40, 8), P.silos.x + 5.5, 20, P.silos.z + 23, '#7a7670');
   beam(far, [P.silos.x + 5.5, 38, P.silos.z + 5.5], [P.silos.x + 5.5, 38, P.silos.z + 20], 3, 3, '#6a645e');
   beam(far, [P.silos.x + 40, 1, P.silos.z + 60], [P.silos.x + 5.5, 38, P.silos.z + 23], 3.5, 3, '#6a645e');

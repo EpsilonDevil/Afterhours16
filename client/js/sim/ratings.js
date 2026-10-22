@@ -42,7 +42,14 @@ export const ATTR_LABEL = {
 export const SUB70_K = 0.9;
 export const proficient = v => (v ?? 60) >= 70;
 export function rk(v) { const x = rkRaw(v); return proficient(v) ? x : x * SUB70_K; }
+// (perf: rkRaw is pure and called for every rating check every tick; the whole-number ratings 0-130 are kept in a table,
+// filled on first use with the very same function, so a cached value is bit-for-bit what it computes)
+const RK_CACHE = new Float64Array(131).fill(NaN);
 export function rkRaw(v) {
+  if (Number.isInteger(v) && v >= 0 && v <= 130) { const c = RK_CACHE[v]; return c === c ? c : (RK_CACHE[v] = rkCalc(v)); }
+  return rkCalc(v);
+}
+function rkCalc(v) {
   v = v ?? 60;
   let x = (v - 25) / 74;
   if (v < 70) x -= Math.pow((70 - v) / 30, 1.4) * 0.2;

@@ -379,11 +379,20 @@ export function retroCity(ctx, scene, rng, theme, park) {
   { const b = byKind('diner'), f = frame(b), L = b.w, D = b.d, H = b.h, r = D / 2, steel = '#dfe6ee';
     const [mx, mz] = f.P(0, -D / 2);
     chrome.push({ geo: G.box(L - D, H - 0.5, D), matrix: TR(mx, 0.3 + (H - 0.5) / 2, mz, f.yaw), color: c4(steel) });
-    for (const s of [-1, 1]) { const [ex, ez] = f.P(s * (L / 2 - r), -r); chrome.push({ geo: G.cylinder(r, r, H - 0.5, 18, { y0: true }), matrix: TR(ex, 0.3, ez), color: c4(steel) }); city.push({ geo: G.cylinder(r + 0.05, r + 0.05, 0.3, 18, { y0: true }), matrix: TR(ex, 0, ez), color: c4('#2a2228') }); city.push({ geo: G.cylinder(r + 0.18, r + 0.18, 0.22, 18, { y0: true }), matrix: TR(ex, H - 0.2, ez), color: c4('#f4f1ea') }); }
+    for (const s of [-1, 1]) {
+      const [ex, ez] = f.P(s * (L / 2 - r), -r);
+      chrome.push({ geo: G.cylinder(r, r, H - 0.5, 18, { y0: true }), matrix: TR(ex, 0.3, ez), color: c4(steel) });
+      city.push({ geo: G.cylinder(r + 0.05, r + 0.05, 0.3, 18, { y0: true }), matrix: TR(ex, 0, ez), color: c4('#2a2228') });
+      city.push({ geo: G.cylinder(r + 0.18, r + 0.18, 0.22, 18, { y0: true }), matrix: TR(ex, H - 0.2, ez), color: c4('#f4f1ea') });
+    }
     city.push({ geo: G.box(L - D, 0.3, D + 0.1), matrix: TR(mx, 0.15, mz, f.yaw), color: c4('#2a2228') });
     city.push({ geo: G.box(L - D, 0.22, D + 0.36), matrix: TR(mx, H - 0.09, mz, f.yaw), color: c4('#f4f1ea') });
     for (const [y, col] of [[0.95, '#ff4a6a'], [1.1, '#ff4a6a'], [3.1, '#17a9c6']]) { const [sx, sz] = f.P(0, 0.03); city.push({ geo: G.box(L - D + 0.2, 0.08, 0.06), matrix: TR(sx, y, sz, f.yaw), color: c4(col) }); }
-    for (let k = 0; k < 6; k++) { const a = -L / 2 + r + 0.6 + k * (L - D - 1.2) / 5.5, [wx, wz] = f.P(a, 0.04), g = G.quad(1.25, 1.35, { bottom: true }); for (let i = 0; i < 4; i++) g.uv[i * 2] = g.uv[i * 2] * 0.25 + (k % 2) * 0.5; shopWin.push({ geo: g, matrix: TR(wx, 1.45, wz, f.yaw), color: c4('#ffe2c0') }); }
+    for (let k = 0; k < 6; k++) {
+      const a = -L / 2 + r + 0.6 + k * (L - D - 1.2) / 5.5, [wx, wz] = f.P(a, 0.04), g = G.quad(1.25, 1.35, { bottom: true });
+      for (let i = 0; i < 4; i++) g.uv[i * 2] = g.uv[i * 2] * 0.25 + (k % 2) * 0.5;
+      shopWin.push({ geo: g, matrix: TR(wx, 1.45, wz, f.yaw), color: c4('#ffe2c0') });
+    }
     const [vx, vz] = f.P(-L / 2 + r + 0.2, 0.7); city.push({ geo: G.box(2.2, 3.2, 1.4), matrix: TR(vx, 1.6, vz, f.yaw), color: c4('#ff4a6a') }); { const [dx, dz] = f.P(-L / 2 + r + 0.2, 1.42); city.push({ geo: G.box(1.2, 2.3, 0.04), matrix: TR(dx, 1.25, dz, f.yaw), color: c4('#1a1424') }); }
     const [px, pz] = f.P(L / 2 + 1.6, 1.4); chrome.push({ geo: G.cylinder(0.14, 0.18, 7.2, 10, { y0: true }), matrix: TR(px, 0, pz), color: c4('#d8dde4') });
     for (const s of [1, -1]) { const yaw = f.yaw + (s > 0 ? 0 : Math.PI); sign('DINER', px + Math.sin(yaw) * 0.12, 6.2, pz + Math.cos(yaw) * 0.12, yaw, 4.6); }
@@ -519,7 +528,11 @@ export function retroCity(ctx, scene, rng, theme, park) {
   const mGlint = [0, 1].map(() => new Material({ color: [3, 3, 3], shading: 'unlit', blend: 'add', depthWrite: false, fog: false }));
   const glints = [0, 1].map(k => { const m = new Mesh(ctx.geometry(G.merge(PR.bake(glint(k)))), mGlint[k], { castShadow: false, reflect: false }); m.order = 4; scene.add(m); return m; });
   const sp = [], srng = new RNG(31);
-  for (let i = 0; i < 160; i++) { const u = srng.range(-1, 1), a = srng.range(0, Math.PI * 2), rr = srng.range(2.2, 4.4), d = [Math.sqrt(1 - u * u) * Math.cos(a) * rr, u * rr, Math.sqrt(1 - u * u) * Math.sin(a) * rr]; if (D.inner.y + d[1] < 0.3 || D.inner.y + d[1] > 4.3) continue; sp.push({ geo: G.sphere(0.05, 4, 2), matrix: TR(...d), color: c4(srng.pick([NEON.white, NEON.white, NEON.pink, NEON.cyan, NEON.yellow])) }); }
+  for (let i = 0; i < 160; i++) {
+    const u = srng.range(-1, 1), a = srng.range(0, Math.PI * 2), rr = srng.range(2.2, 4.4), d = [Math.sqrt(1 - u * u) * Math.cos(a) * rr, u * rr, Math.sqrt(1 - u * u) * Math.sin(a) * rr];
+    if (D.inner.y + d[1] < 0.3 || D.inner.y + d[1] > 4.3) continue;
+    sp.push({ geo: G.sphere(0.05, 4, 2), matrix: TR(...d), color: c4(srng.pick([NEON.white, NEON.white, NEON.pink, NEON.cyan, NEON.yellow])) });
+  }
   const mSpeck = new Material({ color: [3, 3, 3], shading: 'unlit', blend: 'add', depthWrite: false, fog: false });
   const specks = new Mesh(ctx.geometry(G.merge(sp)), mSpeck, { castShadow: false, reflect: false }); specks.order = 4; scene.add(specks);
   const mBeams = [new Material({ color: [0.8, 0.14, 0.55], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true }), new Material({ color: [0.12, 0.6, 0.85], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true })];

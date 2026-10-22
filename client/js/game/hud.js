@@ -1,4 +1,6 @@
-// In-game DOM HUD: score bug, shot meter, release feedback, player tags, feed, big callouts.
+// In-game DOM HUD: score bug, shot meter, release feedback, player tags, feed, big callouts, the Locked-In grade.
+// Owned by the game session (game/session.js: one HUD over the canvas, fed every frame from updateHUD) and the park
+// (game/park.js). Every setter touches the DOM only when what it shows has changed.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 import { badgeSVG, iconBadgeSVG } from '../ui/badgeart.js';
 
@@ -238,18 +240,20 @@ export class HUD {
     if (o.html !== this.oopKey) { this.oopKey = o.html; this.oopBtn.innerHTML = o.html; }
   }
 
-  // tags: [{id, x, y, text, cls, visible}]
+  // tags: [{id, x, y, text, cls, visible}] (each frame; a tag's element is kept by its id, and its position and
+  // visibility are written only when they change)
   setTags(list) {
-    const seen = new Set();
+    const stamp = (this.tagStamp = (this.tagStamp || 0) + 1);
     for (const t of list) {
-      seen.add(t.id);
       let el = this.tagPool.get(t.id);
       if (!el) { el = document.createElement('div'); el.className = 'ptag'; this.tags.appendChild(el); this.tagPool.set(t.id, el); }
+      el._seen = stamp;
       if (el._text !== t.text || el._cls !== t.cls) { el.innerHTML = t.text; el.className = 'ptag ' + (t.cls || ''); el._text = t.text; el._cls = t.cls; }
-      el.style.transform = `translate(${t.x}px, ${t.y}px) translate(-50%, -100%)`;
-      el.hidden = !t.visible;
+      const tr = `translate(${t.x}px, ${t.y}px) translate(-50%, -100%)`;
+      if (el._tr !== tr) { el._tr = tr; el.style.transform = tr; }
+      if (el.hidden !== !t.visible) el.hidden = !t.visible;
     }
-    for (const [id, el] of this.tagPool) if (!seen.has(id)) { el.remove(); this.tagPool.delete(id); }
+    for (const [id, el] of this.tagPool) if (el._seen !== stamp) { el.remove(); this.tagPool.delete(id); }
   }
 
   // v0.4.5: the user's takeover meter (progress or time left) and Hot / Cold state, bottom-left above the feed
@@ -275,7 +279,8 @@ export class HUD {
     const tr = `translate(${Math.round(x - 26)}px, ${Math.round(y + 8)}px)`, w = `${Math.round(v * 100)}%`;
     if (tr !== this.staminaTr) { this.staminaTr = tr; this.stamina.style.transform = tr; }
     if (w !== this.staminaW) { this.staminaW = w; this.stamina.firstChild.style.width = w; }
-    this.stamina.classList.toggle('low', v < 0.25);
+    const low = v < 0.25;
+    if (low !== this.staminaLow) { this.staminaLow = low; this.stamina.classList.toggle('low', low); }
   }
 
   update(dt) {

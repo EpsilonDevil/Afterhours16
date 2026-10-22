@@ -93,3 +93,27 @@ At the start of a run you pick one player: one of three random starters, or one 
 - **Speed:** a replay takes about a quarter of a second.
 - **When it's off:** replay needs Node.js on the server, and the online server installs it by itself with this update. On a server without it, including a game hosted on your own PC, runs are checked by their counts as before. Nothing is needed on players' PCs.
 - **Your opponents' names and looks** still come from your park's world. Who you face and how they play now come only from the run's start, so the server and your screen always get the same run.
+
+---
+
+## Quick patch 2 (Oct 22): QOL + Performance
+
+**Nothing about how the game plays has changed.** Every game mode plays exactly as before, down to the last bounce. We checked that by replaying seeded park, Pro-Am, lockstep online, park director and Gauntlet games before and after the patch and getting identical results. Players on quick patch 1 and quick patch 2 can still play together.
+
+### Smoother on your PC
+- **Players:** posing and animating the players on court costs about **25% less** per frame.
+- **Drawing the scene:** each frame makes about **28% fewer** graphics calls. Busy moments full of effect particles no longer allocate memory for every particle on every frame, so they stay smooth.
+- **Going back to a park:** parks you've already visited this session load **2 to 5 times faster**: Old Brick Yard 0.8 s to 0.2 s, King Tut 0.19 s to 0.04 s. The courts' painted lines and the parks' brick and stone walls are made once and kept.
+- **Fewer copies on the graphics card:** players with the same hair style and colour share one hair texture. A return visit to a park no longer uploads its court textures a second time (about 200 MB less).
+- **Making players:** building AI players for the park, the AI world and the Gauntlet's cast is about **2.2 times faster**.
+- **Pro-Am:** the simulation runs about 9% faster in Pro-Am games.
+
+### Faster online server
+- **Your profile:** the server answers the MyPLAYER and profile request about **6 times faster** (21 ms to 3 ms).
+- **Park games:** starting and finishing a park game is about 1.6 times faster on the server.
+- **Gauntlet:** the server's replay check of a finished Gauntlet run takes about 0.14 s instead of 0.23 s.
+- **Memory:** the sign-in rate limiter now forgets old addresses instead of keeping every one forever.
+
+### Cleaner code
+- **Tidied:** unused code and imports removed throughout.
+- **Easier to follow:** every major file now starts with a short note on what it does and who uses it, with clear section headings inside. The server's routes are grouped by feature (session, online, builds, store, AI world, games, crews and the Cup, Pro-Am, the Gauntlet).

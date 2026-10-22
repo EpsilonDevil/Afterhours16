@@ -226,6 +226,7 @@ class Service:
         self.dev_accounts, self.secure_cookies = dev_accounts, secure_cookies
         self.attempts = collections.defaultdict(collections.deque)
         self.attempt_lock = threading.Lock()
+        self.attempts_swept = time.monotonic()
         self.last_ping = None  # set by game windows opened from the launcher (see --exit-when-idle)
         self.quit_allowed = False  # only when started by RIMRIFT.exe (--exit-when-idle)
         self.quit_requested = False
@@ -673,8 +674,14 @@ class Service:
     def rate_limit(self, ip, category):
         limit, period = (8, 600) if category == "register" else (25, 60)
         with self.attempt_lock:
-            queue = self.attempts[(ip, category)]
             now = time.monotonic()
+            # (once every 10 minutes, forget the addresses with nothing left inside the longest window: the table no
+            # longer grows by one entry for every address that ever tried)
+            if now - self.attempts_swept > 600:
+                self.attempts_swept = now
+                for key in [k for k, q in self.attempts.items() if not q or q[-1] < now - 600]:
+                    del self.attempts[key]
+            queue = self.attempts[(ip, category)]
             while queue and queue[0] < now - period:
                 queue.popleft()
             if len(queue) >= limit:
@@ -903,6 +910,7 @@ class Handler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             s = self.service
             s.maybe_reset()  # (v0.4.8.6 qp: the season reset, the moment it's due)
+            # ---------- the service: health, the game's config, your profile ----------
             if path == "/api/health":
                 return self.respond(200, {"ready": True, "schema_version": SCHEMA_VERSION, "version": VERSION, "app": "rimrift"})  # (v0.4.8.6; RIMRIFT.exe takes this or the old name)
             if path == "/api/ping":
@@ -933,6 +941,11 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if path == "/api/me":
                 return self.respond(200, s.profile(self.account()))
+            if path == "/api/wallet":
+                aid = self.account()
+                rows = s.db.query("SELECT id,delta,balance_after,kind,reference,created_at FROM ledger WHERE account_id=? ORDER BY id DESC LIMIT 200", (aid,))
+                return self.respond(200, {"balance": s.db.query("SELECT balance FROM wallets WHERE account_id=?", (aid,))[0][0], "transactions": [dict(r) for r in rows]})
+            # ---------- online: the hub's socket, friends, the link to another server, hosting ----------
             if path == "/api/ws":
                 return self.websocket()
             if path == "/api/online":
@@ -970,36 +983,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            if path == "/api/wallet":
-                aid = self.account()
-                rows = s.db.query("SELECT id,delta,balance_after,kind,reference,created_at FROM ledger WHERE account_id=? ORDER BY id DESC LIMIT 200", (aid,))
-                return self.respond(200, {"balance": s.db.query("SELECT balance FROM wallets WHERE account_id=?", (aid,))[0][0], "transactions": [dict(r) for r in rows]})
-            if path == "/api/crew":
-                return self.respond(200, s.crew_status(self.account()))
-            # v0.4.8.8 The Pro-Am Overhaul (server/proam.py): the season, your team and builds; search; a team
-            if path == "/api/proam":
-                return self.respond(200, s.proam.status(self.account()))
-            # v0.4.8.9 The Gauntlet (server/gauntlet.py): converted players, the nemesis world, unlocks, stats, the feed
-            if path == "/api/gauntlet/profile":
-                return self.respond(200, s.gauntlet.profile(self.account()))
-            if path == "/api/proam/search":
-                self.account()
-                return self.respond(200, s.proam.search((parse_qs(urlsplit(self.path).query).get("q") or [""])[0]))
-            if path == "/api/proam/teams":
-                aid = self.account()
-                return self.respond(200, s.proam.team(aid, (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]))
-            if path == "/api/prorun":
-                aid = self.account()
-                cid = (parse_qs(urlsplit(self.path).query).get("character_id") or [""])[0]
-                s.character(aid, cid)
-                rows = s.db.query("SELECT data, updated_at FROM prorun_careers WHERE character_id=? AND account_id=?", (cid, aid))
-                return self.respond(200, {"career": json.loads(rows[0]["data"]) if rows else None, "updated_at": rows[0]["updated_at"] if rows else None})
-            if path == "/api/cup":
-                return self.respond(200, s.cup_status(self.account()))
+            # ---------- the AI world ----------
             if path == "/api/ai-world/canonical":  # (v0.4.8.7: the one AI world everybody on this service plays in)
                 return self.respond(200, s.shared_world_payload())
             if path == "/api/ai-world/unlocks":  # (v0.4.8.5 qp7: what the AI world has won)
                 return self.respond(200, s.ai_unlocks(self.account()))
+            # ---------- games ----------
             if re.fullmatch(r"/api/matches/[a-f0-9-]{36}", path):
                 aid = self.account()
                 rows = s.db.query("SELECT id,mode,status,seed,meta,result FROM matches WHERE id=? AND account_id=?", (path.split("/")[-1], aid))
@@ -1007,6 +996,31 @@ class Handler(BaseHTTPRequestHandler):
                     raise HTTPError(404, "Game not found.")
                 r = rows[0]
                 return self.respond(200, {"id": r["id"], "mode": r["mode"], "status": r["status"], "seed": r["seed"], "meta": json.loads(r["meta"] or "{}"), "result": json.loads(r["result"] or "null")})
+            if path == "/api/prorun":
+                aid = self.account()
+                cid = (parse_qs(urlsplit(self.path).query).get("character_id") or [""])[0]
+                s.character(aid, cid)
+                rows = s.db.query("SELECT data, updated_at FROM prorun_careers WHERE character_id=? AND account_id=?", (cid, aid))
+                return self.respond(200, {"career": json.loads(rows[0]["data"]) if rows else None, "updated_at": rows[0]["updated_at"] if rows else None})
+            # ---------- crews and the park events (the Cup) ----------
+            if path == "/api/crew":
+                return self.respond(200, s.crew_status(self.account()))
+            if path == "/api/cup":
+                return self.respond(200, s.cup_status(self.account()))
+            # ---------- Pro-Am ----------
+            # v0.4.8.8 The Pro-Am Overhaul (server/proam.py): the season, your team and builds; search; a team
+            if path == "/api/proam":
+                return self.respond(200, s.proam.status(self.account()))
+            if path == "/api/proam/search":
+                self.account()
+                return self.respond(200, s.proam.search((parse_qs(urlsplit(self.path).query).get("q") or [""])[0]))
+            if path == "/api/proam/teams":
+                aid = self.account()
+                return self.respond(200, s.proam.team(aid, (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]))
+            # ---------- the Gauntlet ----------
+            # v0.4.8.9 The Gauntlet (server/gauntlet.py): converted players, the nemesis world, unlocks, stats, the feed
+            if path == "/api/gauntlet/profile":
+                return self.respond(200, s.gauntlet.profile(self.account()))
             if path.startswith("/api/"):
                 raise HTTPError(404, "Endpoint not found.")
             return self.static(path)
@@ -1094,6 +1108,7 @@ class Handler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             s, db = self.service, self.service.db
             s.maybe_reset()  # (v0.4.8.6 qp: the season reset, the moment it's due)
+            # ---------- signed out: quit, register and log in, the local account, bug reports ----------
             if path == "/api/quit":
                 builds.strict_keys(data, ())
                 if not s.quit_allowed or not self.is_local():
@@ -1145,12 +1160,15 @@ class Handler(BaseHTTPRequestHandler):
                     raise builds.Invalid(str(e))
                 print(f"Bug report #{out['number']} saved to {out['path']}", flush=True)
                 return self.respond(200, out)
+            # ---------- everything below needs a signed-in account ----------
             aid = self.account()
+            # ---------- your session ----------
             if path == "/api/logout":
                 builds.strict_keys(data, ())
                 with db.transaction() as c:
                     c.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256((self.token() or "").encode()).hexdigest(),))
                 return self.respond(200, {"ok": True}, "ah_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+            # ---------- online: the link to another server, this copy's default server, friends ----------
             if path == "/api/online-link":
                 builds.strict_keys(data, ("hub", "username", "token", "clear", "offline"))
                 if data.get("clear"):
@@ -1214,6 +1232,7 @@ class Handler(BaseHTTPRequestHandler):
                 if other:
                     s.hub.push_presence(other[0][0])
                 return self.respond(200, {"message": msg, "friends": s.hub.friends_payload(aid)})
+            # ---------- builds ----------
             if path == "/api/build-preview":
                 build = builds.spec(data)
                 attrs = builds.starting_attributes(build)
@@ -1243,6 +1262,7 @@ class Handler(BaseHTTPRequestHandler):
             del_route = re.fullmatch(r"/api/characters/([a-f0-9-]{36})/delete", path)  # (v0.4.8.5 qp8: deleting a build)
             if del_route:
                 return self.delete_character(aid, data, del_route.group(1))
+            # ---------- the store, the Daily Spin, boosts, locker codes ----------
             if path == "/api/store/purchase":
                 builds.strict_keys(data, ("key", "item_id", "character_id"))
                 item = CATALOG.get(data.get("item_id")) if isinstance(data.get("item_id"), str) else None
@@ -1283,8 +1303,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self.buy_boost(aid, data)
             if path == "/api/locker-codes/redeem":
                 return self.redeem_code(aid, data)
+            # ---------- the AI world ----------
             if path == "/api/ai-world":
                 return self.save_ai_world(aid, data)
+            # ---------- games: tickets and results, the Pro Run's career ----------
+            if path == "/api/matches":
+                return self.start_match(aid, data)
+            match_route = re.fullmatch(r"/api/matches/([a-f0-9-]{36})/(complete|cancel)", path)
+            if match_route:
+                match_id, action = match_route.groups()
+                return self.finish_match(aid, match_id, action, data)
+            if path == "/api/prorun":
+                return self.save_prorun(aid, data)
+            # ---------- crews and the park events (the Cup) ----------
+            if path == "/api/crew":
+                return self.crew_action(aid, data)
+            if path == "/api/cup/claim":
+                return self.claim_cup(aid, data)
+            # ---------- Pro-Am (the old single-game team, and server/proam.py) ----------
             if path == "/api/proam/team":
                 builds.strict_keys(data, ("key", "team"))
                 team = progression.proam_team(data.get("team"))
@@ -1299,12 +1335,11 @@ class Handler(BaseHTTPRequestHandler):
                         c.execute("INSERT INTO proam_teams VALUES(?,?,?,?)", (aid, encode(merged), time.time(), time.time()))
                     return {"team": merged}
                 return self.respond(200, db.once(aid, data.get("key"), "proam_team", team, save_team))
-            if path == "/api/crew":
-                return self.crew_action(aid, data)
             # v0.4.8.8 Pro-Am: create, update, join, leave, answer, kick, handon, draft, queue, lineup (server/proam.py)
             pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup)", path)
             if pa_route:
                 return self.respond(200, s.proam.action(aid, pa_route.group(1), data))
+            # ---------- the Gauntlet ----------
             # v0.4.8.9 The Gauntlet: a run's start and finish (paid once), and the sacrifices (server/gauntlet.py)
             if path == "/api/gauntlet/start":
                 return self.respond(200, s.gauntlet.start(aid, data))
@@ -1315,16 +1350,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(409, {"error": str(e), **e.detail})
             if path == "/api/gauntlet/sacrifice":
                 return self.respond(200, s.gauntlet.sacrifice(aid, data))
-            if path == "/api/prorun":
-                return self.save_prorun(aid, data)
-            if path == "/api/cup/claim":
-                return self.claim_cup(aid, data)
-            if path == "/api/matches":
-                return self.start_match(aid, data)
-            match_route = re.fullmatch(r"/api/matches/([a-f0-9-]{36})/(complete|cancel)", path)
-            if match_route:
-                match_id, action = match_route.groups()
-                return self.finish_match(aid, match_id, action, data)
             raise HTTPError(404, "Endpoint not found.")
         except HTTPError as e:
             self.respond(e.status, {"error": e.message})

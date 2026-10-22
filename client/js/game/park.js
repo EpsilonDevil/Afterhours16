@@ -40,6 +40,7 @@ const ICON_COOL = 30 * 60000, NO_IDS = new Set();
 const SPOT_R = 0.75; // (v0.4.8.8: standing on a GOT NEXT circle: within this of it, you or an AI alike)
 const ICON_TEAM = { name: 'ICON Squad', abbr: 'ICN', color: '#f4f2ec' };
 
+// ---------- layout + geometry helpers ----------
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
 const ZONES = [
   { x0: -46, x1: 46, z0: -30, z1: -21.5, w: 4 }, // south plaza
@@ -65,6 +66,7 @@ function segHitsBox(b, ax, az, bx, bz) {
 
 export const OVERVIEW_NEAR = 3; // (m) the camera's near plane while the court overview is up (0.1 otherwise)
 
+// ---------- park-goers: walkers, your squad, online peers ----------
 export class Walker {
   constructor(hub, entry, x, z) {
     this.hub = hub;
@@ -301,6 +303,7 @@ export class Peers {
   }
 }
 
+// ---------- spectators ----------
 // v0.4.5: people watching the games from the benches and sidelines. They react to what happens on the court
 // in front of them: a dunk, a poster or a deep three gets them up (or arms up on the bench), a block or an
 // ankle-breaker gets hands on heads, ordinary buckets get a clap. They animate only when you're close.
@@ -379,6 +382,7 @@ function pushOut(p, b) {
   if (m === dl) p.x = b.x0 - r; else if (m === dr) p.x = b.x1 + r; else if (m === dn) p.z = b.z0 - r; else p.z = b.z1 + r;
 }
 
+// ---------- your own game, sent out to the park ----------
 // v0.4.8.7 qp4: your own game at a park (you alone there when it began: the AI with you and against you), out to everyone
 // else at the park as it's played (server/online.py local_*): its setup, then every tick's input as the change from the tick
 // before (sim/wire.js: a byte or two a tick, sent ten times a second), with the auto-play switch and your Lock-In grade
@@ -408,6 +412,7 @@ export class LocalPub {
   stop() { if (this.done) return; this.flush(true); if (this.on) this.net.send({ t: 'lstop' }); this.done = true; this.on = false; }
 }
 
+// ---------- director courts ----------
 // v0.4.8.7 a court's game in the director's park (ParkHub.dirCourts): the director's own game (parkdirector.js CourtRunner,
 // stepped by game/parklink.js), drawn by a background MatchSession only while the court can be seen (no athletes built for a
 // court nobody's looking at: they go back to the pool 4 s after it's out of sight). It stands in for c.session: game, opts
@@ -442,6 +447,7 @@ class DirCourt {
   dispose() { if (this.view) this.view.dispose(); this.view = null; this.run.keep = false; this.disposed = true; }
 }
 
+// ---------- the park hub (scene, population, courts, Got Next, input, per-frame update) ----------
 export class ParkHub {
   constructor(app, themeId, ui) {
     this.app = app; this.r = app.renderer; this.ui = ui;
@@ -1078,7 +1084,14 @@ export class ParkHub {
     const app = this.app, inp = app.input, me = this.me;
     inp.ctx = 'roam';
     this.meVisual?.syncIcon?.(app.char()); // (v0.4.8.5 qp3: your ICON badge and aura follow your build: a new streak, ICON made)
-    if (this.app.modalOpen()) { me.intent.mx = me.intent.mz = 0; me.move(dt * GAME_SPEED, false, 0); this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {}); this.meVisual.place(me.x, 0, me.z); this.rig.updateRoam(dt, me, null, this.venue.bounds, this.venue.solids); return; }
+    if (this.app.modalOpen()) {
+      me.intent.mx = me.intent.mz = 0;
+      me.move(dt * GAME_SPEED, false, 0);
+      this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {});
+      this.meVisual.place(me.x, 0, me.z);
+      this.rig.updateRoam(dt, me, null, this.venue.bounds, this.venue.solids);
+      return;
+    }
     if (inp.wasPressed('pause')) { this.ui.pause(this); return; }
     // v0.4.7.5 court overview: hold View / Share (V on the keyboard) for a live bird's-eye view of the whole park,
     // every court's score, streak and bounty on it
@@ -2306,7 +2319,10 @@ export class ParkHub {
     // still on the last game's results (the kings ran it back): off that game first
     if (this.mySession) { this.mySession.dispose(); this.mySession = null; }
     // your own Got Next line, if you weren't the one who started this: its park-goers step off
-    for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) { const l = cc.lines[r]; if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } this.dirFree(cc, l.members.map(w => w.entry).filter(e => !this.world.inSquad(e.aiId))); cc.lines[r] = null; cc.mine = false; } }
+    for (const cc of this.courts) for (let r = 0; r < cc.lines.length; r++) {
+      const l = cc.lines[r];
+      if (l?.mine) { for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = 1; } this.dirFree(cc, l.members.map(w => w.entry).filter(e => !this.world.inSquad(e.aiId))); cc.lines[r] = null; cc.mine = false; }
+    }
     if (!decided) { this.myMates = []; this.myOpp = []; }
     // your AI squad mates in it (your squad's game, or a friend's who set it up): off the park until it's over
     const me = app.net?.myId;
@@ -2516,5 +2532,6 @@ export class ParkHub {
   }
 }
 
+// ---------- exported helpers ----------
 // v0.4.7.5: tiers as they play on this build (a badge above the build's cap plays at the cap)
 export function badgeTiers(char) { const o = {}; for (const [k, v] of Object.entries(char.badges || {})) if (v.tier) o[k] = v.tier; return capBadges(o, char.archetype || char.height ? char : null); }

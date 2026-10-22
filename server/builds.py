@@ -3,6 +3,7 @@
 Positions + archetypes + body (height/weight/wingspan) set per-attribute caps. Players buy
 attribute points with VC up to those caps. v0.2 characters (9 attributes) are upgraded in place.
 """
+import functools
 import math
 
 POSITIONS = {"PG": (67, 79), "SG": (70, 80), "SF": (75, 82), "PF": (77, 84), "C": (80, 87)}
@@ -235,19 +236,28 @@ def cap_breakers_unlocked(char):
     return max_ovr(char) >= OVR_CAP
 
 
-def caps(b, target=None):
-    """v0.4.5: the build's shape (height, weight, wingspan, archetype) sets the relative caps, then they are
-    scaled around 40 so the build maxes out at exactly its max OVR (v0.4.7.5: 80 to 90, see max_ovr). Cap
-    breakers add +1 per breaker on top."""
-    base = base_caps(b)
-    pos = b.get("position", "SF")
-    goal = target if target is not None else max_ovr(b)
+@functools.lru_cache(maxsize=1024)
+def _cap_curve(height, weight, wingspan, archetype, style, pos, goal):
+    """The caps search for one build shape, position and goal OVR (the slow part of caps: up to 1,200 scalings). Its
+    result depends on nothing else, so it's worked out once per shape (perf: /api/me describes every build, several
+    times over). -> a tuple of (attribute, cap) pairs in ATTRIBUTES order."""
+    base = base_caps({"height": height, "weight": weight, "wingspan": wingspan, "archetype": archetype, "style": style})
     out = None
     for i in range(1200):
         k = 0.5 + i * 0.0025
         out = _scaled(base, k)
         if overall(out, pos) >= goal:
             break
+    return tuple(out.items())
+
+
+def caps(b, target=None):
+    """v0.4.5: the build's shape (height, weight, wingspan, archetype) sets the relative caps, then they are
+    scaled around 40 so the build maxes out at exactly its max OVR (v0.4.7.5: 80 to 90, see max_ovr). Cap
+    breakers add +1 per breaker on top."""
+    pos = b.get("position", "SF")
+    goal = target if target is not None else max_ovr(b)
+    out = dict(_cap_curve(b["height"], b["weight"], b["wingspan"], b.get("archetype"), b.get("style"), pos, goal))
     applied = (b.get("cap_breakers") or {}).get("applied") or {}
     for a, n in applied.items():
         if a in out and isinstance(n, int) and n > 0:

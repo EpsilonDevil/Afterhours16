@@ -1,4 +1,7 @@
 // Live match: fixed-step simulation + interpolated rendering + input + presentation (audio, HUD, camera).
+// MatchSession runs one Game (sim/game.js) for every mode that plays basketball (park games, Pro-Am, practice, the
+// Pro Run, background games at the park) and PlayerVisual is one player on screen. Made by game/park.js, ui/modes.js
+// and ui/prorun.js; online it feeds the lockstep (only the inputs it hands the sim matter for the shared hash).
 import { Game } from '../sim/game.js';
 import { DT, COURT, BALL_R, GRAVITY } from '../sim/constants.js';
 import { AthleteView } from '../char/view.js';
@@ -229,8 +232,10 @@ export class MatchSession {
       return pv;
     });
     // ball
-    const bt = cachedTexture(this.r.ctx, 'ballC', () => T.ballTexture().color, {});
-    const bn = cachedTexture(this.r.ctx, 'ballN', () => T.ballTexture().normal, { srgb: false });
+    // (the ball's colour and normal maps come from one painting: painted at most once, only if neither is cached yet)
+    let ball = null;
+    const bt = cachedTexture(this.r.ctx, 'ballC', () => (ball ||= T.ballTexture()).color, {});
+    const bn = cachedTexture(this.r.ctx, 'ballN', () => (ball ||= T.ballTexture()).normal, { srgb: false });
     this.ballMesh = new Mesh(this.r.ctx.geometry(G.sphere(BALL_R, 28, 18)), new Material({ map: bt, normalMap: bn, normalScale: 0.8, roughness: 0.6, color: [1, 1, 1] }));
     this.scene.add(this.ballMesh);
     this.ballQ = M.q4();

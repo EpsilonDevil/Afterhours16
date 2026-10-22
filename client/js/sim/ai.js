@@ -1,17 +1,32 @@
 // Basketball AI: spacing, drives, pick-and-roll, cuts, passing reads, man defense with help,
 // contests, box-outs, rebounding and transition. Uses the same intent interface as the human.
+//
+// Who calls it: game.js (Game owns one AI; Game.step calls AI.think once a tick, before the intents are applied).
+// The Godot port mirrors this file one-to-one: keep functions here, and keep floating-point, RNG and iteration order.
+//
+// MAP (in file order):
+//   tuning constants        transition, defensive mistakes, runners, spacing, closeouts, shot selection
+//   class AI
+//     memory and reads      per-player memory, matchups, tendencies, IQ, delayed perception (seen)
+//     think                 the per-tick dispatch: who does what this tick
+//     movement helpers      seek, line braking, facing, court clamp
+//     offense               shot value, contests, passing lanes and risk, runners, timing, the handler, off the ball,
+//                           alley-oops, catching passes
+//     defense               on-ball and help defense, the lurker, safeties, closeouts
+//     rebounds / loose balls
+//     dead balls / inbounds / free throws, practice, the human's hints
 import { COURT, GRAVITY, isThree, inLane, LANE } from './constants.js';
 import { postPackageOf, postPower } from './post.js';
 import { spotsFor, rimOf, spot } from './formation.js';
 import { tendenciesFor } from './bots.js';
-
-const ARC_SPOTS = ['top', 'wingL', 'wingR', 'cornerL', 'cornerR', 'slotL', 'slotR'];
 import * as S from './shots.js';
 import { cloneBall } from './ball.js';
-
 import { rk as n } from './ratings.js';
 import { bk } from './badges.js';
 import { MOVE_IDS, MOVES as MOVE_DEF, MOVE_STYLE, COMBOS } from './moves.js';
+
+// ---------- tuning constants ----------
+const ARC_SPOTS = ['top', 'wingL', 'wingR', 'cornerL', 'cornerR', 'slotL', 'slotR'];
 const MOVE_FAM = Object.fromEntries(Object.entries(MOVE_DEF).map(([k, v]) => [k, v.fam]));
 const hyp = Math.hypot;
 // v0.4.8.7 qp5: a person's player on auto-play (offline: the game's assist; online: his own seat's, p.auto)
@@ -142,6 +157,7 @@ export class AI {
     this.lastPossession = -1;
     this.stats = {};
   }
+  // ---------- memory and reads ----------
   m(p) { let o = this.mem.get(p.id); if (!o) { o = { next: 0, target: null, role: null, cutT: 0, screenT: 0, rollT: 0, react: 0, plan: null, probe: null, wait: 0, jumpAt: -1 }; this.mem.set(p.id, o); } return o; }
 
   matchups(offTeam) {
@@ -191,9 +207,15 @@ export class AI {
     return h[h.length - 1 - k];
   }
 
+  // ---------- think: the per-tick dispatch ----------
   think(dt) {
     const g = this.g;
-    for (const p of g.players) { const h = p._hist || (p._hist = []); h.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz }); if (h.length > 40) h.shift(); }
+    // (perf: the last 40 ticks of where everyone was, for seen(); the oldest entry is reused instead of a new one a tick.
+    // seen()'s callers read an entry at once and never keep it)
+    for (const p of g.players) {
+      const h = p._hist || (p._hist = []);
+      if (h.length >= 40) { const e = h.shift(); e.x = p.x; e.z = p.z; e.vx = p.vx; e.vz = p.vz; h.push(e); } else h.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz });
+    }
     // v0.4.7.5: how long each handler has had the ball (dead-dribble check); a new touch resets a screen call
     for (const p of g.players) { const o = this.m(p); if (g.ball.holder === p.id) { if (!o.ballT) o.fresh = true; o.ballT = (o.ballT || 0) + dt; } else { o.ballT = 0; o.screenAsk = false; o.fresh = false; o.inMove = false; } }
     if (g.possession !== this.lastPossession) {

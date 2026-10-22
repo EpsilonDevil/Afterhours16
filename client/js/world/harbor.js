@@ -5,7 +5,7 @@
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
 import * as M from '../core/math.js';
-import { RNG, makeNoise2D } from '../core/rng.js';
+import { makeNoise2D } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { cachedTexture } from './court.js';
 import * as PR from './props.js';

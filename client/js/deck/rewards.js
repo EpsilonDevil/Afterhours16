@@ -13,6 +13,7 @@
 //    ~3 Rivals on its path: ~8,000-8,700 before the cap (the smart policy averages ~8,600), so the completion bonus
 //    is 0 and the summary caps a run at 8,000, the top of §11's 6,000-8,000. A failed run keeps what it earned
 //    (~3,000 for the smart policy's failed runs).
+// Called by: run.js (match rewards, Shops), index.js vcFor.
 import * as R from './rng.js';
 import { POOL, canUpgrade, upgraded } from './cards.js';
 import { ABILITY_POOL } from './abilities.js';

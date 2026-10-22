@@ -246,7 +246,13 @@ export class StreakFX {
     const add = o => new Material({ color: [1, 1, 1], shading: 'unlit', blend: 'add', depthWrite: false, fog: false, doubleSided: true, ...o });
     // the outline as a path: u metres round it → [x, z, outward normal x, z]
     const P = [...this.sides.map(s => s[0]), this.sides[0][0]], seg = []; let tot = 0;
-    for (let i = 0; i < 4; i++) { const [a, b] = [P[i], P[i + 1]], l = Math.hypot(b[0] - a[0], b[1] - a[1]), mx = (a[0] + b[0]) / 2 - ox, mz = (a[1] + b[1]) / 2 - (court.full ? oz : oz + 6.5); let nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l; if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; } seg.push({ a, b, l, u: tot, nx, nz }); tot += l; }
+    for (let i = 0; i < 4; i++) {
+      const [a, b] = [P[i], P[i + 1]], l = Math.hypot(b[0] - a[0], b[1] - a[1]), mx = (a[0] + b[0]) / 2 - ox, mz = (a[1] + b[1]) / 2 - (court.full ? oz : oz + 6.5);
+      let nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l;
+      if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+      seg.push({ a, b, l, u: tot, nx, nz });
+      tot += l;
+    }
     const along = u => { u = ((u % tot) + tot) % tot; for (const g of seg) if (u <= g.u + g.l) { const k = (u - g.u) / g.l; return [g.a[0] + (g.b[0] - g.a[0]) * k, g.a[1] + (g.b[1] - g.a[1]) * k, g.nx, g.nz]; } return [P[0][0], P[0][1], 0, -1]; };
     // (the Got Next spots on the east side stay clear: nothing rises there)
     const nm = { x: ox + 9.4, z: court.full ? oz : oz + 6.2 }, clearOf = (x, z) => !(Math.abs(x - nm.x) < 1.6 && Math.abs(z - nm.z) < 6.5);
@@ -260,9 +266,16 @@ export class StreakFX {
         const [x, z, nx, nz] = along(u); if (!clearOf(x, z)) continue;
         // (a tongue: wide and bright at the floor, a waist half way up leaning off to one side, the tip fading out)
         const h = 0.6 + rng() * 0.9, w = 0.16 + rng() * 0.16, b = 1 + (i % 6), lean = (rng() - 0.5) * 0.35, base = [0.1, 0.75, 0.2, 0.6], mid = [0.16, 0.9, 0.3, 0.32], tip = [0.3, 1.0, 0.4, 0];
-        for (const [ax, az] of [[-nz, nx], [nx, nz]]) { const q0 = v(x - ax * w, 0, z - az * w, base, 0), q1 = v(x + ax * w, 0, z + az * w, base, 0), m1 = v(x + ax * (w * 0.55 + lean * 0.5), h * 0.45, z + az * (w * 0.55 + lean * 0.5), mid, 0), m0 = v(x - ax * (w * 0.55 - lean * 0.5), h * 0.45, z - az * (w * 0.55 - lean * 0.5), mid, 0), q2 = v(x + ax * (0.02 + lean), h, z + az * (0.02 + lean), tip, b), q3 = v(x - ax * (0.02 - lean), h, z - az * (0.02 - lean), tip, b); idx.push(q0, q1, m1, q0, m1, m0, m0, m1, q2, m0, q2, q3); }
+        for (const [ax, az] of [[-nz, nx], [nx, nz]]) {
+          const q0 = v(x - ax * w, 0, z - az * w, base, 0), q1 = v(x + ax * w, 0, z + az * w, base, 0), m1 = v(x + ax * (w * 0.55 + lean * 0.5), h * 0.45, z + az * (w * 0.55 + lean * 0.5), mid, 0), m0 = v(x - ax * (w * 0.55 - lean * 0.5), h * 0.45, z - az * (w * 0.55 - lean * 0.5), mid, 0), q2 = v(x + ax * (0.02 + lean), h, z + az * (0.02 + lean), tip, b), q3 = v(x - ax * (0.02 - lean), h, z - az * (0.02 - lean), tip, b);
+          idx.push(q0, q1, m1, q0, m1, m0, m0, m1, q2, m0, q2, q3);
+        }
       }
-      for (let u = 0; u < tot; u += 1.0) { const [x, z, nx, nz] = along(u), [x2, z2] = along(u + 1.0); const a = v(x - nx * 0.6, 0.02, z - nz * 0.6, [0.2, 0.9, 0.3, 0], 0), b = v(x + nx * 0.2, 0.02, z + nz * 0.2, [0.2, 0.9, 0.3, 0.5], 0), c = v(x2 + nx * 0.2, 0.02, z2 + nz * 0.2, [0.2, 0.9, 0.3, 0.5], 0), d = v(x2 - nx * 0.6, 0.02, z2 - nz * 0.6, [0.2, 0.9, 0.3, 0], 0); idx.push(a, b, c, a, c, d); }
+      for (let u = 0; u < tot; u += 1.0) {
+        const [x, z, nx, nz] = along(u), [x2, z2] = along(u + 1.0);
+        const a = v(x - nx * 0.6, 0.02, z - nz * 0.6, [0.2, 0.9, 0.3, 0], 0), b = v(x + nx * 0.2, 0.02, z + nz * 0.2, [0.2, 0.9, 0.3, 0.5], 0), c = v(x2 + nx * 0.2, 0.02, z2 + nz * 0.2, [0.2, 0.9, 0.3, 0.5], 0), d = v(x2 - nx * 0.6, 0.02, z2 - nz * 0.6, [0.2, 0.9, 0.3, 0], 0);
+        idx.push(a, b, c, a, c, d);
+      }
       this.fireMat = add({});
       this.fire = mk({ position: new Float32Array(pos), normal: new Float32Array(nrm), uv: new Float32Array(uv), color: new Float32Array(col), joints: new Float32Array(jnt), weights: new Float32Array(wgt), index: new Uint16Array(idx) }, this.fireMat, 6, 7); }
     // the will-o'-wisps: a hot core in a soft halo, a bone each
@@ -277,7 +290,10 @@ export class StreakFX {
       const n0 = hp.length;
       for (const sx of [-0.026, 0.026]) hp.push({ geo: G.box(0.04, 0.5, 0.04), matrix: M.m4translation(M.m4(), sx, 0.25, 0), color: [...lin(bn), 1], bone: k });
       hp.push({ geo: G.sphere(0.055, 6, 4), matrix: M.m4translation(M.m4(), 0, 0.51, 0), color: [...lin(bn), 1], bone: k }, { geo: G.box(0.15, 0.13, 0.05), matrix: M.m4translation(M.m4(), 0, 0.6, 0.01), color: [...lin(bn), 1], bone: k });
-      for (let f = 0; f < 4; f++) { const fx = -0.055 + f * 0.037; hp.push({ geo: G.box(0.024, 0.11, 0.024), matrix: M.m4translation(M.m4(), fx, 0.72, 0.03), color: [...lin(bn), 1], bone: k }, { geo: G.box(0.022, 0.09, 0.022), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), fx, 0.78, 0.08), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, 0.9))), color: [...lin(bn), 1], bone: k }); }
+      for (let f = 0; f < 4; f++) {
+        const fx = -0.055 + f * 0.037;
+        hp.push({ geo: G.box(0.024, 0.11, 0.024), matrix: M.m4translation(M.m4(), fx, 0.72, 0.03), color: [...lin(bn), 1], bone: k }, { geo: G.box(0.022, 0.09, 0.022), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), fx, 0.78, 0.08), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, 0.9))), color: [...lin(bn), 1], bone: k });
+      }
       hp.push({ geo: G.box(0.024, 0.1, 0.024), matrix: M.m4mul(M.m4(), M.m4translation(M.m4(), 0.09, 0.6, 0.03), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 0, 0, 1, -0.7))), color: [...lin(bn), 1], bone: k });
       for (let q = n0; q < hp.length; q++) hp[q].matrix = M.m4mul(M.m4(), M.m4compose(M.m4(), [0, 0, 0], M.q4(), [HS, HS, HS]), hp[q].matrix);
       hp.push({ geo: G.sphere(0.5, 8, 5, { sy: 0.22 }), matrix: M.m4translation(M.m4(), sp.x, 0.0, sp.z), color: [...lin('#2a2018'), 1], bone: 14 });
@@ -369,7 +385,13 @@ export class StreakFX {
       this.skullMat.opacity = k4; const g = k4 * (1.2 + 0.5 * Math.sin(t * 6)); this.skullEyeMat.color[0] = this.skullEyeMat.color[1] = this.skullEyeMat.color[2] = g;
       if (this.level >= 4 && k4 > 0.9 && (this.hNext -= dt) <= 0) { this.hauntStrike(); this.hNext = H.bolt.every[0] + c.rng() * (H.bolt.every[1] - H.bolt.every[0]); }
     }
-    if (this.hBolt) { this.hBoltT -= dt; const ph = Math.max(0, this.hBoltT) / H.bolt.hold; this.hBolt.visible = this.hBoltT > 0 && (ph % 1) > 0.35; if (this.hBolt.visible) flashScene(this.scene, 0.7); if (this.hBoltT <= 0) { this.scene.remove(this.hBolt); const i = this.meshes.indexOf(this.hBolt); if (i >= 0) this.meshes.splice(i, 1); this.hBolt = null; } }
+    if (this.hBolt) {
+      this.hBoltT -= dt;
+      const ph = Math.max(0, this.hBoltT) / H.bolt.hold;
+      this.hBolt.visible = this.hBoltT > 0 && (ph % 1) > 0.35;
+      if (this.hBolt.visible) flashScene(this.scene, 0.7);
+      if (this.hBoltT <= 0) { this.scene.remove(this.hBolt); const i = this.meshes.indexOf(this.hBolt); if (i >= 0) this.meshes.splice(i, 1); this.hBolt = null; }
+    }
     if (Math.floor(lv + 0.5) > this.hLevel) { if (this.hLevel >= 1 && lv > 2.5) SP.moan(0, 0.3); } this.hLevel = Math.floor(lv + 0.5);
   }
   // a bolt from high over the court down onto its apron (never onto the floor in play)

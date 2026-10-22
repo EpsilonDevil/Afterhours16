@@ -1,14 +1,27 @@
-// Pose → skeleton solve (FK spine, analytic two-bone IK for limbs, look-at, palm orientation) → skin matrices.
-import { B, BONES, PARENT, ARM_ANGLE } from './skeleton.js';
+// The rig: a pose vector (char/pose.js) solved onto the skeleton (char/skeleton.js) and turned into skin matrices.
+//   FK spine and neck with an optional look-at; analytic two-bone IK for the legs and arms; the limb clearance that
+//   keeps knees, feet, hands and arms out of each other and out of the torso and head; palm orientation.
+// Owned by AthleteView (char/view.js), which calls solve() then updateSkin() every frame a player is posed; the
+// animator (char/animator.js) produces the pose. Render-only: nothing in the sim reads it.
+// (QOL+perf: solve() runs for every posed player every frame, so its inner loops work in preallocated scratch vectors
+// instead of fresh arrays; the arithmetic, its order and every result are exactly as before.)
+import { B, BONES, ARM_ANGLE } from './skeleton.js';
 import { P } from './pose.js';
 import * as M from '../core/math.js';
-import { torsoTable } from './athlete.js';
+import { torsoTableInto } from './athlete.js';
 
+// ---------- vector helpers ----------
+const _skinM = M.m4(), _skinL = M.m4(); // (updateSkin's two scratch matrices)
 const tmpQ = M.q4(), tmpQ2 = M.q4();
 const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 function qrot(q, v) { const o = [0, 0, 0]; M.v3transformQuat(o, v, q); return o; }
+// (the same three, writing into `o`)
+function normTo(o, x, y, z) { const l = Math.hypot(x, y, z) || 1; o[0] = x / l; o[1] = y / l; o[2] = z / l; return o; }
+function crossTo(o, a, b) { const x = a[1] * b[2] - a[2] * b[1], y = a[2] * b[0] - a[0] * b[2], z = a[0] * b[1] - a[1] * b[0]; o[0] = x; o[1] = y; o[2] = z; return o; }
+function qrotTo(o, q, x, y, z) { _qv[0] = x; _qv[1] = y; _qv[2] = z; return M.v3transformQuat(o, _qv, q); }
+const _qv = [0, 0, 0], _tv = [0, 0, 0], _tt = [0, 0, 0, 0, 0];
 
 // Quaternion from orthonormal basis columns (x,y,z)
 function quatFromBasis(out, x, y, z) {
@@ -20,12 +33,22 @@ function quatFromBasis(out, x, y, z) {
   else { const s = Math.sqrt(1 + m22 - m00 - m11) * 2; out[3] = (m10 - m01) / s; out[0] = (m02 + m20) / s; out[1] = (m12 + m21) / s; out[2] = 0.25 * s; }
   return M.qnorm(out, out);
 }
-function basis(a, n) { const x = norm(a); let z = norm(n); z = norm([z[0] - x[0] * dot(z, x), z[1] - x[1] * dot(z, x), z[2] - x[2] * dot(z, x)]); return [x, cross(z, x), z]; }
+// the orthonormal frame of an axis `a` and a normal `n` (n made perpendicular to a) into x, y, z
+function basisInto(x, y, z, a, n) {
+  normTo(x, a[0], a[1], a[2]);
+  normTo(z, n[0], n[1], n[2]);
+  const d = dot(z, x);
+  normTo(z, z[0] - x[0] * d, z[1] - x[1] * d, z[2] - x[2] * d);
+  crossTo(y, z, x);
+}
 // Rotation mapping frame (a0,n0) → (a1,n1)
+const _bx = [0, 0, 0], _by = [0, 0, 0], _bz = [0, 0, 0], _fq0 = M.q4(), _fq1 = M.q4(), _fqi = M.q4();
 function frameRot(out, a0, n0, a1, n1) {
-  const [x0, y0, z0] = basis(a0, n0), [x1, y1, z1] = basis(a1, n1);
-  const q0 = quatFromBasis(M.q4(), x0, y0, z0), q1 = quatFromBasis(M.q4(), x1, y1, z1);
-  return M.qmul(out, q1, M.qinvert(M.q4(), q0));
+  basisInto(_bx, _by, _bz, a0, n0);
+  const q0 = quatFromBasis(_fq0, _bx, _by, _bz);
+  basisInto(_bx, _by, _bz, a1, n1);
+  const q1 = quatFromBasis(_fq1, _bx, _by, _bz);
+  return M.qmul(out, q1, M.qinvert(_fqi, q0));
 }
 
 // v0.4.7.5 qp3 limb clearance (Rig.armClear): forearm samples inside this share of the padded torso column count as
@@ -38,17 +61,20 @@ export const ARM_HEAD_R = 0.084;
 // the least distance (x H) between a forearm's centreline and a thigh's / a shin's: the leg's radius plus the arm's
 export const LEG_CLEAR_THIGH = 0.082, LEG_CLEAR_SHIN = 0.068;
 // the least distance between two segments p1-q1 and p2-q2
+// (scalars, not arrays: the arm clearance calls it a few hundred times a frame)
 export function segSegDist(p1, q1, p2, q2) {
-  const d1 = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]], d2 = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]], r = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
-  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+  const d1x = q1[0] - p1[0], d1y = q1[1] - p1[1], d1z = q1[2] - p1[2];
+  const d2x = q2[0] - p2[0], d2y = q2[1] - p2[1], d2z = q2[2] - p2[2];
+  const rx = p1[0] - p2[0], ry = p1[1] - p2[1], rz = p1[2] - p2[2];
+  const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z, f = d2x * rx + d2y * ry + d2z * rz;
   let sc = 0, tc = 0;
   if (a > 1e-9 && e > 1e-9) {
-    const c = dot(d1, r), b = dot(d1, d2), den = a * e - b * b;
+    const c = d1x * rx + d1y * ry + d1z * rz, b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
     sc = den > 1e-9 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
     tc = (b * sc + f) / e;
     if (tc < 0) { tc = 0; sc = Math.max(0, Math.min(1, -c / a)); } else if (tc > 1) { tc = 1; sc = Math.max(0, Math.min(1, (b - c) / a)); }
   } else if (e > 1e-9) tc = Math.max(0, Math.min(1, f / e));
-  const x = p1[0] + d1[0] * sc - p2[0] - d2[0] * tc, y = p1[1] + d1[1] * sc - p2[1] - d2[1] * tc, z = p1[2] + d1[2] * sc - p2[2] - d2[2] * tc;
+  const x = p1[0] + d1x * sc - p2[0] - d2x * tc, y = p1[1] + d1y * sc - p2[1] - d2y * tc, z = p1[2] + d1z * sc - p2[2] - d2z * tc;
   return Math.hypot(x, y, z);
 }
 // where the arm is probed against the torso column, as [share of the segment, the r2 it must keep]: the padded
@@ -222,14 +248,19 @@ export class Rig {
   // ---- v0.4.7.5 limb collisions ----
   // the torso as an elliptic column round the spine (chest frame), padded by an upper arm's thickness
   // (the cross-section is the model's own at that height: narrow at the waist, broad at the chest)
-  torsoAt(E, chestInv) {
+  // ({x, z}: the point in the column's own units, 1 on its padded surface; null above the neck or below the hips)
+  torsoAt(E, chestInv) { const t = this.torsoAtXYZ(E[0], E[1], E[2], chestInv); return t && { x: t.x, z: t.z }; }
+  // (the same for a point px, py, pz, into one scratch object: what the per-frame probes use)
+  torsoAtXYZ(px, py, pz, chestInv) {
     const H = this.d.H, g = this.d.girth || 1, c = this.pos[B.chest], hy = this.pos[B.hips][1], ny = this.pos[B.neck][1];
-    if (E[1] < hy - 0.02 * H || E[1] > ny - 0.01 * H) return null;
-    const v = qrot(chestInv, [E[0] - c[0], E[1] - c[1], E[2] - c[2]]);
-    const [rx, zf, zb, zc] = torsoTable((this.bind[B.chest][1] + v[1]) / H), pad = 0.024 * H;
-    return { x: v[0] / (rx * g * H + pad), z: (v[2] - zc * H) / ((v[2] - zc * H >= 0 ? zf : zb) * g * H + pad) };
+    if (py < hy - 0.02 * H || py > ny - 0.01 * H) return null;
+    const v = qrotTo(_tv, chestInv, px - c[0], py - c[1], pz - c[2]);
+    const tt = torsoTableInto((this.bind[B.chest][1] + v[1]) / H, _tt), rx = tt[0], zf = tt[1], zb = tt[2], zc = tt[3], pad = 0.024 * H;
+    const o = this._tq || (this._tq = { x: 0, z: 0 });
+    o.x = v[0] / (rx * g * H + pad); o.z = (v[2] - zc * H) / ((v[2] - zc * H >= 0 ? zf : zb) * g * H + pad);
+    return o;
   }
-  insideTorso(E, chestInv) { const t = this.torsoAt(E, chestInv); return !!t && t.x * t.x + t.z * t.z < 1; }
+  insideTorso(E, chestInv) { const t = this.torsoAtXYZ(E[0], E[1], E[2], chestInv); return !!t && t.x * t.x + t.z * t.z < 1; }
   // the pole that puts the arm outside the torso and the head with the least swing round the shoulder-wrist line:
   // {d: the pole, clear: whether the whole arm clears} (qp3: it used to look at the elbow point alone, so an upper
   // arm could still cut through the chest or the head on its way to a clear elbow)
@@ -254,22 +285,24 @@ export class Rig {
   // how far the arm (shoulder S, elbow E, wrist W) sits inside the torso's own surface (ARM_CLEAR_TORSO of the padded
   // column: the pad is an arm's thickness, so that is the skin) or the head: 0 when it clears
   armPenetration(S, E, W, chestInv) {
-    const H = this.d.H, hd = this.pos[B.head], hr = ARM_HEAD_R * H;
-    const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
     let v = 0;
-    const probe = (px, py, pz, thr) => {
-      const t = this.torsoAt([px, py, pz], chestInv);
-      if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr) v += thr - r2; }
-      const dd = Math.hypot(px - cx, py - cy, pz - cz);
-      if (dd < hr - 0.005 * H) v += (hr - dd) / hr;
-    };
-    for (const [k, thr] of ARM_PROBE_UPPER) probe(S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr);
-    for (const [k, thr] of ARM_PROBE_FORE) probe(E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr);
+    for (const [k, thr] of ARM_PROBE_UPPER) v = this.penProbe(v, S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr, chestInv);
+    for (const [k, thr] of ARM_PROBE_FORE) v = this.penProbe(v, E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr, chestInv);
     // ...and the forearm and hand against the thighs and shins (a raised knee, a pike)
     for (const [lp, lq, r] of this.legCapsules()) { const dd = segSegDist(E, W, lp, lq); if (dd < r) v += (r - dd) / r; }
     return v;
   }
-  torsoDepth(E, chestInv) { const t = this.torsoAt(E, chestInv); return t ? -(t.x * t.x + t.z * t.z) : -9; }
+  // one armPenetration probe: v plus how far the point sits inside the torso (below thr) and inside the head
+  penProbe(v, px, py, pz, thr, chestInv) {
+    const H = this.d.H, hd = this.pos[B.head], hr = ARM_HEAD_R * H;
+    const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
+    const t = this.torsoAtXYZ(px, py, pz, chestInv);
+    if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr) v += thr - r2; }
+    const dd = Math.hypot(px - cx, py - cy, pz - cz);
+    if (dd < hr - 0.005 * H) v += (hr - dd) / hr;
+    return v;
+  }
+  torsoDepth(E, chestInv) { const t = this.torsoAtXYZ(E[0], E[1], E[2], chestInv); return t ? -(t.x * t.x + t.z * t.z) : -9; }
   // v0.4.7.5 qp3: the arm (shoulder S, elbow E, wrist W) and the hand T against the torso and the head, when no elbow
   // swing clears it: samples inside the torso's skin move the hand forward of the chest by ARM_CLEAR_STEP; samples
   // inside the head move it away from the head's centre. Returns whether the target moved.
@@ -278,8 +311,8 @@ export class Rig {
     const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
     let worstT = 0, headPush = null, outDir = null;
     const probe = (px, py, pz, thr) => {
-      const t = this.torsoAt([px, py, pz], chestInv);
-      if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr && thr - r2 > worstT) { worstT = thr - r2; outDir = t; } }
+      const t = this.torsoAtXYZ(px, py, pz, chestInv);
+      if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr && thr - r2 > worstT) { worstT = thr - r2; outDir = { x: t.x, z: t.z }; } }
       const dx = px - cx, dy = py - cy, dz = pz - cz, dd = Math.hypot(dx, dy, dz);
       if (dd < hr - 0.005 * H && dd > 1e-5 && (!headPush || hr - dd > headPush[3])) headPush = [dx / dd, dy / dd, dz / dd, hr - dd];
     };
@@ -310,9 +343,11 @@ export class Rig {
     return true;
   }
   // the legs as capsules [from, to, radius + an arm's radius] for the arm clearance (the thigh and the shin of each side)
+  // (built once: the joint positions are the rig's own arrays, updated in place by every solve)
   legCapsules() {
+    if (this._legCaps) return this._legCaps;
     const H = this.d.H, p = this.pos;
-    return [[p[B.thighL], p[B.shinL], LEG_CLEAR_THIGH * H], [p[B.shinL], p[B.footL], LEG_CLEAR_SHIN * H], [p[B.thighR], p[B.shinR], LEG_CLEAR_THIGH * H], [p[B.shinR], p[B.footR], LEG_CLEAR_SHIN * H]];
+    return (this._legCaps = [[p[B.thighL], p[B.shinL], LEG_CLEAR_THIGH * H], [p[B.shinL], p[B.footL], LEG_CLEAR_SHIN * H], [p[B.thighR], p[B.shinR], LEG_CLEAR_THIGH * H], [p[B.shinR], p[B.footR], LEG_CLEAR_SHIN * H]]);
   }
   // a hand target inside the head is pushed out to its surface
   clearHead(T) {
@@ -377,7 +412,7 @@ export class Rig {
 
   // world: character placement matrix (yaw + translation). Fills this.skin.
   updateSkin(world) {
-    const m = M.m4(), local = M.m4();
+    const m = _skinM, local = _skinL;
     for (let i = 0; i < this.n; i++) {
       const q = this.rot[i], p = this.pos[i], b = this.bind[i];
       M.m4compose(local, p, q);

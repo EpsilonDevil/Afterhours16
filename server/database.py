@@ -1,3 +1,6 @@
+# The service's SQLite store: one connection behind a lock (transaction() is BEGIN IMMEDIATE), migrations, the
+# once() replay guard for paid actions, the wallet and its ledger, accounts and sessions. Called by app.py and the
+# feature modules (proam.py, gauntlet.py, cup.py, online.py, ...); encode() is the one JSON form for rows and replies.
 import contextlib
 import hashlib
 import json

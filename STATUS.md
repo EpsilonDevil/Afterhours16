@@ -2,6 +2,17 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 2 (Oct 22): QOL + Performance (behaviour-identical; the port baseline does not move)
+Proof: `tools/golden.mjs` (new) hashes seeded park 3v3/2v2, Pro-Am with and without realism, park cards, AI-world rosters, a two-human lockstep game with auto-play, the AI world schedule, the park director and three Gauntlet runs with their replays: byte-identical before and after. `sim_batch park 6`, `sim_batch proam 4` and `deck_sim` outputs identical. Node 752/754 (the missing-mp3 soundtrack test and 1 skip, as before), Python 334 OK. Browser smoke on a scratch server: title, builder, showroom and Harbor Point render with no new console errors.
+
+| Area | Files | Notes |
+|---|---|---|
+| Sim (Deck agent) | `sim/builds.js` (`caps()` binary search over the same 1,200 steps; monotone), `sim/game.js` (header + section map; merged imports; axis early-out before `Math.hypot` in `collide`/`settleBodies`/ball body; `screenContact` method instead of per-pair arrays; `NOT_SCREENING` constant), `sim/ai.js` (header; history entries recycled), `sim/ratings.js` (`rkRaw` table for whole ratings 0–130), unused imports in `player.js`, `shots.js`, `bots.js`, `snags.js` | no function moved between sim files; float, RNG and iteration order unchanged. caps 990 → 46 µs; Pro-Am ~12.0k → 13.1k ticks/s; 3v3 park +2% |
+| Deck (Deck agent) | `deck/*` headers; 21 event bodies one statement per line; dead exports `hasAbility`, `FATIGUE_TEMP`, `FATIGUE_CURSE`, `STYLE_IDS`, `MIX` removed; `tools/deck_sim.mjs` | server replay check ~230 → ~138 ms |
+| Render (Hub agent) | `char/rig.js` (preallocated scratch in `solve()`; `penProbe`), `char/athlete.js` (`torsoTableInto`), `char/animator.js` (`POSE_GROUPS`), `char/pose.js` (cached neutral; dead `compileKey`, `blendInto`, `ANGLE_GROUPS`, `GROUPS`), `char/view.js` (shared bounds centre; hair textures shared by style+colour), `gfx/renderer.js` (scratch uniforms; blend/depth state only on change; particles written in place, single-pass expiry), `gfx/gl.js` (`bindTex` per-unit cache + `forgetTextures`; sampler units set at link), `game/hud.js` (tag writes on change), ball maps painted once (`session.js`, `showroom.js`, `deckcine.js`), dead code in `main.js`, `deckcine.js`, `present.js`, `geometry.js`, `textures.js`; headers in `camera.js`, `shaders.js`, `looks.js`, `skeleton.js` | pose 10 players 1.13 → 0.84 ms; GL calls/frame 4,892 → 3,531; particle heap 2.6 → 0.53 MB/frame; full GL-state recording identical except the shared hair texture objects |
+| World (World agent) | `world/court.js` (overlay texture cache by spec+ctx), `world/street.js`, `world/venues.js` (facade/brick memos through `cachedTexture`), unused code in `harbor.js`, `proamhubs.js`; long one-liners split in 12 world files and `game/park.js` (+ section headers) | re-entry: brick 803 → 184 ms, kingtut 188 → 35, harbor 221 → ~100; scene fingerprints identical for every park |
+| Server (Server/UI agent) | `server/builds.py` (`_cap_curve` lru_cache; caps still returns a fresh dict), `server/app.py` (routes grouped by feature, lines moved whole; `rate_limit` sweeps empty queues every 10 min), `database.py` header, unused code in `gauntlet.py`, `progression.py` (`badge_tiers`), `proam.py` (`zero_stats`) | `/api/me` 46.6 → 297.7 req/s; park start+complete 113 → 179 req/s; relay already encodes once per frame |
+
 ### v0.4.8.9 quick patch 1 (Oct 22): Gauntlet replay checks
 | Area | Files | Notes |
 |---|---|---|

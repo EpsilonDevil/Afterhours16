@@ -13,6 +13,7 @@
 //  * FLOW (+1 energy, draw 1 at 3 different tags, once a turn) is about one free card: worth building around, not
 //    automatic (the starter deck has 3 tags only in Crossover + Outlet + one of the 8 basics).
 //  * Opponent intent weights avoid the same move 3 times running so a fight never stalls into one pattern.
+// Called by: run.js (startMatch), replay.js, and the UI through index.js (playCard, endTurn, handView, flowView).
 import * as R from './rng.js';
 import { cardDef, TIGHT_AT, DEPTH_FROM } from './cards.js';
 import { BOSSES, NEMESIS_BOSS, BOSS_DMG, BOSS_PHASE } from './bosses.js';

@@ -1,7 +1,7 @@
 // Shot model: classification, timing windows, make probability, physically-solved trajectories.
 import { HS_PKG, isHS, hsSpin, hsK } from './hashsling.js';
-import { COURT, BALL_R, GRAVITY, isThree } from './constants.js';
-import { Ball, cloneBall, predictShot } from './ball.js';
+import { COURT, GRAVITY } from './constants.js';
+import { Ball, predictShot } from './ball.js';
 
 import { rk as n, rkRaw, proficient, SUB70_K } from './ratings.js';
 import { bk, tierTable, STAT_BADGES } from './badges.js';

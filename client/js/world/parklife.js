@@ -842,7 +842,10 @@ function retroEvents(env, R) {
       t += dt; const on = t < 15.5 || Math.sin(t * 22) > 0;
       for (const b of beams) { M.m4mul(b.m.matrix, M.m4fromYaw(M.m4(), b.x, H + 0.6, b.z, base + Math.sin(t * 1.3 + b.i * 1.1) * 1.4), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, 0.35 + 0.3 * Math.sin(t * 0.9 + b.i)), [1, 1, 1])); b.m.visible = on; }
       // (the lasers fan up over the plaza into the sky, clear of the courts and their cameras)
-      for (const l of lasers) { M.m4mul(l.m.matrix, M.m4fromYaw(M.m4(), lx, ly, lz, base + (l.i - 3.5) * 0.16 + Math.sin(t * 2.2) * 0.3), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, (62 + Math.sin(t * 1.7 + l.i) * 8) * DEG), [1, 1, 1])); l.m.visible = on && Math.sin(t * 9 + l.i) > -0.6; }
+      for (const l of lasers) {
+        M.m4mul(l.m.matrix, M.m4fromYaw(M.m4(), lx, ly, lz, base + (l.i - 3.5) * 0.16 + Math.sin(t * 2.2) * 0.3), M.m4compose(M.m4(), [0, 0, 0], M.qaxis(M.q4(), 1, 0, 0, (62 + Math.sin(t * 1.7 + l.i) * 8) * DEG), [1, 1, 1]));
+        l.m.visible = on && Math.sin(t * 9 + l.i) > -0.6;
+      }
       return t < 16;
     };
   };
@@ -948,7 +951,13 @@ function horrorLife(env) {
     // the werewolf prowls the patch; once a lap, at its far corner, it stands up and howls at the moon
     const W = st.wolf;
     if (W.howl > 0) { W.howl -= dt; const k = Math.min(1, (5.5 - W.howl) * 1.5, W.howl * 1.5); const [x, z] = wolfPath.at(W.s); wolf.pose(0, x, 0, z, Math.PI * 0.05, HR.MOVES.howl(Math.max(0, k)), 1.12); }
-    else { const s0 = W.s; W.s += dt * 1.7; if (Math.floor(s0 / wolfPath.L) !== Math.floor(W.s / wolfPath.L) || (W.s % wolfPath.L > 58 && s0 % wolfPath.L <= 58)) { W.howl = 5.5; SP.howl(1.5); } const [x, z, yaw] = wolfPath.at(W.s); wolf.pose(0, x, gy(x, z), z, yaw, HR.MOVES.prowl(W.s * 1.9, t), 1.12); }
+    else {
+      const s0 = W.s;
+      W.s += dt * 1.7;
+      if (Math.floor(s0 / wolfPath.L) !== Math.floor(W.s / wolfPath.L) || (W.s % wolfPath.L > 58 && s0 % wolfPath.L <= 58)) { W.howl = 5.5; SP.howl(1.5); }
+      const [x, z, yaw] = wolfPath.at(W.s);
+      wolf.pose(0, x, gy(x, z), z, yaw, HR.MOVES.prowl(W.s * 1.9, t), 1.12);
+    }
     // the slasher: slow and steady round the block, stopping now and then to look over at the courts
     const S = st.slash;
     if (hold.slasher > 0) { hold.slasher -= dt; wolf.pose(1, 0, 0, 0, 0, { hidden: true }); }
@@ -964,7 +973,10 @@ function horrorLife(env) {
     // the skeletons dance on the mausoleum's steps
     { const b = t * 2, Mz = HR.MAUSOLEUM, y = gy(Mz.x, Mz.z) + 0.66; for (let i = 0; i < 2; i++) skel.pose(i, Mz.x + (i ? 1.1 : -1.1), y, Mz.z - Mz.d / 2 - 0.5, Math.PI + (i ? -0.3 : 0.3), HR.MOVES.skel(b + i * 2), 1.0); skel.done(); }
     // ghosts drifting among the graves
-    for (let i = 0; i < 6; i++) { const a = t * (0.05 + i * 0.012) + i * 1.7, cx = -12 + Math.cos(i * 2.3) * 16, cz = 52 + Math.sin(i * 1.7) * 7, x = cx + Math.cos(a) * 9, z = cz + Math.sin(a * 1.3) * 5; HR.poseGhost(ghostBones, i, x, gy(x, z) + 1.1 + (i % 3) * 0.3, z, a + Math.PI / 2 + Math.sin(t * 0.3 + i) * 0.4, t, 1); }
+    for (let i = 0; i < 6; i++) {
+      const a = t * (0.05 + i * 0.012) + i * 1.7, cx = -12 + Math.cos(i * 2.3) * 16, cz = 52 + Math.sin(i * 1.7) * 7, x = cx + Math.cos(a) * 9, z = cz + Math.sin(a * 1.3) * 5;
+      HR.poseGhost(ghostBones, i, x, gy(x, z) + 1.1 + (i % 3) * 0.3, z, a + Math.PI / 2 + Math.sin(t * 0.3 + i) * 0.4, t, 1);
+    }
     ghosts.boundsOverride = { center: [-12, 3, 52], radius: 30 };
     // cats: one walks the fence rail, one sits on a gate pillar, one on a porch rail; now and then one arches its back
     { const c0 = path([[-40, 37.2], [20, 37.2]], false), [x, z, yaw] = c0.at(t * 0.45); HR.poseCat(catBones, 0, x, 1.62, z, yaw, t * 6, t, 0);
@@ -973,14 +985,29 @@ function horrorLife(env) {
       const d = doors[2]; if (d) HR.poseCat(catBones, 2, d.rail[0], d.rail[1], d.rail[2], 0.2, null, t + 3, st.arch[2]); }
     cats.boundsOverride = catEyes.boundsOverride = { center: [-10, 2, 0], radius: 70 };
     // bats wheeling round three of the floodlights
-    for (const sw of swarms) for (let i = 0; i < 8; i++) { const a = t * (1.6 + (i % 3) * 0.3) * (i % 2 ? 1 : -1) + i * 0.8 + sw.ph, rr = 1.6 + (i % 4) * 0.5, y = sw.y + Math.sin(t * 1.3 + i) * 0.9; HR.poseBat(sw.bones, i, sw.x + Math.cos(a) * rr, y, sw.z + Math.sin(a) * rr, a + (i % 2 ? Math.PI : 0), t * 22 + i, 0, 1.6); }
+    for (const sw of swarms) for (let i = 0; i < 8; i++) {
+      const a = t * (1.6 + (i % 3) * 0.3) * (i % 2 ? 1 : -1) + i * 0.8 + sw.ph, rr = 1.6 + (i % 4) * 0.5, y = sw.y + Math.sin(t * 1.3 + i) * 0.9;
+      HR.poseBat(sw.bones, i, sw.x + Math.cos(a) * rr, y, sw.z + Math.sin(a) * rr, a + (i % 2 ? Math.PI : 0), t * 22 + i, 0, 1.6);
+    }
     // trick-or-treaters: along the far sidewalk, up each path to knock, a moment at the door, back out
     for (const k of kidState) {
       if (!doors.length) { k.g.pose(0, 0, 0, 0, 0, { hidden: true }); k.g.pose(1, 0, 0, 0, 0, { hidden: true }); k.g.done(); continue; }
       const d = doors[k.i], walkZ = -47.6; k.t += dt;
       let x = k.x, z = walkZ, yaw = k.dir > 0 ? Math.PI / 2 : -Math.PI / 2, P = null;
       if (k.mode === 'walk') { k.x += k.dir * 1.0 * dt; x = k.x; k.ph += dt * 7; P = HR.MOVES.walk(k.ph, 0.9); if (Math.abs(k.x - d.x) < 0.2) { k.mode = 'up'; k.t = 0; } }
-      else if (k.mode === 'up' || k.mode === 'down') { const f = Math.min(1, k.t / 3.2), u = k.mode === 'up' ? f : 1 - f; x = d.x; z = walkZ + (d.z - walkZ) * u; yaw = k.mode === 'up' ? Math.PI : 0; k.ph += dt * 7; P = HR.MOVES.walk(k.ph, 0.9); if (f >= 1) { k.mode = k.mode === 'up' ? 'door' : 'walk'; k.t = 0; if (k.mode === 'walk') { k.i = (k.i + (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; if ((k.dir > 0 && doors[k.i].x < k.x) || (k.dir < 0 && doors[k.i].x > k.x)) { k.dir = -k.dir; k.i = (k.i + 2 * (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; } } } }
+      else if (k.mode === 'up' || k.mode === 'down') {
+        const f = Math.min(1, k.t / 3.2), u = k.mode === 'up' ? f : 1 - f;
+        x = d.x;
+        z = walkZ + (d.z - walkZ) * u;
+        yaw = k.mode === 'up' ? Math.PI : 0;
+        k.ph += dt * 7;
+        P = HR.MOVES.walk(k.ph, 0.9);
+        if (f >= 1) {
+          k.mode = k.mode === 'up' ? 'door' : 'walk';
+          k.t = 0;
+          if (k.mode === 'walk') { k.i = (k.i + (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; if ((k.dir > 0 && doors[k.i].x < k.x) || (k.dir < 0 && doors[k.i].x > k.x)) { k.dir = -k.dir; k.i = (k.i + 2 * (k.dir > 0 ? 1 : -1) + doors.length) % doors.length; } }
+        }
+      }
       else { x = d.x; z = d.z; yaw = Math.PI; P = k.t < 1.5 ? HR.MOVES.knock(k.t) : HR.MOVES.treat(k.t); if (k.t > 4.5) { k.mode = 'down'; k.t = 0; } }
       for (let j = 0; j < 2; j++) { const ox = (j ? 0.75 : -0.15) * (k.mode === 'walk' ? 1 : 0.9), oz = k.mode === 'walk' ? (j ? 0.5 : 0) : (j ? 0.55 : 0); k.g.pose(j, x + (k.mode === 'walk' ? -k.dir * j * 0.9 : ox), 0, z + oz, yaw, P, 0.6 + j * 0.04); }
       k.g.done();
@@ -1062,7 +1089,12 @@ function horrorEvents(env, H) {
       spots.forEach(([sx, sz], i) => {
         const g = gs[i >> 1], j = i & 1, enter = Math.min(1, Math.max(0, (t - i * 0.5) / 6)), leave = Math.max(0, Math.min(1, (t - 30 - (7 - i) * 0.4) / 6));
         const gx = C.gate + (i % 4 - 1.5) * 0.6, gz = 40;
-        if (t < 8.5 || leave > 0) { const u = leave > 0 ? 1 - leave : enter, x = gx + (sx - gx) * u, z = gz + (sz - gz) * u; g.pose(j, x, 0, z, leave > 0 ? 0 : Math.PI + (u < 1 ? 0 : 0), u > 0 && u < 1 ? HR.MOVES.shamble(t * 2.6 + i, t) : HR.MOVES.stand(t), 1); if (leave >= 1) g.pose(j, 0, 0, 0, 0, { hidden: true }); return; }
+        if (t < 8.5 || leave > 0) {
+          const u = leave > 0 ? 1 - leave : enter, x = gx + (sx - gx) * u, z = gz + (sz - gz) * u;
+          g.pose(j, x, 0, z, leave > 0 ? 0 : Math.PI + (u < 1 ? 0 : 0), u > 0 && u < 1 ? HR.MOVES.shamble(t * 2.6 + i, t) : HR.MOVES.stand(t), 1);
+          if (leave >= 1) g.pose(j, 0, 0, 0, 0, { hidden: true });
+          return;
+        }
         if (!played) { played = true; SP.groove(BPM, 20.5); }
         const b = (t - 8.5) / beatLen, { P, dx } = HR.zombieRoutine(b);
         g.pose(j, sx + dx, 0, sz, Math.PI, P, 1);
@@ -1095,7 +1127,11 @@ function horrorEvents(env, H) {
       // him: steady, the lantern swinging, to the gate; a look round; then in among the graves and gone in the fog
       const sx = -84 + t * 2.0, gate = C.gate;
       if (sx < gate) sl.pose(0, sx, 0, z, Math.PI / 2, HR.MOVES.creep(t * 2.6, t), 1.15);
-      else { const w = t - (gate + 84) / 2.0; if (w < 4) sl.pose(0, gate, 0, z, Math.PI / 2 - Math.min(1, w) * (Math.PI / 2 + 0.6), { ...HR.MOVES.stand(t), aL: [0.35, 0.2, 0.3], head: [0.1, -0.5, 0] }, 1.15); else { const zz = z + (w - 4) * 1.3; sl.pose(0, gate, gy(gate, zz), zz, 0, HR.MOVES.creep(t * 2.6, t), 1.15); } }
+      else {
+        const w = t - (gate + 84) / 2.0;
+        if (w < 4) sl.pose(0, gate, 0, z, Math.PI / 2 - Math.min(1, w) * (Math.PI / 2 + 0.6), { ...HR.MOVES.stand(t), aL: [0.35, 0.2, 0.3], head: [0.1, -0.5, 0] }, 1.15);
+        else { const zz = z + (w - 4) * 1.3; sl.pose(0, gate, gy(gate, zz), zz, 0, HR.MOVES.creep(t * 2.6, t), 1.15); }
+      }
       for (const g of tg) g.done(); sl.done();
       return t < 46;
     };

@@ -1,6 +1,6 @@
 // RIMRIFT — app bootstrap, account/session, screen router and the render loop.
 import { Renderer, Camera } from './gfx/renderer.js';
-import { Input, PAD } from './core/input.js';
+import { Input } from './core/input.js';
 import { lockin } from './core/lockin.js';
 import { PadNav, modalOpen } from './ui/padnav.js';
 import { audio } from './core/audio.js';
@@ -14,7 +14,7 @@ import { resolveLook } from './sim/bots.js';
 import { refreshSlots, slotOpenedText } from './sim/builds.js';
 import { initWorld, setEventVenue, setEventSchedule } from './sim/world.js';
 import { watchEvents } from './ui/events.js';
-import { $, toast, modal, closeModal, esc } from './ui/common.js';
+import { $, toast, closeModal } from './ui/common.js';
 import * as Screens from './ui/screens.js';
 import { togglePhone, phoneOpen } from './ui/phone.js';
 import { installErrorCapture, reportBug } from './ui/bugreport.js';

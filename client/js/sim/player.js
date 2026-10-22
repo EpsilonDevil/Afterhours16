@@ -2,13 +2,12 @@
 import { HS_PKG } from './hashsling.js';
 import { reboundPackageOf } from './snags.js';
 import { stealPackageOf } from './clamp.js';
-import { physical } from './ratings.js';
+import { physical, rk as pd } from './ratings.js';
 import { bodyDims } from '../char/skeleton.js';
-import { DT, GRAVITY, COURT } from './constants.js';
+import { GRAVITY } from './constants.js';
 import { jumpshotPackage, SHARP_EYE_PKG } from './shots.js';
 
-import { rk as pd } from './ratings.js';
-import { effectiveRatings, iconAttributes, TAKEOVER_FOR_POS, TAKEOVERS } from './badges.js';
+import { effectiveRatings, iconAttributes, TAKEOVER_FOR_POS } from './badges.js';
 import { capBadges } from './builds.js';
 import { greenVoice } from '../core/greensound.js';
 // v0.4.5 final: sprinting drains stamina twice as fast

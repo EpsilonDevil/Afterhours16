@@ -1,7 +1,7 @@
 // Procedural animation driven by the simulation: velocity-matched gait with planted feet,
 // stance blending, ball-hand IK, and timed action bodies (jumpshots, layups, dunks, passes, defense).
 import { P, GROUP_SIZE, neutral, newPose } from './pose.js';
-import { COURT, BALL_R, GRAVITY } from '../sim/constants.js';
+import { BALL_R, GRAVITY } from '../sim/constants.js';
 import { dunkSpin, layupHand } from '../sim/shots.js';
 import { MOVE_STYLE } from '../sim/moves.js';
 import { BLOCK_BY_ID, blockSpin } from '../sim/blocks.js';
@@ -301,8 +301,17 @@ const FOLLOW = {
   sharpeye: { k: 0.24, y: 0.1, z: 0.38, f: -1.55, hold: 1.15 }, // (v0.4.8: eased in like butter, held long)
 };
 
+// the pose groups as the smoothing loop walks them (P's own order), with what it asks of each name worked out once
+// instead of string tests per group per player per frame
+const POSE_GROUPS = Object.entries(P).filter(([g]) => g !== 'N').map(([g, o]) => ({
+  g, o, n: GROUP_SIZE[g],
+  arm: g.startsWith('hand') || g.startsWith('elbow'),
+  headNeck: g === 'head' || g === 'neck',
+  foot: g.startsWith('foot') || g.startsWith('pitch') || g.startsWith('toe') || g.startsWith('yaw'),
+  trunk: g === 'root' || g === 'spine' || g === 'chest' || g.startsWith('knee'),
+}));
+
 function set3(p, g, x, y, z) { const o = P[g]; p[o] = x; p[o + 1] = y; p[o + 2] = z; }
-function add3(p, g, x, y, z) { const o = P[g]; p[o] += x; p[o + 1] += y; p[o + 2] += z; }
 function mix3(p, g, x, y, z, w) { const o = P[g]; p[o] += (x - p[o]) * w; p[o + 1] += (y - p[o + 1]) * w; p[o + 2] += (z - p[o + 2]) * w; }
 
 export class Animator {
@@ -653,15 +662,14 @@ export class Animator {
     const vel = this.poseVel || (this.poseVel = new Float32Array(out.length));
     // (sub-stepped at 60 Hz or finer, so the feel is the same at any frame rate and the spring stays stable on a slow frame)
     const wS = 15, nS = Math.min(4, Math.max(1, Math.ceil(dt * 60 - 1e-6))), dtS = Math.min(dt, 1 / 15) / nS;
-    for (const [g2, o] of Object.entries(P)) {
-      if (g2 === 'N') continue;
-      const n = GROUP_SIZE[g2];
+    for (const G of POSE_GROUPS) {
+      const g2 = G.g, o = G.o, n = G.n;
       // (qp3: a styled block's arms track their path tightly too: the swat is a snap, and the crossing hands are routed
       // up and round the body on purpose, which a lagging arm would cut straight through)
-      const styledBlock = a && (((a.type === 'block' && a.bstyle) || a.type === 'snag' || (a.type === 'steal' && a.clamp)) && (g2.startsWith('hand') || g2.startsWith('elbow')) || (a.type === 'snag' && (g2 === 'head' || g2 === 'neck'))); // (v0.4.8.5: and a rebound snag's arms and head: the scream, the bark, the nod are quick)
-      const k = rawGroups.has(g2) ? 1 : (g2.startsWith('foot') || g2.startsWith('pitch') || g2.startsWith('toe') || g2.startsWith('yaw')) ? (wGait > 0.5 ? 1 : kFast) : (athletic && (g2 === 'root' || g2 === 'spine' || g2 === 'chest' || g2.startsWith('knee'))) || styledBlock ? kFast : kSlow;
+      const styledBlock = a && (((a.type === 'block' && a.bstyle) || a.type === 'snag' || (a.type === 'steal' && a.clamp)) && G.arm || (a.type === 'snag' && G.headNeck)); // (v0.4.8.5: and a rebound snag's arms and head: the scream, the bark, the nod are quick)
+      const k = rawGroups.has(g2) ? 1 : G.foot ? (wGait > 0.5 ? 1 : kFast) : (athletic && G.trunk) || styledBlock ? kFast : kSlow;
       if (k === kSlow && !athletic) { // (shots and finishes keep their exact timing: the release is measured off them)
-        const w = g2 === 'head' || g2 === 'neck' ? wS * 0.85 : wS;
+        const w = G.headNeck ? wS * 0.85 : wS;
         for (let i = 0; i < n; i++) { const j = o + i; for (let s2 = 0; s2 < nS; s2++) { vel[j] += (w * w * (T[j] - out[j]) - 2 * w * vel[j]) * dtS; out[j] += vel[j] * dtS; } }
       } else {
         for (let i = 0; i < n; i++) { const j = o + i, prev = out[j]; out[j] += (T[j] - out[j]) * k; vel[j] = (out[j] - prev) / Math.max(dt, 1e-4); }

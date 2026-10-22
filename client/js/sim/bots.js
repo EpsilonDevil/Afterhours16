@@ -1,6 +1,6 @@
 // Seeded AI hooper generation (legal builds, cosmetics from the catalog, tendencies).
 import { RNG } from '../core/rng.js';
-import { POSITIONS, ARCHETYPES, ARCH_BONUS, caps, capBadges, OVR_CAP } from './builds.js';
+import { POSITIONS, ARCH_BONUS, caps, capBadges, OVR_CAP } from './builds.js';
 import { ATTRS, overall } from './ratings.js';
 
 const FIRST = ['Milo', 'Jules', 'Rio', 'Dante', 'Ellis', 'Kai', 'Ari', 'Nico', 'Zion', 'Remy', 'Cole', 'Devon', 'Marcus', 'Theo', 'Andre', 'Isaiah', 'Quinn', 'Jalen', 'Omari', 'Tariq', 'Bryce', 'Malik', 'Reggie', 'Jace', 'Darius', 'Eli', 'Rashad', 'Kendrick', 'Luca', 'Mateo', 'Nate', 'Shawn', 'Tyrell', 'Victor', 'Wes', 'Xavier', 'Yusuf', 'Zeke', 'Caleb', 'Desmond'];

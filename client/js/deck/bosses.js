@@ -18,6 +18,7 @@
 // combo), a fat deck (Ref's Favorite's Fatigue, the Press's smaller hand), Shot spam (The Enforcer). The Finals
 // need a complete deck (~8 turns). The smart policy beats a phase boss 55-95% of the time and ~4 in 5 failed runs
 // end at a boss: the bosses are the walls. Values below are absolute for their phase (no PHASE_DMG applied).
+// Called by: combat.js (the hooks), map.js (the pools); the UI through index.js bossInfo.
 
 const S = (pts, o = {}) => ({ kind: 'shoot', pts, anim: 'jumper', ...o });
 const D = (stops, o = {}) => ({ kind: 'defend', stops, anim: 'contest', ...o });

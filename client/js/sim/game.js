@@ -1,33 +1,61 @@
 // Authoritative client-side basketball simulation (60 Hz fixed step).
 // Park: halfcourt 21 by 2s/3s with check-ball and take-it-back. Pro-Am: full court 5v5 with quarters,
 // shot clock, inbounds, fouls and free throws. Practice: shootaround with rebounder.
+//
+// Who calls it: game/session.js (every mode, offline and lockstep online), the headless tools (tools/sim_*.mjs,
+// tools/golden.mjs) and the tests. The Godot port mirrors this file one-to-one: keep functions in this file, and keep
+// the order of floating-point operations, RNG calls and player iteration exactly as they are.
+//
+// MAP (in file order):
+//   tuning constants        dribble-move speed, passes, stamina, fouls, screens, alley-oops, shot and dunk paths,
+//                           layup bodies (exported for the renderer, the AI and the tests)
+//   class Game
+//     constructor
+//     helpers               events, the soundtrack cues, plays / streaks / takeovers
+//     shooting windows      green windows, contests, meters (what each shooter's meter shows)
+//     badge triggers        badge and Icon pop-ups
+//     lookups               holder, rims, teams, who the AI plays
+//     setup and restarts    check ball, formations, inbounds, the tip
+//     main step             step(): one 60 Hz tick, the order every system runs in
+//     online                several humans: lockstep intents, presses, screens, drops, lag, the desync hash
+//     grades and phases     Lock-In grades for the AI, the game phase machine
+//     intents → actions     auto-contest, applyIntent, movement, scripted drives
+//     actions               the post, shots, layups, dunks, passes, alley-oops, dribble moves, steals, jumps
+//     action timeline       tickAction: every action's frames
+//     releases              shots, layups and dunks leaving the hand, slams and posters
+//     contact               blocks, shooting fouls, ankle breakers, steals, reaches, hold points
+//     ball                  ball flight, passes in the air, made / missed shots, dead balls, possession changes
+//     interactions          catches, snags, alley-oop catches and inputs
+//     collisions            box-outs, screens, bodies and the ball's body
+//     rules                 clocks, lanes, technicals, backcourt, five seconds, out of bounds, turnovers, fouls
+//     free throws
+//     periods and the end   clutch, quarters, game over, practice, the summary
 import { RNG } from '../core/rng.js';
 import { OVERHEAD_LIFT } from '../char/skeleton.js';
 import { pickBlockStyle, BLOCK_BY_ID, blockPackageOf, ICON_BLOCK_PKG_BY_ID } from './blocks.js';
-// v0.4.8.7 qp7: an Icon badge's pop-up, at most once this many seconds of game per player and badge (Game.iconPop)
-export const ICON_POP_GAP = 1.5;
 import { pickSnag, snagAction, snagTick, snagCuttable, snagBall, SNAG, SNAG_FROM, OA_ICON } from './snags.js';
 import { clampReach, clampFull, clampGot, clampStealBall, clampPickStart, clampStripStart, clampFxTick, clampPickBall } from './clamp.js';
 import { HS_PKG, HS_TIMING, HS_POSTER, isHS, hsPath, hsK } from './hashsling.js';
 import { POST, POST_MOVES, POST_SHOTS, postPower, postResist, backdownSpeed, beatChance, postShotK, postPackageOf } from './post.js';
-import { DRIBBLE_SPEED_K } from './player.js';
-import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT, inLane, LANE } from './constants.js';
+import { DRIBBLE_SPEED_K, Player, toWorld, blankIntent } from './player.js';
+import { COURT, BALL_R, GRAVITY, isThree, ballOut, feetOut, FOOT_R, DT, inLane } from './constants.js';
 import { Ball } from './ball.js';
-import { Player, toWorld, blankIntent } from './player.js';
 import * as S from './shots.js';
+// v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
+import { DEF_K } from './shots.js';
 import { spotsFor, CHECK_SPOT, rimOf } from './formation.js';
 import { AI } from './ai.js';
 import { statProfile } from './profile.js';
-
-import { rk as n } from './ratings.js';
-import { over99, RATING_MAX } from './ratings.js';
+import { rk as n, over99, RATING_MAX } from './ratings.js';
 import { OP_ICON, pickOprahPass, oprahPlan, oprahBall, oprahFacing } from './oprah.js';
 import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES, REALISM } from './badges.js';
-// v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
-import { DEF_K } from './shots.js';
 import { LockedInGrade } from '../game/grade.js';
-const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 import { MOVES, moveProfile, switchesHand, comboName, moveStyle } from './moves.js';
+
+// ---------- tuning constants ----------
+// v0.4.8.7 qp7: an Icon badge's pop-up, at most once this many seconds of game per player and badge (Game.iconPop)
+export const ICON_POP_GAP = 1.5;
+const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 // v0.4.5 quick patch: snappier dribble moves. Every move is 20% shorter, and a better Ball Handle and Speed With
 // Ball make it quicker still (up to about a third quicker on top). The next move can start once the current one is
 // 60% through (CHAIN_AT), and a different move started within COMBO_GAP of the last one is a combo: it costs no
@@ -129,6 +157,7 @@ export const DEF_ASSIST_K = 1.0375;
 // point (Hitch); rz: release in front (+) or behind (−) the usual spot; drift: swings out toward the shooting
 // side and back (Sway); line: no set point at all, one curving motion (Slingshot, Silk)
 // back: how far the shoulders sit behind upright at the release (×H), from the base's lean in the air (animator)
+// ---------- shot and dunk paths ----------
 export const SHOT_PATH = {
   standard: { py: 0.6, sx: 0.07, sz: 0.2, ks: 0.62, back: 0.014 },
   high: { py: 0.62, sx: 0.0, sz: 0.12, ks: 0.6, back: 0.022 },
@@ -247,6 +276,9 @@ export const LAYUP_BODY = {
 
 // v0.4.8.7 qp3: the closest a layup's shooter gets to the rim's centre (m, on the floor plan) while he still has the ball
 export const LAYUP_FIN = 0.95;
+
+// (the actions a set screen can't be: isSetScreener, hoisted so it isn't rebuilt for every contact)
+const NOT_SCREENING = ['shoot', 'layup', 'dunk', 'land', 'celebrate', 'stumble', 'bump'];
 
 export class Game {
   constructor(cfg) {
@@ -423,6 +455,7 @@ export class Game {
       this.emit({ type: 'takeover', player: p.id, kind: t.kind, on: true, label: TAKEOVERS[t.kind].label });
     } else this.emit({ type: 'takeoverProg', player: p.id, kind: t.kind, prog: t.prog });
   }
+  // ---------- shooting windows and meters ----------
   // extra green-window share for a player (Sharp Eye Icon badge, shooting takeover)
   greenK(p) { return 1 + (p.icon && p.iconFx !== false && ICON_BADGES[p.icon]?.green || 0) + (p.takeover.active && TAKEOVERS[p.takeover.kind].green || 0); }
 
@@ -534,6 +567,7 @@ export class Game {
     return { total, natural: Math.min(total, natural), sure: true };
   }
 
+  // ---------- badge triggers ----------
   // v0.4.2: which badges visibly mattered for this event -> 'badge' events (the HUD shows the user's)
   badgeTriggers(e) {
     if (e.type === 'badge' || e.player == null) return;
@@ -603,6 +637,7 @@ export class Game {
     at.set(k, this.time);
     return true;
   }
+  // ---------- lookups ----------
   holder() { return this.ball.holder >= 0 ? this.players[this.ball.holder] : null; }
   rimFor(team) { return rimOf(this.attackDir[team]); }
   sideFor(team) { return this.attackDir[team]; }
@@ -628,6 +663,7 @@ export class Game {
   }
   live() { return this.phase === 'live'; }
 
+  // ---------- setup and restarts: check ball, formations, inbounds, the tip ----------
   setup() {
     if (this.practice) {
       const p = this.teams[0][0];
@@ -919,6 +955,7 @@ export class Game {
     return h;
   }
 
+  // ---------- grades and phases ----------
   // v0.4.7.5: a Lock-In grade for every AI player, fed the same events the user's is (qp3 online: and every human; no
   // client's own grade drives a player there)
   updateAIGrades(dt) {
@@ -2018,6 +2055,7 @@ export class Game {
     }
   }
 
+  // ---------- releases: shots, layups, dunks ----------
   bailout(p, spec) {
     const air = p.airborne;
     p.action = null;
@@ -2266,6 +2304,7 @@ export class Game {
     this.emit({ type: 'bump', player: p.id, defender: d.id, v: 3 });
   }
 
+  // ---------- contact: blocks, fouls, ankle breakers, steals, reaches ----------
   // a badge visibly changed an outcome (drives the in-game badge banner)
   badgeFx(p, key) {
     const tier = p.badges?.[key] || 0;
@@ -3254,7 +3293,7 @@ export class Game {
   // is slowed (bumpT), whether he is stopped outright (a short shoved-back stumble, lock 1) and, for a screener with
   // Brick Wall, whether a perfect screen puts him on the floor.
   isSetScreener(s, h) {
-    return s.team === this.possession && s !== h && s.speed < 0.8 && !s.airborne && !['shoot', 'layup', 'dunk', 'land', 'celebrate', 'stumble', 'bump'].includes(s.action?.type);
+    return s.team === this.possession && s !== h && s.speed < 0.8 && !s.airborne && !NOT_SCREENING.includes(s.action?.type);
   }
   screenAnchor(s) { return 1 + 0.9 * s.phys.strength + 0.3 * bk(s.badges, 'brick_wall') + (s.screening > 0 ? 0.4 : 0); }
   screenQuality(s, d, approach) {
@@ -3344,8 +3383,9 @@ export class Game {
       if (a.action?.type === 'hang' || c.action?.type === 'hang') continue;
       // v0.4.5: no passing through bodies. A dunker who beats the contact shoves the defender out of his path
       // (velocity), so the two are kept apart here like everyone else
-      const dx = c.x - a.x, dz = c.z - a.z, d = Math.hypot(dx, dz);
-      const r = a.phys.radius + c.phys.radius;
+      const dx = c.x - a.x, dz = c.z - a.z, r = a.phys.radius + c.phys.radius;
+      if (dx >= r || -dx >= r || dz >= r || -dz >= r) continue; // (perf: too far apart on one axis, so d >= r; skips the hypot)
+      const d = Math.hypot(dx, dz);
       if (d >= r || d < 1e-5) continue;
       if (Math.abs(a.y - c.y) > 1.2) continue;
       const nx = dx / d, nz = dz / d, pen = r - d;
@@ -3394,18 +3434,23 @@ export class Game {
         // screens: a stationary offensive player without the ball slows a defender running into him. Contact
         // while a shot is up (or from the shooter himself) is not a screen.
         const shotUp = this.ball.mode === 'flight' && this.ball.kind === 'shot';
-        for (const [s, d2] of [[a, c], [c, a]]) {
-          if (this.isSetScreener(s, h) && d2.team !== this.possession && d2.bumpT <= 0) {
-            if (shotUp || (this.ball.info && this.ball.info.shooter === s.id)) continue;
-            if (d2.speed < 1.0 && -rv < 1.0) continue; // he has to be moving into it
-            if (d2.screened && d2.screened.id === s.id && this.time - d2.screened.t < 1.5) continue; // (one screen, one hit)
-            d2.screened = { id: s.id, t: this.time };
-            this.screenHit(s, d2, -rv);
-          }
-        }
+        // (a into c, then c into a; perf: two calls, not a pair of arrays a contact)
+        this.screenContact(a, c, h, rv, shotUp);
+        this.screenContact(c, a, h, rv, shotUp);
       }
     }
     this.settleBodies();
+  }
+
+  // (collide: s, a set screener, and d2 running into him)
+  screenContact(s, d2, h, rv, shotUp) {
+    if (this.isSetScreener(s, h) && d2.team !== this.possession && d2.bumpT <= 0) {
+      if (shotUp || (this.ball.info && this.ball.info.shooter === s.id)) return;
+      if (d2.speed < 1.0 && -rv < 1.0) return; // he has to be moving into it
+      if (d2.screened && d2.screened.id === s.id && this.time - d2.screened.t < 1.5) return; // (one screen, one hit)
+      d2.screened = { id: s.id, t: this.time };
+      this.screenHit(s, d2, -rv);
+    }
   }
 
   // v0.4.5: the ball has a body too: a dribble (or a ball held out in front) can't go through anybody's legs or
@@ -3419,7 +3464,9 @@ export class Game {
       const bp = this.holdPoint(h, this._ballProbe || (this._ballProbe = {}));
       for (const q of ps) {
         if (q === h || q.action?.type === 'hang' || Math.abs(q.y - h.y) > 1.2 || bp.y > q.y + q.phys.H * 0.95) continue;
-        const dx = bp.x - q.x, dz = bp.z - q.z, d = Math.hypot(dx, dz), r = q.phys.radius + BALL_R * 0.9;
+        const dx = bp.x - q.x, dz = bp.z - q.z, r = q.phys.radius + BALL_R * 0.9;
+        if (dx >= r || -dx >= r || dz >= r || -dz >= r) continue; // (perf: as in collide)
+        const d = Math.hypot(dx, dz);
         if (d >= r || d < 1e-5) continue;
         let mh = mass(h), mq = mass(q);
         if (q.team !== h.team) { mh *= this.anchorK(h, q); mq *= this.anchorK(q, h); }
@@ -3436,7 +3483,9 @@ export class Game {
       for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
         const a = ps[i], c = ps[j];
         if (a.action?.type === 'hang' || c.action?.type === 'hang' || Math.abs(a.y - c.y) > 1.2) continue;
-        const dx = c.x - a.x, dz = c.z - a.z, d = Math.hypot(dx, dz), r = a.phys.radius + c.phys.radius;
+        const dx = c.x - a.x, dz = c.z - a.z, r = a.phys.radius + c.phys.radius;
+        if (dx >= r || -dx >= r || dz >= r || -dz >= r) continue; // (perf: as in collide)
+        const d = Math.hypot(dx, dz);
         if (d >= r || d < 1e-5) continue;
         let ma = mass(a), mc = mass(c);
         if (a.team !== c.team) { ma *= this.anchorK(a, c); mc *= this.anchorK(c, a); }
@@ -3645,6 +3694,7 @@ export class Game {
     this.deadBall(1.3, () => this.restartFor(victim.team, vx, vz));
   }
 
+  // ---------- free throws ----------
   startFT(shooter, count) {
     const side = this.sideFor(shooter.team);
     const rim = rimOf(side);
@@ -3736,6 +3786,7 @@ export class Game {
     this.ball.kind = 'loose';
   }
 
+  // ---------- periods and the end ----------
   isClutch(team) {
     if (this.mode === 'park') return Math.max(...this.score) >= this.target - 3;
     return this.quarter >= this.quarters && this.gameClock < 60 && Math.abs(this.score[0] - this.score[1]) <= 5;
