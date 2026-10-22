@@ -32,10 +32,12 @@ import { Game } from '../sim/game.js';
 import { spreadGreens } from '../sim/bots.js';
 import { blankIntent } from '../sim/player.js';
 import { normIntent, intentDelta, takeInputs } from '../sim/wire.js';
+import { RecordTags } from './recordtag.js';
 
 // v0.4.8.6 the ICON Squad: after their hour, the three don't drift back in one by one for a while (they just walked out);
 // their team on the scoreboard, the ticker and the court cards
 const ICON_COOL = 30 * 60000, NO_IDS = new Set();
+const SPOT_R = 0.75; // (v0.4.8.8: standing on a GOT NEXT circle: within this of it, you or an AI alike)
 const ICON_TEAM = { name: 'ICON Squad', abbr: 'ICN', color: '#f4f2ec' };
 
 // v0.4.2 layout: full courts at x = -26, 0, 26; 2v2 annex at x = -52; 1v1 + practice annex at x = 52
@@ -1039,6 +1041,7 @@ export class ParkHub {
         if ((c.live.ended && c.live.endT > 2.5) || (c.liveEndAt && performance.now() - c.liveEndAt > 6000)) this.dropWatch(c);
       }
     }
+    if (!dir) this.holdLines(); // (v0.4.8.8: AI groups that have reached their GOT NEXT spot hold it now)
     // your squad is set on an open court: on you go (online, when it's yours to start)
     const my = this.myLine();
     if (my && my.l.ready && this.mode === 'roam' && !my.c.session && !my.c.live && this.canStart(my.c)) this.startNext(my.c);
@@ -1046,6 +1049,7 @@ export class ParkHub {
     this.updateSpectators(dt);
     for (const w of this.walkers) { w.update(dt); if (!w.gone) w.render(dt); }
     this.peers.frame(dt);
+    this.recordTagsFrame(dt);
     this.courtReport(dt);
     if (this.walkers.some(w => w.gone)) { for (const w of this.walkers) if (w.gone) w.dispose(); this.walkers = this.walkers.filter(w => !w.gone); }
     this.updateStreakFX(dt);
@@ -1129,6 +1133,11 @@ export class ParkHub {
       this.prompt = `${promptGlyph(inp, 'E', 'A')} ${hl.home ? `Home Park · ${hl.name || 'your home court'}` : hl.open ? `Event Park · ${hl.name}` : 'Event Park · no event running'}`;
       if (inp.wasPressed('interact')) this.ui.openHall(this);
     }
+    else if (this.venue.proamHub && Math.hypot(me.x - this.venue.proamHub.x, me.z - this.venue.proamHub.z) < 2.6) {
+      // v0.4.8.8 The Pro-Am Overhaul: the Pro-Am HUB's doors: your team's hub (game/proamhub.js, the Hub agent's)
+      this.prompt = `${promptGlyph(inp, 'E', 'A')} Pro-Am HUB · your team`;
+      if (inp.wasPressed('interact') && !this.hubOpening) this.enterProamHub();
+    }
     else if (wheel && Math.hypot(me.x - wheel.x, me.z - wheel.z) < 2.6) {
       const ready = (this.app.profile.daily_spin?.next_at || 0) * 1000 <= Date.now();
       this.prompt = `${promptGlyph(inp, 'E', 'A')} Daily Spin${ready ? ' · ready!' : ''}`;
@@ -1139,6 +1148,26 @@ export class ParkHub {
     this.gotNext(dt);
     if (inp.wasPressed('celebrate') && !me.action) this.celebrate(me);
     if (me.action) { me.action.t += dt; if (me.action.t > me.action.dur) me.action = null; }
+  }
+  // v0.4.8.8 The Pro-Am Overhaul (§6, Platinum): the Pro-Am record over the head of everyone here who shows his (his
+  // entry's proam: {tier, record, showRecord}), you too; while you roam (not in your own game). Yours is read again
+  // every second (you can flip the toggle in your settings while you're here)
+  recordTagsFrame(dt) {
+    const tags = this.recordTags || (this.recordTags = new RecordTags(this.r, this.scene));
+    if (this.mode !== 'roam') { tags.update([], null); return; }
+    const now = performance.now();
+    if (now - (this.myProamAt ?? -1e9) > 1000) { this.myProamAt = now; try { this.myProam = myEntry(this.app)?.proam || this.app.proam || null; } catch { this.myProam = null; } }
+    const head = e => (+e?.build?.height || 76) * 0.0254 + 0.08, list = [];
+    list.push({ key: 'me', x: this.me.x, z: this.me.z, h: head(this.meEntry), proam: this.myProam });
+    for (const w of this.peers.list()) if (!w.visual?.pending) list.push({ key: 'p:' + w.id, x: w.p.x, z: w.p.z, h: head(w.entry), proam: w.entry?.proam });
+    tags.update(list, this.app.camera?.pos || null);
+  }
+  // v0.4.8.8: through the Pro-Am HUB's doors (the hub is game/proamhub.js: until it's there, a word that it's coming)
+  enterProamHub() {
+    this.hubOpening = true;
+    import('./proamhub.js').then(m => m.enterHub(this.app, { from: 'park', park: this.themeId }))
+      .catch(e => { console.warn('[park] Pro-Am HUB', e?.message || e); this.ui.toast('The Pro-Am HUB opens soon.'); })
+      .finally(() => { this.hubOpening = false; });
   }
   // your celebration in the park: here, and (v0.4.8.7 qp7) on the screens of the real people here (it used to play on yours
   // alone: nothing of it went out, their copy of you only had your walk)
@@ -1186,10 +1215,30 @@ export class ParkHub {
     return null;
   }
   lineSet(c, l) { return this.lineFull(c, l) && l.members.every(w => w.state === 'queued'); }
-  // stamp the moment a line fills up (it's what decides who runs next)
-  markFull(c, l) { if (l && !l.fullAt && this.lineFull(c, l)) l.fullAt = (this.fillSeq = (this.fillSeq || 0) + 1); }
+  // stamp the moment a line fills up (it's what decides who runs next). v0.4.8.8: an AI line only once it holds its spot
+  // (its first man is standing on it: holdLines), as yours only exists once you've stood on it
+  markFull(c, l) { if (l && !l.fullAt && !l.pending && this.lineFull(c, l)) l.fullAt = (this.fillSeq = (this.fillSeq || 0) + 1); }
+  // ---------- v0.4.8.8: a GOT NEXT spot is held by whoever is standing on it ----------
+  // An AI group heading for a spot (pending) holds nothing yet: you can step on it and claim it first (claim: they look
+  // for the other spot, or go back to hanging out), and it isn't in the order for the next game. It's theirs the moment
+  // their first man stands on the spot's first circle (SPOT_R, as close as you have to be to claim one), the way yours
+  // is yours the moment you stand on it; a squad still steps on court only with everyone on his circle (lineSet)
+  spotHeld(c, r, w) { const sp = c.rows[r]?.[0]; return !!sp && !!w && w.state === 'queued' && Math.hypot(w.p.x - sp.x, w.p.z - sp.z) < SPOT_R; }
+  holdLines() {
+    for (const c of this.courts || []) c.lines.forEach((l, r) => { if (l?.pending && !l.dir && !l.mirror && this.spotHeld(c, r, l.members[0])) { l.pending = false; this.markFull(c, l); } });
+  }
+  // an AI group that was only on its way to spot r (someone stood on it first): to the other spot if it's free, else back
+  // to hanging out
+  rerouteLine(c, r) {
+    const l = c.lines[r]; if (!l || l.mine || l.remote) return;
+    c.lines[r] = null;
+    if (l.dir || l.mirror) return; // (the director's / the park host's: it moves them, for everyone)
+    if (l.pending && !c.lines[1 - r]) { c.lines[1 - r] = l; this.placeLine(c, 1 - r); return; }
+    for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = this.rng.range(0.5, 3); }
+  }
   // the line that runs next: the first one that filled up → {l, i} (null while neither spot is full)
   nextLine(c) {
+    this.holdLines(); // (v0.4.8.8: who's standing on his spot by now)
     let out = null;
     c.lines.forEach((l, i) => { if (l && l.fullAt && (!out || l.fullAt < out.l.fullAt)) out = { l, i }; });
     return out;
@@ -1197,6 +1246,7 @@ export class ParkHub {
   // the AI line that can step on court now (mine = also yours): the first-filled one if it's standing ready; if
   // that one is still walking up, the other spot's squad when it is
   upNext(c, mine = false) {
+    this.holdLines();
     const order = c.lines.map((l, i) => ({ l, i })).filter(x => x.l && x.l.fullAt).sort((a, b) => a.l.fullAt - b.l.fullAt);
     for (const x of order) { if (x.l.mine && !mine) { if (x.l.ready) return null; continue; } if (this.lineSet(c, x.l)) return x; }
     return null;
@@ -1232,8 +1282,7 @@ export class ParkHub {
       }
       members = free;
     }
-    c.lines[r] = { members, mine: false, ready: false, readyAt: 0, ...(icon != null ? { icon } : {}) };
-    this.markFull(c, c.lines[r]);
+    c.lines[r] = { members, mine: false, ready: false, readyAt: 0, pending: true, ...(icon != null ? { icon } : {}) }; // (v0.4.8.8: theirs once they're on it: holdLines)
     this.placeLine(c, r);
     return true;
   }
@@ -1245,12 +1294,13 @@ export class ParkHub {
       // v0.4.7.5 qp3 online: in a friend's squad, he calls next for all of you
       const net = this.netHere(), member = net?.squad && !net.isLeader(), sq = this.squadLine();
       let on = null;
-      for (const c of this.courts) c.rows.forEach((row, r) => row.forEach((sp, i) => { if (Math.hypot(me.x - sp.x, me.z - sp.z) < 0.75) on = { c, r, i }; }));
+      for (const c of this.courts) c.rows.forEach((row, r) => row.forEach((sp, i) => { if (Math.hypot(me.x - sp.x, me.z - sp.z) < SPOT_R) on = { c, r, i }; }));
       if (on) {
         const { c, r } = on, other = c.lines[1 - r];
         if (c.lines[r]?.remote) { this.prompt = c.lines[r].squad ? `Your squad has GOT NEXT on ${c.name}` : `${c.lines[r].remote.names[0]}'s squad has this GOT NEXT spot on ${c.name}`; this.claimT = 0; return; }
         if (member) { this.prompt = sq ? `Your squad has GOT NEXT on ${sq.c.name} · your squad leader calls it` : 'Your squad leader calls GOT NEXT for the squad'; this.claimT = 0; return; }
-        if (c.lines[r]) { this.prompt = `This GOT NEXT spot on ${c.name} is taken · ${other ? 'both spots are full' : 'the other spot is open'}`; this.claimT = 0; return; }
+        // (v0.4.8.8: taken only by people standing on it: a group still on its way to it holds nothing)
+        if (c.lines[r] && !c.lines[r].pending) { this.prompt = `This GOT NEXT spot on ${c.name} is taken · ${other && !other.pending ? 'both spots are full' : 'the other spot is open'}`; this.claimT = 0; return; }
         if (this.anteDeclined === c) { this.prompt = `Step off and back on to claim the spot on ${c.name}`; return; }
         this.claimT += dt;
         this.prompt = `Claiming a GOT NEXT spot on ${c.name}… ${Math.max(0, 1.2 - this.claimT).toFixed(1)}s`;
@@ -1282,6 +1332,7 @@ export class ParkHub {
 
   claim(c, r) {
     c.mine = true; this.claimT = 0;
+    if (c.lines[r]) this.rerouteLine(c, r); // (v0.4.8.8: you got there first: the group on its way finds another spot)
     c.lines[r] = { members: [], mine: true, ready: false, readyAt: 0, realMates: [] };
     this.markFull(c, c.lines[r]);
     this.netHere()?.send({ t: 'claim', court: this.courts.indexOf(c), spot: r }); // (online: everyone here sees your squad on it)
@@ -1726,6 +1777,7 @@ export class ParkHub {
   // park-goers on a spot step off it (a real squad has it now)
   disperseLine(c, r) {
     const l = c.lines[r]; if (!l) return;
+    if (l.pending) { this.rerouteLine(c, r); return; } // (v0.4.8.8: a group only on its way: to the other spot if it's free)
     if (!l.dir) for (const w of l.members) { w.spot = null; w.state = 'idle'; w.t = this.rng.range(0.5, 3); } // (the director's line: it breaks up there, for everyone)
     c.lines[r] = null;
   }
@@ -1812,7 +1864,7 @@ export class ParkHub {
         c.popMe = { s: s.opts.seed, k: s.game.tick, at: now };
         return { s: s.opts.seed, r: s.opts.rosters.map(ids), tm: s.opts.teams.map(x => x.abbr), ks: c.kingsStreak || 0, k: s.game.tick, o: s.game.over ? 1 : 0, rt: s.rate || 1, p: Math.round(Math.max(0, p) * 1e5) / 1e5 };
       }),
-      lines: this.courts.map(c => c.lines.map(l => (l && !l.mine && !l.remote ? { ids: l.members.map(w => w.entry.aiId), ...(l.icon != null ? { icon: l.icon } : {}) } : null))),
+      lines: this.courts.map(c => c.lines.map(l => (l && !l.mine && !l.remote ? { ids: l.members.map(w => w.entry.aiId), ...(l.icon != null ? { icon: l.icon } : {}), ...(l.pending ? { p: 1 } : {}) } : null))), // (v0.4.8.8 p: still on its way: holds nothing)
       walkers: this.walkers.filter(w => w.entry?.aiId && w.follow == null && !w.gone).map(w => {
         const p = w.p, sp = w.spot ? [idx(w.spot.court), w.spot.row, w.spot.slot] : null;
         return [w.entry.aiId, Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100, Math.round(p.facing * 100) / 100, Math.round(Math.hypot(p.intent.mx, p.intent.mz) * 100) / 100, p.intent.sprint ? 1 : 0, sp, w.exit ? 1 : 0, w.unit ?? null, w.watch ? 1 : 0];
@@ -1875,7 +1927,7 @@ export class ParkHub {
       const d = m.lines?.[i]?.[r];
       if (!d) { if (l) { for (const w of l.members) if (w.spot?.court === c) w.spot = null; c.lines[r] = null; } return; }
       const members = d.ids.map(id => byId.get(id)).filter(Boolean);
-      c.lines[r] = { members, mine: false, ready: false, readyAt: 0, mirror: true, ...(d.icon != null ? { icon: d.icon } : {}) };
+      c.lines[r] = { members, mine: false, ready: false, readyAt: 0, mirror: true, ...(d.icon != null ? { icon: d.icon } : {}), ...(d.p ? { pending: true } : {}) };
       members.forEach((w, slot) => { w.spot = { court: c, row: r, slot }; });
       this.markFull(c, c.lines[r]);
     }));
@@ -2102,7 +2154,7 @@ export class ParkHub {
         const cur = c.lines[r];
         if (cur?.mine) return;
         if (cur?.remote) { cur.members = [...onSpot].filter(([, s]) => s.c === ci && s.r === r).sort((a, b) => a[1].i - b[1].i).map(([id]) => byId.get(id)).filter(Boolean); return; }
-        if (l) c.lines[r] = { members: l.ids.map(id => byId.get(id)).filter(Boolean), mine: false, ready: false, readyAt: 0, fullAt: l.full * 1024 + (l.n % 1024), dir: true, ...(l.icon != null ? { icon: l.icon } : {}) };
+        if (l) c.lines[r] = { members: l.ids.map(id => byId.get(id)).filter(Boolean), mine: false, ready: false, readyAt: 0, fullAt: l.full != null ? l.full * 1024 + (l.n % 1024) : 0, dir: true, ...(l.full == null ? { pending: true } : {}), ...(l.icon != null ? { icon: l.icon } : {}) }; // (v0.4.8.8: pending: still on its way)
         else if (cur) c.lines[r] = null;
       });
     });
@@ -2449,6 +2501,7 @@ export class ParkHub {
   dispose() {
     this.disposed = true;
     this.peers.detach(); // (qp7: and stops listening for their emotes)
+    this.recordTags?.dispose(); this.recordTags = null;
     for (const f of this.dirOff || []) f?.(); // (v0.4.8.7: and to the park director)
     this.localPub?.stop(); this.localPub = null;
     for (const c of this.courts) if (c.live) c.live.dispose();

@@ -167,13 +167,13 @@ export class AthleteView {
       // textures were shared by 'gold' or 'ice' alone, so every chain was drawn as one of two; now they're keyed by what
       // they look like (two players in the same chain still share one)
       const cs = look.gear?.chain || {}, stones = !!cs.stone || (!cs.link && geo.chain.iced);
-      const ck = 'chain:' + [cs.link || geo.chain.link, cs.metal || cs.color, cs.stone].join('|'), pk = 'pendant:' + [geo.chain.pendantKind, cs.metal || cs.color, cs.stone].join('|');
+      const ck = 'chain:' + [cs.link || geo.chain.link, cs.metal || cs.color, cs.stone].join('|'), pk = 'pendant:' + [geo.chain.pendantKind, cs.metal || cs.color, cs.stone, cs.letters, cs.stamp].join('|'); // (v0.4.8.8: a nameplate by its letters and stamp)
       const cspec = cs.link ? cs : (geo.chain.iced ? 'ice' : 'gold');
       const tex = sharedTex(ctx, ck, () => paintChain(cspec).color, { aniso: 8 });
       const etex = stones ? sharedTex(ctx, ck + ':e', () => paintChain(cspec).emissive, {}) : null;
       const pspec = cs.link ? { ...cs, pendant: geo.chain.pendantKind } : cspec;
       const ptex = geo.chain.pendant ? sharedTex(ctx, pk, () => paintPendant(pspec).color, { aniso: 8 }) : null;
-      const petex = geo.chain.pendant && (stones || geo.chain.pendantKind === 'iced' || geo.chain.pendantKind === 'heart') ? sharedTex(ctx, pk + ':e', () => paintPendant(pspec).emissive, {}) : null;
+      const petex = geo.chain.pendant && (stones || geo.chain.pendantKind === 'iced' || geo.chain.pendantKind === 'heart' || geo.chain.pendantKind === 'plate') ? sharedTex(ctx, pk + ':e', () => paintPendant(pspec).emissive, {}) : null;
       const rough = { rope: 0.3, cuban: 0.24, tennis: 0.16, box: 0.18 }[geo.chain.link] ?? 0.24;
       // (viewBias: a jersey's neckline band is drawn 1.8 cm toward the camera so it's never under the skin (the straps,
       // above), and a chain lying along that neckline went under it: on a sleeveless jersey most of every chain was hidden.

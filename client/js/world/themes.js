@@ -235,6 +235,12 @@ export const PARK_COURTS = [
 export const PARK_HQ = { x: -26.5, z: -26.8 };
 // v0.4.7.5 qp3: the Event Park hall next door (east of the HQ, between the lamps at x -22 and -13), its door facing the courts
 export const PARK_HALL = { x: -17.6, z: -26.8 };
+// v0.4.8.8: the Pro-Am HUB on the plaza (east of the kiosks, in place of the lamp at x 14), its doors facing the courts.
+// It stands between the main and east courts' 2K camera paths (harbor.js camClear: |x - court| < 8.9 out to z -33),
+// so it never comes into a game's frame, and clear of the plaza walkers' lane at z -30.5 behind it
+export const PARK_PROAM = { x: 13.2, z: -27.4 };
+// the plaza's street lamps stand every 9 m along z -27 (x -40 to 41) except where the HUB stands
+export const plazaLampOff = x => Math.abs(x - PARK_PROAM.x) < 3.7;
 // the floor area a court's game uses (walkers stay out while it's being played on)
 export function courtPlayRect(c, pad = 0.6) {
   const [ox, , oz] = c.origin, hw = COURT_W / 2 + pad, hl = COURT_L / 2 + pad;

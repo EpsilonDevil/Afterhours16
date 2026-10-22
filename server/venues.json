@@ -8,5 +8,17 @@
   {"id":"monster","kind":"park","name":"The Monster Mash","affiliation":null,"event":true},
   {"id":"favela","kind":"park","name":"The Favelas","affiliation":null,"event":true},
   {"id":"arena","kind":"arena","name":"RIMRIFT Arena","affiliation":null},
-  {"id":"gym","kind":"gym","name":"Union Fieldhouse","affiliation":null}
+  {"id":"gym","kind":"gym","name":"Union Fieldhouse","affiliation":null},
+  {"id":"proam_overpass","kind":"proam","name":"Under the Overpass","affiliation":null},
+  {"id":"proam_longbeach","kind":"proam","name":"Long Beach","affiliation":null},
+  {"id":"proam_aau","kind":"proam","name":"AAU Gym","affiliation":null},
+  {"id":"proam_rooftop","kind":"proam","name":"Rooftop","affiliation":null},
+  {"id":"proam_projects","kind":"proam","name":"Projects","affiliation":null},
+  {"id":"proam_riverside","kind":"proam","name":"Riverside","affiliation":null},
+  {"id":"proam_warehouse","kind":"proam","name":"Old Warehouse","affiliation":null},
+  {"id":"proam_schoolyard","kind":"proam","name":"Schoolyard","affiliation":null},
+  {"id":"proam_cage","kind":"proam","name":"The Cage","affiliation":null},
+  {"id":"proam_rec","kind":"proam","name":"Suburban Rec Center","affiliation":null},
+  {"id":"proam_desert","kind":"proam","name":"Desert Dusk","affiliation":null},
+  {"id":"proam_market","kind":"proam","name":"Night Market","affiliation":null}
 ]

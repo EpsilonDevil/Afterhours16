@@ -137,7 +137,7 @@ export function makeBot(rng, opts = {}) {
   if (rng.next() < 0.25) eq.wristband = pick('wristband', 'wrist_white');
   if (rng.next() < 0.12) eq.leg_sleeve = pick('leg_sleeve', 'leg_sleeve_black');
   if (rng.next() < 0.08) eq.knee_pad = 'knee_black';
-  const chains = items.filter(i => i.slot === 'chain');
+  const chains = items.filter(i => i.slot === 'chain' && i.exclusive !== 'proam'); // (v0.4.8.8: the Pro-Am chains are won in Pro-Am: not on the AI)
   if (chains.length && rng.next() < 0.05 + flash * 0.3) eq.chain = rng.pick(chains).id;
   if (rng.next() < 0.5) eq.celebration = pick('celebration', 'celly_flex');
   build.equipment = eq;
@@ -264,6 +264,8 @@ export function chainSpec(it = {}) {
     id, link, kind: iced || it.stone ? 'ice' : 'plain', color: it.color || '#e8c15a', metal: it.metal || it.color || '#e8c15a',
     stone: it.stone !== undefined ? it.stone : iced ? '#ffffff' : null, thick: it.thick || (link === 'rope' ? 0.0034 : 0.0038), drop: it.drop ?? 0.072,
     pendant: it.pendant !== undefined ? it.pendant : link === 'rope' ? null : iced ? 'iced' : 'medallion',
+    // (v0.4.8.8: a nameplate's iced-out letters, the Pro-Am chain's PRO-AM, and its season stamp, S1)
+    ...(it.letters ? { letters: String(it.letters).slice(0, 8) } : {}), ...(it.stamp ? { stamp: String(it.stamp).slice(0, 4) } : {}),
   };
 }
 
@@ -279,7 +281,7 @@ export function resolveLook(build, catalog, override = {}) {
   if (item(eq.socks)) g.socks = { color: item(eq.socks).color, style: item(eq.socks).style };
   if (item(eq.headband)) g.headband = { color: item(eq.headband).color, glow: item(eq.headband).glow || null, feather: item(eq.headband).feather || null, stripes: item(eq.headband).stripes || null, pattern: item(eq.headband).pattern || null, trim: item(eq.headband).trim || null }; // (v0.4.8.5 quick patch: the Neon Terry's stripes; quick patch 2: the Jack-o'-Lantern's pattern; v0.4.8.7: the bandana's print colour)
   if (item(eq.sleeve)) g.sleeve = { color: item(eq.sleeve).color, side: build.hand === 'L' ? 'L' : 'R' };
-  if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color };
+  if (item(eq.wristband)) g.wristband = { color: item(eq.wristband).color, ...(item(eq.wristband).family === 'watch' ? { watch: true, face: item(eq.wristband).face || '#111', trim: item(eq.wristband).trim || null, side: build.hand === 'L' ? 'R' : 'L' } : {}) }; // (v0.4.8.8: a watch, on the off hand)
   if (item(eq.leg_sleeve)) g.legSleeve = { color: item(eq.leg_sleeve).color, side: 'L' };
   if (item(eq.knee_pad)) g.kneePad = { color: item(eq.knee_pad).color, side: 'R' };
   if (item(eq.chain)) g.chain = chainSpec({ ...item(eq.chain), id: eq.chain }); // (v0.4.8.7: each chain its own look, not gold or ice)

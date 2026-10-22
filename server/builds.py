@@ -28,7 +28,8 @@ DEFAULT_EQUIPMENT = {"top": "yard_teal", "bottom": "yard_shorts", "shoes": "yard
                      "jumpshot": "js_base_standard", "dunk": "dunk_basic", "sizeup": "sizeup_basic", "layup": "layup_basic", "post": "post_basic", "block": "block_basic"}
 # (v0.4.8.5: "rebound", the Open Arms Icon's Rebound Package: optional, empty by default, only its holder can fill it;
 # qp6: "steal", The Clamp Icon's Steal Package, the same way; v0.4.8.7 qp7: "pass", the Oprah Icon's Pass Package)
-EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain",
+# (v0.4.8.8: "banner", a Pro-Am season banner on the introduction card: optional, empty by default)
+EQUIP_SLOTS = ("top", "bottom", "shoes", "socks", "headband", "sleeve", "leg_sleeve", "wristband", "knee_pad", "chain", "banner",
                "release", "jumpshot", "dunk", "sizeup", "celebration", "layup", "movement", "greensound", "greenfx", "rebound", "steal", "pass",
                "post", "block")
 OPTIONAL_SLOTS = tuple(s for s in EQUIP_SLOTS if s not in DEFAULT_EQUIPMENT)

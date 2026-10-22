@@ -34,7 +34,7 @@ This is a single-player game against AI on your own machine. The checks stop acc
 
 ## Launcher (`launcher/`)
 
-`RIMRIFT.exe` is about 480 lines of Go using only the standard library, cross-compiled with `-H windowsgui`. Icon and version resources (the RIMRIFT icon at 16–256 px; version info: RIMRIFT, Silverback Studios, 0.4.8.7; the manifest) come from a prebuilt `.syso`, made from `launcher/res/rimrift.rc`:
+`RIMRIFT.exe` is about 480 lines of Go using only the standard library, cross-compiled with `-H windowsgui`. Icon and version resources (the RIMRIFT icon at 16–256 px; version info: RIMRIFT, Silverback Studios, 0.4.8.8; the manifest) come from a prebuilt `.syso`, made from `launcher/res/rimrift.rc`:
 
 ```
 # resources (only when res/ changes; binutils-mingw-w64-x86-64; --preprocessor=cpp because there's no mingw gcc)

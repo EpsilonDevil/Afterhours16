@@ -50,7 +50,7 @@ test('the event soundtrack: 28 cuts of the mix in their own folder, none of them
   assert.ok(src('client/js/game/park.js').includes("music.setPlaylist(this.theme?.music || 'main');"));
   assert.ok(src('client/js/ui/screens.js').includes("music.setPlaylist('main');"));
   assert.ok(src('client/js/game/crewhq.js').includes("music.setPlaylist('main');"));
-  assert.equal((src('client/js/ui/modes.js').match(/music\.setPlaylist\('main'\); music\.setSuppressed\(true\)/g) || []).length, 2, 'both Pro-Am kinds');
+  assert.equal((src('client/js/ui/modes.js').match(/music\.setPlaylist\('main'\); music\.setSuppressed\(true\)/g) || []).length, 3, 'every Pro-Am kind (v0.4.8.8: the offline game, the series game and the online one)');
   assert.ok(src('client/js/ui/prorun.js').includes("music.setPlaylist('main'); music.setSuppressed(true);"));
 });
 

@@ -632,6 +632,45 @@ export function eventHall(x, z, color = '#ff8a1f', accent = '#2ec4ff') {
   return { parts, glow };
 }
 
+// v0.4.8.8 The Pro-Am Overhaul: the Pro-Am HUB on every park's plaza (east of the kiosks, mirroring the Crew HQ): a tall
+// charcoal hall with the ranks' metals running up its face in bands (bronze, silver, gold), a lit portal round its double
+// doors, a ball emblem over them and the PRO-AM marquee on the roof. Walk up to the doors to go in (game/park.js →
+// game/proamhub.js). Returns {parts, glow} (glow: the lit pieces, batched unlit)
+export const PROAM_HUB_SIZE = { w: 6.6, d: 4.2, h: 5.8 };
+export function proamHub(x, z, accent = '#ff4d24') {
+  const parts = [], glow = [];
+  const { w: W, d: D, h: Hh } = PROAM_HUB_SIZE, t = 0.24;
+  const put = (geo, dx, dy, dz, c, out = parts) => out.push({ geo, matrix: T(x + dx, dy, z + dz), color: col(c) });
+  const shell = '#24272c', trim = '#121417';
+  put(G.box(W, Hh, t), 0, Hh / 2, -D / 2 + t / 2, shell);
+  for (const sx of [-1, 1]) put(G.box(t, Hh, D), sx * (W / 2 - t / 2), Hh / 2, 0, shell);
+  put(G.box(W + 0.4, 0.34, D + 0.4), 0, Hh + 0.17, 0, trim);
+  put(G.box(W + 0.16, 0.4, D + 0.16), 0, 0.2, 0, '#3a3f45');
+  // the face: piers either side of the doors, each with the three metals in bands up it
+  const door = 2.4, fz = D / 2 - t / 2, pier = (W - door) / 2;
+  for (const sx of [-1, 1]) {
+    const px = sx * (door / 2 + pier / 2);
+    put(G.box(pier, Hh, t), px, Hh / 2, fz, shell);
+    ['#a8672e', '#c9cdd2', '#e8c15a'].forEach((m, i) => put(G.box(0.22, Hh - 1.2, 0.08), px + sx * (-0.6 + i * 0.6), (Hh - 1.2) / 2 + 0.6, fz + 0.15, m));
+  }
+  put(G.box(door, Hh - 3.0, t), 0, 3.0 + (Hh - 3.0) / 2, fz, shell);
+  put(G.box(door, 3.0, 0.06), 0, 1.5, fz - 0.02, '#7a5230', glow); // (lit from inside: the glass doors glow warm)  for (const dx of [-door / 2, 0, door / 2]) put(G.box(0.1, 3.0, 0.12), dx, 1.5, fz + 0.02, trim);
+  for (const dx of [-0.2, 0.2]) put(G.box(0.05, 0.9, 0.07), dx, 1.3, fz + 0.1, '#e8c15a'); // (gold door pulls)
+  // the lit portal round the doors, and the ball emblem over them (a ring and its seams)
+  put(G.box(door + 0.5, 0.12, 0.08), 0, 3.12, fz + 0.16, accent, glow);
+  for (const sx of [-1, 1]) put(G.box(0.12, 3.12, 0.08), sx * (door / 2 + 0.19), 1.56, fz + 0.16, accent, glow);
+  const ey = 4.35, er = 0.62;
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; put(G.box(0.26, 0.09, 0.06), Math.cos(a) * er, ey + Math.sin(a) * er, fz + 0.16, '#ff8a3c', glow); }
+  put(G.box(er * 2, 0.06, 0.06), 0, ey, fz + 0.17, '#ff8a3c', glow); put(G.box(0.06, er * 2, 0.06), 0, ey, fz + 0.17, '#ff8a3c', glow);
+  // the rooftop marquee frame (its lit face is the sign the park puts on it), on two posts
+  put(G.box(W - 0.8, 1.3, 0.3), 0, Hh + 1.2, D / 2 - 0.5, trim);
+  for (const sx of [-1, 1]) put(G.box(0.16, 0.9, 0.16), sx * (W / 2 - 1.2), Hh + 0.55, D / 2 - 0.6, trim);
+  // a red-carpet runner and two rope posts out front
+  put(G.box(door, 0.02, 2.2), 0, 0.01, D / 2 + 1.1, '#8a1f24');
+  for (const sx of [-1, 1]) { put(G.cylinder(0.05, 0.07, 0.9, 8, { y0: true }), sx * (door / 2 + 0.35), 0, D / 2 + 1.9, '#e8c15a'); put(G.sphere(0.08, 8, 6), sx * (door / 2 + 0.35), 0.95, D / 2 + 1.9, '#e8c15a'); }
+  return { parts, glow };
+}
+
 export function crewHQ(x, z, color = '#e0482f') {
   const parts = [], glow = [];
   const { w: W, d: D, h: Hh } = HQ_SIZE, t = 0.22;

@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 L = ROOT / "launcher"
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-VERSION_INFO = {"CompanyName": "Silverback Studios", "FileDescription": "RIMRIFT", "FileVersion": "0.4.8.7", "InternalName": "RIMRIFT",
-                "LegalCopyright": "MIT License", "OriginalFilename": "RIMRIFT.exe", "ProductName": "RIMRIFT", "ProductVersion": "0.4.8.7"}
+VERSION_INFO = {"CompanyName": "Silverback Studios", "FileDescription": "RIMRIFT", "FileVersion": "0.4.8.8", "InternalName": "RIMRIFT",
+                "LegalCopyright": "MIT License", "OriginalFilename": "RIMRIFT.exe", "ProductName": "RIMRIFT", "ProductVersion": "0.4.8.8"}
 
 
 def go_sources():
@@ -83,10 +83,10 @@ class LauncherStrings(unittest.TestCase):
         m = re.search(r'const version = "([\d.]+)"', go_sources()["main.go"]).group(1)
         rc = (L / "res" / "rimrift.rc").read_text()
         man = (L / "res" / "rimrift.exe.manifest").read_text()
-        self.assertEqual(m, "0.4.8.7")
-        self.assertIn("FILEVERSION 0,4,8,7", rc); self.assertIn("PRODUCTVERSION 0,4,8,7", rc)
+        self.assertEqual(m, "0.4.8.8")
+        self.assertIn("FILEVERSION 0,4,8,8", rc); self.assertIn("PRODUCTVERSION 0,4,8,8", rc)
         # (an assembly version has exactly four parts, or Windows won't start the exe)
-        self.assertRegex(man, r'<assemblyIdentity version="0\.4\.8\.7" processorArchitecture="amd64" name="RIMRIFT\.Launcher" type="win32"/>')
+        self.assertRegex(man, r'<assemblyIdentity version="0\.4\.8\.8" processorArchitecture="amd64" name="RIMRIFT\.Launcher" type="win32"/>')
 
 
 class LauncherResources(unittest.TestCase):

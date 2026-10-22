@@ -18,8 +18,8 @@ import * as Stats from './stats.js';
 import { boostedBuild, ATTR_LABEL } from '../sim/ratings.js';
 import { padGlyph } from '../core/input.js';
 import * as MyPlayer from './myplayer.js';
-import { badgeSVG, iconBadgeSVG, rankEmblemSVG } from './badgeart.js';
-import { RANKS, RANK_SPAN, FORFEIT_RP, rankOf, rpOf, levelRating, teamRating } from '../sim/ranks.js';
+import { badgeSVG, iconBadgeSVG, rankEmblemSVG, nameRankIcon } from './badgeart.js';
+import { RANKS, RANK_SPAN, FORFEIT_RP, rankOf, rpOf, levelRating, teamRating, divInfo, RP_MAX, entryRankTier } from '../sim/ranks.js';
 import { reportBug } from './bugreport.js';
 import * as Crew from './crew.js';
 import { CrewHQ, RUN_MIN } from '../game/crewhq.js';
@@ -150,7 +150,7 @@ export function enterPark(app, themeId, opts = {}) {
   const ui = new ParkUI(app);
   $('#ui').innerHTML = ''; $('#ui').className = 'layer';
   ui.mount();
-  toast(opts.at === 'hq' ? 'Back to the park…' : opts.at === 'hall' ? `Heading to ${THEMES[themeId]?.name || 'the park'}…` : 'Loading the park…');
+  toast(opts.at === 'hq' || opts.at === 'proam' ? 'Back to the park…' : opts.at === 'hall' ? `Heading to ${THEMES[themeId]?.name || 'the park'}…` : 'Loading the park…');
   Crew.fetchCrew(app).catch(() => {}); // v0.4.5: the HQ door knows whether you have a crew
   setTimeout(() => {
     try {
@@ -162,6 +162,8 @@ export function enterPark(app, themeId, opts = {}) {
       if (opts.at === 'hq' && hub.venue.hq) { hub.me.setPos(hub.venue.hq.x, hub.venue.hq.z + 0.3, 0); hub.rig.roamYaw = 0; hub.rig.snap(); hub.syncSquad(true); }
       // qp3: through the Event Park / Home Park hall, you step out of the hall's door in the other park
       if (opts.at === 'hall' && hub.venue.hall) { hub.me.setPos(hub.venue.hall.x, hub.venue.hall.z + 0.3, 0); hub.rig.roamYaw = 0; hub.rig.snap(); hub.syncSquad(true); }
+      // v0.4.8.8: out of the Pro-Am hub (game/proamhub.js), you step out of the Pro-Am HUB's doors onto the plaza
+      if (opts.at === 'proam' && hub.venue.proamHub) { hub.me.setPos(hub.venue.proamHub.x, hub.venue.proamHub.z + 0.3, 0); hub.rig.roamYaw = 0; hub.rig.snap(); hub.syncSquad(true); }
       ui.intro(hub, opts);
       Online.touchWhere(app); // (online: the people here see you arrive, and you them)
     } catch (e) { console.error(e); toast(e.message, 'error'); Screens.go(app, 'home'); }
@@ -212,6 +214,9 @@ class ParkUI {
     for (const w of ws) {
       let el = this.fTag.get(w.id);
       if (!el) { el = document.createElement('div'); el.className = `friend-tag${w.squad ? ' sq' : ''}`; el.textContent = w.username || w.entry.name; box.appendChild(el); this.fTag.set(w.id, el); }
+      // (v0.4.8.8: the rank icon of his current Pro-Am tier by his name, from Silver up; drawn again when it changes)
+      const tier = entryRankTier(w.entry);
+      if (el._tier !== tier) { el._tier = tier; el.innerHTML = nameRankIcon(tier, 13) + esc(w.username || w.entry.name); }
       const p = hub.r.project(this.app.camera, [w.p.x, (w.visual.view?.H || 1.95) + 0.3, w.p.z], this.tmpP);
       el.hidden = !p.visible || p.depth > 70 || !!w.visual.pending;
       if (!el.hidden) el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
@@ -295,7 +300,7 @@ class ParkUI {
       ${hub.cup ? `<div class="cup-chip" id="cup-chip" style="--c:${hub.event?.color || '#39ff88'}">${esc(hub.event?.name || 'Park event')}</div>` : ''}
       <div class="park-keys muted small" id="park-keys"></div>`;
     this.keysFor = null;
-    if (opts.at !== 'hq') this.toast(hub.cup ? `Welcome to ${hub.event?.park || hub.venue.theme.name}. Every game is an ante-up — claim a GOT NEXT spot and name your stake.` : `Welcome to ${hub.venue.theme.name}. Find a Got Next circle by a court.`);
+    if (opts.at !== 'hq' && opts.at !== 'proam') this.toast(hub.cup ? `Welcome to ${hub.event?.park || hub.venue.theme.name}. Every game is an ante-up — claim a GOT NEXT spot and name your stake.` : `Welcome to ${hub.venue.theme.name}. Find a Got Next circle by a court.`);
   }
   cupInfo(hub, st) {
     const el = $('#cup-chip'); if (!el) return;
@@ -514,13 +519,14 @@ export function showResults(app, summary, result, won, opts = {}) {
     <div class="results ${won ? 'win' : 'loss'}">
       <div class="eyebrow">${r?.cup ? esc(eventName(r.cup.event).toUpperCase()) + ' · ANTE-UP' : summary.mode === 'park' ? 'PARK GAME' : summary.mode === 'proam' ? 'PRO-AM' : pro ? 'THE PRO RUN' : 'GAME'} · FINAL</div>
       <h1>${won ? 'Victory' : 'Defeat'} <span class="score">${summary.score[summary.me.team]}–${summary.score[1 - summary.me.team]}</span></h1>
+      ${resWho(app, r)}
       ${lg ? `<div class="lg-final" data-tier="${lg.tier}"><small>LOCKED-IN GRADE</small><b>${esc(lg.letter)}</b><span class="muted small">${lg.good} smart plays · ${lg.bad} costly ones</span></div>` : ''}
       <div class="stat-strip">${[['PTS', me.pts], ['REB', me.reb], ['AST', me.ast], ['STL', me.stl], ['BLK', me.blk], ['FG', pct(me.fgm, me.fga)], ['3PT', pct(me.tpm, me.tpa)], ['TO', me.tov]].map(([k, v]) => `<div><b>${v}</b><small>${k}</small></div>`).join('')}</div>
       ${r?.cup ? `<div class="cup-result ${won ? 'win' : 'loss'}">${won ? `<b>POT +${money(r.cup.pot)} VC</b><small>your ${money(r.cup.ante)} stake back + theirs${r.streak_mult > 1 ? ` ×${r.streak_mult.toFixed(2)}` : ''}</small>` : `<b>ANTE LOST −${money(r.cup.ante)} VC</b><small>the stake goes to the other side</small>`}<span>${esc(eventName(r.cup.event))}: <b>#${r.cup.rank}</b> of ${r.cup.field} · ${r.cup.net < 0 ? '−' : ''}${money(Math.abs(r.cup.net))} VC this event</span></div>` : ''}
       ${r?.bounty ? `<div class="bounty-result">${BOUNTY_SVG}<div><b>BOUNTY CLAIMED +${money(r.bounty)} VC</b><small>You broke the kings' streak (included in VC earned)</small></div></div>` : ''}
       ${opts.online && opts.note ? `<div class="muted small">${esc(opts.note)}</div>` : ''}
       ${r ? `<div class="reward-row"><div class="reward"><b>+${money(r.vc)}</b><small>VC EARNED</small></div>${pro ? '<div class="reward"><b>×1.5</b><small>VC & BADGE PROGRESS</small></div>' : `<div class="reward"><b>+${money(r.rep)}</b><small>REP</small></div>`}${summary.mode === 'park' ? `<div class="reward"><b>${r.streak}</b><small>WIN STREAK</small></div>` : ''}${summary.mode === 'park' && r.streak_mult > 1 ? `<div class="reward"><b>×${r.streak_mult.toFixed(2)}</b><small>STREAK BONUS</small></div>` : ''}${r.proam_rank ? `<div class="reward rp ${r.proam_rank.delta < 0 ? 'neg' : ''}"><b>${signed(r.proam_rank.delta)}<i> RP</i></b><small>${esc(r.proam_rank.rank_after.name.toUpperCase())}</small></div>` : ''}${r.proam_team ? `<div class="reward"><b>${r.proam_team.wins}-${r.proam_team.losses}</b><small>TEAM RECORD</small></div>` : ''}</div>
-        ${rankResult(r.proam_rank)}
+        ${r.pa ? paResult(r.pa, app.catalog) : rankResult(r.proam_rank)}
         ${pro ? '' : `<div class="rep-line"><span>${esc(repAfter.label)}</span>${repBefore.level !== repAfter.level ? '<span class="tag hot">RANK UP!</span>' : ''}<span class="muted">${money(repAfter.points)} REP</span></div><span class="bar rep-bar"><i style="width:${repPct}%"></i></span>`}
         ${r.crew ? `<div class="crew-xp" style="${Crew.crewVars({ color: app.crew?.color || '#ff4d24' })}"><span class="crew-tag sm">${esc(r.crew.tag)}</span><b>+${money(r.crew.xp)} CREW XP</b>${r.crew.with_crew ? '<span class="tag hot">×2 WITH CREW</span>' : ''}<span class="muted small">${esc(r.crew.name)} · Level ${r.crew.level_after}${r.crew.next ? ` · ${money(r.crew.next - r.crew.total)} to level ${r.crew.level_after + 1}` : ''}</span>${r.crew.level_after > r.crew.level_before ? '<span class="tag hot">CREW LEVEL UP!</span>' : ''}</div>` : ''}
         ${r.badges_upgraded.length ? `<div class="badge-ups">${r.badges_upgraded.map(b => `<span class="tag badge-up ${['', 'bronze', 'silver', 'gold', 'hof'][b.tier]}">${badgeSVG(b.id, b.tier, 22)}${esc(b.name)} · ${TIER[b.tier]}</span>`).join('')}</div>` : ''}
@@ -572,6 +578,15 @@ export function showResults(app, summary, result, won, opts = {}) {
 }
 
 // v0.4.4: add the people you just played with (teammates first)
+// v0.4.8.8: who played, with the rank icon of his Pro-Am tier by his name (every mode), and the VC and Rep boost it
+// brought this game (server/progression.py rewards: rank_boost)
+function resWho(app, r) {
+  const c = r?.character || app.char();
+  if (!c) return '';
+  const tier = entryRankTier({ build: c }), boost = +r?.rank_boost || 0;
+  return `<div class="res-who">${nameRankIcon(tier, 16)}<b>${esc(c.name)}</b>${boost > 0 ? `<span class="muted small">Rank boost · +${Math.round(boost * 100)}% VC and Rep</span>` : ''}</div>`;
+}
+
 function peopleRow(app, players) {
   const w = app.ai, list = (players || []).filter(e => e?.aiId);
   if (!w || !list.length) return '';
@@ -651,6 +666,22 @@ function rankCard(c) {
     <p class="muted small pa-rank-rule">Every game moves your RP: the win or loss, how strong the other team was, and how you played. Friends run Pro-Am together within ${RANK_SPAN} ranks of each other: as ${esc(rk.name)}, with ${esc(lo)} through ${esc(hi)}.</p>`;
 }
 // the results screen's RP block: change, rank, breakdown, and a banner when the rank changed
+// v0.4.8.8 Pro-Am: the season rank a game moved (server/proam.py complete: RP in the division, a promotion at 100) and, in
+// a series, where the series stands (won: the team up a division and the bonus; lost: everyone to 0 RP)
+export function paResult(pa, catalog = {}) {
+  if (!pa) return '';
+  // (v0.4.8.8: a new tier's items, won with this game: in your Inventory)
+  const won = (pa.items || []).map(id => catalog?.[id]?.name || id);
+  const items = won.length ? `<div class="pa-items-won"><b>WON</b> ${won.map(n => `<span class="tag">${esc(n)}</span>`).join(' ')} <small class="muted">in your Inventory</small></div>` : '';
+  const d = divInfo(pa.state?.index ?? pa.div_after ?? 0), p = pa.parts || {}, sr = pa.series;
+  const line = 'forfeit' in p ? `Forfeit ${signed(p.forfeit)}` : [['Result', p.result], ['Competition', p.competition], ['Performance', p.performance]].map(([k, v]) => `${k} <b>${signed(v || 0)}</b>`).join(' · ');
+  const banner = pa.promoted ? `<div class="rank-banner up">${rankEmblemSVG(d.tier, 34)}<b>PROMOTED TO ${esc(d.label.toUpperCase())}</b></div>` : '';
+  const series = sr ? `<div class="pa-series-line ${sr.status}">${sr.status === 'won' ? `<b>SERIES WON ${sr.wins}-${sr.losses}</b> · the team moves up a division · +${money(sr.bonus || 0)} VC bonus`
+    : sr.status === 'lost' ? `<b>SERIES LOST ${sr.wins}-${sr.losses}</b> · everyone back to 0 RP` : `Series ${sr.wins}-${sr.losses} · first to ${sr.need} of ${sr.length}`}</div>` : '';
+  return `${banner}<div class="rp-line" style="--rc:${d.color};--rd:${d.dark}">${rankEmblemSVG(d.tier, 40)}<div class="rp-main"><div class="rp-top"><b>${esc(d.label)}</b><span class="muted">${pa.rp_after ?? pa.state?.rp ?? 0}/${RP_MAX} RP · ${signed(pa.delta || 0)}</span></div>
+    <span class="bar rp-bar"><i style="width:${Math.max(0, Math.min(100, pa.rp_after ?? 0))}%"></i></span><small class="muted">${line}</small></div></div>${series}${items}`;
+}
+
 function rankResult(pr) {
   if (!pr) return '';
   const ra = pr.rank_after, rk = rankOf(pr.rp_after), p = pr.parts || {};
@@ -722,7 +753,7 @@ export async function playProAm(app) {
   opp.forEach((e, i) => { e.look = resolveLook(e.build, app.catalog, { ...opU, number: e.build.appearance?.number, name: e.name }); });
   const teams = [{ name: t.name, abbr: t.abbr, color: t.primary }, { name: oppName, abbr: oppAbbr, color: op1 }];
   const session = new MatchSession(app, {
-    mode: 'proam', scene, venue, court: venue.courts[0], rosters: [roster, opp], teams, seed: ticket.seed, quarterLen: ticket.meta.quarter_len, quarters: 4, difficulty: ticket.meta.difficulty,
+    mode: 'proam', realism: true, scene, venue, court: venue.courts[0], rosters: [roster, opp], teams, seed: ticket.seed, quarterLen: ticket.meta.quarter_len, quarters: 4, difficulty: ticket.meta.difficulty,
     onEnd: async (summary, sess) => {
       app.ai.recordGame(roster.map(e => e.aiId).filter(Boolean), opp.map(e => e.aiId).filter(Boolean), summary.winner === summary.me.team);
       // v0.4.5: teammates from your AI world go along (crew members on your team double the crew XP)
@@ -747,6 +778,148 @@ export async function playProAm(app) {
   music.setPlaylist('main'); music.setSuppressed(true); // v0.4.4: the soundtrack sits out Pro-Am
   audio.surface = 'wood';
   app.setController(world, scene);
+}
+
+// ---------------- v0.4.8.8 The Pro-Am Overhaul: a series game (docs/PROAM-OVERHAUL.md §3) ----------------
+// The shared contract: proamGame(app, { team, opponent, venue, home, series, game, lineup, members }). team: your team
+// (ui/proam.js); opponent: {kind 'ai' | 'team', id, name, abbr, div}; venue: 'proam_<park>' (the home team's court; the
+// arena where that park isn't there); home: whether you're at home; series and game: the server's (the ticket counts
+// for game.n of series.id); lineup: the AI players who fill your open spots (the draft); members: the team members in
+// the hub ([{id}], online): with others there it's one online game for all of you (proamOnlineSetup), else it's you
+// and the draft.
+const PA_UNIFORM = (b, n) => ({ top: { family: 'jersey', color: b.primary, trim: b.secondary, secondary: b.secondary, pattern: 'panel', lettering: b.abbr, tucked: true }, bottom: { family: 'shorts', color: b.primary, trim: b.secondary, stripe: b.secondary }, number: n });
+export const paBrand = t => ({ name: t?.name || 'Pro-Am', abbr: t?.abbr || 'PRO', primary: t?.primary || '#2457c5', secondary: t?.secondary || '#f2c14e', logo: t?.logo || 'bolt' });
+export const paVenue = v => (v && THEMES[v] ? v : 'arena');
+export const paOppRating = opp => Math.round(divInfo(opp?.div ?? 0).index * 75 + 37); // (proam.py rating, the division's middle)
+// five AI players from ids (an AI team's roster, the draft), filled up to n with regulars at the positions still open
+export function paFive(app, ids, n, level = 0.62, key = 'pa') {
+  const w = app.ai, out = [], used = new Set();
+  for (const id of ids || []) { if (out.length >= n) break; try { const e = w.gameEntry(id); if (e) { out.push(e); used.add(id); } } catch { /* not in this world */ } }
+  const open = ORDER5.filter(p => !out.some(e => e.build.position === p));
+  while (out.length < n) { const position = open.shift() || ORDER5[out.length % 5]; const id = w.pick({ position, level, exclude: used, key: key + out.length }); used.add(id); out.push(w.gameEntry(id)); }
+  return out;
+}
+async function paOpponentTeam(app, opponent) {
+  try { return (await app.api.get(`/api/proam/teams?id=${encodeURIComponent(opponent.id)}`)).team; } catch { return null; }
+}
+
+export async function proamGame(app, ctx = {}) {
+  const { team, opponent, series, game, lineup = [], members = null } = ctx;
+  const others = (members || []).filter(m => m.id !== app.net?.myId);
+  if (others.length && app.net?.connected) return startProamTeamOnline(app, ctx);
+  const c = app.char();
+  const opp = await paOpponentTeam(app, opponent);
+  let ticket;
+  try {
+    ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: paVenue(ctx.venue), format: 5, quarter_len: settings.quarterLen, difficulty: settings.difficulty, opp_rating: paOppRating(opponent), pa_game: { series: series.id, n: game.n } });
+  } catch (e) { toast(e.message, 'error'); return; }
+  leaveWorld(app);
+  $('#ui').innerHTML = ''; $('#ui').className = 'layer';
+  const scene = new Scene();
+  const mine = paBrand(team), theirs = paBrand(opp || opponent);
+  if (theirs.primary === mine.primary) { theirs.primary = '#f4f2ec'; theirs.secondary = '#1d1f24'; }
+  const vid = paVenue(ctx.venue), host = ctx.home ? mine : theirs;
+  const venue = vid.startsWith('proam_') ? buildVenue(app.renderer, scene, vid, { home: host, seed: ticket.seed })
+    : buildVenue(app.renderer, scene, 'arena', { team: { name: host.name, abbr: host.abbr, primary: host.primary, secondary: host.secondary, logo: host.logo, wood: WOOD_TONES.natural } });
+  const me = { build: boostedBuild(c, ticket.meta.boosts), name: c.name, human: true, look: null, badges: badgeTiers(c) };
+  Rewards.consumeBoostsLocal(app, ticket);
+  const roster = [me, ...paFive(app, lineup, 4, 0.62, `pa${ticket.seed}m`)];
+  const oppRoster = paFive(app, opp?.roster || [], 5, Math.min(0.95, 0.5 + divInfo(opponent.div).index * 0.02), `pa${ticket.seed}o`);
+  roster.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, app.catalog, { ...PA_UNIFORM(mine, e.build.appearance?.number ?? (i * 7 + 3) % 50), name: e.name }); });
+  oppRoster.forEach(e => { e.look = resolveLook(e.build, app.catalog, { ...PA_UNIFORM(theirs, e.build.appearance?.number), name: e.name }); });
+  const teams = [{ name: mine.name, abbr: mine.abbr, color: mine.primary }, { name: theirs.name, abbr: theirs.abbr, color: theirs.primary }];
+  const session = new MatchSession(app, {
+    mode: 'proam', realism: true, scene, venue, court: venue.courts[0], rosters: [roster, oppRoster], teams, seed: ticket.seed, quarterLen: ticket.meta.quarter_len, quarters: 4, difficulty: ticket.meta.difficulty,
+    onEnd: async (summary, sess) => {
+      const won = summary.winner === summary.me.team;
+      app.ai.recordGame(roster.map(e => e.aiId).filter(Boolean), oppRoster.map(e => e.aiId).filter(Boolean), won);
+      const mates = roster.map(e => e.aiId).filter(Boolean).slice(0, 4);
+      const saving = app.api.mutate(`/api/matches/${ticket.id}/complete`, { summary, mates }).catch(e => { toast('Result not saved: ' + e.message, 'error'); return null; });
+      await playOutro(app, { summary, session: sess, result: saving });
+      const result = await saving;
+      if (result) { app.replaceChar(result.character); app.setBalance(result.balance); }
+      const next = async () => { const ProamUI = await import('./proam.js'); Screens.go(app, 'proam'); ProamUI.queue(app, team); };
+      showResults(app, summary, result, won, { players: [...roster.slice(1), ...oppRoster], menuLabel: 'Pro-Am', menu: () => Screens.go(app, 'proam'), again: next, againLabel: 'Next game', autoNext: false });
+    },
+  });
+  const world = {
+    session, scene, ticket,
+    frame: dt => { if (app.input.wasPressed('pause') && !session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); session.frame(dt); },
+    onFocusLost: () => { if (!session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); },
+    dispose: () => session.dispose(),
+  };
+  app.world = world;
+  app.mode = 'match';
+  app.renderer.prewarm(scene);
+  music.setPlaylist('main'); music.setSuppressed(true);
+  audio.surface = venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt';
+  app.setController(world, scene);
+}
+
+// with team members in the hub: one online game for all of you (the same as a squad's Pro-Am: playProAmOnline on every
+// screen), the series game riding in the setup so every member's ticket counts for it
+export async function proamOnlineSetup(app, ctx) {
+  const { team, opponent, series, game, lineup = [], members = [] } = ctx;
+  const net = app.net, cat = app.catalog, seed = Online.newSeed(), people = new Map();
+  const opp = await paOpponentTeam(app, opponent);
+  const mine = paBrand(team), theirs = paBrand(opp || opponent);
+  if (theirs.primary === mine.primary) { theirs.primary = '#f4f2ec'; theirs.secondary = '#1d1f24'; }
+  const humansP = [Online.personOf(app, net.myId), ...members.filter(m => m.id !== net.myId).map(m => Online.personOf(app, m.id))].filter(p => p?.entry).slice(0, 5);
+  const human = p => { const e = Online.setupEntry(app, p.entry, true, p.username); people.set(e, p); return e; };
+  const r0 = [...humansP.map(human), ...paFive(app, lineup, 5 - humansP.length, 0.62, `pa${seed}m`).map(e => Online.setupEntry(app, e, false))];
+  const r1 = paFive(app, opp?.roster || [], 5, Math.min(0.95, 0.5 + divInfo(opponent.div).index * 0.02), `pa${seed}o`).map(e => Online.setupEntry(app, e, false));
+  const rosters = [r0, r1];
+  rosters.forEach((ro, ti) => ro.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, cat, { ...PA_UNIFORM(ti ? theirs : mine, e.build.appearance?.number ?? (i * 7 + 3) % 50), name: e.name }); }));
+  const { slots, names, meter } = Online.seatPeople(rosters, people);
+  return {
+    kind: 'proam', where: null, court: null, format: 5, seed, rosters, slots, names, meter,
+    teams: [{ name: mine.name, abbr: mine.abbr, color: mine.primary }, { name: theirs.name, abbr: theirs.abbr, color: theirs.primary }],
+    delay: Online.inputDelay([...people.values()].map(p => p.rtt)), difficulty: settings.difficulty ?? 0.6, branding: ctx.home ? mine : theirs, quarterLen: settings.quarterLen || 180,
+    by: app.char()?.name || '', levels: [0.62, 0.62], venue: paVenue(ctx.venue), pa: { series: series.id, n: game.n }, opp_rating: paOppRating(opponent),
+  };
+}
+// v0.4.8.8 a real team against a real team: one online game, set up by the home team's Captain. vs: the other team's side
+// as its Captain gave it (proam.py side: humans, lineup, series, n, team), people: {id: {entry, username, rtt}} for every
+// real player but you (Online.paEntries). Each team's own series game rides in it (pa: [home's, away's]) and its own
+// rating of the other team (opp_ratings), so every real player's ticket counts for his own team's series.
+export async function proamVsSetup(app, ctx, vs, people) {
+  const { team, opponent, series, game, lineup = [], members = [] } = ctx;
+  const net = app.net, cat = app.catalog, seed = Online.newSeed(), seats = new Map();
+  const opp = await paOpponentTeam(app, opponent);
+  const mine = paBrand(team), theirs = paBrand(opp || opponent);
+  if (theirs.primary === mine.primary) { theirs.primary = '#f4f2ec'; theirs.secondary = '#1d1f24'; }
+  const person = id => (id === net.myId ? Online.personOf(app, id) : people[id] ? { id, username: people[id].username, entry: people[id].entry, rtt: people[id].rtt } : null);
+  const human = p => { const e = Online.setupEntry(app, p.entry, true, p.username); seats.set(e, p); return e; };
+  const homeP = [net.myId, ...(members || []).map(m => m.id).filter(id => id !== net.myId)].map(person).filter(p => p?.entry).slice(0, 5);
+  const awayP = (vs.humans || []).map(h => person(h.id)).filter(p => p?.entry).slice(0, 5);
+  if (!awayP.length) return null; // (nobody from the other team to play: each plays it on his own screen)
+  const level = d => Math.min(0.95, 0.5 + divInfo(d).index * 0.02);
+  const r0 = [...homeP.map(human), ...paFive(app, lineup, 5 - homeP.length, level(series.div), `pa${seed}m`).map(e => Online.setupEntry(app, e, false))];
+  const r1 = [...awayP.map(human), ...paFive(app, vs.lineup || [], 5 - awayP.length, level(opponent.div), `pa${seed}o`).map(e => Online.setupEntry(app, e, false))];
+  const rosters = [r0, r1];
+  rosters.forEach((ro, ti) => ro.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, cat, { ...PA_UNIFORM(ti ? theirs : mine, e.build.appearance?.number ?? (i * 7 + 3) % 50), name: e.name }); }));
+  const { slots, names, meter } = Online.seatPeople(rosters, seats);
+  return {
+    kind: 'proam', where: null, court: null, format: 5, seed, rosters, slots, names, meter,
+    teams: [{ name: mine.name, abbr: mine.abbr, color: mine.primary }, { name: theirs.name, abbr: theirs.abbr, color: theirs.primary }],
+    delay: Online.inputDelay([...seats.values()].map(p => p.rtt)), difficulty: settings.difficulty ?? 0.6, branding: mine, quarterLen: settings.quarterLen || 180,
+    by: app.char()?.name || '', levels: [level(series.div), level(opponent.div)], venue: paVenue(ctx.venue),
+    pa: [{ series: series.id, n: game.n }, { series: vs.series, n: vs.n }], opp_ratings: [paOppRating(opponent), paOppRating({ div: series.div })], vsReal: true,
+  };
+}
+export async function startProamVs(app, ctx, vs, people) {
+  const net = app.net;
+  if (app.world?.mySession && !app.world.mySession.ended) { toast('Finish your game first.', 'error'); return false; }
+  const setup = await proamVsSetup(app, ctx, vs, people);
+  if (!setup) return false;
+  net.send({ t: 'start', setup });
+  return true;
+}
+async function startProamTeamOnline(app, ctx) {
+  const net = app.net;
+  if (app.world?.mySession && !app.world.mySession.ended) { toast('Finish your game first.', 'error'); return; }
+  try { net.send({ t: 'start', setup: await proamOnlineSetup(app, ctx) }); toast(`${ctx.team?.name || 'Your team'} is heading to the court…`); }
+  catch (e) { console.error(e); toast(e.message, 'error'); }
 }
 
 // ---------------- v0.4.7.5 qp3 online: Pro-Am with your real squad ----------------
@@ -829,20 +1002,24 @@ export async function playProAmOnline(app, setup, local) {
   // (v0.4.8.5: the team you face, rated: its real players by their RP, its regulars by their level)
   const myTeam = local < (setup.rosters[0]?.length || 5) ? 0 : 1;
   const oppRating = teamRating(setup.rosters[1 - myTeam], setup.levels?.[1 - myTeam] ?? 0.62);
-  try { ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: 'arena', format: 5, quarter_len: setup.quarterLen, difficulty: setup.difficulty, opp_rating: oppRating }); }
+  // (v0.4.8.8: a Pro-Am team's series game: its park, and the series game on every member's ticket)
+  // (v0.4.8.8 real vs real: each team's own series game and rating of the other: pa and opp_ratings by team)
+  const myPa = Array.isArray(setup.pa) ? setup.pa[myTeam] : setup.pa, myOpp = Array.isArray(setup.opp_ratings) ? setup.opp_ratings[myTeam] : setup.opp_rating;
+  try { ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: setup.venue ? paVenue(setup.venue) : 'arena', format: 5, quarter_len: setup.quarterLen, difficulty: setup.difficulty, opp_rating: myOpp ?? oppRating, ...(myPa ? { pa_game: myPa } : {}) }); }
   catch (e) { ticket = null; toast(`This one won't count for you (${e.message}). Playing it anyway.`, 'error'); }
   if (ticket) Rewards.consumeBoostsLocal(app, ticket);
   leaveWorld(app);
   $('#ui').innerHTML = ''; $('#ui').className = 'layer';
   const scene = new Scene();
   const b = setup.branding || {};
-  const venue = buildVenue(app.renderer, scene, 'arena', { team: { name: b.name, abbr: b.abbr, primary: b.primary, secondary: b.secondary, logo: b.logo, wood: WOOD_TONES[b.wood] || WOOD_TONES.natural } });
+  const venue = setup.venue && paVenue(setup.venue).startsWith('proam_') ? buildVenue(app.renderer, scene, paVenue(setup.venue), { home: b, seed: setup.seed })
+    : buildVenue(app.renderer, scene, 'arena', { team: { name: b.name, abbr: b.abbr, primary: b.primary, secondary: b.secondary, logo: b.logo, wood: WOOD_TONES[b.wood] || WOOD_TONES.natural } });
   const rosters = structuredClone(setup.rosters);
   for (const r of rosters) for (const e of r) e.look = e.look || resolveLook({ ...e.build, name: e.name }, app.catalog);
   const backHome = () => { world.backTo = 'home'; Screens.go(app, 'home'); };
   const aids = Object.fromEntries(Object.entries(setup.slots).map(([a, s]) => [s, a]));
   const session = new MatchSession(app, {
-    mode: 'proam', scene, venue, court: venue.courts[0], rosters, teams: setup.teams, seed: setup.seed, quarterLen: setup.quarterLen, quarters: 4, difficulty: setup.difficulty,
+    mode: 'proam', realism: true, scene, venue, court: venue.courts[0], rosters, teams: setup.teams, seed: setup.seed, quarterLen: setup.quarterLen, quarters: 4, difficulty: setup.difficulty,
     online: { net, local, delay: setup.delay, game: setup.game, meter: setup.meter, names: setup.names, aids, onLost: async () => { if (ticket) { try { await app.api.post(`/api/matches/${ticket.id}/cancel`, {}); endWinStreak(app); } catch { /* ignore */ } } toast('Lost the connection to the game service: you left the game.', 'error'); backHome(); } },
     onEnd: async (summary, sess) => {
       const teamAids = Object.entries(setup.slots).filter(([, s]) => sess.game.players[s]?.team === summary.me.team).map(([a]) => a);
@@ -859,6 +1036,8 @@ export async function playProAmOnline(app, setup, local) {
       showResults(app, summary, result, summary.winner === summary.me.team, {
         online: true, players: [], note: net.squad ? (net.isLeader() ? 'Play again takes your squad back on the floor.' : 'Your squad leader starts the next one: you\'re in when he does.') : '',
         menuLabel: 'Pro-Am menu', menu: () => Screens.go(app, 'proam'), again: lead ? () => startProAmOnline(app) : null, againLabel: 'Next game', autoNext: true,
+        // (v0.4.8.8: a team's series game: Next game queues the team again, when you choose to)
+        ...(myPa ? { again: async () => { const P = await import('./proam.js'); Screens.go(app, 'proam'); P.queue(app, null); }, autoNext: false } : {}),
       });
     },
   });

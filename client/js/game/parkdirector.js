@@ -285,11 +285,20 @@ export class ParkDirector {
       }
       ids = free.map(w => w.id);
     }
-    c.lines[r] = { ids: ids.slice(), icon: icon ?? null, full: this.s.k, n: ++this.s.seq };
+    c.lines[r] = { ids: ids.slice(), icon: icon ?? null, full: null, n: ++this.s.seq }; // (v0.4.8.8: held once they're on it: holdLines)
     this.placeLine(ci, r);
+    this.holdLine(ci, r);
     this.touch();
     return true;
   }
+  // v0.4.8.8: a GOT NEXT spot is held by whoever stands on it. An AI line holds its spot (full: the tick it did, its place
+  // in the order for the next game) once its first man has walked onto the spot's first circle: his path's end, by its time
+  // (arrive), the same on every screen. Before that it holds nothing: a real squad calling the spot gets it (claim)
+  holdLine(ci, r) {
+    const l = this.s.courts[ci].lines[r], w = l && l.full == null ? this.W(l.ids[0]) : null;
+    if (w && w.st === 'line' && w.c === ci && w.r === r && this.arrive(w) <= this.s.k) l.full = this.s.k;
+  }
+  holdLines() { this.s.courts.forEach((c, ci) => c.lines.forEach((l, r) => { if (l && l.full == null) this.holdLine(ci, r); })); }
   // ---------- the courts ----------
   endGame(ci) { const c = this.s.courts[ci]; c.g = null; this.runners[ci] = null; this.touch(); }
   newGame(ci, kings, force = false) {
@@ -523,7 +532,10 @@ export class ParkDirector {
     } else if (e === 'claim' && okC && (ev.r === 0 || ev.r === 1)) {
       const c = this.s.courts[ci], who = ev.aid == null ? null : String(ev.aid), was = c.claim[ev.r];
       c.claim[ev.r] = who;
-      if (who && c.lines[ev.r]) this.disperse(ci, ev.r);
+      // (v0.4.8.8: a group only on its way there: to the other spot if it's free; one standing on it breaks up)
+      const l = who ? c.lines[ev.r] : null, o = 1 - ev.r;
+      if (l && l.full == null && !c.lines[o] && !c.claim[o]) { c.lines[ev.r] = null; c.lines[o] = l; this.placeLine(ci, o); }
+      else if (l) this.disperse(ci, ev.r);
       if (was && was !== who) {
         // the squad that had it stepped off: the park-goers they had on it go back to hanging out; nobody's ready here now
         const tl = this.tl(this.s.k), off = this.s.lent.filter(l => l[1] === was && l[2] === ci && l[3] === ev.r);
@@ -556,6 +568,7 @@ export class ParkDirector {
     for (const r of this.runners) if (r) r.stepTo(U);
     this.s.k = k; this.out.length = 0; this.syncExtra(); // (this PC's clock may have been set again: the hop-ons' ends with it)
     for (const ev of events) this.apply(ev);
+    this.holdLines(); // (v0.4.8.8: AI lines that reached their spot hold it from this tick)
     this.s.courts.forEach((c, ci) => {
       const g = c.g, run = this.runners[ci];
       if (!g || !run) return;

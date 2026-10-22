@@ -252,9 +252,23 @@ def validate_summary(data, ticket):
     return {"mode": mode, "score": score, "winner": winner, "duration": duration, "team": team, "stats": clean, "forfeit": forfeit}
 
 
+def rank_boost(char):
+    """v0.4.8.8: the VC and Rep boost of the build's current Pro-Am tier (server/proam.py BOOST), in every mode. Only the
+    current tier's: each replaces the one before, never stacked."""
+    from . import proam
+    pa = ((char or {}).get("progression") or {}).get("pa") or {}
+    div = pa.get("div")
+    return proam.BOOST[proam.tier_of(div)] if isinstance(div, int) and not isinstance(div, bool) else 0.0
+
+
+PA_HOME_VC = 0.25  # (v0.4.8.8: a home-court 3s game from the Pro-Am HUB pays a quarter of a park game's VC: server/app.py)
+
+
 def rewards(summary, ticket, char):
     """Compute VC, Rep and badge progress for a validated summary."""
     s = summary["stats"]
+    boost = rank_boost(char)  # (v0.4.8.8: on what the game itself pays; an ante's pot and a bounty stay as they are)
+    up = lambda v: int(v * (1 + boost))
     won = summary["winner"] == summary["team"] and not summary["forfeit"]
     mode = summary["mode"]
     if summary["forfeit"]:
@@ -268,6 +282,7 @@ def rewards(summary, ticket, char):
         vc = min(int(vc * mult), int(2200 * VC_K * mult))
         rep = (70 if won else 25) + s["pts"] * 2 + s["ast"] * 3 + s["reb"] * 2 + s["stl"] * 3 + s["blk"] * 3 + s["ankles"] * 6 + s["posters"] * 8
         rep = int(rep * mult)
+        vc, rep = up(vc), up(rep)
         # v0.4.5 King Tut Cup ante-up: the stake was taken when the game started. A win pays it back plus the
         # other side's stake, boosted by the Cup streak multiplier; a loss pays nothing back.
         ante = int(ticket["meta"].get("ante") or 0)
@@ -282,10 +297,12 @@ def rewards(summary, ticket, char):
         streak = 0
         vc = min(int(3600 * VC_K), int((300 + (300 if won else 80) + max(0, statline)) * VC_K))
         rep = int(((50 if won else 20) + s["pts"] + s["ast"] * 2 + s["reb"] + s["stl"] * 2 + s["blk"] * 2) * 0.6)
+        vc, rep = up(vc), up(rep)
     elif mode == "prorun":
         # the park formula without a streak, at 1.5x
         streak, rep = 0, 0
         vc = min(int((160 + (180 if won else 40) + max(0, statline)) * VC_K * PRORUN_K), int(2200 * VC_K * PRORUN_K))
+        vc = up(vc)
     else:
         streak, vc, rep = 0, 0, 0
     # badge progress (v0.4.5: 1.5x in the Pro Run)
@@ -297,7 +314,7 @@ def rewards(summary, ticket, char):
         inc = min(int(round(stat_for.get(b["stat"], 0) * k)), int(40 * k))
         if inc > 0:
             gains[bid] = inc
-    out = {"vc": int(vc), "rep": int(max(0, rep)), "won": won, "streak": streak, "badges": gains}
+    out = {"vc": int(vc), "rep": int(max(0, rep)), "won": won, "streak": streak, "badges": gains, "rank_boost": boost}
     if mode == "park":
         out["streak_mult"] = streak_multiplier(streak) if won else 1.0
         out["bounty"] = int(ticket["meta"].get("bounty") or 0) if won else 0
@@ -410,7 +427,7 @@ def apply_progress(char, summary, rw):
     prog["rep"] = prog.get("rep", 0) + rw["rep"]
     after = rep_info(prog["rep"])
     mode = summary["mode"]
-    if mode in ("park", "proam", "prorun"):
+    if mode in ("park", "proam", "prorun") and not rw.get("pa_home"):  # (v0.4.8.8: a home-court game: no streak, no record)
         # v0.4.8.5 quick patch 3: the build's own win streak, every mode together (the ICON aura grows with it)
         prog["win_streak"] = int(prog.get("win_streak", 0) or 0) + 1 if rw["won"] else 0
         # v0.4.5: King Tut Cup games keep their own record and streak (the park streak is untouched)

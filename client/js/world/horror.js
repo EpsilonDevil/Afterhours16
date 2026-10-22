@@ -16,7 +16,7 @@ import { RNG, makeNoise2D } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { cachedTexture } from './court.js';
 import * as PR from './props.js';
-import { PARK_COURTS } from './themes.js';
+import { PARK_COURTS, plazaLampOff } from './themes.js';
 import { shadedPlane, camClear, onSomething } from './harbor.js';
 
 const lin = hex => M.hexLinear(hex);
@@ -696,7 +696,7 @@ export function horrorTown(ctx, scene, rng, theme, park) {
       for (const q of jackFace(r, k)) flick[k % 2].push({ geo: q.geo, matrix: mul(L, Ry(z > 0 ? Math.PI : 0)), color: c4('#ffb347') });
     }
     // (glow pools under the plaza's street lamps: sodium orange)
-    for (let i = 0; i < 10; i++) pool(-40 + i * 9 + 0.5, -27, 3.6, '#ff9a40', 0.35);
+    for (let i = 0; i < 10; i++) if (!plazaLampOff(-40 + i * 9)) pool(-40 + i * 9 + 0.5, -27, 3.6, '#ff9a40', 0.35); // (v0.4.8.8: none where the Pro-Am HUB stands)
   }
 
   // ---------- materials and meshes ----------

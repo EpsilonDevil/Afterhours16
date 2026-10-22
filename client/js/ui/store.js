@@ -6,6 +6,7 @@ import { BLOCK_BY_ID } from '../sim/blocks.js';
 import { snagName } from '../sim/snags.js';
 import { clampName } from '../sim/clamp.js';
 import { minAttrFor } from '../sim/bots.js';
+import { seasonBanner } from './badgeart.js';
 import { $, $$, esc, money, toast, modal, closeModal, title, keepScroll, busy } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
@@ -20,6 +21,9 @@ export const CATS = [
   ['sizeup', 'Size-Ups', 'wide', 'Animations'], ['post', 'Post Moves', 'wide', 'Animations'], ['block', 'Blocks', 'wide', 'Animations'], ['rebound', 'Rebounds', 'wide', 'Animations', 'open_arms'], ['steal', 'Steals', 'wide', 'Animations', 'the_clamp'], ['pass', 'Passes', 'wide', 'Animations', 'oprah'], ['celebration', 'Celebrations', 'upper', 'Animations'], ['movement', 'Movement', 'wide', 'Animations'], // (qp3: Block Packages)
   // v0.4.7.5 green releases: the sound and the effect when your green goes in
   ['greensound', 'Green Sounds', 'green', 'Green Releases'], ['greenfx', 'Green FX', 'green', 'Green Releases'],
+  // v0.4.8.8: the Pro-Am season banners (they go on your introduction card), won, never bought: x[5] 'inv', a category of
+  // the Inventory alone (every build's)
+  ['banner', 'Banners', 'full', 'Apparel', null, 'inv'],
 ];
 export const GROUPS = ['Apparel', 'Animations', 'Green Releases'];
 const ACC_SLOTS = new Set(['socks', 'headband', 'sleeve', 'leg_sleeve', 'wristband', 'knee_pad', 'chain']);
@@ -34,11 +38,13 @@ export const optionalSlot = i => !['top', 'bottom', 'shoes', 'release', 'jumpsho
 // v0.4.8.5: the categories a screen shows. The store (no build given) never shows an Icon's own category; the Inventory
 // shows it only to the build that holds that Icon badge (for anyone else it isn't there at all)
 export const catsFor = (build = null) => CATS.filter(x => !x[4] || (!!build && build.icon_badge === x[4]));
-export const catShown = (cat, build = null) => catsFor(build).some(x => x[0] === cat);
+// (v0.4.8.8: and an Inventory-only category (x[5] 'inv': the Banners) never in the store)
+const onScreen = (x, build) => !x[5] || !!build;
+export const catShown = (cat, build = null) => catsFor(build).some(x => x[0] === cat && onScreen(x, build));
 // category tabs grouped (Apparel | Animations | Green Releases), with a count when `count` is given; build: the
 // Inventory's build (see catsFor)
 export function catTabs(cat, count = null, build = null) {
-  return `<div class="cat-groups">${GROUPS.map(g => `<div class="cat-group"><span>${g}</span><div class="subtabs">${catsFor(build).filter(c => c[3] === g).map(([k, l]) => `<button class="${cat === k ? 'on' : ''}" data-cat="${k}">${l}${count ? `<em>${count(k)}</em>` : ''}</button>`).join('')}</div></div>`).join('')}</div>`;
+  return `<div class="cat-groups">${GROUPS.map(g => `<div class="cat-group"><span>${g}</span><div class="subtabs">${catsFor(build).filter(c => c[3] === g && onScreen(c, build)).map(([k, l]) => `<button class="${cat === k ? 'on' : ''}" data-cat="${k}">${l}${count ? `<em>${count(k)}</em>` : ''}</button>`).join('')}</div></div>`).join('')}</div>`;
 }
 
 export function render(app, root, params = {}) {
@@ -75,6 +81,7 @@ export function render(app, root, params = {}) {
 }
 
 export function swatch(i) {
+  if (i.slot === 'banner') return seasonBanner(i, 'sw-banner'); // (v0.4.8.8)
   if (i.category === 'green') return `<div class="sw-green ${i.exclusive ? 'gold' : ''}"><i>${i.slot === 'greensound' ? '♪' : '✦'}</i></div>`;
   if (i.category === 'animation') return `<div class="sw-anim">${i.slot === 'dunk' ? 'DNK' : i.slot === 'layup' ? 'LAY' : i.slot === 'block' ? 'BLK' : i.slot === 'post' ? 'PST' : i.slot === 'celebration' ? 'CEL' : i.slot === 'sizeup' ? 'HND' : i.slot === 'release' ? 'REL' : i.slot === 'movement' ? 'MOV' : i.slot === 'rebound' ? 'REB' : i.slot === 'steal' ? 'STL' : i.slot === 'pass' ? 'PAS' : 'JS'}</div>`;
   const a = i.color || '#888', b = i.trim || i.accent || i.secondary || '#fff';
@@ -93,7 +100,7 @@ export function lockReason(app, c, i) {
 function card(app, c, i, inv, sel) {
   const owned = inv.has(i.id), equipped = c.equipment[i.slot] === i.id, lock = lockReason(app, c, i);
   return `<button class="item ${sel === i.id ? 'on' : ''} ${owned ? 'owned' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'monster' ? '★ MONSTER MASH' : i.exclusive === 'favela' ? '★ THE FAVELAS' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? 'EQUIPPED' : owned ? 'OWNED' : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'monster' ? '★ MONSTER MASH' : i.exclusive === 'favela' ? '★ THE FAVELAS' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive === 'proam' ? '★ PRO-AM' : i.exclusive ? '★ DAILY SPIN' : lock ? '🔒 ' + esc(lock) : i.price ? money(i.price) + ' VC' : 'FREE'}</small></button>`;
 }
 
 export function itemExtra(i) {
@@ -108,7 +115,7 @@ function detail(app, c, i, inv) {
     <div class="eyebrow">${esc((CATS.find(x => x[0] === catOf(i)) || [, title(i.slot)])[1])}</div><h2>${esc(i.name)}</h2>
     <p class="muted">${esc(i.description || '')}</p>${extra ? `<p class="small">${esc(extra)}</p>` : ''}
     ${lock && !owned ? `<p class="lock">🔒 Requires ${esc(lock)}</p>` : ''}
-    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive === 'jungle' ? '★ Jungle Ballers exclusive' : i.exclusive === 'beat' ? '★ And The Beat Goes On exclusive' : i.exclusive === 'monster' ? '★ Monster Mash exclusive' : i.exclusive === 'favela' ? '★ The Favelas exclusive' : i.exclusive === 'icon' ? '★ Icon badge exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
+    <div class="price">${i.exclusive === 'cup' ? '★ King Tut Cup exclusive' : i.exclusive === 'jungle' ? '★ Jungle Ballers exclusive' : i.exclusive === 'beat' ? '★ And The Beat Goes On exclusive' : i.exclusive === 'monster' ? '★ Monster Mash exclusive' : i.exclusive === 'favela' ? '★ The Favelas exclusive' : i.exclusive === 'icon' ? '★ Icon badge exclusive' : i.exclusive === 'proam' ? '★ Pro-Am exclusive' : i.exclusive ? '★ Daily Spin exclusive' : i.price ? money(i.price) + ' VC' : 'FREE'}</div>
     ${i.slot === 'greensound' ? '<button class="btn ghost small" data-hear>▶ Hear it</button>' : ''}
     <div class="row gap">${owned ? `<span class="owned-tag">${equipped ? '✓ Equipped' : '✓ Owned'}</span><button class="btn" data-inventory>${equipped ? 'In your Inventory' : 'Equip in Inventory'} →</button>` : i.exclusive === 'cup' ? '<button class="btn ghost" disabled>Win it in the King Tut Cup</button>' : i.exclusive === 'jungle' ? '<button class="btn ghost" disabled>Win it in the Jungle Ballers</button>' : i.exclusive === 'beat' ? '<button class="btn ghost" disabled>Win it at And The Beat Goes On</button>' : i.exclusive === 'monster' ? '<button class="btn ghost" disabled>Win it at The Monster Mash</button>' : i.exclusive === 'favela' ? '<button class="btn ghost" disabled>Win it at The Favelas</button>' : i.exclusive === 'icon' ? `<button class="btn ghost" disabled>Comes with the ${esc(app.config.icon_badges?.[i.icon]?.name || 'Icon')} Icon badge</button>` : i.exclusive ? '<button class="btn ghost" disabled>Win it on the Daily Spin wheel</button>' : `<button class="btn primary" data-buy ${lock ? 'disabled' : ''}>Buy · ${money(i.price)} VC</button>`}</div>
   </aside>`;

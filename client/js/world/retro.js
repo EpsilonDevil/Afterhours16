@@ -40,7 +40,8 @@ export const EXTENT = 175;
 // the disco bar: its front (the door in the middle) faces the plaza from across the south sidewalk
 export const DISCO = { x: 25, z: -40.2, w: 22, d: 13.6, h: 8 };
 // where people gather (parklife.js): the breakers' cardboard, the boombox crew, the dancers outside the disco and the line
-export const SPOTS = { breakers: { x: 17.5, z: -31 }, crew: { x: 36.5, z: -31.2 }, door: { x: DISCO.x, z: DISCO.z + 2.6 }, line: { x0: DISCO.x + 3.2, x1: DISCO.x + 9.6, z: DISCO.z + 0.9 } };
+// (v0.4.8.8: the breakers' cardboard moved west of the kiosks, from x 17.5: the Pro-Am HUB stands east of them now)
+export const SPOTS = { breakers: { x: -10.5, z: -31.2 }, crew: { x: 36.5, z: -31.2 }, door: { x: DISCO.x, z: DISCO.z + 2.6 }, line: { x0: DISCO.x + 3.2, x1: DISCO.x + 9.6, z: DISCO.z + 0.9 } };
 // the sun's bearing (from north toward the west) as a unit vector on the ground
 export const sunBearing = theme => { const a = (theme?.sunset?.az ?? 68) * DEG; return [-Math.sin(a), Math.cos(a)]; };
 

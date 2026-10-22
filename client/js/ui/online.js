@@ -15,15 +15,15 @@ import { GAME_SPEED } from '../sim/game.js';
 import { settings } from '../core/settings.js';
 import { badgeTiers } from '../game/park.js';
 import { boostedBuild } from '../sim/ratings.js';
-import { rankOf, rpOf, entryRP, rankSpan, spanMessage } from '../sim/ranks.js';
-import { rankEmblemSVG } from './badgeart.js';
+import { rankOf, rpOf, entryRP, rankSpan, spanMessage, entryProam, entryRankTier, seasonRank, divInfo, divIndex } from '../sim/ranks.js';
+import { rankEmblemSVG, nameRankIcon } from './badgeart.js';
 import { iconStatus, iconAuraLevel, winStreak } from '../sim/builds.js';
 
 export const MAX_SQUAD = 5;
 // v0.4.8.5 quick patch 3: what the people where you are see of your ICON status (the Icon badge under you, the aura from a
 // 3-game streak): your entry goes out again when it changes (it isn't sent again for every win: only a new aura level)
 export const iconKey = c => (c && iconStatus(c) ? `I${c.icon_badge || ''}:${iconAuraLevel(winStreak(c))}` : '');
-export const parkName = id => !id ? 'somewhere' : String(id).startsWith('hq:') ? 'a Crew HQ' : PARK_NAMES[id] || THEMES[id]?.name || 'a park';
+export const parkName = id => !id ? 'somewhere' : String(id).startsWith('hq:pa:') ? 'the Pro-Am HUB' : String(id).startsWith('hq:') ? 'a Crew HQ' : PARK_NAMES[id] || THEMES[id]?.name || 'a park'; // (v0.4.8.8: a team's Pro-Am HUB, game/proamhub.js)
 const hubOf = app => (app.world && app.world.parkList && app.world.themeId ? app.world : null);
 // the park or Crew HQ you're in, when it shows the people there (game/park.js, game/crewhq.js)
 const placeOf = app => (app.world && app.world.placeKey ? app.world : null);
@@ -53,6 +53,8 @@ export async function initOnline(app) {
     yes: 'Join the crew', onYes: () => net.send({ t: 'crew-accept', crew: m.crew?.id }),
   }));
   net.on('crew-pending', m => collectCrewXP(app, m.xp));
+  net.on('pa-ready', m => paReadyMsg(app, m)); // (v0.4.8.8 Pro-Am: the team's ready check)
+  net.on('pa-entries', m => paEntryWaiters.get(m.req)?.(m.people)); // (v0.4.8.8: a real-vs-real game's players, paEntries)
   net.on('crew', () => { crewSync(app); placeOf(app)?.onCrew?.(); });
   net.on('claimed', m => hubOf(app)?.onClaimed?.(m));
   net.on('start', s => startOnline(app, s).catch(e => { console.error(e); toast('Could not start the online game: ' + e.message, 'error'); net.send({ t: 'quit' }); }));
@@ -130,7 +132,7 @@ export function touchWhere(app) { const net = app.net; if (net?.connected) net.w
 // overall, Pro-Am RP, boosts, Icon status. v0.4.8.7 qp4: and the badge tiers, as the build plays them (capped). The
 // others' copy of your entry is what a game one of them sets up plays you with, on every screen yours included: without
 // them here a badge that went up a tier in your last game played (and popped up) at its old tier in the next one
-export const entryKey = c => (c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(badgeTiers(c))}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null);
+export const entryKey = c => (c ? `${c.id}|${c.overall}|${rpOf(c)}|${JSON.stringify(entryProam(c, settings.paRecord === true))}|${JSON.stringify(badgeTiers(c))}|${JSON.stringify(c.equipment || {})}|${JSON.stringify(c.boosts || {})}|${iconKey(c)}` : null); // (v0.4.8.8: and the season rank, the record and whether it shows)
 // your AI squad mates', the same way (v0.4.8.5 qp7: one who unlocks his Icon badge or puts on a prize; qp4: or whose
 // badges change tier)
 export const aiSquadKey = ai => ai.map(a => `${a.id}:${a.entry.build.overall}:${a.entry.build.icon_badge || ''}:${Object.values(a.entry.build.equipment || {}).join('.')}:${JSON.stringify(a.entry.badges || {})}`).join(',');
@@ -142,7 +144,9 @@ export function myEntry(app) {
   // (your active boosts play, as in any game: the game's ticket uses one game of each up)
   const boosts = Object.keys(c.boosts || {}).filter(k => (c.boosts[k] | 0) > 0).sort();
   // (v0.4.8.5: proam_rp: your Pro-Am RP, for your squad's rank check and the other team's strength in a Pro-Am game)
-  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false, proam_rp: rpOf(c) };
+  // (v0.4.8.8: proam, his season rank: {tier, div, record, showRecord}, for the rank icon by his name, his card's
+  // borderplate, and his record over his head in the park when he shows it: Settings → Pro-Am record)
+  return { build: boostedBuild(c, boosts), name: c.name, look: app.look(c), badges: badgeTiers(c), human: true, username: app.net?.you?.username || '', meterOff: settings.shotMeter === false, proam: entryProam(c, settings.paRecord === true), proam_rp: rpOf(c) };
 }
 
 const statusText = p => !p || !p.online ? 'Offline' : p.playing || p.status === 'game' ? 'In a game' : p.park ? `At ${parkName(p.park)}${p.status === 'busy' ? ' · busy' : ''}` : 'In the menus';
@@ -175,7 +179,7 @@ export function setupEntry(app, e, human, username = null) {
   // v0.4.8.5: his level, and a real player's Pro-Am RP, rate the team for Pro-Am RP: sim/ranks.js teamRating)
   for (const k of ['iq', 'number', 'icon', 'level']) if (e[k] != null) out[k] = e[k];
   if (e.sq) out.sq = e.sq; // (an AI squad mate: whose, and who he is in his owner's game)
-  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; if (entryRP(e) != null) out.proam_rp = entryRP(e); }
+  if (human) { out.username = username || e.username || ''; out.meterOff = !!e.meterOff; if (entryRP(e) != null) out.proam_rp = entryRP(e); if (e.proam) out.proam = cleanProam(e.proam); }
   return out;
 }
 // slots, names and shot-meter settings of a setup's people: rosters are team 0 then team 1; people: [{id, username}]
@@ -202,6 +206,21 @@ export const netOn = app => !!app.net?.connected;
 export function memberRank(app, id) {
   const net = app.net, rp = id === net?.myId ? rpOf(app.char()) : entryRP(net?.entryOf(id));
   return rp == null ? null : rankOf(rp);
+}
+// v0.4.8.8: an entry's season rank as another player sent it, kept to its fields and their ranges
+export function cleanProam(p) {
+  if (!p || typeof p !== 'object') return null;
+  const n = (v, hi) => (Number.isFinite(+v) ? Math.max(0, Math.min(hi, Math.floor(+v))) : 0);
+  const rec = Array.isArray(p.record) ? p.record : [0, 0];
+  return { tier: n(p.tier, 6), div: Math.max(1, n(p.div, 7)), record: [n(rec[0], 99999), n(rec[1], 99999)], showRecord: p.showRecord === true, best: Math.max(n(p.tier, 6), n(p.best, 6)) };
+}
+// a squad member's season rank chip (you: your build's; a friend: his entry's), '' when it isn't known
+export function seasonChip(app, id, size = 14) {
+  const net = app.net, e = id === net?.myId ? { build: app.char() } : net?.entryOf(id);
+  const t = entryRankTier(e);
+  if (t == null) return '';
+  const pr = cleanProam(e?.proam), label = pr ? divInfo(divIndex(pr.tier, pr.div)).label : seasonRank(e.build).label;
+  return `<span class="rk-chip r${t}">${rankEmblemSVG(t, size)}${esc(label)}</span>`;
 }
 export const rankChip = (rk, size = 14) => (rk ? `<span class="rk-chip r${rk.tier}">${rankEmblemSVG(rk, size)}${esc(rk.name)}</span>` : '');
 // The friends rule: the real players who'd suit up together (you and your free squad mates) are within 2 ranks of each
@@ -243,7 +262,7 @@ function popInvite(app, kind, o) {
   document.getElementById(id)?.remove();
   const el = document.createElement('div');
   el.id = id; el.className = 'ol-invite';
-  el.style.top = `${74 + 150 * ['sq', 'ch', 'crew'].indexOf(kind)}px`;
+  el.style.top = `${74 + 150 * Math.max(0, ['sq', 'ch', 'crew', 'pa'].indexOf(kind))}px`; // (v0.4.8.8: 'pa', the Pro-Am ready check)
   el.innerHTML = `<div class="eyebrow">${esc(o.eyebrow)}</div><b>${esc(o.title)}</b><small>${esc(o.text)}</small>
     <div class="row gap"><button class="btn small ghost" data-no>Not now</button><button class="btn small primary" data-yes>${esc(o.yes)}</button></div>`;
   document.body.appendChild(el);
@@ -253,6 +272,44 @@ function popInvite(app, kind, o) {
   el.querySelector('[data-yes]').onclick = () => { done(); o.onYes?.(); };
 }
 const clearInvites = () => document.querySelectorAll('.ol-invite').forEach(el => el.remove());
+
+// v0.4.8.8 Pro-Am: the team's ready check over the online service (server/online.py pa_ready). The Captain asks
+// (ui/proam.js queue: paReadyCheck); every member connected gets "ready?" and answers; the Captain's check gathers who did
+export const paReadyWaiters = new Set();
+// v0.4.8.8: the entries of the players in a real-vs-real series game (the home Captain's setup: Modes.proamVsSetup), from
+// the online service (each as he last sent it there): {id: {entry, username, rtt}}, {} when nothing came in time
+export const paEntryWaiters = new Map();
+export function paEntries(app, ids, ms = 5000) {
+  const net = app.net, req = Math.random().toString(36).slice(2);
+  if (!net?.connected || !ids.length) return Promise.resolve({});
+  return new Promise(resolve => {
+    const t = setTimeout(() => { paEntryWaiters.delete(req); resolve({}); }, ms);
+    paEntryWaiters.set(req, people => { clearTimeout(t); paEntryWaiters.delete(req); resolve(people && typeof people === 'object' ? people : {}); });
+    net.send({ t: 'pa-entries', ids, req });
+  });
+}
+export function paReadyMsg(app, m) {
+  const net = app.net;
+  if (m.op === 'ask') {
+    popInvite(app, 'pa', { eyebrow: 'PRO-AM READY CHECK', title: m.name || 'Your Captain', text: `is queueing the team for its next game. Ready? (${m.secs || 20} s)`, yes: 'Ready',
+      onYes: () => net.send({ t: 'pa-ready', op: 'yes' }), onNo: () => net.send({ t: 'pa-ready', op: 'no' }) });
+    setTimeout(() => document.getElementById('ol-invite-pa')?.remove(), (m.secs || 20) * 1000);
+  } else if (m.op === 'cancel') document.getElementById('ol-invite-pa')?.remove();
+  else for (const f of paReadyWaiters) f(m);
+}
+// the Captain's side: asks, and resolves with who's ready ({humans, members: [{id}]}) when every other member has
+// answered or `secs` have passed. size: the team's size (members other than him who could answer)
+export function paReadyCheck(app, secs = 20, size = 0) {
+  const net = app.net;
+  return new Promise(resolve => {
+    const yes = new Set(), answered = new Set();
+    const finish = () => { paReadyWaiters.delete(on); clearTimeout(t); resolve({ humans: 1 + yes.size, members: [{ id: net.myId }, ...[...yes].map(id => ({ id }))] }); };
+    const on = m => { answered.add(m.from); if (m.op === 'yes') yes.add(m.from); else yes.delete(m.from); if (size && answered.size >= size) finish(); };
+    paReadyWaiters.add(on);
+    const t = setTimeout(finish, secs * 1000);
+    net.send({ t: 'pa-ready', op: 'ask', secs });
+  });
+}
 
 // ---------------- your squad goes where its leader goes ----------------
 // A squad member who's walking around a park (or the HQ) follows the leader to the park he went to; one in the menus
@@ -367,7 +424,7 @@ export function phoneTab(app) {
     if (free && lead && !inSquad.has(f.id)) acts.push(`<button class="ph-act inv" data-och="${esc(f.id)}" title="Challenge to Pro-Am">Pro-Am</button>`);
     if (on && founder && !crewIds.has(f.id)) acts.push(`<button class="ph-act inv" data-ocrew="${esc(f.id)}" title="Invite to your crew">Crew</button>`);
     if (on && p.park && !p.park.startsWith('hq:') && p.park !== herePlace) acts.push(`<button class="ph-act" data-ogo="${esc(p.park)}" title="Go to his park">Go</button>`);
-    return `<div class="ph-row"><div class="ph-main">${av(p.name || f.username)}<span class="ph-who"><b>${esc(p.name || f.username)}</b><small>${esc(f.username)}${on && p.char ? ' · ' + esc(p.char) : ''}</small><em>${esc(statusText(p))}${inSquad.has(f.id) ? ' · your squad' : p.squad && p.squad.size > 1 ? ` · squad of ${p.squad.size}` : ''}</em></span><i class="ph-dot ${on ? 'on' : ''}"></i></div>
+    return `<div class="ph-row"><div class="ph-main">${av(p.name || f.username)}<span class="ph-who"><b>${nameRankIcon(entryRankTier(net.entryOf(f.id)), 13)}${esc(p.name || f.username)}</b><small>${esc(f.username)}${on && p.char ? ' · ' + esc(p.char) : ''}</small><em>${esc(statusText(p))}${inSquad.has(f.id) ? ' · your squad' : p.squad && p.squad.size > 1 ? ` · squad of ${p.squad.size}` : ''}</em></span><i class="ph-dot ${on ? 'on' : ''}"></i></div>
       ${acts.join('')}<button class="ph-act" data-ofr="remove" data-u="${esc(f.username)}" title="Remove friend">✕</button></div>`;
   };
   return `${head}${conn ? squadHTML(app) + crewHTML(app) : ''}
@@ -385,7 +442,7 @@ export function squadHTML(app) {
   const lead = net.isLeader();
   // (each member's AI squad mates from his own game run in the squad too)
   const aiRows = m => (m.ai || []).map(a => `<div class="ol-mem ol-ai"><span class="ol-av ai">${esc(String(a.name || '?').slice(0, 1))}</span><span class="ph-who"><b>${esc(a.name)}</b><small>AI · ${a.ovr ?? ''} ${esc(a.pos || '')} · with ${esc(m.name || m.username)}</small></span></div>`).join('');
-  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}${rankChip(memberRank(app, m.id))}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>${aiRows(m)}`).join('');
+  const rows = sq.members.map(m => `<div class="ol-mem">${av(m.name || m.username, m.id === sq.leader ? 'host' : '')}<span class="ph-who"><b>${esc(m.name || m.username)}${m.id === sq.leader ? ' <i class="ph-star">LEADER</i>' : ''}${m.id === net.myId ? ' <small>(you)</small>' : ''}</b><small>${esc(m.username)}${m.char ? ' · ' + esc(m.char) : ''}${m.rtt != null ? ` · ${m.rtt} ms` : ''}${seasonChip(app, m.id)}</small><em>${esc(m.inGame || m.status === 'game' ? 'In a game' : m.park ? `At ${parkName(m.park)}` : 'In the menus')}</em></span>${lead && m.id !== net.myId ? `<button class="ph-act" data-okick="${esc(m.id)}" title="Out of the squad">✕</button>` : ''}</div>${aiRows(m)}`).join('');
   const nAI = sq.members.reduce((s, m) => s + (m.ai?.length || 0), 0);
   const rankBad = squadRankProblem(app);
   return `<div class="ol-room"><div class="ph-sec">Your squad · ${sq.members.length}/${MAX_SQUAD}${nAI ? ` · ${nAI} AI` : ''}</div>${rows}

@@ -8,7 +8,13 @@
 //   past 99 in the sim (the rating curve keeps rising above 99).
 // * Takeovers add a temporary boost to a stat group.
 export const BADGE_K = [0, 1, 2.1, 3.31, 4.641];
-export const bk = (badges, key) => BADGE_K[Math.max(0, Math.min(4, (badges && badges[key]) || 0))];
+// (v0.4.8.8: a badge set can carry a strength, badgeK (not enumerable, so it's never a badge): Pro-Am's realism plays
+// every badge at REALISM.badgeK of its effect)
+export const bk = (badges, key) => BADGE_K[Math.max(0, Math.min(4, (badges && badges[key]) || 0))] * ((badges && badges.badgeK) ?? 1);
+// v0.4.8.8 "The Pro-Am Overhaul": Pro-Am is the most realistic mode. Icon badges' effects are off (their animation
+// packages still play), every badge's effect is 10% smaller, every attribute is pulled 10% of the way toward the game's
+// average for it (the gap between builds 10% smaller) and the game is 10% harder (Game, cfg.realism, Pro-Am only)
+export const REALISM = { badgeK: 0.9, spread: 0.9, difficulty: 1.1 };
 // a per-tier table [0, b1, b2, b3, b4] with each step 10% bigger than the last (same rule as bk)
 export function tierTable(t) { const o = [0]; for (let i = 1; i < t.length; i++) o.push(o[i - 1] + (t[i] - t[i - 1]) * Math.pow(1.1, i - 1)); return o; }
 export const TIER_NAMES = ['', 'Bronze', 'Silver', 'Gold', 'Hall of Fame'];

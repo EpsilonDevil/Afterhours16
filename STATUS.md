@@ -1,4 +1,23 @@
-# Status — v0.4.8.7, the server runs the park (v0.4.8.6, the RIMRIFT identity patch and its quick patches, below; the port baseline moves with this patch)
+# Status — v0.4.8.8, The Pro-Am Overhaul (v0.4.8.7, the server runs the park, and its quick patches below; the port baseline moves with this update)
+
+## v0.4.8.8: The Pro-Am Overhaul
+
+Player-facing list: `PATCH_NOTES_v0.4.8.8.docx` (source `.md`). Contract: `docs/PROAM-OVERHAUL.md` (David's brief and answers, the lead's decisions marked).
+
+| Area | Files | Notes |
+|---|---|---|
+| Server: teams, seasons, series, ranks, draft, rewards | `server/proam.py` (new: TIERS B3/S5/G7/P7/7/7/7 divisions, SEASON_DAYS 45 from first boot, RP_MAX 100, RP_K 0.7 on the v0.4.8.5 game RP, series 3/2, 5/3, 7/5, SERIES_BONUS 1500/3000/5000, QUEUE_WAIT 45 s within MATCH_SPAN 2, 28 AI teams from the shared world with AI-vs-AI rounds every 6 h, MAX_MEMBERS 10, DRAFT_SIZE 5 / pool 15 / 3 refreshes per series, BOOST 0/2/4/5%, RANK_ITEMS, season banners and the S{n} chain, custom clubhouse looks), `server/migrations/016_v0488_proam.sql`, `server/app.py` (routes; `pa_home` home-court 3s at 25% park VC, no Rep), `server/progression.py` (rank boost in every mode, non-stacking; series games don't touch the pre-season RP), `server/online.py` (`pa-ready`, `pa-entries`, `player_hosted` for `hq:` places), `server/catalog.json` (PRO-AM chain, Gold Low-Top Canvas, Platinum PRO watch and headband, season items; exclusive "proam"), `server/builds.py` (`banner` slot) | matchmaking over HTTP (`/api/proam/queue` join/poll/leave/side); real vs real is one shared lockstep game (home Captain starts it); AI-team games run locally |
+| Client UI | `ui/proam.js` + `ui/proamui.js` (new: create/join/search, team page, season countdown, office panels: whiteboard, draft, ready check, settings incl. Gold clubhouse look; `openOffice`, `queue`, `load`), `ui/modes.js` (`proamGame`, `startProamVs`; the old single-game Pro-Am replaced), `ui/online.js` (`entry.proam`, entryKey, parkName "the Pro-Am HUB"), `sim/ranks.js`, `ui/badgeart.js` (`nameRankIcon`, `seasonBanner`), `game/present.js` (borderplates, banner), `game/session.js` (rank tags), `ui/inventory.js`, `ui/store.js`, `ui/screens.js`, `core/settings.js` (`paRecord`), `char/athlete.js`, `char/looks.js`, `char/view.js` (figaro link, nameplate letters, canvas shoe, watch), `sim/bots.js`, `sim/builds.js`, `css/menus.css` | Diamond+ icons are placeholders |
+| Pro-Am parks | `world/proamparks.js` (new: 12 parks, one full court each, home colors via `paintHome`, seed-only time/weather/crowd, unique clubhouse each with `door`/`anchor`; 15k–61k triangles, ≤ 84 draw calls, ≤ 8 lights), `world/venues.js`, `server/venues.json` (`proam_<id>`) | the 2K camera never sees above 8.5 m (the Overpass reads through its columns) |
+| HUB | `game/proamhub.js` + `world/proamhubs.js` (new: Bronze/Silver/Gold/Platinum buildings, offices with whiteboard canvas, clipboard, desk; Captain = longest in the HUB; online places `hq:pa:<team>` and `:out`; Gold customization; walk-out to the home park and 3s), HUB building in every park (`world/props.js`, `harbor.js`, `street.js`, `horror.js`, `retro.js`, `themes.js`, `game/park.js` door), `game/recordtag.js` (Platinum record over head) | about 10k–21.5k triangles per building |
+| Realism | `sim/badges.js` (`REALISM` 0.9 / 0.9 / 1.1; `bk` honors a non-enumerable `badgeK`), `sim/player.js` (`applyRealism`: `iconFx` off, `played` attributes pulled toward the game's mean, badgeK), `sim/game.js` (`realism` = cfg.realism && mode proam; difficulty × 1.1; no Icon green or pops; Hash-Slinging poster/knockdown gated by `hsFx`), `game/session.js` (passes `realism`; `noIcon` hides the ICON cursor and aura) | rules change: moves the port baseline; deterministic from the config |
+| Got Next | `game/park.js`, `game/parkdirector.js` (an AI line holds its spot only once its first man is on the circle; a real player can claim a spot a group is walking to) | |
+| Version | 0.4.8.8: `package.json`, `server/app.py`, `launcher/*`, rebuilt `RIMRIFT.exe`, `tests/test_launcher.py`, `docs/ARCHITECTURE.md` | |
+
+Tests (new): `tests/test_v0488_proam.py`, `tests/test_v0488_hub_online.py`, `tests/v0488proam.test.mjs`, `tests/v0488proamui.test.mjs`, `tests/v0488rankitems.test.mjs`, `tests/v0488hubwiring.test.mjs`, `tests/v0488proamhub.test.mjs`, `tests/v0488proamparks.test.mjs`, `tests/v0488realism.test.mjs`, `tests/v0488gotnext.test.mjs`. Updated for changed rules: `test_server.py` (migration 016), `v0475qp` (catalog counts), `v0485beat` (Pro-Am music setups), `v0485proam` (per-team opponent rating).
+
+Known limits: AI-team series games run on the Captain's screen only (not watchable); home-court 3s results aren't cross-checked; Diamond, Master and GrandMaster rewards and higher HUB tiers are for later.
+
 
 ## v0.4.8.7: the server runs the park
 

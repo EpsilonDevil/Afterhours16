@@ -4,6 +4,7 @@ import { $, $$, esc, money, keepScroll, busy } from './common.js';
 import * as Screens from './screens.js';
 import { enterPark } from './modes.js';
 import { playGreenSound } from '../core/greensound.js';
+import { seasonBanner } from './badgeart.js';
 import { CATS, catTabs, catShown, inCat, swatch, tryOn, equip, itemExtra, optionalSlot, catOf, forBuild, lockReason } from './store.js';
 
 export function render(app, root, params = {}) {
@@ -27,7 +28,7 @@ export function render(app, root, params = {}) {
     root.innerHTML = `<section class="panel store inventory">
       <div class="row between"><div><div class="eyebrow">INVENTORY · ${total} ITEMS · ${money(worth)} VC OF GEAR</div><h1>Your locker</h1></div><div class="row gap"><button class="btn ghost" data-store>VC Store</button>${params.returnPark ? '<button class="btn primary" data-back-park>Back to the park</button>' : ''}</div></div>
       ${catTabs(cat, count, c)}
-      <div class="item-grid">${items.map(i => card(c, i, sel, lock.get(i.id))).join('') || `<div class="inv-empty muted">Nothing in ${esc((CATS.find(x => x[0] === cat) || [])[1] || 'here')} yet. ${(CATS.find(x => x[0] === cat) || [])[4] ? 'It comes with your Icon badge.' : '<button class="btn small" data-store>Shop for some</button>'}</div>`}</div>
+      <div class="item-grid">${items.map(i => card(c, i, sel, lock.get(i.id))).join('') || `<div class="inv-empty muted">Nothing in ${esc((CATS.find(x => x[0] === cat) || [])[1] || 'here')} yet. ${(CATS.find(x => x[0] === cat) || [])[4] ? 'It comes with your Icon badge.' : (CATS.find(x => x[0] === cat) || [])[5] ? 'Finish a Pro-Am season to earn one: a banner for the highest tier you reached.' : '<button class="btn small" data-store>Shop for some</button>'}</div>`}</div>
     </section>
     ${item ? detail(c, item, lock.get(item.id)) : ''}`;
     $$('[data-cat]', root).forEach(b => b.onclick = () => { if (cat === b.dataset.cat) return; cat = b.dataset.cat; sel = null; draw(true); });
@@ -48,7 +49,7 @@ export function render(app, root, params = {}) {
 function card(c, i, sel, lock) {
   const equipped = c.equipment[i.slot] === i.id;
   return `<button class="item ${sel === i.id ? 'on' : ''} ${equipped ? 'equipped' : ''} ${lock ? 'locked' : ''}" data-item="${i.id}">${swatch(i)}
-    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : lock ? '🔒 ' + esc(lock) : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'monster' ? '★ MONSTER MASH' : i.exclusive === 'favela' ? '★ THE FAVELAS' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
+    <b>${esc(i.name)}</b><small>${equipped ? '✓ EQUIPPED' : lock ? '🔒 ' + esc(lock) : i.exclusive === 'cup' ? '★ KING TUT CUP' : i.exclusive === 'jungle' ? '★ JUNGLE BALLERS' : i.exclusive === 'beat' ? '★ BEAT GOES ON' : i.exclusive === 'monster' ? '★ MONSTER MASH' : i.exclusive === 'favela' ? '★ THE FAVELAS' : i.exclusive === 'icon' ? '★ ICON BADGE' : i.exclusive === 'proam' ? '★ PRO-AM' : i.exclusive ? '★ DAILY SPIN' : 'OWNED'}</small></button>`;
 }
 
 function detail(c, i, lock) {
@@ -56,6 +57,7 @@ function detail(c, i, lock) {
   return `<aside class="panel store-detail">
     <div class="eyebrow">${esc((CATS.find(x => x[0] === catOf(i)) || [, i.slot])[1])}</div><h2>${esc(i.name)}</h2>
     <p class="muted">${esc(i.description || '')}</p>${extra ? `<p class="small">${esc(extra)}</p>` : ''}
+    ${i.slot === 'banner' ? `<div class="banner-show">${seasonBanner(i, 'banner-big')}<small class="muted">On your introduction card, by your name</small></div>` : ''}
     ${lock ? `<p class="lock">🔒 This build can't equip it yet: requires ${esc(lock)}</p>` : ''}
     ${i.slot === 'greensound' ? '<button class="btn ghost small" data-hear>▶ Hear it</button>' : ''}
     <div class="row gap">${equipped ? (optionalSlot(i) ? '<span class="owned-tag">✓ Equipped</span><button class="btn ghost" data-unequip>Take off</button>' : '<span class="owned-tag">✓ Equipped</span>') : lock ? `<button class="btn ghost" data-equip disabled>🔒 Requires ${esc(lock)}</button>` : '<button class="btn primary" data-equip>Equip</button>'}</div>

@@ -986,6 +986,22 @@ export function paintShoe(spec = {}) {
         dots(half, 0.84, 0.97, 0.58, 0.74, 0.03, 'rgba(0,0,0,0.35)');
         rect(half, 0, 0.88, 0.4, 0.93, accent); break;
       }
+      case 'canvas': {
+        // v0.4.8.8 the Gold Low-Top Canvas (Pro-Am Gold): a vulcanized court shoe. The upper is woven canvas (a fine
+        // cross-hatch over the colour), a tall white rubber foxing round the sole with a thin trim stripe through it, a
+        // white rubber toe cap, stitched panels and a little heel tab with RIMRIFT's mark
+        const weave = rgbStr(shade(up, 0.82), 0.35), lite = rgbStr(shade(up, 1.12), 0.25);
+        for (let t = 0; t <= 1; t += 0.008) line(half, [[t, 0.5], [t, 1]], (Math.round(t / 0.008) % 2) ? weave : lite, 1.2);
+        for (let v = 0.5; v <= 1; v += 0.012) line(half, [[0, v], [1, v]], (Math.round(v / 0.012) % 2) ? weave : lite, 1);
+        rect(half, 0, 0.245, 1, 0.53, sole);
+        line(half, [[0, 0.36], [1, 0.36]], trim, 7); line(half, [[0, 0.395], [1, 0.395]], 'rgba(0,0,0,0.12)', 2);
+        poly(half, [...curve(t => 0.53 + 0.2 * Math.sqrt(Math.max(0, (t - 0.84) / 0.16)), 0.84, 1), [1, 0.53]], sole);
+        line(half, curve(t => 0.53 + 0.2 * Math.sqrt(Math.max(0, (t - 0.84) / 0.16)), 0.84, 1), 'rgba(0,0,0,0.25)', 2);
+        line(half, [[0.2, 0.53], [0.27, 0.9]], 'rgba(0,0,0,0.3)', 2, [5, 4]); line(half, [[0.74, 0.53], [0.7, 0.86]], 'rgba(0,0,0,0.3)', 2, [5, 4]);
+        rect(half, 0, 0.6, 0.05, 0.86, sole);
+        g.fillStyle = trim; g.font = `900 ${Math.round(15 * k)}px "Arial Black", sans-serif`; g.textAlign = 'center'; g.fillText('RR', X(half, 0.025), Y(0.7));
+        break;
+      }
       case 'retro': {
         poly(half, [[0.08, 0.6], [0.4, 0.84], [0.6, 0.84], [0.32, 0.6]], trim === upper ? accent : trim);
         line(half, [[0.08, 0.6], [0.4, 0.84]], 'rgba(0,0,0,0.3)', 2, [5, 4]);
@@ -1259,6 +1275,21 @@ export function paintChain(spec) {
       gr.addColorStop(0, M.dk); gr.addColorStop(0.35, M.hi); gr.addColorStop(0.6, M.mid); gr.addColorStop(1, M.deep);
       g.fillStyle = gr; g.beginPath(); g.moveTo(x0, Hh); g.lineTo(x0 + step * 0.85, Hh); g.lineTo(x0 + step * 0.85 + Hh * 0.9, 0); g.lineTo(x0 + Hh * 0.9, 0); g.closePath(); g.fill();
     }
+  } else if (link === 'figaro') {
+    // v0.4.8.8 a figaro (the Pro-Am chain): flat links, three short round ones then a long oval, each with a bright bevel
+    // and a dark hole, dark gaps between
+    g.fillStyle = M.deep; g.fillRect(0, 0, W, Hh);
+    const units = [1, 1, 1, 2.2], tot = units.reduce((a, b) => a + b, 0);
+    let x = 0;
+    for (const u of units) {
+      const lw = W * u / tot, cx = x + lw / 2, cy = Hh / 2;
+      const grd = g.createLinearGradient(0, cy - Hh * 0.45, 0, cy + Hh * 0.45);
+      grd.addColorStop(0, M.hi); grd.addColorStop(0.35, M.lt); grd.addColorStop(0.7, M.mid); grd.addColorStop(1, M.dk);
+      g.fillStyle = grd; g.beginPath(); g.ellipse(cx, cy, lw * 0.48, Hh * 0.44, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = M.deep; g.beginPath(); g.ellipse(cx, cy, lw * (u > 1 ? 0.34 : 0.2), Hh * 0.14, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = M.hi; g.lineWidth = 3; g.beginPath(); g.ellipse(cx, cy, lw * 0.42, Hh * 0.36, 0, Math.PI * 1.1, Math.PI * 1.8); g.stroke();
+      x += lw;
+    }
   } else if (link === 'tennis') {
     // a tennis chain: one unbroken row of round stones, each in a square setting with a prong at every corner
     g.fillStyle = M.dk; g.fillRect(0, 0, W, Hh);
@@ -1301,12 +1332,49 @@ export function paintChain(spec) {
   return { color: c, emissive: e };
 }
 
+// v0.4.8.8 the Pro-Am chain's nameplate (athlete.js buildChain 'plate': 2.4 times as wide as it is tall, the canvas the
+// same shape): a polished bar in the chain's metal with a raised rim, its letters (PRO-AM) paved edge to edge with clear
+// stones in their own bright metal setting, and the season stamp (S1) struck small under them on the season chain. The
+// glow map: the stones' sparkle.
+function paintPlate(s, M) {
+  const W = 512, Hh = 212, c = canvas(W, Hh), g = c.getContext('2d'), e = canvas(W, Hh), ge = e.getContext('2d');
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, W, Hh);
+  const grd = g.createLinearGradient(0, 0, 0, Hh); grd.addColorStop(0, M.hi); grd.addColorStop(0.45, M.mid); grd.addColorStop(1, M.dk);
+  g.fillStyle = grd; g.fillRect(0, 0, W, Hh);
+  g.lineWidth = 12; g.strokeStyle = M.lt; g.strokeRect(8, 8, W - 16, Hh - 16);
+  g.lineWidth = 3; g.strokeStyle = M.deep; g.strokeRect(17, 17, W - 34, Hh - 34);
+  const text = s.letters || 'PRO-AM', stamp = s.stamp || '', ty = stamp ? Hh * 0.43 : Hh * 0.52;
+  const size = Math.min(118, Math.floor((W - 70) / Math.max(3, text.length) * 1.32));
+  // (the letters' mask, drawn alone: the stones go where it's set)
+  const m = canvas(W, Hh), gm = m.getContext('2d');
+  gm.fillStyle = '#fff'; gm.font = `900 ${size}px "Arial Black", sans-serif`; gm.textAlign = 'center'; gm.textBaseline = 'middle'; gm.fillText(text, W / 2, ty);
+  // the setting: the letters raised in bright metal, a dark edge under them
+  g.font = gm.font; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = M.deep; g.fillText(text, W / 2 + 3, ty + 4);
+  g.fillStyle = M.hi; g.fillText(text, W / 2, ty);
+  const px = gm.getImageData(0, 0, W, Hh).data, st = hexToRgb(s.stone || '#ffffff'), step = 9;
+  for (let y = 4; y < Hh; y += step) for (let x = 4 + ((y / step) % 2) * (step / 2); x < W; x += step) {
+    if (px[(Math.floor(y) * W + Math.floor(x)) * 4] < 160) continue;
+    g.fillStyle = rgbStr(mix(st, [1, 1, 1], 0.35)); g.beginPath(); g.arc(x, y, step * 0.42, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(110,130,160,0.65)'; g.lineWidth = 1; g.stroke();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x - 1.2, y - 1.2, 1.3, 0, 7); g.fill();
+    if ((x * 7 + y * 3) % 5 < 2) { ge.fillStyle = '#ffffff'; ge.beginPath(); ge.arc(x - 1, y - 1, 2.2, 0, 7); ge.fill(); }
+  }
+  if (stamp) {
+    // the season, struck into the bar under the letters: its shadow, then the metal's light edge
+    g.font = '900 34px "Arial Black", sans-serif'; g.fillStyle = M.deep; g.fillText(`· ${stamp} ·`, W / 2 + 2, Hh * 0.8 + 2);
+    g.fillStyle = M.lt; g.fillText(`· ${stamp} ·`, W / 2, Hh * 0.8);
+  }
+  return { color: c, emissive: e };
+}
+
 // a pendant's face (v0.4.8.7: from the chain's own spec, sim/bots.js chainSpec): the medallion in the chain's metal with a
 // raised rim and an original RR mark (it said "16", the old name's); the iced disc paved with the chain's stones; the heart
 // in the chain's metal, paved edge to edge with its stones (the heart's outline is the mesh's, athlete.js buildChain)
 export function paintPendant(spec) {
   const s = typeof spec === 'string' ? { ...(LEGACY_CHAIN[spec] || LEGACY_CHAIN.gold), pendant: spec === 'ice' ? 'iced' : 'medallion' } : spec || {};
   const kind = s.pendant || (s.stone ? 'iced' : 'medallion'), M = metalRamp(s.metal || s.color);
+  if (kind === 'plate') return paintPlate(s, M);
   const S = 256, c = canvas(S, S), g = c.getContext('2d');
   const iced = kind === 'iced' || kind === 'heart', st = hexToRgb(s.stone || '#ffffff');
   const e = iced ? canvas(S, S) : null, ge = e && e.getContext('2d');

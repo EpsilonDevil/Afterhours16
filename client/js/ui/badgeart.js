@@ -7,7 +7,7 @@
 // full-spectrum design inside.
 // Everything is inline SVG with its own gradient ids, so a badge can be dropped into any element.
 import { esc, TIER_CLS } from './common.js';
-import { RANKS as RANK_COLORS } from '../sim/ranks.js';
+import { RANKS as RANK_COLORS, showsIcon, bannerInfo } from '../sim/ranks.js';
 
 let uid = 0;
 const nid = p => `${p}${(++uid).toString(36)}`;
@@ -193,4 +193,19 @@ export function rankEmblemSVG(rank, size = 48) {
     <linearGradient id="${a}w" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${r.color}"/><stop offset="1" stop-color="${r.dark}" stop-opacity=".8"/></linearGradient></defs>
     ${burst}${wings}<path d="${RANK_SHIELD}" fill="url(#${a}f)" stroke="${t === 6 ? '#ffd458' : r.dark}" stroke-width="${t === 6 ? 3 : 2}" stroke-linejoin="round"/>
     <path d="M32 9L45.5 14.2V31C45.5 42 39 49.5 32 54.5 25 49.5 18.5 42 18.5 31V14.2Z" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="1.2"/>${glyph}</svg>`;
+}
+
+// v0.4.8.8 the rank icon by a player's name (every mode: the tags over the players, the results, the phone, the intro
+// cards): his current tier's emblem, from Silver up (Bronze shows none). '' when there's nothing to show. (Each call has
+// its own gradient ids: keep one per player where it's redrawn every frame, game/session.js)
+export function nameRankIcon(tier, size = 14) {
+  if (tier == null || !showsIcon(tier)) return '';
+  return `<span class="name-rank r${tier}" title="${esc(RANK_COLORS[tier]?.name || '')}">${rankEmblemSVG(tier, size)}</span>`;
+}
+// a Pro-Am season banner (its item: "S1 · Gold"), a pennant in the tier's colours: the intro card, the Inventory
+export function seasonBanner(item, cls = '') {
+  const b = bannerInfo(item);
+  if (!b) return '';
+  const r = RANK_COLORS[b.tier] || RANK_COLORS[0];
+  return `<span class="season-banner r${b.tier}${cls ? ' ' + cls : ''}" style="--bc:${r.color};--bd:${r.dark}" title="${esc(item.name || b.label)}"><b>S${b.season}</b><small>${esc(b.tier_name.toUpperCase())}</small></span>`;
 }

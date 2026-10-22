@@ -1073,7 +1073,17 @@ export class AthleteModel {
         this.loftLimb(gb, up, fo, (t, p, ls) => this.upperArmR(t, p, ls) + 0.0038 + overComp, this.jointBlend(clav, up, fo, 0.2), { t0: 0.14, t1: 1.02, col: () => sc });
         this.loftLimb(gb, fo, ha, (t, p, ls) => { const r = this.foreArmR(t, p, ls); return [r[0] + 0.0036 + overComp, r[1] + 0.0036 + overComp]; }, this.jointBlend(up, fo, ha, 0.12), { t0: -0.02, t1: 0.95, col: () => sc });
       }
-      if (gear.wristband) {
+      if (gear.wristband?.watch) {
+        // v0.4.8.8 the Platinum PRO watch (Pro-Am): on the off hand only, a slim metal bracelet just above the wrist with a
+        // raised round face on the back of it, dark, ringed by the bezel in the trim's metal
+        if (side === (gear.wristband.side || 'L')) {
+          const band = hexLinear(gear.wristband.color), face = [...hexLinear(gear.wristband.face || '#111'), 1], bezel = [...hexLinear(gear.wristband.trim || gear.wristband.color), 1];
+          const o0 = 0.0058 + (topFam === 'hoodie' ? 0.0148 : topFam === 'compression' ? 0.0024 : topFam === 'shell' ? 0.0126 : 0);
+          const at = (phi, ls) => Math.abs(angDiff(phi, ls * Math.PI / 2)); // (the back of the wrist: away from the body as the arm hangs)
+          this.loftLimb(gb, fo, ha, (t, p, ls) => { const r = this.foreArmR(t, p, ls), up = 0.0042 * bump(at(p, ls), 0, 0.75) * bump(t, 0.845, 0.05); return [r[0] + o0 + up, r[1] + o0 + up]; }, this.jointBlend(up, fo, ha, 0.12),
+            { t0: 0.8, t1: 0.89, rows: 9, col: (t, p, ls) => { const d = at(p, ls), k = 0.86 + 0.14 * (Math.round(p * 9) % 2); return d < 0.42 && Math.abs(t - 0.845) < 0.028 ? face : d < 0.58 && Math.abs(t - 0.845) < 0.04 ? bezel : [band[0] * k, band[1] * k, band[2] * k, 1]; } });
+        }
+      } else if (gear.wristband) {
         const wc = [...hexLinear(gear.wristband.color), 1];
         // (v0.4.8.5 quick patch: over the windbreaker it follows the sleeve into its gathered cuff: buildTop's forearm + 3 mm)
         const shellWb = t => 0.0126 + 0.0035 * bump(t, 0.45, 0.42) - 0.0088 * smooth(0.8, 0.86, t) + 0.0032;
@@ -1156,7 +1166,7 @@ export class AthleteModel {
     const link = spec.link || (iced ? 'tennis' : 'cuban');
     const r = spec.thick || (iced ? 0.0042 : 0.0036); // tube radius (H units)
     const dropF = spec.drop ?? 0.072;
-    const SECTION = { cuban: { cols: 10, ra: 1.25, rb: 0.6 }, rope: { cols: 12, ra: 1, rb: 1 }, tennis: { cols: 6, ra: 1.1, rb: 0.85 }, box: { cols: 4, ra: 1, rb: 1 } }[link] || { cols: 10, ra: 1, rb: 1 };
+    const SECTION = { cuban: { cols: 10, ra: 1.25, rb: 0.6 }, rope: { cols: 12, ra: 1, rb: 1 }, tennis: { cols: 6, ra: 1.1, rb: 0.85 }, box: { cols: 4, ra: 1, rb: 1 }, figaro: { cols: 8, ra: 1.2, rb: 0.7 } }[link] || { cols: 10, ra: 1, rb: 1 };
     const path = [], wts = [], N = 72;
     // point on the (clothed) body surface at height yf with lateral offset xt (H units), front or back
     const surf = (yf, xt, frontSide, loose) => {
@@ -1183,7 +1193,7 @@ export class AthleteModel {
     }
     let len = 0; const acc = [0];
     for (let i = 1; i < path.length; i++) { len += Math.hypot(...sub(path[i], path[i - 1])); acc.push(len); }
-    const linkRepeat = ({ cuban: 0.05, rope: 0.034, tennis: 0.05, box: 0.034 }[link] || 0.06) * H; // one texture tile (4 links, stones or twists)
+    const linkRepeat = ({ cuban: 0.05, rope: 0.034, tennis: 0.05, box: 0.034, figaro: 0.06 }[link] || 0.06) * H; // one texture tile (4 links, stones or twists)
     const gb = new GB();
     gb.tube(path, path.map(() => [r * H * SECTION.ra, r * H * SECTION.rb]), [0, 1, 0], {
       cols: SECTION.cols, capEnd: false,
@@ -1197,17 +1207,20 @@ export class AthleteModel {
     // one) or a heart (its outline: the classic curve, fanned from its middle)
     const pg = new GB(), lo = path[N / 2], w = wts[N / 2];
     const heart = pendantKind === 'heart';
-    const pr = (pendantKind === 'iced' ? 0.021 : heart ? 0.016 : 0.017) * H, th = (heart ? 0.0032 : 0.004) * H;
+    // (v0.4.8.8: or a nameplate, the Pro-Am chain's: a wide rounded bar, PA times as wide as it is tall, letters across it)
+    const plate = pendantKind === 'plate', PA = 2.4;
+    const pr = (pendantKind === 'iced' ? 0.021 : heart ? 0.016 : plate ? 0.0125 : 0.017) * H, th = (heart ? 0.0032 : 0.004) * H;
     const cz = lo[2] + 0.004 * H, cy = lo[1] - pr - 0.004 * H;
-    const seg = heart ? 48 : 28;
+    const seg = heart ? 48 : plate ? 64 : 28;
     const outline = a => {
+      if (plate) { const sa = Math.sin(a), ca = Math.cos(a); return [Math.sign(sa) * Math.pow(Math.abs(sa), 0.25), Math.sign(ca) * Math.pow(Math.abs(ca), 0.25)]; } // (a squircle: rounded corners)
       if (!heart) return [Math.sin(a), Math.cos(a)];
       const t = a; // (16 sin^3 t, 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t), about 34 x 30 across: to -1..1, centred
       return [16 * Math.pow(Math.sin(t), 3) / 17, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5) / 15];
     };
     const ringF = [], ringB = [];
     for (let k = 0; k <= seg; k++) {
-      const a = k / seg * Math.PI * 2, [ox, oy] = outline(a), x = ox * pr, y = oy * pr, uv = [0.5 + ox * 0.5, 0.5 - oy * 0.5];
+      const a = k / seg * Math.PI * 2, [ox, oy] = outline(a), x = ox * pr * (plate ? PA : 1), y = oy * pr, uv = [0.5 + ox * 0.5, 0.5 - oy * 0.5];
       ringF.push(pg.v([lo[0] + x, cy + y, cz + th], uv, null, w));
       ringB.push(pg.v([lo[0] + x, cy + y, cz - th], uv, null, w));
     }

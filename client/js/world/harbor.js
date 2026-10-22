@@ -9,7 +9,7 @@ import { RNG, makeNoise2D } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { cachedTexture } from './court.js';
 import * as PR from './props.js';
-import { PARK_COURTS, PARK_HQ, PARK_HALL } from './themes.js';
+import { PARK_COURTS, PARK_HQ, PARK_HALL, PARK_PROAM } from './themes.js';
 
 const lin = hex => M.hexLinear(hex);
 // the dry sand ends at SHORE.z; a wet slope runs down to SHORE.y at SHORE.wet (the sea sits at y -0.6, so the
@@ -86,6 +86,7 @@ export function onSomething(x, z, r = 1.2) {
   if (Math.abs(x) < 9.6 + r && Math.abs(z + 24) < 2.4 + r) return true;              // kiosks + the wheel
   if (Math.abs(x - PARK_HQ.x) < 3.6 + r && Math.abs(z - PARK_HQ.z) < 2.2 + r) return true;
   if (Math.abs(x - PARK_HALL.x) < 2.9 + r && Math.abs(z - PARK_HALL.z) < 2.2 + r) return true;
+  if (Math.abs(x - PARK_PROAM.x) < 3.5 + r && z > PARK_PROAM.z - 2.3 - r && z < PARK_PROAM.z + 4.4 + r) return true; // (v0.4.8.8 the Pro-Am HUB and its carpet)
   const lx = (((x + 40) % 9) + 9) % 9;
   if (Math.abs(z + 27) < 0.6 + r && x > -41 - r && x < 42 + r && Math.min(lx, 9 - lx) < 0.6 + r) return true; // plaza lamps
   if (Math.abs(x + 66) < 1 + r && z > -13 - r && z < 5 + r) return true;            // the mural wall

@@ -169,7 +169,8 @@ export const iconNeed = b => Math.max(1, Math.min(HOF_LIMIT, hofCapacity(b)));
 // unlocked that Icon badge (c.icon_badge, which the server sets from its archetype at the unlock: an Oprah item is a
 // Playmaker's who has unlocked Oprah). Everyone else doesn't see it at all; it stays in the account's locker for them)
 export const iconItemFor = (i, c) => !!c && !!i?.icon && c.icon_badge === i.icon;
-export const inStore = i => !i.secret && !i.icon;
+// (v0.4.8.8: the Pro-Am rank and season items are won, not bought: never in the store, only in the Inventory once won)
+export const inStore = i => !i.secret && !i.icon && i.exclusive !== 'proam';
 export const forBuild = (i, c) => (i.icon ? iconItemFor(i, c) : !i.secret);
 
 // v0.4.8.5 quick patch 3: ICON status, the endgame (mirrors server/builds.py icon_status_info). Every cap breaker the

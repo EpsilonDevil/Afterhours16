@@ -130,7 +130,7 @@ test('wiring: tickets carry the other team\'s rating, Forfeit & leave costs RP, 
   // offline: the AI team's level; online: the other roster (real players by RP)
   assert.match(modes, /opp_rating: levelRating\(level\)/);
   assert.match(modes, /teamRating\(setup\.rosters\[1 - myTeam\], setup\.levels/);
-  assert.match(modes, /opp_rating: oppRating/);
+  assert.match(modes, /opp_rating: myOpp \?\? oppRating/); // (v0.4.8.8: a series game: the server's rating of the other team, each team's own)
   // the pause menu's forfeit, Pro-Am only (a lost connection sends no flag)
   assert.match(modes, /cancel`, pa \? \{ forfeit: true \} : \{\}\)/);
   assert.match(modes, /onLost: async \(\) => \{ if \(ticket\) \{ try \{ await app\.api\.post\(`\/api\/matches\/\$\{ticket\.id\}\/cancel`, \{\}\)/);

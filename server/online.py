@@ -498,10 +498,10 @@ class Hub:
             self.release_place(conn.aid, old)
             if self.parks:
                 self.parks.leave(conn.aid, old)  # (v0.4.8.7: the park director's: he's gone)
-            else:
+            if self.player_hosted(old):
                 self.pick_host(old)
         if place:
-            if not self.parks:
+            if self.player_hosted(place):
                 self.pick_host(place, quiet=conn.aid)
             others = self.at(place, skip=conn.aid)
             pop = self.pops.get(place)
@@ -516,6 +516,10 @@ class Hub:
                 self.parks.arrive(conn, place)  # (v0.4.8.7: the park as the server has it: pstate)
 
     # ---- v0.4.8.7 qp7: each park's host, picked here (one answer for everyone): whoever has been there longest ----
+    # (v0.4.8.8: with the park director on, the parks are the server's; a Crew HQ or a Pro-Am HUB, hq:..., still has a host)
+    def player_hosted(self, place):
+        return bool(place) and (not self.parks or str(place).startswith("hq:"))
+
     def host_of(self, place):
         there = self.at(place)
         return min(there, key=lambda c: (c.info.get("arrived", 0), str(c.aid))).aid if there else None
@@ -945,6 +949,42 @@ class Hub:
                 ct["busy"]["score"] = sc
             self.send_to([c.aid for c in self.at(g["where"]) if c.aid not in g["players"]], {"t": "courtscore", "court": g["court"], "score": sc, "names": g["names"]})
 
+    # ---- v0.4.8.8 Pro-Am (server/proam.py): the team's ready check (the Server/UI agent's section) ----
+    PA_READY_OPS = ("ask", "yes", "no", "cancel")
+
+    def pa_ready(self, conn, msg):
+        """{"t": "pa-ready", "op": ask | yes | no | cancel, "secs"} from a Pro-Am team member, passed on to every other
+        member of his team who's connected here: the Captain asks (with the seconds he waits: 5-30), the others say yes
+        or no, the Captain can call it off. The team is the one this service keeps (pa_members); the queue and the game
+        themselves go through the service (/api/proam/queue) and the usual game start."""
+        op = msg.get("op")
+        if op not in self.PA_READY_OPS:
+            return
+        row = self.db.query("SELECT team_id FROM pa_members WHERE account_id=?", (conn.aid,))
+        if not row:
+            return conn.send({"t": "error", "text": "You're not on a Pro-Am team."})
+        team = row[0][0]
+        mates = [r[0] for r in self.db.query("SELECT account_id FROM pa_members WHERE team_id=?", (team,)) if r[0] != conn.aid]
+        out = {"t": "pa-ready", "op": op, "team": team, "from": conn.aid, "name": self.name_of(conn.aid)}
+        if op == "ask":
+            secs = msg.get("secs")
+            out["secs"] = max(5, min(30, int(secs))) if isinstance(secs, (int, float)) and not isinstance(secs, bool) else 20
+        self.send_to([a for a in mates if self.live(a)], out)
+
+    def pa_entries(self, conn, msg):
+        """{"t": "pa-entries", "ids": [...], "req"}: the home team's Captain setting up a real-vs-real series game asks for
+        the players' entries (his teammates' and the other team's, as each one last sent it here). Only Pro-Am team
+        members, connected and not in a game; at most 10. Answered {"t": "pa-entries", "req", "people": {id: {entry,
+        username, rtt}}}."""
+        ids = msg.get("ids")
+        if not isinstance(ids, list) or not self.db.query("SELECT 1 FROM pa_members WHERE account_id=?", (conn.aid,)):
+            return
+        ids = [a for a in ids[:10] if isinstance(a, str)]
+        teamed = {r[0] for r in self.db.query("SELECT account_id FROM pa_members WHERE account_id IN (%s)" % ",".join("?" * len(ids)), tuple(ids))} if ids else set()
+        people = {a: {"entry": self.conns[a].entry, "username": self.conns[a].username, "rtt": self.conns[a].info.get("rtt")}
+                  for a in ids if a in teamed and self.live(a) and not self.conns[a].game and self.conns[a].entry}
+        conn.send({"t": "pa-entries", "req": msg.get("req"), "people": people})
+
     # ---- v0.4.8.7: hosted games' results, for the service's check (app.py hosted_verdict) ----
     def results_prune(self, now=None):
         """Bounded: a finished game's record goes RESULT_TTL after its end; past RESULT_MAX the oldest finished go first
@@ -1251,7 +1291,7 @@ class Hub:
             elif t == "pop":  # (v0.4.8.7: the park's people as the park's host sees them, to everyone else there)
                 # (qp7: only from the host picked here, and kept a moment for whoever arrives next)
                 place = conn.info.get("park")
-                if place and not self.parks and msg.get("place") == place and self.hosts.get(place, self.host_of(place)) == conn.aid:
+                if place and self.player_hosted(place) and msg.get("place") == place and self.hosts.get(place, self.host_of(place)) == conn.aid:
                     out = {**msg, "from": conn.aid}
                     self.pops[place] = (time.monotonic(), out)
                     self.send_to([c.aid for c in self.at(place, skip=conn.aid)], out)
@@ -1348,6 +1388,10 @@ class Hub:
                 self.crew_xp(conn, msg)
             elif t == "crew-ack":
                 self.crew_ack(conn, msg)
+            elif t == "pa-ready":  # (v0.4.8.8 Pro-Am: the team's ready check, pa_ready)
+                self.pa_ready(conn, msg)
+            elif t == "pa-entries":  # (v0.4.8.8 Pro-Am: the players of a real-vs-real series game, for its setup)
+                self.pa_entries(conn, msg)
 
     # ---- the socket loop (runs on the request's handler thread) ----
     def sign_in(self, conn):

@@ -7,7 +7,7 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import { buildCourt, buildHoop, cachedTexture } from './court.js';
 import * as PR from './props.js';
 import { createParkLife } from './parklife.js';
-import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, PARK_HALL, HQ } from './themes.js';
+import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, PARK_HALL, PARK_PROAM, plazaLampOff, HQ } from './themes.js';
 import { COURT } from '../sim/constants.js';
 import { harborGround, harborPalms, waterlineZ } from './harbor.js';
 import { streetGround, cityStreets } from './street.js';
@@ -15,6 +15,7 @@ import { industrialSprawl } from './industry.js';
 import { retroGround, retroSky, retroCity } from './retro.js';
 import { horrorGround, horrorTown } from './horror.js';
 import { favelaGround, favelaTown } from './favela.js';
+import { buildProamPark } from './proamparks.js'; // (v0.4.8.8: the twelve Pro-Am parks: THEMES.proam_<id>)
 
 const lin = hex => M.hexLinear(hex);
 
@@ -42,6 +43,7 @@ export function buildVenue(r, scene, themeId, opts = {}) {
   applyLighting(r, scene, theme);
   if (theme.kind === 'park') return buildPark(r, scene, theme, opts);
   if (theme.kind === 'arena') return buildArena(r, scene, theme, opts);
+  if (theme.kind === 'proam') return buildProamPark(r, scene, theme.proam, opts); // (opts: {home, seed})
   if (theme.kind === 'hq') return buildHQ(r, scene, theme, opts);
   return buildGym(r, scene, theme, opts);
 }
@@ -210,6 +212,13 @@ function buildPark(r, scene, theme, opts) {
   const hallSign = new Mesh(ctx.geometry(G.quad(3.4, 0.85)), new Material({ map: cachedTexture(ctx, 'hallsign-' + theme.id + '-' + hallInfo.sub, () => T.banner(hallInfo.title, { bg: '#121418', color: '#f4f1ea', stripe: hallInfo.color, sub: hallInfo.sub }), {}), shading: 'unlit', color: [1.4, 1.4, 1.4], fog: false }), { castShadow: false });
   M.m4translation(hallSign.matrix, PARK_HALL.x, 4.55, PARK_HALL.z + HL.d / 2 + 0.03);
   scene.add(hallSign);
+  // v0.4.8.8: the Pro-Am HUB east of the kiosks: walk up to its doors to go in (game/park.js → game/proamhub.js)
+  const pah = PR.proamHub(PARK_PROAM.x, PARK_PROAM.z, '#ff4d24'), PH = PR.PROAM_HUB_SIZE;
+  matte.push(...pah.parts);
+  batch(ctx, scene, pah.glow, new Material({ color: [1.6, 1.6, 1.6], shading: 'unlit', fog: false }), { castShadow: false, reflect: false });
+  const pahSign = new Mesh(ctx.geometry(G.quad(PH.w - 1, 1.1)), new Material({ map: cachedTexture(ctx, 'proamhubsign', () => T.banner('PRO-AM', { bg: '#0d0f12', color: '#ff4d24', stripe: '#e8c15a', sub: 'HUB · TEAMS · SEASONS · RANKS', w: 1024, h: 192 }), {}), shading: 'unlit', color: [1.5, 1.5, 1.5], fog: false }), { castShadow: false });
+  M.m4translation(pahSign.matrix, PARK_PROAM.x, PH.h + 1.2, PARK_PROAM.z + PH.d / 2 - 0.34);
+  scene.add(pahSign);
   // perimeter scenery by style
   const lightsOut = [];
   let board = null, scenery = null; // (v0.4.8.5: scenery.update(dt) animates the city's signals, neon and windows,
@@ -232,12 +241,13 @@ function buildPark(r, scene, theme, opts) {
     if (theme.style === 'tut' && (z > 18 || (x < -30 && z < -30))) continue; // mini-golf strip / leaderboard
     if (Math.abs(x - PARK_HQ.x) < 6.5 && z < -20) continue; // the Crew HQ
     if (Math.abs(x - PARK_HALL.x) < 5.5 && z < -20) continue; // the Event Park hall
+    if (Math.abs(x - PARK_PROAM.x) < 6.5 && z < -18) continue; // (v0.4.8.8) the Pro-Am HUB
     if (theme.style === 'coast' || theme.style === 'tut') foliage.push(...PR.palm(x, z, theme.style === 'tut' ? 0.85 : 1, rng));
     else if (theme.style === 'jungle') foliage.push(...PR.rainTree(x, z, 0.42 + rng.next() * 0.2, rng, { leaf: '#2f7a3a', leaf2: '#4a8a3c' }), ...PR.fern(x + rng.range(-2.5, 2.5), z + rng.range(-2.5, 2.5), 0.9 + rng.next() * 0.5, rng)); // (a younger giant: 8-13 m)
     else foliage.push(...PR.tree(x, z, 0.9 + rng.next() * 0.4, rng, theme.style === 'industrial' ? '#55623d' : '#3f6b3a'));
   }
-  for (let i = 0; i < 10; i++) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : theme.style === 'retro' ? '#3a2466' : theme.style === 'horror' ? '#1a181e' : undefined));
-  if (theme.style === 'horror') for (let i = 0; i < 10; i++) lamps.push({ geo: G.cylinder(0.11, 0.16, 0.3, 8, { y0: true }), matrix: M.m4translation(M.m4(), -40 + i * 9 + 0.5, 5.4, -27), color: [1, 0.62, 0.3, 1] }); // (v0.4.8.5 quick patch 2: the lamps glow sodium orange)
+  for (let i = 0; i < 10; i++) if (!plazaLampOff(-40 + i * 9)) metal.push(...PR.streetLamp(-40 + i * 9, -27, 5.5, theme.style === 'tut' ? '#1c1428' : theme.style === 'jungle' ? '#2a3a24' : theme.style === 'retro' ? '#3a2466' : theme.style === 'horror' ? '#1a181e' : undefined));
+  if (theme.style === 'horror') for (let i = 0; i < 10; i++) if (!plazaLampOff(-40 + i * 9)) lamps.push({ geo: G.cylinder(0.11, 0.16, 0.3, 8, { y0: true }), matrix: M.m4translation(M.m4(), -40 + i * 9 + 0.5, 5.4, -27), color: [1, 0.62, 0.3, 1] }); // (v0.4.8.5 quick patch 2: the lamps glow sodium orange)
   // murals on a wall behind the west court
   // (v0.4.8.5 quick patch: the Beat Goes On's wall is its boombox-and-cassette mural)
   const muralTex = theme.style === 'retro' ? cachedTexture(ctx, 'mural-beat', () => T.boomboxMural(), {}) : theme.style === 'favela' ? cachedTexture(ctx, 'mural-favela', () => T.favelaMural(), {}) : theme.style === 'horror' ? cachedTexture(ctx, 'mural-monster', () => T.monsterMural(), {}) : cachedTexture(ctx, 'mural-' + theme.id, () => T.mural(theme.id === 'kingtut' ? 'KING TUT' : theme.id === 'jungle' ? 'JUNGLE' : AFFILIATIONS[theme.id]?.park?.split(' ')[0]?.toUpperCase() || 'RIMRIFT', { seed: theme.id.length * 11, palette: theme.id === 'harbor' ? ['#ef7d3c', '#ffd25e', '#0d8a8f', '#d1386b', '#fff4e0'] : theme.id === 'brick' ? ['#b8322f', '#f0e2c4', '#f2c14e', '#3b6fb5', '#fafafa'] : theme.id === 'kingtut' ? ['#39ff88', '#b14dff', '#e8c15a', '#2fd3ff', '#14101f'] : theme.id === 'jungle' ? ['#ff8a1f', '#ffd23f', '#2ec4ff', '#3f8a3a', '#141414'] : ['#f2c14e', '#3b5873', '#e05a2f', '#9ab3c9', '#f4efe3'] }), {});
@@ -279,10 +289,12 @@ function buildPark(r, scene, theme, opts) {
     theme, courts, hoops, practice: { origin: prOrigin, hoop: practiceHoop }, store: { x: storePos[0], z: storePos[1] + 2.4 }, gotNext, life,
     boosts: { x: boostPos[0], z: boostPos[1] + 2.4 }, wheel: { x: wheelPos[0], z: wheelPos[1] + 2.2, obj: wheel }, board,
     hq: { x: PARK_HQ.x, z: PARK_HQ.z + HS.d / 2 + 1.1 },
+    proamHub: { x: PARK_PROAM.x, z: PARK_PROAM.z + PH.d / 2 + 1.1 }, // (v0.4.8.8: where you stand to go in)
     hall: { x: PARK_HALL.x, z: PARK_HALL.z + HL.d / 2 + 1.1, home: !!theme.event, open: theme.event ? true : !!opts.eventName, name: theme.event ? (opts.homeName || null) : (opts.eventName || null) },
     solids: [storePos, boostPos].map(q => ({ x0: q[0] - 2.9, x1: q[0] + 2.9, z0: q[1] - 1.75, z1: q[1] + 1.75, h: 3.3 })).concat([{ x0: wheelPos[0] - 1.6, x1: wheelPos[0] + 1.6, z0: wheelPos[1] - 0.8, z1: wheelPos[1] + 0.8, h: 4 }],
       [{ x0: PARK_HQ.x - HS.w / 2 - 0.1, x1: PARK_HQ.x + HS.w / 2 + 0.1, z0: PARK_HQ.z - HS.d / 2 - 0.1, z1: PARK_HQ.z + HS.d / 2 + 0.05, h: HS.h + 0.3 },
-        { x0: PARK_HALL.x - HL.w / 2 - 0.1, x1: PARK_HALL.x + HL.w / 2 + 0.1, z0: PARK_HALL.z - HL.d / 2 - 0.1, z1: PARK_HALL.z + HL.d / 2 + 0.05, h: HL.h + 0.3 }], board?.solids || []),
+        { x0: PARK_HALL.x - HL.w / 2 - 0.1, x1: PARK_HALL.x + HL.w / 2 + 0.1, z0: PARK_HALL.z - HL.d / 2 - 0.1, z1: PARK_HALL.z + HL.d / 2 + 0.05, h: HL.h + 0.3 },
+        { x0: PARK_PROAM.x - PH.w / 2 - 0.1, x1: PARK_PROAM.x + PH.w / 2 + 0.1, z0: PARK_PROAM.z - PH.d / 2 - 0.1, z1: PARK_PROAM.z + PH.d / 2 + 0.05, h: PH.h + 0.3 }], board?.solids || []),
     bounds: { x0: -63, x1: 63, z0: -34, z1: 32 },
     update(dt) {
       t += dt;

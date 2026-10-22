@@ -22,7 +22,7 @@ import { statProfile } from './profile.js';
 import { rk as n } from './ratings.js';
 import { over99, RATING_MAX } from './ratings.js';
 import { OP_ICON, pickOprahPass, oprahPlan, oprahBall, oprahFacing } from './oprah.js';
-import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES } from './badges.js';
+import { bk, TAKEOVERS, TAKEOVER_NEED, TAKEOVER_SECS, ICON_BADGES, REALISM } from './badges.js';
 // v0.4.5 defense: +3.75% contest range, positioning (blocks, contests, boards), block timing and lane pressure
 import { DEF_K } from './shots.js';
 import { LockedInGrade } from '../game/grade.js';
@@ -271,6 +271,14 @@ export class Game {
       this.players.push(p); this.teams[t].push(p);
     }));
     this.human = this.players.find(p => p.human) || null;
+    // v0.4.8.8 Pro-Am realism (badges.js REALISM): Pro-Am only, the same on every screen (it comes with the game's config)
+    this.realism = !!cfg.realism && cfg.mode === 'proam';
+    if (this.realism) {
+      const sum = {}, cnt = {};
+      for (const p of this.players) for (const k in p.raw) if (Number.isFinite(p.raw[k])) { sum[k] = (sum[k] || 0) + p.raw[k]; cnt[k] = (cnt[k] || 0) + 1; }
+      const mean = {}; for (const k in sum) mean[k] = sum[k] / cnt[k];
+      for (const p of this.players) p.applyRealism(mean, REALISM);
+    }
     // v0.4.4: the user's lifetime numbers drive how auto-play plays his player
     for (const p of this.players) if (p.human) p.profile = statProfile(p.entry.build, this.mode);
     this.score = [0, 0];
@@ -307,6 +315,7 @@ export class Game {
     this.ftState = null;
     this.firstPossession = 0;
     this.difficulty = cfg.difficulty ?? 0.6;
+    if (this.realism) this.difficulty = Math.min(1, this.difficulty * REALISM.difficulty); // (v0.4.8.8: Pro-Am 10% harder, AI included)
     this.ai = new AI(this);
     this.shotLog = [];
     this.lastShot = null;
@@ -411,7 +420,7 @@ export class Game {
     } else this.emit({ type: 'takeoverProg', player: p.id, kind: t.kind, prog: t.prog });
   }
   // extra green-window share for a player (Sharp Eye Icon badge, shooting takeover)
-  greenK(p) { return 1 + (p.icon && ICON_BADGES[p.icon]?.green || 0) + (p.takeover.active && TAKEOVERS[p.takeover.kind].green || 0); }
+  greenK(p) { return 1 + (p.icon && p.iconFx !== false && ICON_BADGES[p.icon]?.green || 0) + (p.takeover.active && TAKEOVERS[p.takeover.kind].green || 0); }
 
   // v0.4.5 quick patch: the green window a release is graded against (ms of action time: ±total around the ideal
   // release), and the part of it the build earns with its own ratings alone (natural: the attributes as the build
@@ -584,7 +593,7 @@ export class Game {
   }
   // may his Icon badge pop up now (his own, and its gap since the last one gone by)? Yes notes the time
   iconPopOk(p, badge = p?.icon) {
-    if (!p || !badge || p.icon !== badge) return false;
+    if (!p || !badge || p.icon !== badge || p.iconFx === false) return false; // (v0.4.8.8: no Icon effects in Pro-Am, so no pop)
     const at = this.iconPopAt || (this.iconPopAt = new Map()), k = `${p.id}:${badge}`, last = at.get(k);
     if (last != null && this.time - last < ICON_POP_GAP) return false;
     at.set(k, this.time);
@@ -1867,15 +1876,15 @@ export class Game {
             // finishing through contact: dunk ratings + Close Shot vs the defender's size and interior D
             // (qp3: a Hash-Slinging finish carries the Icon's own poster: he wins the contact HS_POSTER.pc of the time at
             // least, and the knockdown comes with the package, Posterizer badge or not)
-            const tier = a.hs ? Math.max(bk(p.badges, 'posterizer'), bk({ posterizer: 4 }, 'posterizer')) : bk(p.badges, 'posterizer'), traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
+            const hsFx = a.hs && !this.realism, tier = hsFx ? Math.max(bk(p.badges, 'posterizer'), bk({ posterizer: 4 }, 'posterizer')) : bk(p.badges, 'posterizer'), traffic = S.trafficSkill(p, !!a.standing), pkT = a.tier || 0;
             let pc = Math.max(0.12, Math.min(0.96, 0.45 + 0.44 * traffic + 0.07 * tier + 0.04 * pkT + (p.phys.strength - d.phys.strength) * 0.3 - 0.22 * n(d.ratings.interior_d) - Math.max(0, d.phys.H - p.phys.H) * 0.3 + (d.airborne ? 0.05 : 0)));
-            if (a.hs) pc = Math.max(pc, HS_POSTER.pc);
+            if (hsFx) pc = Math.max(pc, HS_POSTER.pc); // (v0.4.8.8: the Icon's poster is an effect: not in Pro-Am)
             if (this.rng.next() < pc) {
               // v0.4.5: the shove-and-knockdown is the Posterizer badge's alone; without it the dunker finishes
               // through the contact and bumps the defender off the line (no knockdown)
               // (qp3: a Hash-Slinging finish clears him out right there, on the way up: the shove and the knockdown come
               // with the package, so the lane is open for the long finish)
-              if (a.hs) this.posterize(p, d, a, rim, true);
+              if (hsFx) this.posterize(p, d, a, rim, true);
               else if (tier > 0) { a.posterPending = d.id; a.through = d.id; }
               else this.shoulderThrough(p, d, a, rim);
             } else if (p.badges.contact_finisher) {
@@ -2157,8 +2166,9 @@ export class Game {
       // (qp3: a Hash-Slinging finish goes over anyone contesting it, in the air or not, within HS_POSTER.reach and
       // not behind him)
       const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
-      poster = this.opponents(p).find(d => d.dist(p) < (a.hs ? HS_POSTER.reach : 1.1) && (d.airborne || d.action?.type === 'block' || (a.hs && d.action?.type !== 'stumble' && ((d.x - p.x) * fx + (d.z - p.z) * fz) / (d.dist(p) || 1) > HS_POSTER.ahead))) || null;
-      if (poster && (p.badges.posterizer || a.hs)) this.posterize(p, poster, a, rim, false);
+      const hsFx = a.hs && !this.realism; // (v0.4.8.8: the Icon's poster is an effect: not in Pro-Am)
+      poster = this.opponents(p).find(d => d.dist(p) < (hsFx ? HS_POSTER.reach : 1.1) && (d.airborne || d.action?.type === 'block' || (hsFx && d.action?.type !== 'stumble' && ((d.x - p.x) * fx + (d.z - p.z) * fz) / (d.dist(p) || 1) > HS_POSTER.ahead))) || null;
+      if (poster && (p.badges.posterizer || hsFx)) this.posterize(p, poster, a, rim, false);
       else if (poster) { this.shoulderThrough(p, poster, a, rim); poster = null; }
     }
     a.slamAt = a.t;
@@ -2203,7 +2213,7 @@ export class Game {
     let push = (2.6 + 1.6 * Math.max(0, p.phys.strength - d.phys.strength + 0.3)) * (1 + 0.18 * pkT);
     d.action = null;
     let fall = this.rng.next() < 0.45 + 0.1 * bk(p.badges, 'posterizer') + 0.13 * pkT;
-    if (a.hs) {
+    if (a.hs && !this.realism) { // (v0.4.8.8: not in Pro-Am)
       // qp3: a Hash-Slinging finish puts most defenders flat on their back (HS_POSTER.fall, more against a weaker man)
       // for a good three seconds; the strongest sometimes stay up (shoved back hard instead)
       fall = this.rng.next() < Math.max(HS_POSTER.fallMin, Math.min(HS_POSTER.fallMax, HS_POSTER.fall + HS_POSTER.fallStr * (p.phys.strength - d.phys.strength) * 10));
@@ -2214,7 +2224,7 @@ export class Game {
     d.vx = nx / nl * push * 1.15; d.vz = nz / nl * push * 1.15;
     if (early) { p.vx *= 0.8; p.vz *= 0.8; }
     if (p.badges.posterizer) this.badgeFx(p, 'posterizer');
-    this.emit({ type: 'posterContact', player: p.id, victim: d.id, fall, flat: !!(a.hs && fall) });
+    this.emit({ type: 'posterContact', player: p.id, victim: d.id, fall, flat: !!(a.hs && !this.realism && fall) });
   }
 
   // finishing through lighter contact: the defender is bumped off the line (no fall), never passed through

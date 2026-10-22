@@ -132,7 +132,19 @@ export class Player {
   setPos(x, z, facing) { this.x = this.prevX = x; this.z = this.prevZ = z; this.vx = this.vz = 0; if (facing != null) this.facing = this.prevFacing = facing; this.y = this.prevY = 0; this.vy = 0; this.airborne = false; }
   startAction(type, dur, data = {}) { this.action = { type, t: 0, dur, ...data, id: (this.actionSeq = (this.actionSeq || 0) + 1) }; return this.action; }
   jump(h) { this.vy = Math.sqrt(2 * GRAVITY * Math.max(0.05, h)); this.airborne = true; }
-  refreshRatings() { this.ratings = effectiveRatings(this.raw, this.badges, this.icon, this.takeover.active ? this.takeover.kind : null); }
+  refreshRatings() { this.ratings = effectiveRatings(this.played || this.raw, this.badges, this.iconFx === false ? null : this.icon, this.takeover.active ? this.takeover.kind : null); }
+  // v0.4.8.8 Pro-Am realism (Game, cfg.realism; badges.js REALISM): his Icon badge's stat effects off (p.icon stays, so the
+  // Icon's own animation packages still play), his badges at badgeK of their effect, and the attributes he plays with
+  // (played; raw, what gating checks read, is untouched) pulled toward the game's average (mean) by REALISM.spread
+  applyRealism(mean, R) {
+    this.iconFx = false;
+    const played = { ...this.raw };
+    for (const k in played) if (Number.isFinite(played[k]) && Number.isFinite(mean[k])) played[k] = mean[k] + (played[k] - mean[k]) * R.spread;
+    this.played = played;
+    Object.defineProperty(this.badges, 'badgeK', { value: R.badgeK, enumerable: false, configurable: true, writable: true });
+    this.refreshRatings();
+    this.phys = physical({ ...this.entry.build, attributes: played });
+  }
   // v0.4.5 stamina multipliers. Drain: repeated moves × repeated negative plays × cold (1.5) × low grade.
   // Recovery: positive-play bonus (2x, doesn't stack) × hot (1.5) × high grade. All of them stack.
   get drainK() { const s = this.stam; return s.moveK * s.negK * (this.cold ? 1.5 : 1) * (GRADE_DRAIN[s.grade] || 1); }

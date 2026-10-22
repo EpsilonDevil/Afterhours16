@@ -1,6 +1,6 @@
 {
   "name": "rimrift",
-  "version": "0.4.8.7",
+  "version": "0.4.8.8",
   "private": true,
   "type": "module",
   "description": "RIMRIFT \u2014 Make your own gravity. Original street-and-arena basketball game: WebGL2 client, Python/SQLite service.",

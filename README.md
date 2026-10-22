@@ -1,4 +1,17 @@
-# RIMRIFT — v0.4.8.7
+# RIMRIFT — v0.4.8.8
+
+## New in v0.4.8.8: The Pro-Am Overhaul
+
+Full list in `PATCH_NOTES_v0.4.8.8.docx`. Design contract: `docs/PROAM-OVERHAUL.md`.
+- **Pro-Am teams and seasons:** create or join a Pro-Am team (search every team on the server, player and AI); 45-day seasons, Season 1 from the moment the server runs v0.4.8.8, everyone in Bronze.
+- **Series:** Bronze 3 games (first to 2), Silver 5 (first to 3), Gold+ 7 (first to 5), each game matchmade (real teams within 2 divisions first, AI teams after ~45 s), alternating home and away at the 12 new Pro-Am parks. A series win promotes the team a division (3 to Silver, 5 to Gold, 7 to Platinum); a loss resets RP to 0 and demotes anyone already at 0.
+- **GM draft:** the Captain drafts AI players from a clipboard (5 at a time, 3 free refreshes per series).
+- **Pro-Am HUB:** a building in every park, or from the menu: Bronze middle-school gym, Silver high-school gym, Gold clubhouse (customizable, with a walk-out to the home park and 3s there), each with an office (whiteboard, clipboard, queue).
+- **Rank rewards:** +2/+4/+5% VC and Rep in every mode (not stacking), rank icons by names, Gold/Platinum borderplates, the PRO-AM Chain, Gold Low-Top Canvas, Platinum PRO Watch and Headband, record over head, season banners.
+- **Realism (Pro-Am only):** no Icon effects (animation packages stay), badges and the overall gap 10% smaller, 10% harder.
+- **Got Next:** AI can't hold a spot until they're standing on it.
+
+## Earlier: v0.4.8.7
 
 ## New in v0.4.8.7: the server runs the park
 

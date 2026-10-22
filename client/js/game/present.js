@@ -3,7 +3,8 @@
 // shows every player's overall and build plus their badges (park: top 3; Pro-Am 5v5: the #1 most-used one).
 // The simulation doesn't run during the intro; positions are restored exactly when it ends.
 import { ARCHETYPES, badgeCaps, iconStatus } from '../sim/builds.js';
-import { badgeChip } from '../ui/badgeart.js';
+import { badgeChip, nameRankIcon, seasonBanner } from '../ui/badgeart.js';
+import { entryRankTier, borderplate } from '../sim/ranks.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const TIER_CLS = ['none', 'bronze', 'silver', 'gold', 'hof'];
@@ -31,7 +32,7 @@ export function mostUsedBadge(entry) { return rankedBadges(entry).filter(b => b.
 export function introCards(session) {
   const g = session.game, cfg = session.app.config?.badges || {};
   const fiveV5 = g.mode === 'proam';
-  const w = session.app.ai;
+  const w = session.app.ai, cat = session.app.catalog || {};
   return [0, 1].map(t => {
     const team = session.teams[t] || {};
     const players = g.teams[t].map(p => {
@@ -41,6 +42,9 @@ export function introCards(session) {
         name: p.name, human: p.human, pos: b.position || p.position, ovr: b.overall ?? '', height: ftIn(b.height), rep: b.rep?.label || '',
         tag: e.aiId && w ? (w.inSquad(e.aiId) ? 'SQUAD' : w.isFriend(e.aiId) ? 'FRIEND' : '') : '',
         arch: ARCHETYPES[b.archetype]?.label || '', icon: iconStatus(b), badges: badges.map(x => ({ ...x, name: cfg[x.key]?.name || x.key.replace(/_/g, ' ') })),
+        // (v0.4.8.8 Pro-Am ranks: the rank icon by his name and his borderplate, Gold with a sheen and Platinum animated,
+        // follow his current tier; the season banner he has on, from a season he finished)
+        rank: entryRankTier(e), banner: b.equipment?.banner && cat[b.equipment.banner]?.slot === 'banner' ? cat[b.equipment.banner] : null,
       };
     });
     return { team, players, fiveV5 };
@@ -53,9 +57,9 @@ export function introHTML(card, idx, total) {
   return `<div class="intro-card ${fiveV5 ? 'five' : ''}" style="--tc:${esc(team.color || '#ff4d24')}">
     <div class="intro-team"><span class="intro-k">${idx === 0 ? 'STARTING FOR' : 'AND THEIR OPPONENTS'}</span><b>${esc(team.name || 'Team')}</b><span class="intro-step">${idx + 1}/${total}</span></div>
     <div class="intro-players">${players.map((p, i) => `
-      <div class="intro-p ${p.human ? 'me' : ''}" style="--d:${i * 0.12}s">
+      <div class="intro-p ${p.human ? 'me' : ''}${borderplate(p.rank) ? ' plate-' + borderplate(p.rank) : ''}${p.banner ? ' has-banner' : ''}" style="--d:${i * 0.12}s">${p.banner ? seasonBanner(p.banner, 'intro-banner') : ''}
         <div class="intro-ovr"><b>${esc(p.ovr)}</b><small>OVR</small></div>
-        <div class="intro-who"><b>${esc(p.name)}${p.human ? ' <em>YOU</em>' : p.tag ? ` <em class="${p.tag === 'SQUAD' ? 'sq' : 'fr'}">${p.tag}</em>` : ''}</b><small>${esc(p.pos)} · ${esc(p.height)} · ${p.icon ? '<span class="icon-status">ICON</span> ' : ''}${esc(p.arch)}${p.rep ? ' · ' + esc(p.rep) : ''}</small>
+        <div class="intro-who"><b>${nameRankIcon(p.rank, 15)}${esc(p.name)}${p.human ? ' <em>YOU</em>' : p.tag ? ` <em class="${p.tag === 'SQUAD' ? 'sq' : 'fr'}">${p.tag}</em>` : ''}</b><small>${esc(p.pos)} · ${esc(p.height)} · ${p.icon ? '<span class="icon-status">ICON</span> ' : ''}${esc(p.arch)}${p.rep ? ' · ' + esc(p.rep) : ''}</small>
           <div class="intro-badges" title="${sub}">${p.badges.length ? p.badges.map(b => badgeChip(b.key, b.tier, b.name)).join('') : '<span class="ib none">No badges yet</span>'}</div>
         </div>
       </div>`).join('')}</div>

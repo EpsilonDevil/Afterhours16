@@ -837,3 +837,73 @@ select { background-color: rgba(255,255,255,.06); }
 /* The screens whose content grows and shrinks with a filter (the store, inventory, MyPlayer, stats) keep their
    scrollbar's space, so a filter that makes the list fit no longer shifts the whole layout sideways under the pointer. */
 .panel.store, .panel.mp, .panel.stats-panel { scrollbar-gutter: stable; }
+
+/* v0.4.8.8 The Pro-Am Overhaul: the Pro-Am tab and the office (ui/proam.js) */
+.pa-season { color: var(--muted); font-size: 13px; letter-spacing: .04em; margin: 2px 0 12px; }
+.pa-div { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pa-div b { font-family: var(--display); letter-spacing: .06em; font-size: 14px; }
+.pa-div.r0 b { color: #e9a26a; } .pa-div.r1 b { color: #dfe5ec; } .pa-div.r2 b { color: #ffd458; } .pa-div.r3 b { color: #72e8d6; } .pa-div.r4 b { color: #7cc4ff; } .pa-div.r5 b { color: #c792ff; } .pa-div.r6 b { color: #ff7a6b; }
+.pa-rp { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; vertical-align: middle; margin: 0 6px; }
+.pa-rp i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ffd458); }
+.pa-logo { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; flex: none; background: linear-gradient(140deg, var(--c1), color-mix(in srgb, var(--c1) 70%, #000)); border: 2px solid var(--c2); color: var(--c2); font-family: var(--display); font-size: 14px; letter-spacing: .04em; }
+.pa-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pa-head h1, .pa-head h2 { margin: 0; }
+.pa-rank { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pa-start, .pa-office { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 14px 0; }
+.pa-big { text-align: left; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--line); background: linear-gradient(140deg, rgba(255,255,255,.07), rgba(255,255,255,.02)); color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.pa-big:hover, .pa-big:focus-visible { border-color: var(--accent); }
+.pa-big.primary { border-color: rgba(255,77,36,.55); background: linear-gradient(140deg, rgba(255,77,36,.22), rgba(255,77,36,.05)); }
+.pa-big b { font-family: var(--display); font-size: 18px; letter-spacing: .05em; } .pa-big small { color: var(--muted); }
+.pa-cols, .pa-board-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 22px; }
+.pa-row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.pa-row .grow, .pa-row-main { flex: 1; } .pa-row-main { display: flex; flex-direction: column; } .pa-row small { color: var(--muted); }
+.pa-row.on { background: rgba(255,77,36,.08); } .pa-row em { font-style: normal; color: var(--muted); width: 18px; }
+.pa-results { max-height: 52vh; overflow: auto; margin-top: 10px; }
+.pa-members { width: 100%; border-collapse: collapse; } .pa-members td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.pa-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin: 10px 0 14px; }
+.pa-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.pa-form .chips { grid-column: 1 / -1; }
+.pa-builds { display: grid; gap: 6px; } .pa-build { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pa-games { width: 100%; border-collapse: collapse; } .pa-games td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.pa-games tr.won td:last-child b { color: var(--good); } .pa-games tr.lost td:last-child b { color: var(--bad); }
+.pa-series-line { margin: 8px 0; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); }
+.pa-series-line.won { border-color: rgba(61,220,132,.5); color: #9ff0c2; } .pa-series-line.lost { border-color: rgba(255,91,87,.45); color: #ffb0ac; }
+@media (max-width: 760px) { .pa-cols, .pa-board-cols { grid-template-columns: 1fr; } .pa-rank { margin-left: 0; align-items: flex-start; } }
+
+/* ---------------- v0.4.8.8 Pro-Am ranks everywhere: the name icon, borderplates, season banners ---------------- */
+.name-rank { display: inline-flex; vertical-align: -2px; margin-right: 4px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+.name-rank .rank-em { display: block; }
+.ptag .name-rank, .friend-tag .name-rank { margin-right: 2px; vertical-align: -3px; }
+.res-who { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; font-size: 14px; }
+.res-who .muted { margin-left: 6px; }
+.pa-items-won { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
+.pa-items-won > b { color: #ffd458; letter-spacing: .14em; font-size: 11px; }
+/* the introduction card's borderplates: Gold with a sheen, Platinum animated (sim/ranks.js borderplate) */
+.intro-p { position: relative; }
+.intro-p.plate-gold, .intro-p.plate-platinum { overflow: hidden; border-left-width: 0; padding-left: 13px; }
+.intro-p.plate-gold { background: linear-gradient(100deg, rgba(255,212,88,.16), rgba(160,105,10,.10) 60%, rgba(255,212,88,.06)); box-shadow: inset 0 0 0 1.5px rgba(255,212,88,.75), inset 3px 0 0 #ffd458, 0 0 14px rgba(255,190,60,.18); }
+.intro-p.plate-gold::after, .intro-p.plate-platinum::after { content: ''; position: absolute; inset: -40% auto -40% -60%; width: 38%; transform: skewX(-22deg); pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,246,206,.42), transparent); animation: plateSheen 3.6s ease-in-out infinite; animation-delay: calc(var(--d, 0s) + .6s); }
+.intro-p.plate-platinum { background: linear-gradient(100deg, rgba(114,232,214,.15), rgba(124,196,255,.10) 50%, rgba(220,232,244,.10)); box-shadow: inset 0 0 0 1.5px rgba(200,236,240,.8), 0 0 16px rgba(114,232,214,.25); }
+.intro-p.plate-platinum::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; pointer-events: none;
+  background: linear-gradient(180deg, #72e8d6, #dfe9f3, #7cc4ff, #72e8d6); background-size: 100% 300%; animation: platePlat 2.4s linear infinite; }
+.intro-p.plate-platinum::after { background: linear-gradient(90deg, transparent, rgba(225,250,255,.5), transparent); animation-duration: 2.4s; }
+.intro-p.plate-platinum .intro-ovr b { background: linear-gradient(90deg, #dff7f3, #72e8d6, #e9f2ff, #7cc4ff, #dff7f3); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: platePlatText 3s linear infinite; }
+@keyframes plateSheen { 0%, 55% { left: -60%; } 100% { left: 130%; } }
+@keyframes platePlat { to { background-position: 0 300%; } }
+@keyframes platePlatText { to { background-position: 300% 0; } }
+@media (prefers-reduced-motion: reduce) { .intro-p.plate-gold::after, .intro-p.plate-platinum::after, .intro-p.plate-platinum::before, .intro-p.plate-platinum .intro-ovr b { animation: none; } .intro-p.plate-gold::after, .intro-p.plate-platinum::after { display: none; } }
+/* season banners (a pennant: S1 over the tier), on the intro card, in the Inventory */
+.season-banner { --bc: #ffd458; --bd: #a0690a; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 3px 6px 9px; min-width: 30px;
+  background: linear-gradient(180deg, var(--bc), var(--bd)); color: #10131a; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); line-height: 1; font-family: var(--display, inherit); }
+.season-banner b { font-size: 12px; letter-spacing: .04em; }
+.season-banner small { font-size: 7px; letter-spacing: .1em; margin-top: 2px; font-weight: 800; }
+.season-banner.r1 { color: #1d232b; } .season-banner.r0 { color: #fff4e8; }
+.intro-banner { position: absolute; top: 0; right: 8px; z-index: 1; }
+.intro-p.has-banner .intro-who { padding-right: 34px; }
+.sw-banner { width: 100%; height: 100%; min-height: 54px; justify-content: center; padding-bottom: 14px; }
+.sw-banner b { font-size: 20px; } .sw-banner small { font-size: 10px; }
+.banner-show { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; }
+.banner-big { min-width: 64px; padding: 8px 10px 22px; } .banner-big b { font-size: 26px; } .banner-big small { font-size: 11px; }
+.pa-hub-btn { margin-left: auto; align-self: center; }
+.pa-custom .chips { margin-bottom: 4px; }

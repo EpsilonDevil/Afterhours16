@@ -21,6 +21,8 @@ const DEFAULTS = {
   defArrows: true,
   // v0.4.7.5 qp3 perf: an online game whose frames run slow draws a little lighter until they're quick again
   adaptiveGfx: true,
+  // v0.4.8.8: your Pro-Am season record over your head in the park (ui/online.js myEntry: entry.proam.showRecord)
+  paRecord: false,
 };
 export const settings = { ...DEFAULTS };
 try {

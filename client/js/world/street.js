@@ -13,7 +13,7 @@ import { RNG, makeNoise2D } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { cachedTexture } from './court.js';
 import * as PR from './props.js';
-import { PARK_COURTS } from './themes.js';
+import { PARK_COURTS, plazaLampOff } from './themes.js';
 import { shadedPlane } from './harbor.js';
 
 const lin = hex => M.hexLinear(hex);
@@ -407,6 +407,7 @@ export function cityStreets(ctx, scene, rng) {
   // and the plaza's own lamps (the park's lanterns at z -27) get a warm globe and a pool of light under them
   for (let i = 0; i < 10; i++) {
     const lx = -40 + i * 9 + 0.5;
+    if (plazaLampOff(lx - 0.5)) continue; // (v0.4.8.8: the Pro-Am HUB stands there)
     glow.push({ geo: G.cylinder(0.106, 0.198, 0.35, 8, { y0: true }), matrix: TR(lx, 5.5 + 0.22 - 0.345, -27), color: [1, 0.78, 0.48, 1] });
     pools.push({ geo: G.plane(10, 10), matrix: TR(lx, 0.02, -27), color: [0.9, 0.62, 0.34, 1] });
   }

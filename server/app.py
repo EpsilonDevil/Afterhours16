@@ -21,7 +21,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from . import builds, progression, cup, crew, bugs, online, upnp
+from . import builds, progression, cup, crew, bugs, online, upnp, proam
 from . import reset as season
 from .database import Database, encode
 
@@ -48,7 +48,7 @@ VENUES = json.loads((ROOT / "server/venues.json").read_text())
 SCHEMA_VERSION = 12
 PRORUN_MAX = 2_000_000  # bytes of JSON for one saved Pro Run career
 PRORUN_PHASES = ("college", "draft", "season", "playoffs", "offseason")
-VERSION = "0.4.8.7"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset; v0.4.8.7)
+VERSION = "0.4.8.8"  # (v0.4.8.6: the RIMRIFT identity patch; its quick patch: the ICON Squad, the season reset; v0.4.8.7; v0.4.8.8 The Pro-Am Overhaul)
 # Reported game clock may run ahead of wall clock by at most this many seconds.
 # (Tests raise it to fast-forward simulated games; leave it alone for real play.)
 TIME_SLACK = float(env("TIME_SLACK", "30"))
@@ -249,6 +249,10 @@ class Service:
         # game's service (main) passes reset.SEASON_RESET; a Service made without one (the tests) never resets
         self.season, self.reset_lock, self.reset_done = season_reset, threading.Lock(), False
         self.maybe_reset()
+        # v0.4.8.8 The Pro-Am Overhaul (server/proam.py, docs/PROAM-OVERHAUL.md): Season 1 begins the first time this
+        # runs; the AI Pro-Am teams are made, and the season items added to the catalog
+        self.proam = proam.ProAm(self, CATALOG)
+        self.proam.boot()
 
     def maybe_reset(self, now=None):
         """v0.4.8.6 qp: the season reset, once per save, the first moment the service is asked anything at or after its
@@ -295,6 +299,16 @@ class Service:
         out.update(builds.describe(char))
         out["rep"] = progression.rep_info(char.get("progression", {}).get("rep", 0))
         out["proam_rank"] = progression.proam_rank(rp)
+        # v0.4.8.8 Pro-Am: the build's season rank (division, RP 0..100, record), the boost it brings, and the rank from
+        # before Season 1 as history
+        prog = char.get("progression", {})
+        pa = prog.get("pa") or proam.blank_state(None)
+        # ("best": the highest tier this build has ever reached, this season or an old one: what a tier unlocks for good
+        # goes by it, like the Platinum record over the head)
+        best = max([proam.tier_of(pa.get("high", 0))] + [proam.tier_of(r.get("high", 0)) for r in prog.get("pa_seasons", []) if isinstance(r, dict)])
+        out["pa"] = {**proam.public_state(pa), "boost": proam.BOOST[proam.tier_of(pa.get("div", 0))], "best": best}
+        out["pa_history"] = prog.get("pa_history")
+        out["pa_seasons"] = prog.get("pa_seasons", [])
         return out
 
     # v0.4.8.5 qp7: ICON build slots (builds.build_slots): the account's slots from its builds as saved. claim=True (a new
@@ -334,6 +348,8 @@ class Service:
             # as marked before, so they're never said again)
             kept = self.kept_slots(conn, account_id)
             stored, marked_before, marked_now = [], kept, 0
+            pa_season = proam.current_season(conn)["n"]  # (v0.4.8.8)
+            self.proam.sync_catalog(pa_season)
             for cid, data in rows:
                 char = builds.normalize(json.loads(data))
                 # v0.4.8.5: badges catch up with the current requirements as the profile loads (a lowered Hall of Fame
@@ -382,6 +398,9 @@ class Service:
                 elif builds.mark_icon_slot(char):
                     marked_now += 1
                     conn.execute("UPDATE characters SET data=? WHERE id=?", (encode(char), cid))
+                # v0.4.8.8 Pro-Am: the build in this season (an old season's record kept and its reward given, Bronze 1
+                # again), its rank items given
+                self.proam.on_profile(conn, account_id, [char], pa_season)
                 stored.append(char)
                 chars.append(self.describe(char))
             # v0.4.7.5 qp3: every Icon badge a build holds brings its own items (the Hash-Slinging dunk package); builds
@@ -931,6 +950,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, {"balance": s.db.query("SELECT balance FROM wallets WHERE account_id=?", (aid,))[0][0], "transactions": [dict(r) for r in rows]})
             if path == "/api/crew":
                 return self.respond(200, s.crew_status(self.account()))
+            # v0.4.8.8 The Pro-Am Overhaul (server/proam.py): the season, your team and builds; search; a team
+            if path == "/api/proam":
+                return self.respond(200, s.proam.status(self.account()))
+            if path == "/api/proam/search":
+                self.account()
+                return self.respond(200, s.proam.search((parse_qs(urlsplit(self.path).query).get("q") or [""])[0]))
+            if path == "/api/proam/teams":
+                aid = self.account()
+                return self.respond(200, s.proam.team(aid, (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]))
             if path == "/api/prorun":
                 aid = self.account()
                 cid = (parse_qs(urlsplit(self.path).query).get("character_id") or [""])[0]
@@ -1206,6 +1234,8 @@ class Handler(BaseHTTPRequestHandler):
                         raise builds.Invalid("The Favelas exclusive. Win it at the Favelas.")
                     if item.get("exclusive") == "icon":
                         raise builds.Invalid("Icon badge exclusive. It comes with the Icon badge; it cannot be bought.")
+                    if item.get("exclusive") == "proam":  # (v0.4.8.8: rank and season items)
+                        raise builds.Invalid("Pro-Am exclusive. Won, not bought: earn it in Pro-Am.")
                     if item.get("exclusive"):
                         raise builds.Invalid("Daily Spin exclusive. Win it on the wheel in your park.")
                     why = s.eligible(char, item)
@@ -1239,6 +1269,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200, db.once(aid, data.get("key"), "proam_team", team, save_team))
             if path == "/api/crew":
                 return self.crew_action(aid, data)
+            # v0.4.8.8 Pro-Am: create, update, join, leave, answer, kick, handon, draft, queue, lineup (server/proam.py)
+            pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup)", path)
+            if pa_route:
+                return self.respond(200, s.proam.action(aid, pa_route.group(1), data))
             if path == "/api/prorun":
                 return self.save_prorun(aid, data)
             if path == "/api/cup/claim":
@@ -1525,7 +1559,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def start_match(self, aid, data):
         s, db = self.service, self.service.db
-        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante", "bounty_streak", "opp_rating"))
+        builds.strict_keys(data, ("key", "character_id", "mode", "venue", "format", "target", "quarter_len", "difficulty", "ante", "bounty_streak", "opp_rating", "pa_game", "pa_home"))
+        if "pa_game" in data and data.get("mode") != "proam":
+            raise builds.Invalid("A series game is a Pro-Am game.")
+        # v0.4.8.8: a 3s game on a Gold+ Pro-Am team's home court, from its HUB (game/proamhub.js): a quarter of a park
+        # game's VC, no Rep, the usual badge progress, and nothing else (no streaks, ante, bounty, cup, crew or rank)
+        pa_home = "pa_home" in data
+        if pa_home:
+            if data.get("pa_home") is not True or data.get("mode", "park") != "park" or "ante" in data or "bounty_streak" in data:
+                raise builds.Invalid("A home-court game is a plain park game: pa_home true, no ante or bounty.")
+            with db.transaction() as pc:
+                why = s.proam.home_court_check(pc, aid, data.get("venue"))
+            if why:
+                raise builds.Invalid(why)
         mode = data.get("mode", "park")
         if mode not in ("park", "proam", "prorun"):
             raise builds.Invalid("Mode must be park, proam or prorun.")
@@ -1548,7 +1594,9 @@ class Handler(BaseHTTPRequestHandler):
             if target not in (11, 15, 21):
                 raise builds.Invalid("Park games go to 11, 15 or 21.")
             meta["target"] = target
-            meta["streak"] = char.get("progression", {}).get("park", {}).get("streak", 0)
+            meta["streak"] = 0 if pa_home else char.get("progression", {}).get("park", {}).get("streak", 0)
+            if pa_home:
+                meta["pa_home"] = True
             # v0.4.7.5: challenging kings on a streak above 6 puts their bounty on the line
             bs = data.get("bounty_streak")
             if bs is not None:
@@ -1582,12 +1630,16 @@ class Handler(BaseHTTPRequestHandler):
             meta["quarter_len"] = ql
             meta["quarters"] = 4
             row = db.query("SELECT data FROM proam_teams WHERE account_id=?", (aid,))
-            if not row:
+            if not row and data.get("pa_game") is None:  # (v0.4.8.8: a series game is the Pro-Am team's)
                 raise builds.Invalid("Create your Pro-Am team first.")
             # v0.4.8.5: how strong the other team is (RP-like, 0..3200: the client's AI level or its players' RP), for the
             # competition part of the RP this game pays; without one, a team as strong as you
             opp = data.get("opp_rating")
             meta["opp_rating"] = progression.proam_state(char)["rp"] if opp is None else builds.integer(opp, 0, progression.PROAM_RATING_MAX, "Opponent rating")
+            # v0.4.8.8: a game of the team's series (server/proam.py ProAm.ticket_meta: his team's, on, not played yet)
+            if data.get("pa_game") is not None:
+                with db.transaction() as pc:
+                    meta["pa_game"] = s.proam.ticket_meta(pc, aid, data)
         diff = data.get("difficulty", 0.6)
         if not isinstance(diff, (int, float)) or isinstance(diff, bool) or not 0.2 <= diff <= 1.0:
             raise builds.Invalid("Difficulty must be 0.2-1.0.")
@@ -1600,12 +1652,14 @@ class Handler(BaseHTTPRequestHandler):
 
         def create(c):
             # abandoning an unfinished game forfeits it (no reward, resets park streak)
-            for old in c.execute("SELECT id, mode, character_id, venue FROM matches WHERE account_id=? AND status='running'", (aid,)).fetchall():
+            for old in c.execute("SELECT id, mode, character_id, venue, meta FROM matches WHERE account_id=? AND status='running'", (aid,)).fetchall():
                 rank = s.proam_forfeit(c, old["character_id"], "abandoned") if old["mode"] == "proam" else None  # v0.4.8.5: -20 RP
+                if old["mode"] == "proam":  # (v0.4.8.8: this season's -20, and a series game lost)
+                    s.proam.forfeit(c, aid, old["character_id"], json.loads(old["meta"] or "{}"))
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "abandoned", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), old["id"]))
                 if old["venue"] in cup.EVENT_VENUES:
                     s.reset_cup_streak(c, old["character_id"])
-                if old["mode"] in ("park", "proam", "prorun"):
+                if old["mode"] in ("park", "proam", "prorun") and not json.loads(old["meta"] or "{}").get("pa_home"):  # (v0.4.8.8: a home-court game touches no streak)
                     s.reset_win_streak(c, old["character_id"])
             # v0.4.5: the Cup stake comes out of the wallet now; it's only paid back on a win
             if meta.get("ante"):
@@ -1667,13 +1721,18 @@ class Handler(BaseHTTPRequestHandler):
                 raise builds.Invalid("forfeit must be true or false.")
             rank, char_out = None, None
             with db.transaction() as c:
-                row = c.execute("SELECT status, result, mode, character_id, venue FROM matches WHERE id=? AND account_id=?", (match_id, aid)).fetchone()
+                row = c.execute("SELECT status, result, mode, character_id, venue, meta FROM matches WHERE id=? AND account_id=?", (match_id, aid)).fetchone()
                 if not row:
                     raise HTTPError(404, "Game not found.")
                 if row["status"] != "running":
                     return self.respond(200, {"status": row["status"], "result": json.loads(row["result"] or "null")})
+                if json.loads(row["meta"] or "{}").get("pa_home"):  # (v0.4.8.8: a home-court game left: nothing to undo)
+                    c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "player_left", "reward": 0}), time.time(), match_id))
+                    return self.respond(200, {"status": "cancelled", "reward": 0})
                 if row["mode"] == "proam" and data.get("forfeit"):
                     rank = s.proam_forfeit(c, row["character_id"])
+                    pm = c.execute("SELECT meta FROM matches WHERE id=?", (match_id,)).fetchone()
+                    s.proam.forfeit(c, aid, row["character_id"], json.loads(pm[0] or "{}") if pm else {})  # (v0.4.8.8)
                     char_out = s.describe(s.character(aid, row["character_id"], c)) if rank else None
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "forfeit" if rank else "player_left", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), match_id))
                 if row["mode"] == "park" and row["venue"] in cup.EVENT_VENUES:
@@ -1726,11 +1785,16 @@ class Handler(BaseHTTPRequestHandler):
             if verdict and verdict["state"] == "disputed":
                 return s.void_disputed(c, aid, row, ticket["meta"], verdict, match_id)  # (v0.4.8.7: no rewards, the ante back)
             char = s.character(aid, row["character_id"], c)
+            s.proam.settle_char(c, aid, char, proam.current_season(c)["n"])  # (v0.4.8.8: his rank boost is this season's)
             rw = progression.rewards(summary, ticket, char)
+            home3s = bool(ticket["meta"].get("pa_home"))
+            if home3s:  # (v0.4.8.8: a home-court game: a quarter of the park VC, no Rep, the badge progress as usual)
+                rw = {**rw, "vc": int(rw["vc"] * progression.PA_HOME_VC), "rep": 0, "streak": 0, "streak_mult": 1.0, "bounty": 0, "pa_home": True}
             # v0.4.8.5: Pro-Am RP (worked out before apply_progress counts this game in the build's record): win or loss,
             # how strong the other team was, and how you played; a forfeited result costs what Forfeit & leave does
             proam_rank = None
-            if row["mode"] == "proam":
+            # (v0.4.8.8: a team's series game counts for the season's rank alone; the old RP is the "before Season 1" record)
+            if row["mode"] == "proam" and not ticket["meta"].get("pa_game"):
                 if summary["forfeit"]:
                     proam_rank = progression.proam_forfeit(char)
                 else:
@@ -1738,6 +1802,8 @@ class Handler(BaseHTTPRequestHandler):
                     secs = ticket["meta"].get("quarter_len", 180) * ticket["meta"].get("quarters", 4)
                     change = progression.proam_rp_change(pa["rp"], ticket["meta"].get("opp_rating", pa["rp"]), rw["won"], summary["stats"], secs)
                     proam_rank = progression.proam_apply(char, change)
+            # v0.4.8.8 Pro-Am: this season's RP and division, and a series game's result for the series (server/proam.py)
+            pa_result = s.proam.complete(c, aid, char, summary, ticket, rw) if row["mode"] == "proam" else None
             prog = progression.apply_progress(char, summary, rw)
             icon_items = s.grant_icon_items(c, aid, prog["icon_unlocked"], char, equip=True) if prog["icon_unlocked"] else []
             balance = db.change_wallet(c, aid, rw["vc"], "match_reward", "match:" + match_id) if rw["vc"] > 0 else c.execute("SELECT balance FROM wallets WHERE account_id=?", (aid,)).fetchone()[0]
@@ -1766,7 +1832,7 @@ class Handler(BaseHTTPRequestHandler):
                 cup_info = {**rw["cup"], "window": cw, "net_change": rw["vc"] - rw["cup"]["ante"], "net": entry["net"], "rank": mine["rank"] if mine else None, "field": len(rows), "streak": rw["streak"]}
             # v0.4.5 crew XP: a share of the Rep this game paid, weighted by mode, doubled with a crew member on your team
             crew_info = None
-            cr = s.load_crew(c, aid) if row["mode"] in ("park", "proam") else None
+            cr = s.load_crew(c, aid) if row["mode"] in ("park", "proam") and not home3s else None
             if cr and not summary["forfeit"]:
                 ids = {m["id"] for m in cr["members"]}
                 with_crew = any(m in ids for m in mates) or crew_mates > 0
@@ -1781,9 +1847,10 @@ class Handler(BaseHTTPRequestHandler):
             result = {"match_id": match_id, "mode": row["mode"], "won": rw["won"], "score": summary["score"], "vc": rw["vc"], "rep": rw["rep"], "cup": cup_info, "crew": crew_info,
                       "streak": rw["streak"], "bounty": rw.get("bounty", 0), "balance": balance, "rep_before": prog["rep_before"], "rep_after": prog["rep_after"],
                       "badges_upgraded": prog["badges_upgraded"], "badge_progress": rw["badges"], "stats": summary["stats"],
-                      "streak_mult": rw.get("streak_mult", 1.0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "icon_items": icon_items, "max_ovr_unlocked": prog["max_ovr_unlocked"],
+                      "streak_mult": rw.get("streak_mult", 1.0), "rank_boost": rw.get("rank_boost", 0), "cap_breakers_awarded": prog["cap_breakers_awarded"], "icon_unlocked": prog["icon_unlocked"], "icon_items": icon_items, "max_ovr_unlocked": prog["max_ovr_unlocked"],
                       "legend_ovr": prog.get("legend_ovr"), "character": s.describe(char), "proam_team": team, "proam_rank": proam_rank,
-                      "build_slot_unlocked": slot_opened, **({"build_slots": s.build_slots(c, aid)} if slot_opened else {})}
+                      "build_slot_unlocked": slot_opened, **({"build_slots": s.build_slots(c, aid)} if slot_opened else {}),
+                      **({"pa": pa_result} if pa_result else {}), **({"pa_home": True} if home3s else {})}
             c.execute("UPDATE matches SET status='completed', result=?, updated_at=? WHERE id=?", (encode(result), time.time(), match_id))
             return result
         out = db.once(aid, data.get("key"), "match_complete:" + match_id, [data.get("summary"), mates], complete)

@@ -28,6 +28,8 @@ import { greenFxFor } from './greenfx.js';
 import { logGameEvent } from '../ui/bugreport.js';
 import { normIntent, intentDelta, takeInputs } from '../sim/wire.js';
 import { IconFX, iconFxState } from './iconfx.js';
+import { nameRankIcon } from '../ui/badgeart.js';
+import { entryRankTier } from '../sim/ranks.js';
 
 const esc2 = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtClock = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return s < 10 && s > 0 ? s.toFixed(1) : `${m}:${String(r).padStart(2, '0')}`; };
@@ -113,6 +115,7 @@ export class PlayerVisual {
   // (shown from a 3-game win streak). Nothing for a build without ICON status: false
   addIcon(r, color = null) {
     if (this.icon) return true;
+    if (this.noIcon) return false;
     if (!iconFxState(this.build).icon) return false;
     this.icon = new IconFX(r, this.scene, this.build, { color });
     this.icon.setCulled(!!this.culled);
@@ -123,7 +126,7 @@ export class PlayerVisual {
   syncIcon(build) {
     if (!build || build === this.build) return;
     this.build = build;
-    const on = iconFxState(build).icon;
+    const on = iconFxState(build).icon && !this.noIcon;
     if (this.icon && !on) { this.icon.dispose(); this.icon = null; if (this.ringColor != null && !this.ring) this.addRing(this.r, this.ringColor); }
     else if (this.icon) this.icon.setBuild(build);
     else if (on && (this.ring || this.ringColor != null)) { if (this.ring) { this.scene.remove(this.ring); this.ring = null; } this.addIcon(this.r, this.ringColor ?? null); }
@@ -191,6 +194,7 @@ export class MatchSession {
       difficulty: opts.difficulty ?? 0.6, assist: this.online ? false : startsOnAutoPlay(opts),
       greenBonus: !opts.background && settings.shotMeter === false ? 1.1 : 1,
       multi: !!this.online, inputDelay: this.online?.delay || 0,
+      realism: !!opts.realism, // (v0.4.8.8: Pro-Am's realism: no Icon effects, badges and the overall gap 10% smaller, +10% difficulty)
     });
     this.game.teamsMeta = this.teams;
     if (this.online) {
@@ -214,6 +218,7 @@ export class MatchSession {
       const pv = new PlayerVisual(this.r, this.scene, e.build, e.look || resolveLook(e.build, this.catalog), lod);
       // (online: your ring is gold; the other people playing get blue rings with you, red against you)
       // (watching: the people playing get a white ring)
+      if (this.game.realism) pv.noIcon = true; // (v0.4.8.8: no ICON cursor or aura in Pro-Am: the plain ring)
       if (p.human) pv.addRing(this.r, this.spectate ? '#f4f2ec' : this.isMe(p) ? '#ffd84a' : p.team === this.game.human?.team ? '#4ac8ff' : '#ff5a6a');
       // (v0.4.8.5 qp8: an AI ICON, a 99 of the AI world with everything maxed, carries the ICON cursor too, in the team's
       // colour as a person would: blue with you, red against you, white when nobody of yours is on the floor)
@@ -1199,6 +1204,15 @@ export class MatchSession {
 
   // v0.4.5 quick patch: the icon pass input over a teammate's head, for whatever you're playing with right now: the
   // key on a keyboard (your binding), the modifier + face button on a controller (your binding, your pad's symbols)
+  // v0.4.8.8: the rank icon by a player's name (his entry's tier: sim/ranks.js entryRankTier), made once per player and
+  // tier (the tags are compared by their text every frame: the same string while nothing changes)
+  rankTag(p) {
+    const m = this._rankTags || (this._rankTags = new Map()), tier = entryRankTier(p.entry);
+    let r = m.get(p.id);
+    if (!r || r.tier !== tier) m.set(p.id, r = { tier, html: nameRankIcon(tier, 13) });
+    return r.html;
+  }
+
   iconPassGlyph(i) {
     const inp = this.input, esc = t => String(t).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
     if (inp.usingPad) {
@@ -1331,7 +1345,9 @@ export class MatchSession {
         const nm = friend ? (this.online?.names?.[p.id] || p.name.split(' ').slice(-1)[0]) : p.name.split(' ').slice(-1)[0];
         // (v0.4.8.7 qp5: a person's player on auto-play says so by his name)
         const auto = names && p.human && g.multi && p.auto ? ' <em class="ptag-auto">AUTO</em>' : '';
-        const txt = (!names ? this.iconPassGlyph(icon) : mine ? `<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${esc2(nm)}` : esc2(nm)) + auto;
+        // (v0.4.8.8: and the rank icon of his current Pro-Am tier by the name, from Silver up: rankTag)
+        const rk = names ? this.rankTag(p) : '';
+        const txt = (!names ? this.iconPassGlyph(icon) : mine ? `${rk}<b>YOU</b>` : icon >= 0 ? `${this.iconPassGlyph(icon)}${rk}${esc2(nm)}` : rk + esc2(nm)) + auto;
         list.push({ id: p.id, x: s.x, y: s.y, text: txt, cls: (mine ? 'me ' : friend ? 'friend ' : '') + (p.team === (me ? me.team : 0) ? 'mate' : 'opp') + (p.calling > 0 ? ' calling' : ''), visible: s.visible && s.depth < 45 });
       }
       hud.setTags(list);
