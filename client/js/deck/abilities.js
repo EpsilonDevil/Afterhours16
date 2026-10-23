@@ -13,8 +13,8 @@
 export const ABILITY_LIST = [
   // common
   { id: 'lucky_headband', name: 'Lucky Headband', rarity: 'common', text: 'The first Shot each match scores double.' },
-  { id: 'wristbands', name: 'Wristbands', rarity: 'common', text: 'Start each match with 5 Stops.' },
-  { id: 'chalk_bag', name: 'Chalk Bag', rarity: 'common', text: 'On turn 1, your Shots score +3.' },
+  { id: 'wristbands', name: 'Wristbands', rarity: 'common', text: 'Start each match with 5 Stops (they wait for your first defense).' },
+  { id: 'chalk_bag', name: 'Chalk Bag', rarity: 'common', text: 'On your first possession each match, your Shots score +3.' },
   { id: 'water_bottle', name: 'Water Bottle', rarity: 'common', text: 'Heal 4 after every match you win.' },
   { id: 'lucky_socks', name: 'Lucky Socks', rarity: 'common', text: '+10 max Health.' },
   { id: 'knee_pads', name: 'Knee Pads', rarity: 'common', text: 'Your first Defense card each turn gives +3 Stops.' },
@@ -23,9 +23,9 @@ export const ABILITY_LIST = [
   { id: 'tip_jar', name: 'Tip Jar', rarity: 'common', text: '+8 coins for every match you win.' },
   { id: 'jump_rope', name: 'Jump Rope', rarity: 'common', text: 'Every 3rd card you play in a turn gives 3 Stops.' },
   { id: 'sweatband', name: 'Sweatband', rarity: 'common', text: 'The first time each match you\'d be made Cold, you aren\'t.' },
-  { id: 'mouthguard', name: 'Mouthguard', rarity: 'common', text: 'The first hit on you each match scores 0.' },
+  { id: 'mouthguard', name: 'Mouthguard', rarity: 'common', text: 'The first basket against you each match scores 0.' },
   // uncommon
-  { id: 'scouting_report', name: 'Scouting Report', rarity: 'uncommon', text: 'See enemy intents two turns ahead.' },
+  { id: 'scouting_report', name: 'Scouting Report', rarity: 'uncommon', text: 'Read hidden sets (against the Shadow, his total).' },
   { id: 'film_reel', name: 'Film Reel', rarity: 'uncommon', text: 'Your first Combo each turn gives +1 energy.' },
   { id: 'metronome', name: 'Metronome', rarity: 'uncommon', text: 'Flow also gives 4 Stops.' },
   { id: 'heavy_ball', name: 'Heavy Ball', rarity: 'uncommon', text: 'Post Shots score +2.' },
@@ -46,13 +46,13 @@ export const ABILITY_LIST = [
   { id: 'deep_rotation', name: 'Deep Rotation', rarity: 'rare', text: 'Depth cards count 6 more cards.' },
   { id: 'minimalist', name: 'Minimalist', rarity: 'rare', text: 'Tight works at 15 cards or fewer.' },
   { id: 'clutch_chain', name: 'Clutch Chain', rarity: 'rare', text: 'Clutch works below 70% Health.' },
-  { id: 'hot_hand', name: 'Hot Hand', rarity: 'rare', text: 'Whenever you score 15+ in one turn, gain Hot 1.' },
+  { id: 'hot_hand', name: 'Hot Hand', rarity: 'rare', text: 'Whenever you score 15+ in one possession, gain Hot 1.' },
   { id: 'ankle_weights', name: 'Ankle Weights', rarity: 'rare', text: '+1 energy, but draw 1 fewer card on turn 1.' },
   // boss: strong, with a drawback
   { id: 'max_contract', name: 'Max Contract', rarity: 'boss', text: '+1 energy each turn. Won matches pay half coins.' },
   { id: 'superteam', name: 'Superteam', rarity: 'boss', text: 'Draw 1 more card each turn. Coolers can\'t heal.' },
   { id: 'signature_shoe', name: 'Signature Shoe', rarity: 'boss', text: '+1 energy each turn. Every match starts with a Ticky-Tack Foul in your draw pile.' },
-  { id: 'franchise_tag', name: 'Franchise Tag', rarity: 'boss', text: '+1 energy each turn. You can\'t see enemy intents.' },
+  { id: 'franchise_tag', name: 'Franchise Tag', rarity: 'boss', text: '+1 energy each turn. You can\'t read their sets.' },
   { id: 'spotlight', name: 'Spotlight', rarity: 'boss', text: '+1 energy each turn. You can play only 6 cards a turn.' },
   // shop
   { id: 'sneaker_deal', name: 'Sneaker Deal', rarity: 'shop', text: 'Shops are 20% cheaper.' },

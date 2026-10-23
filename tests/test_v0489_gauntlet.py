@@ -195,18 +195,18 @@ class GauntletApi(unittest.TestCase):
     def complete_runs(self, p, n, distinct=True):
         for i in range(n):
             seed = next(self.SEEDS) if distinct else 999
-            r = self.call(p, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": seed, "player": {"id": f"starter-{seed}-0", "name": "S"}})
+            r = self.call(p, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": seed, "player": {"id": f"starter-{seed}-0", "name": "S"}})
             self.age(r["run_id"], 3600)
             self.call(p, "/api/gauntlet/finish", {"run_id": r["run_id"], "summary": counts(**COMPLETE)})
 
     def test_start_seeds_players_and_the_profile(self):
         a = self.player("st")
-        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 77, "player": {"id": "starter-77-2", "name": "Pip"}})
+        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 77, "player": {"id": "starter-77-2", "name": "Pip"}})
         self.assertEqual((r["seed"], r["player"]["id"], len(r["run_id"])), (77, "starter-77-2", 32))
-        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 77, "player": {"id": "starter-78-0"}}, expect=400)  # (not this seed's)
-        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 0, "player": {"id": "starter-0-0"}}, expect=400)
-        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "player": {"id": "cv-nope", "converted": True}}, expect=400)  # (not his)
-        auto = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "player": {"id": "x"}}, expect=400)
+        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 77, "player": {"id": "starter-78-0"}}, expect=400)  # (not this seed's)
+        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 0, "player": {"id": "starter-0-0"}}, expect=400)
+        self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "player": {"id": "cv-nope", "converted": True}}, expect=400)  # (not his)
+        auto = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "player": {"id": "x"}}, expect=400)
         self.assertIn("starter", auto["error"])
         prof = self.call(a, "/api/gauntlet/profile")
         self.assertTrue({"converted", "world", "unlocks", "stats", "feed"} <= set(prof))
@@ -216,7 +216,7 @@ class GauntletApi(unittest.TestCase):
     def test_finish_pays_once_capped_by_time_and_keeps_the_world(self):
         a = self.player("fi")
         bal0 = self.call(a, "/api/me")["balance"]
-        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 5, "player": {"id": "starter-5-0", "name": "S"}})
+        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 5, "player": {"id": "starter-5-0", "name": "S"}})
         self.age(r["run_id"], 600)  # (10 real minutes: 1,800 at the most)
         world = {"v": 1, "aiSeed": 3, "runs": 1, "ticks": 0, "chars": {"ai-4": {"name": "Big Dre", "rank": 1, "record": {"w": 1, "l": 0}}}, "feed": []}
         body = {"run_id": r["run_id"], "summary": counts(phaseReached=2, bosses=1, matchesWon=9, rivals=1, nodesCleared=14, durationTurns=40), "world": world, "feed": ["Big Dre sent you home."], "choices": []}
@@ -235,17 +235,17 @@ class GauntletApi(unittest.TestCase):
         # another account can't finish it; too fast is refused; an expired run is gone
         b = self.player("fx")
         self.call(b, "/api/gauntlet/finish", {"run_id": r["run_id"], "summary": counts()}, expect=400)
-        r2 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 6, "player": {"id": "starter-6-0", "name": "S"}})
+        r2 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 6, "player": {"id": "starter-6-0", "name": "S"}})
         self.call(a, "/api/gauntlet/finish", {"run_id": r2["run_id"], "summary": counts(**COMPLETE)}, expect=400)
         self.age(r2["run_id"], G.MAX_RUN_AGE + 10)
         self.call(a, "/api/gauntlet/finish", {"run_id": r2["run_id"], "summary": counts(**COMPLETE)}, expect=400)
         # a completed run: the cap
-        r3 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 9, "player": {"id": "starter-9-1", "name": "S"}})
+        r3 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 9, "player": {"id": "starter-9-1", "name": "S"}})
         self.age(r3["run_id"], 3600)
         out3 = self.call(a, "/api/gauntlet/finish", {"run_id": r3["run_id"], "summary": counts(**COMPLETE)})
         self.assertEqual((out3["vc"], out3["completed"], out3["unlocks"]["completed"], out3["unlocks"]["distinctCompleted"]), (7280, True, 1, 1))
         self.call(a, "/api/gauntlet/finish", {"run_id": r3["run_id"], "summary": counts(**COMPLETE), "world": {"chars": "bad"}})  # (finished: the same answer)
-        r4 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": 10, "player": {"id": "starter-10-1", "name": "S"}})
+        r4 = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 10, "player": {"id": "starter-10-1", "name": "S"}})
         self.age(r4["run_id"], 3600)
         self.call(a, "/api/gauntlet/finish", {"run_id": r4["run_id"], "summary": counts(), "world": {"chars": "bad"}}, expect=400)
 
@@ -281,9 +281,9 @@ class GauntletApi(unittest.TestCase):
         self.assertTrue(all(c["park_cards"] == [{"attr": out["card"]["attr"], "pct": 0.01}] for c in me["characters"]))
         self.assertEqual(me["park_cards"][0]["tier"], "common")
         # a converted player can start a run; another account's can't
-        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "player": {"id": cv["id"], "converted": True}})
+        r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "player": {"id": cv["id"], "converted": True}})
         self.assertTrue(r["player"]["converted"])
-        self.call(self.player("ot"), "/api/gauntlet/start", {"key": uuid.uuid4().hex, "player": {"id": cv["id"], "converted": True}}, expect=400)
+        self.call(self.player("ot"), "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "player": {"id": cv["id"], "converted": True}}, expect=400)
         # gate 2: 3 completed runs with 3 different players
         self.complete_runs(a, 1)
         self.assertIn("3 completed", sac(a.cids[1], 400)["error"])

@@ -23,6 +23,8 @@ import { healRun, removeCardAt, upgradeAt, outcome } from './runlib.js';
 import { AIWorld } from '../sim/world.js';
 
 export const STATS = ['stamina', 'shooting', 'defense', 'health'];
+// the Gauntlet's rules version (§15): 1 = turns, 2 = possessions (v0.4.8.9 qp4). Every new run records it (run.engine)
+export const ENGINE_VERSION = 2;
 export const PHASES = 3; // plus the Final (phase 4)
 export const PHASE_HEAL = 0.5, COOLER_HEAL = 0.3, ICE_CHEST_HEAL = 0.4;
 export const AI_BORN = 1767225600000; // (a fixed birth for an AI world the engine builds itself: names never move)
@@ -68,7 +70,7 @@ export function newRun({ seed = 1, player, world = null, unlocks = null, ai = nu
   const stats = Object.fromEntries(STATS.map(k => [k, clampStat(p.stats?.[k] ?? 3)]));
   const maxHp = maxHpFor(stats.health);
   const run = {
-    v: 1, seed, player: { id: String(p.id || 'player'), name: String(p.name || 'You'), look: p.look || null, converted: !!p.converted, stats, start: { ...stats } },
+    v: 1, engine: ENGINE_VERSION, seed, player: { id: String(p.id || 'player'), name: String(p.name || 'You'), look: p.look || null, converted: !!p.converted, stats, start: { ...stats } },
     hp: maxHp, maxHp, bonusHp: 0, coins: START_COINS, deck: STARTER_DECK.slice(), abilities: [],
     phase: 1, at: null, stage: 'map', node: null, match: null, event: null, shop: null, cooler: null, reward: null,
     map: { phases: [] }, chars: {}, sideline: [], wc: {}, plot: null, outcomes: [], usedChars: [], seenEvents: [],

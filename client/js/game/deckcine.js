@@ -12,6 +12,12 @@
 // action sits in the top part of the screen above the card table. Plays queue (PlayQueue): each takes 1-2 s, a long
 // queue plays faster, and the player can skip the current play or fast-forward. Pure parts (PLAYS, playFor,
 // PlayQueue) have no renderer and are what tests/v0489gauntletui.test.mjs checks.
+// v0.4.8.9 qp4, the Gauntlet in possessions (scratchpad contract QP4 §4): the engine's possession events play too:
+// the tip-off, the run back the other way after a change of possession (and the fast break after a steal), each shot's
+// outcome as the card combination decided it (made, assist, and-one, block, steal, contest and the rebound after it),
+// fouls and free throws, and the defensive cards played against the offense. Within one possession the plays run on
+// from one another without a cut (the men move to where the next play starts); tests/qp4hub.test.mjs drives them with
+// hand-written event lists.
 import { Scene, Material, Mesh } from '../gfx/renderer.js';
 import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
@@ -59,11 +65,50 @@ export const PLAYS = {
   celebrate: { role: 'solo', base: 1.4, label: 'celebration' },
   gassed: { role: 'solo', base: 1.2, label: 'gassed' },
   foul: { role: 'defense', base: 1.5, label: 'foul' },
+  // (qp4: the possession plays. solo here means the play picks its own men: offWho / defWho on the play)
+  tipoff: { role: 'solo', base: 2.6, big: 'always', label: 'tip-off', long: true },
+  transition: { role: 'solo', base: 1.5, label: 'brings it up', long: true },
+  fastbreak: { role: 'solo', base: 1.7, big: 'always', label: 'fast break', long: true },
+  assist: { role: 'offense', base: 3.0, label: 'assist', long: true },
+  andone: { role: 'offense', base: 2.9, big: 'always', label: 'and-one', long: true },
+  board: { role: 'solo', base: 1.6, label: 'rebound', long: true },
+  freethrow: { role: 'solo', base: 2.3, label: 'free throw', long: true },
+  guard: { role: 'defense', base: 1.1, label: 'on him' },
+  protect: { role: 'defense', base: 1.1, label: 'protects the rim' },
+  swipe: { role: 'defense', base: 1.1, label: 'swipes at it' },
+  boxout: { role: 'defense', base: 1.0, label: 'boxes out' },
+  sizeup: { role: 'offense', move: 'cross', base: 1.0, label: 'sizes him up' },
+  charge: { role: 'defense', base: 1.8, big: 'always', label: 'takes the charge' },
 };
+// (qp4) a defensive card played in a possession is the defender getting into it, not a play of its own: the shot that
+// meets it is the shot event's. A shot tag on a card is the shooter sizing his man up before it
+const CARD_ANIM = { contest: 'guard', foul: 'guard', block: 'protect', steal: 'swipe', rebound: 'boxout', lob: 'pass', jumper: 'sizeup', three: 'sizeup', layup: 'sizeup', dunk: 'sizeup', floater: 'sizeup', post: 'sizeup' };
+// the shots' own plays (the shot's tag) and how each outcome of the clash shows (QP4 §3; the engine decides which)
+const SHOT_ANIMS = new Set(['jumper', 'three', 'layup', 'dunk', 'floater', 'post', 'stepback']);
+// the event types only the possession engine sends (a batch with one of them plays as one possession: no cuts)
+export const POSSESSION_TYPES = new Set(['jump', 'tip', 'tipoff', 'jump_ball', 'possession', 'rebound', 'foul', 'ft', 'clash', 'wall']);
+// table-only events in a possession: their text goes to the log, nothing plays on the court (a Shot Clock violation's
+// and a Fatigue card's foul tag, the banked Stops, the statuses, the draws)
+const TABLE_ONLY = new Set(['clash', 'wall', 'rule', 'fatigue', 'status', 'stops', 'draw', 'turn', 'end', 'betray', 'energy', 'flow', 'combo', 'power', 'burn']);
+const sideOf = who => (who === 'you' ? 'you' : 'them');
+// which side has the ball in a play ('you' | 'them')
+function playOffSide(p) {
+  if (p.offWho !== undefined) return sideOf(p.offWho);
+  if (p.role === 'defense') return p.actor === 'you' ? 'them' : 'you';
+  return sideOf(p.actor);
+}
+// plays that set the floor up themselves (never run on from the last one), and the one that runs on from wherever the
+// last play left everybody, whoever has the ball (the rebound off a miss)
+const RESETS = new Set(['tipoff', 'transition', 'fastbreak', 'freethrow']);
+const FROM_HERE = new Set(['board']);
 // what a court event plays: the play, who does it, against whom, and whether the ball goes in. A shot the Stops ate
 // (made, but no points) is a miss on the court: the defense got there. null: nothing to play (a text-only event)
 export function playFor(ev, opts = {}) {
-  if (!ev || !ev.anim || !PLAYS[ev.anim]) return null;
+  if (!ev) return null;
+  const v2 = possessionPlay(ev, opts);
+  if (v2 !== undefined) return v2;
+  if (ev.type === 'card' && CARD_ANIM[ev.anim]) ev = { ...ev, anim: CARD_ANIM[ev.anim], made: false, points: 0 };
+  if (!ev.anim || !PLAYS[ev.anim]) return null;
   const P = PLAYS[ev.anim], nOpp = Math.max(1, opts.opps || 1);
   const you = ev.actor === 'you' || ev.actor == null;
   const actor = you ? 'you' : clamp(ev.actor | 0, 0, nOpp - 1);
@@ -72,6 +117,51 @@ export function playFor(ev, opts = {}) {
   const made = scoring ? !!ev.made && (ev.points > 0 || !ev.stops) : false;
   const dur = clamp(P.base, 1.0, 2.4);
   return { anim: ev.anim, role: P.role, actor, versus, made, scoring, points: ev.points | 0, stops: ev.stops | 0, big: P.big === 'always' || (P.big === 'made' && made), dur, text: ev.text || '', ev };
+}
+
+// (qp4) the possession engine's events: a play, null (text only: the clash), or undefined (not one of them: the plain
+// card and shot plays above take it). Who's who: 'you', an opponent's index, or for a side 'you' | 'them' (the lead
+// opponent, opts.lead ?? 0, stands for them)
+function possessionPlay(ev, opts) {
+  const nOpp = Math.max(1, opts.opps || 1), lead = clamp(opts.lead ?? 0, 0, nOpp - 1);
+  const who = w => (w === 'you' || w == null ? 'you' : w === 'them' ? lead : clamp(w | 0, 0, nOpp - 1));
+  const vs = w => (w === 'you' ? clamp(opts.target ?? 0, 0, nOpp - 1) : 'you');
+  const mk = (anim, o) => { const P = PLAYS[anim]; return { anim, role: P.role, actor: o.offWho ?? 'you', versus: o.defWho ?? null, made: false, scoring: false, points: 0, stops: 0, big: P.big === 'always', dur: P.base, text: ev.text || '', ev, ...o }; };
+  if (TABLE_ONLY.has(ev.type)) return null;
+  switch (ev.type) {
+    case 'jump': { // (the engine's tip-off: actor is who won it)
+      const win = ev.actor === 'you' ? 'you' : 'them';
+      return mk('tipoff', { offWho: win === 'you' ? 'you' : who(ev.actor), defWho: win === 'you' ? lead : 'you', winner: win });
+    }
+    case 'tip': case 'tipoff': case 'jump_ball': {
+      const win = sideOf(ev.winner ?? ev.to ?? 'you');
+      return mk('tipoff', { offWho: win === 'you' ? 'you' : lead, defWho: win === 'you' ? lead : 'you', winner: win });
+    }
+    case 'possession': {
+      const to = sideOf(ev.to), off = to === 'you' ? 'you' : lead;
+      return mk(ev.turnType === 'fast_break' ? 'fastbreak' : 'transition', { offWho: off, defWho: off === 'you' ? lead : 'you', toSide: to, turnType: ev.turnType || null });
+    }
+    case 'rebound': { const r = who(ev.actor); return mk('board', { offWho: r, defWho: vs(r), offensive: !!ev.offensive }); }
+    case 'foul': { const f = who(ev.actor); return mk('foul', { actor: f, offWho: vs(f), defWho: f, role: 'defense' }); }
+    case 'ft': { const s = who(ev.actor), pts = ev.points | 0; return mk('freethrow', { offWho: s, defWho: vs(s), actor: s, made: pts > 0, scoring: true, points: pts }); }
+    case 'shot': {
+      if (!ev.how) return undefined; // (the engine before possessions: the plain shot play)
+      // (the man guarding him: yours, the opponent your shot went at (the event's target); his, you)
+      const s = who(ev.actor), d = ev.by != null ? who(ev.by) : s === 'you' ? clamp(ev.target ?? opts.target ?? 0, 0, nOpp - 1) : 'you';
+      const anim0 = PLAYS[ev.anim] && SHOT_ANIMS.has(ev.anim) ? ev.anim : 'jumper', pts = ev.points | 0;
+      const base = { offWho: s, defWho: d, actor: s, versus: d, shotAnim: anim0, points: pts, stops: ev.stops | 0, scoring: true };
+      if (ev.how === 'block') return mk('block', { ...base, actor: d, made: false, role: 'defense' });
+      if (ev.how === 'steal') return mk('steal', { ...base, actor: d, made: false, role: 'defense', scoring: false });
+      if (ev.how === 'charge') return mk('charge', { ...base, actor: d, made: false, role: 'defense', scoring: false });
+      const made = ev.how === 'made' || ev.how === 'assist' || ev.how === 'and_one';
+      if (ev.how === 'assist') return mk('assist', { ...base, made, assistWho: ev.assist != null ? who(ev.assist) : s });
+      if (ev.how === 'and_one') return mk('andone', { ...base, made });
+      // made or contested: the shot's own play
+      const P = PLAYS[anim0];
+      return { ...mk(anim0, base), role: 'offense', made, big: P.big === 'always' || (P.big === 'made' && made), dur: clamp(P.base, 1.0, 2.4) };
+    }
+    default: return undefined;
+  }
 }
 
 // ---------------- the queue ----------------
@@ -168,6 +258,7 @@ export class DeckCourt {
     const court = this.venue?.courts?.[0];
     this.origin = court?.origin || [0, 0, 0];
     this.hoops = court?.hoops || [];
+    this.full = court ? (court.full ?? (court.format || 0) >= 5) : true; // (qp4: a full court tips off at centre court)
     this.frameTop = opts.frameTop ?? 0.52;
     const bot = (k, lvl) => { const b = makeBot(new RNG(hashString(`${opts.seed}|${k}`)), { level: lvl }); return { build: b.build, name: b.name, look: resolveLook(b.build, this.catalog) }; };
     const youE = opts.you || bot('you', 0.5), oppE = (opts.opps && opts.opps.length ? opts.opps : [bot('opp', 0.6)]).slice(0, 3);
@@ -195,9 +286,18 @@ export class DeckCourt {
   }
   // ---------- the queue ----------
   // events from the engine: the ones with an animation tag become plays; the rest are text (onText)
+  // (qp4: a batch from the possession engine is one possession: its plays run on from one another without a cut while
+  // the same side has the ball; the tip-off, the run back and a fast break end where the next play starts)
   enqueue(events, opts = {}) {
-    const out = [];
-    for (const e of events || []) { const p = playFor(e, { opps: this.opps.length, target: opts.target }); if (p) { this.queue.push(p); out.push(p); } }
+    const out = [], evs = events || [];
+    const chain = evs.some(e => e && (POSSESSION_TYPES.has(e.type) || e.how));
+    for (const e of evs) {
+      const p = playFor(e, { opps: this.opps.length, target: opts.target, lead: opts.lead });
+      if (!p) continue;
+      p.offSide = playOffSide(p);
+      if (chain) { const prev = out[out.length - 1] || (this.lastPlay?.chain ? this.lastPlay : null); p.chain = true; p.cont = !!prev && !RESETS.has(p.anim) && (FROM_HERE.has(p.anim) || prev.offSide === p.offSide); }
+      this.queue.push(p); out.push(p);
+    }
     return out;
   }
   skip() { this.queue.skip(); }
@@ -206,21 +306,35 @@ export class DeckCourt {
   get busy() { return this.queue.busy; }
   // ---------- a play ----------
   actorOf(who) { return who === 'you' ? this.you : this.opps[who] || this.opps[0]; }
+  mateOf(a) { return this.mates.find(m => m.side === a.side); }
   resetAll() {
     for (const a of this.actors) a.place(a.rest.x, a.rest.z);
     this.ball.sim = null; this.ball.mode = 'held'; this.ball.holder = this.you;
   }
   // a step on the play's clock (kept in order: a step can schedule more)
-  at(t, fn) { const s = { t, fn }; let i = this.steps.length; while (i > 0 && this.steps[i - 1].t > t) i--; this.steps.splice(i, 0, s); }
+  at(t, fn) { t += this.base || 0; const s = { t, fn }; let i = this.steps.length; while (i > 0 && this.steps[i - 1].t > t) i--; this.steps.splice(i, 0, s); }
   startPlay(play) {
-    this.play = play; this.steps = []; this.landed = false; this.playT = 0;
-    const off = play.role === 'defense' ? (play.actor === 'you' ? this.opps[play.versus === 'you' ? 0 : play.versus] || this.opps[0] : this.you) : this.actorOf(play.actor);
-    const def = play.role === 'defense' ? this.actorOf(play.actor) : play.role === 'solo' ? null : this.actorOf(play.versus);
+    this.play = play; this.steps = []; this.landed = false; this.playT = 0; this.base = 0;
+    let off, def;
+    if (play.offWho !== undefined) { off = this.actorOf(play.offWho); def = play.defWho == null ? null : this.actorOf(play.defWho); }
+    else {
+      off = play.role === 'defense' ? (play.actor === 'you' ? this.opps[play.versus === 'you' ? 0 : play.versus] || this.opps[0] : this.you) : this.actorOf(play.actor);
+      def = play.role === 'defense' ? this.actorOf(play.actor) : play.role === 'solo' ? null : this.actorOf(play.versus);
+    }
     play.off = off; play.def = def;
-    this.setup(play);
     const fn = SCRIPTS[play.anim] || SCRIPTS.celebrate;
-    fn(this, play, off, def);
-    this.camShot(play.big ? (play.anim === 'dunk' || play.anim === 'block' ? 'baseline' : 'broadcast') : 'broadcast', true);
+    if (play.cont && FROM_HERE.has(play.anim)) fn(this, play, off, def);
+    else if (play.cont && off && def) {
+      // (qp4: on from the last play: the two men run to where this one starts, then it plays from there)
+      const lead = this.leadIn(play);
+      play.dur += lead;
+      this.at(lead, () => { this.base = this.playT; try { this.setupMen(play, true); fn(this, play, off, def); } finally { this.base = 0; } });
+    } else {
+      this.setup(play);
+      fn(this, play, off, def);
+    }
+    this.camShot(play.anim === 'tipoff' ? 'center' : play.big ? (play.anim === 'dunk' || play.anim === 'block' ? 'baseline' : 'broadcast') : 'broadcast', !play.cont);
+    this.lastPlay = play;
     this.opts.onStart?.(play);
   }
   endPlay(play) {
@@ -240,24 +354,60 @@ export class DeckCourt {
   }
   // where a play starts: the man with the ball at his spot facing up, his defender between him and the rim, the
   // others off to the side. A cut, so the jump in place doesn't show
+  // the spot a play starts from: how far out the man with the ball is (by the shot it builds to), at a random angle
+  spotFor(play) {
+    const P = PLAYS[play.shotAnim || play.anim] || PLAYS[play.anim], sh = P.shot;
+    const dist = sh === 'three' ? 7.6 : sh === 'mid' ? 5.4 : sh === 'post' ? 3.1 : sh === 'floater' ? 5.2 : sh === 'layup' ? 5.6 : sh === 'dunk' ? 6.8 : play.anim === 'block' || play.anim === 'foul' ? 5.6 : 6.8;
+    const ang = this.rng.range(-0.9, 0.9);
+    return { x: Math.sin(ang) * dist, z: HZ - Math.cos(ang) * dist, dist, post: sh === 'post' };
+  }
   setup(play) {
     const off = play.off, def = play.def, P = PLAYS[play.anim];
-    const ang = this.rng.range(-0.9, 0.9);
-    const dist = P.shot === 'three' ? 7.6 : P.shot === 'mid' ? 5.4 : P.shot === 'post' ? 3.1 : P.shot === 'floater' ? 5.2 : P.shot === 'layup' ? 5.6 : P.shot === 'dunk' ? 6.8 : play.anim === 'block' || play.anim === 'foul' ? 5.6 : 6.8;
-    const sx = Math.sin(ang) * dist, sz = HZ - Math.cos(ang) * dist;
+    if (SETUPS[play.anim]) { SETUPS[play.anim](this, play, off, def); return; }
+    const sp = this.spotFor(play); play.spot = sp;
+    const sx = sp.x;
     for (const a of this.actors) if (a !== off && a !== def) {
       const mate = this.mates.includes(a);
       const side = a.side === off?.side ? -Math.sign(sx || 1) : Math.sign(sx || 1);
       a.place(mate ? side * 6.4 : side * 3.2 + this.rng.range(-0.6, 0.6), mate ? HZ - 4.6 : HZ - 3.6 + this.rng.range(-1, 1));
       if (a.side !== off?.side) a.p.stance = 'defense';
     }
-    if (off) { off.place(sx, sz, toRim(sx, sz)); this.give(off, P.shot === 'post' || play.role === 'defense' && play.anim === 'rebound' ? 'held' : 'dribble'); }
-    if (def && off) {
+    this.setupMen(play, false);
+    if (play.role === 'solo' && play.offWho === undefined) { const a = this.actorOf(play.actor); a.place(a.side === 'you' ? -1.2 : 1.2, HZ - 6.5, Math.PI); this.ball.mode = 'dead'; this.ball.holder = null; this.ball.y = BALL_R; this.ball.x = 2.5; this.ball.z = HZ - 4; }
+    void P;
+  }
+  // the man with the ball at the play's spot facing up, his defender between him and the rim (cut: placed there; on
+  // from the last play: snapped onto the spot the lead-in ran them to)
+  setupMen(play, cont) {
+    const off = play.off, def = play.def, P = PLAYS[play.shotAnim || play.anim] || PLAYS[play.anim];
+    const sp = play.spot || (play.spot = this.spotFor(play));
+    if (!off) return;
+    const sx = sp.x, sz = sp.z, dist = hypot2(sx, sz - HZ) || 1;
+    off.place(sx, sz, toRim(sx, sz));
+    if (!cont || this.ball.holder !== off) this.give(off, P.shot === 'post' || play.role === 'defense' && play.anim === 'rebound' ? 'held' : 'dribble');
+    if (def) {
       const ux = (RIM.x - sx) / dist, uz = (RIM.z - sz) / dist, gap = play.anim === 'closeout' ? 3.6 : P.shot === 'post' ? 0.85 : 1.25;
       def.place(sx + ux * gap, sz + uz * gap, Math.atan2(sx - (sx + ux * gap), sz - (sz + uz * gap)));
       def.p.stance = 'defense';
     }
-    if (play.role === 'solo') { const a = this.actorOf(play.actor); a.place(a.side === 'you' ? -1.2 : 1.2, HZ - 6.5, Math.PI); this.ball.mode = 'dead'; this.ball.holder = null; this.ball.y = BALL_R; this.ball.x = 2.5; this.ball.z = HZ - 4; }
+  }
+  // (qp4) the run to the next play's spot: drives and setup moves start from wherever the man already is (inside the
+  // arc), set shots from their own range; the ball comes to him if a teammate has it. Returns the lead-in's length
+  leadIn(play) {
+    const off = play.off, def = play.def, P = PLAYS[play.shotAnim || play.anim] || PLAYS[play.anim];
+    const here = { x: off.p.x, z: off.p.z }, dr = hypot2(here.x, here.z - HZ);
+    const fixed = P.shot === 'three' || P.shot === 'mid' || P.shot === 'post';
+    let sp;
+    if (!fixed && dr > 1.4 && dr < 8.5) sp = { x: here.x, z: here.z, dist: dr };
+    else sp = this.spotFor(play);
+    play.spot = sp;
+    const d = hypot2(sp.x - here.x, sp.z - here.z), lead = clamp(d / 6.5, 0.25, 0.8);
+    off.goTo(sp.x, sp.z, 6.5);
+    if (def) { const ux = (RIM.x - sp.x) / (sp.dist || 1), uz = (RIM.z - sp.z) / (sp.dist || 1); def.goTo(sp.x + ux * 1.25, sp.z + uz * 1.25, 6.5); def.p.stance = 'defense'; }
+    const h = this.ball.holder;
+    if (h && h !== off && h.side === off.side && this.ball.mode !== 'flight') this.passTo(h, off, false, Math.min(0.4, lead));
+    else if (!h || h.side !== off.side) { if (this.ball.mode !== 'flight' || !this.ball.sim) this.give(off, 'dribble'); }
+    return lead;
   }
   give(a, mode = 'held') { this.ball.holder = a; this.ball.mode = mode; this.ball.sim = null; }
   // ---------- the ball ----------
@@ -285,7 +435,7 @@ export class DeckCourt {
     if (b.arc) {
       const A = b.arc; A.t += dt; const k = Math.min(1, A.t / A.dur);
       b.x = lerp(A.P.x, A.Q.x, k); b.z = lerp(A.P.z, A.Q.z, k); b.y = lerp(A.P.y, A.Q.y, k) + 4 * A.h * k * (1 - k);
-      if (k >= 1) { b.arc = null; this.give(A.to, 'held'); if (A.to.p && !A.to.p.action) A.to.act('catch', 0.25); }
+      if (k >= 1) { b.arc = null; if (A.to) { this.give(A.to, 'held'); if (A.to.p && !A.to.p.action) A.to.act('catch', 0.25); } else { b.mode = 'dead'; } }
       return;
     }
     if (b.sim) {
@@ -310,7 +460,8 @@ export class DeckCourt {
     const C = this.cam, b = this.ball, [ox, , oz] = this.origin;
     const fx = clamp(b.x, -6, 6), fz = clamp(b.z, HZ - 10, HZ + 0.5);
     let pos, tgt, fov;
-    if (C.shot === 'baseline') { pos = [fx * 0.35 + 2.8, 3.7, HZ + 2.3]; tgt = [fx * 0.6, 1.7, HZ - 5]; fov = 54; } // (inside the baseline: a park's fence is just behind it)
+    if (C.shot === 'center') { const bz = clamp(b.z, -4, HZ); pos = [-14.5, 6.6, bz - 2.2]; tgt = [b.x * 0.4, 1.4, bz + 0.4]; fov = 44; } // (qp4: the tip-off, at centre court)
+    else if (C.shot === 'baseline') { pos = [fx * 0.35 + 4.1, 3.2, HZ + 2.3]; tgt = [fx * 0.6, 1.7, HZ - 5]; fov = 54; } // (inside the baseline: a park's fence is just behind it; wide of the board, so a play at the rim isn't behind it)
     else if (C.shot === 'low') { pos = [fx - 2.6, 1.9, fz - 3.6]; tgt = [RIM.x, 2.6, RIM.z]; fov = 50; }
     else if (C.shot === 'tight') { const a = this.play?.off || this.play?.def || this.you; pos = [a.p.x - 3.6, 2.4, a.p.z - 3.4]; tgt = [a.p.x, 1.3, a.p.z]; fov = 38; }
     else { const mz = fz * 0.45 + (HZ - 1.5) * 0.55; pos = [-15.5, 7.4, mz - 2.6]; tgt = [fx * 0.4, 1.2, mz + 0.6]; fov = 42; }
@@ -494,4 +645,131 @@ const SCRIPTS = {
     dc.at(1.15, () => { a.p.stamina = 1; });
   },
 };
+// ---------------- qp4: the possession plays ----------------
+// the floor each sets up for itself (a cut): the jump ball at centre court (the top of the key on a half court), the
+// new offense bringing it up from the back, a fast break with the defense behind the play, the free-throw line
+const SETUPS = {
+  tipoff(dc) {
+    const cz = dc.full ? 0 : HZ - 7.6;
+    dc.you.place(-0.55, cz, Math.PI / 2); dc.opps[0].place(0.55, cz, -Math.PI / 2);
+    dc.mates[0].place(-2.7, cz + 2.4); dc.mates[1].place(2.7, cz + 2.4);
+    dc.opps.slice(1).forEach((o, i) => o.place(i % 2 ? 2.7 : -2.7, cz - 2.4));
+    dc.ball.holder = null; dc.ball.mode = 'dead'; dc.ball.sim = null; dc.ball.arc = null; dc.ball.x = 0; dc.ball.y = 1.35; dc.ball.z = cz;
+  },
+  transition(dc, pl, off, def) {
+    const x = dc.rng.range(-2, 2);
+    off.place(x, HZ - 14.5, 0); dc.give(off, 'dribble');
+    if (def) { def.place(x * 0.5, HZ - 10.5, Math.PI); def.p.stance = 'defense'; }
+    for (const a of dc.actors) if (a !== off && a !== def) {
+      const same = a.side === off.side, sx = (dc.mates.includes(a) ? 1 : 0.6) * (a.p.x >= 0 ? 1 : -1) || 1;
+      a.place(same ? sx * 5.2 : sx * 3, same ? HZ - 13 : HZ - 7.5);
+    }
+  },
+  fastbreak(dc, pl, off, def) {
+    const x = dc.rng.range(-1.5, 1.5);
+    off.place(x, HZ - 12, 0); dc.give(off, 'dribble');
+    if (def) def.place(x + 1.4, HZ - 14.6, 0);
+    for (const a of dc.actors) if (a !== off && a !== def) a.place((a.p.x >= 0 ? 1 : -1) * 3.5, HZ - 16 + dc.rng.range(-0.8, 0.8), 0);
+  },
+  freethrow(dc, pl, off) {
+    const ftz = COURT.boardZ - COURT.ftDist, lane = [[-2.15, HZ - 1.3], [2.15, HZ - 1.3], [-2.15, HZ - 2.7], [2.15, HZ - 2.7], [-2.15, HZ - 4.1]];
+    off.place(0, ftz, 0); dc.give(off, 'dribble');
+    let k = 0;
+    for (const a of dc.actors) if (a !== off) { const [x, z] = lane[k++ % lane.length]; a.place(x, z, x < 0 ? Math.PI / 2 : -Math.PI / 2); }
+  },
+};
+const DRIVES = new Set(['layup', 'dunk', 'floater']);
+const faceTo = (a, b) => { if (a && b) a.face = Math.atan2(b.p.x - a.p.x, b.p.z - a.p.z); };
+// a play's script from `t` on (dc.base: the clock its steps are scheduled on)
+function playAt(dc, t, fn, ...args) { dc.base = (dc.base || 0) + t; try { fn(dc, ...args); } finally { dc.base -= t; } }
+Object.assign(SCRIPTS, {
+  // the jump ball: the ball tossed up between the two, both go up (the winner a beat sooner and higher), tipped back to
+  // the winner's teammate, who gives it to him; he brings it up and the other one picks him up
+  tipoff(dc, pl) {
+    const A = dc.you, B = dc.opps[0], win = pl.winner === 'them' ? B : A, lose = win === A ? B : A, recv = dc.mateOf(win), cz = A.p.z;
+    dc.at(0.2, () => { const b = dc.ball; b.holder = null; b.mode = 'flight'; b.sim = null; b.arc = { P: { x: 0, y: 1.35, z: cz }, Q: { x: 0, y: 3.15, z: cz }, t: 0, dur: 0.55, h: 0.45, to: null }; });
+    dc.at(0.42, () => { win.act('tipjump', 1.0); win.hop(0.72, 0); });
+    dc.at(0.47, () => { lose.act('tipjump', 1.0); lose.hop(0.62, 0); });
+    dc.at(0.76, () => { const b = dc.ball; b.arc = { P: { x: b.x, y: b.y, z: b.z }, Q: { x: recv.p.x, y: 1.3, z: recv.p.z }, t: 0, dur: 0.5, h: 0.35, to: recv }; b.mode = 'flight'; audio.bounce?.(0.4); faceTo(recv, win); });
+    dc.at(1.45, () => { faceTo(recv, win); recv.act('pass', 0.36, { ptype: 'chest', rel: 0.14, to: win.id }); });
+    dc.at(1.6, () => dc.passTo(recv, win, false, 0.38));
+    dc.at(2.05, () => { dc.camShot('broadcast'); win.face = null; if (dc.ball.holder === win) dc.ball.mode = 'dribble'; win.goTo(0.4, HZ - 8, 5.5); recv.goTo(win === A ? -6.2 : 6.2, HZ - 5.5, 5); lose.goTo(0.2, HZ - 6.6, 5); lose.p.stance = 'defense'; });
+  },
+  // a change of possession: the new offense brings it up the floor, the defense gets back and picks him up
+  transition(dc, pl, o, d) {
+    dc.at(0.05, () => o.goTo(o.p.x * 0.4, HZ - 8, 5.6));
+    dc.at(0.1, () => { if (!d) return; d.goTo(o.p.x * 0.3, HZ - 6.8, 4.4); d.p.stance = 'defense'; d.face = Math.PI; });
+    dc.at(0.15, () => { for (const a of dc.actors) if (a !== o && a !== d) { const same = a.side === o.side, sx = a.p.x >= 0 ? 1 : -1; a.goTo(same ? sx * 6.2 : sx * 3.2, same ? HZ - 5.2 : HZ - 3.6, same ? 5 : 4.5); if (!same) a.p.stance = 'defense'; } });
+    dc.at(1.15, () => { if (d) faceTo(d, o); });
+  },
+  // after a steal: he's gone, the defense chasing from behind; he gets to the rim (the fast break's shot plays next)
+  fastbreak(dc, pl, o, d) {
+    const side = o.p.x >= 0 ? 1 : -1;
+    dc.at(0.02, () => { dc.ball.mode = 'dribble'; o.goTo(side * 1.2, HZ - 2.6, 7.6); });
+    dc.at(0.1, () => d && d.goTo(side * 0.5, HZ - 3.6, 7.0));
+    dc.at(0.15, () => { for (const a of dc.actors) if (a !== o && a !== d) a.goTo(a.p.x * 0.6, HZ - 8.5, 5.2); });
+    dc.at(0.95, () => dc.camShot('baseline', true));
+  },
+  // a pass to the open man, and his shot from the catch (the shot's own play): the receiver scores, the passer assists
+  assist(dc, pl, o, d) {
+    let passer = dc.actorOf(pl.assistWho ?? pl.offWho);
+    if (passer === o) passer = dc.mateOf(o);
+    dc.give(passer, 'held'); faceTo(passer, o); faceTo(o, passer);
+    dc.at(0.15, () => passer.act('pass', 0.42, { ptype: 'chest', rel: 0.18, to: o.id }));
+    dc.at(0.33, () => dc.passTo(passer, o, false, 0.4));
+    dc.at(0.8, () => { o.face = toRim(o.p.x, o.p.z); });
+    playAt(dc, 0.85, SCRIPTS[pl.shotAnim] || SCRIPTS.jumper, pl, o, d);
+  },
+  // a make through contact: hit on the way up, the whistle, and it goes in anyway
+  andone(dc, pl, o, d) {
+    (SCRIPTS[pl.shotAnim] || SCRIPTS.jumper)(dc, pl, o, d);
+    dc.at(DRIVES.has(pl.shotAnim) ? 0.75 : 0.35, () => { if (!d) return; faceTo(d, o); d.act('steal', 0.46, { checked: false, hand: 'L', low: false, aimed: true }); audio.whistle?.(); });
+    ACT.celebrate(dc, o, 2.35, 'flex', 0.5);
+  },
+  // off the rim: he gets there first, goes up and takes it; an offensive board is kicked back out, a defensive one goes
+  // the other way (the possession that follows plays next)
+  board(dc, pl, o, d) {
+    const side = dc.rng.next() < 0.5 ? 1 : -1, bx = side * 0.9, bz = HZ - 1.9;
+    dc.at(0.05, () => {
+      const b = new Ball(); b.halfOnly = true; b.setFlight(RIM.x + side * 0.15, RIM.y + 0.1, RIM.z - 0.12, side * 0.9, 2.6, -1.6, 'loose', null);
+      dc.ball.sim = b; dc.ball.arc = null; dc.ball.mode = 'flight'; dc.ball.holder = null; dc.hoops[0]?.hit?.(0.6);
+      o.goTo(bx, bz, 6); if (d) d.goTo(bx * 0.4, bz + 0.5, 5.5);
+    });
+    dc.at(0.55, () => { o.face = toRim(o.p.x, o.p.z); o.act('rebound', 0.8, { jumpAt: 0.05, jumpH: 0.6, jumped: true, air: 0.55 }); o.hop(0.6, 0.05); if (d) { d.act('rebound', 0.8, { jumpAt: 0.05, jumpH: 0.45, jumped: true, air: 0.5 }); d.hop(0.45, 0.08); } });
+    dc.at(0.85, () => dc.give(o, 'held'));
+    dc.at(1.2, () => { o.face = null; dc.ball.mode = 'dribble'; if (pl.offensive) o.goTo(bx * 2.5, HZ - 5.5, 4.5); else o.goTo(bx * 2, HZ - 9, 6); });
+  },
+  // at the line: a couple of bounces, the shot (made: it scores the event's points)
+  freethrow(dc, pl, o) {
+    dc.at(0.2, () => dc.camShot('low', true));
+    dc.at(0.45, () => { o.face = toRim(o.p.x, o.p.z); dc.ball.mode = 'held'; o.act('ftshot', 1.4, { tRel: 0.62, t0: 0 }); });
+    dc.at(1.07, () => { if (o.p.action) o.p.action.released = true; dc.shoot(o, pl.made, 52, { swish: pl.made }); });
+  },
+  // the defensive cards, played against the man with the ball
+  guard(dc, pl, o, d) {
+    dc.at(0.1, () => { if (!d) return; d.goTo(lerp(d.p.x, o.p.x, 0.35), lerp(d.p.z, o.p.z, 0.35), 4); d.p.stance = 'defense'; d.p.handsUp = true; d.p.contestHand = 'R'; faceTo(d, o); });
+    dc.at(0.35, () => { dc.ball.mode = 'held'; o.act('pumpfake', 0.42, {}); });
+    dc.at(0.85, () => { if (d) { d.p.handsUp = false; d.p.contestHand = null; } dc.ball.mode = 'dribble'; });
+  },
+  protect(dc, pl, o, d) {
+    dc.at(0.1, () => { if (!d) return; d.goTo(lerp(d.p.x, 0, 0.6), HZ - 1.8, 5); d.p.stance = 'defense'; });
+    dc.at(0.7, () => { if (!d) return; faceTo(d, o); d.p.handsUp = true; });
+  },
+  swipe(dc, pl, o, d) {
+    dc.at(0.15, () => { dc.ball.mode = 'dribble'; if (!d) return; faceTo(d, o); d.act('steal', 0.46, { checked: false, hand: 'R', low: true, aimed: true }); d.goTo(lerp(d.p.x, o.p.x, 0.4), lerp(d.p.z, o.p.z, 0.4), 4); });
+    ACT.move(dc, o, 0.3, 'cross', 0.5);
+  },
+  boxout(dc, pl, o, d) {
+    dc.at(0.1, () => { if (!d) return; d.goTo(lerp(d.p.x, 0, 0.5), HZ - 2.4, 4.5); d.p.stance = 'defense'; });
+    dc.at(0.7, () => d && faceTo(d, o));
+  },
+  sizeup(dc, pl, o, d) { ACT.move(dc, o, 0.15, 'cross', 0.5); ACT.bite(dc, d, 0.5, false); },
+  // the drive into a man who's planted: the contact, he goes down, the whistle, the ball the other way
+  charge(dc, pl, o, d) {
+    const t = ACT.layup(dc, o, 0.15, false, 'basic');
+    dc.at(0.25, () => { if (!d) return; d.goTo(lerp(d.p.x, o.p.x, 0.35), lerp(d.p.z, HZ - 2.4, 0.6), 6.2); d.p.stance = 'defense'; });
+    dc.at(t + 0.06, () => { pl.cancel = true; if (!d) return; faceTo(d, o); o.target = null; d.target = null; d.act('stumble', 0.9, { fall: true, back: true, dir: 1, react: 'stagger' }); o.act('stumble', 0.5, { fall: false, back: false, dir: -1 }); audio.whistle?.(); dc.cam.shake = 0.2; dc.give(o, 'held'); });
+    dc.at(t + 0.95, () => { if (d) dc.give(d, 'held'); });
+  },
+});
 export const SCRIPTED = Object.keys(SCRIPTS);

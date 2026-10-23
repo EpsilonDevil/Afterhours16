@@ -41,7 +41,7 @@ export const hpBar = (hp, max, cls = '') => `<span class="gx-hp ${cls}"><i style
 // a card: cost, name, type, tags, text (h: the hand's view of it: cost now, playable, points / Stops it would give)
 export function cardHTML(ref, h = null, o = {}) {
   const c = D.cardInfo(ref), cost = h ? h.cost : c.cost;
-  const cls = ['gx-card', `t-${c.type}`, `r-${c.rarity}`, c.upgraded ? 'up' : '', h && !h.playable ? 'off' : '', h?.combo ? 'combo' : '', o.flow ? 'flow' : '', h?.lent ? 'lent' : '', o.cls || ''].filter(Boolean).join(' ');
+  const cls = ['gx-card', `t-${c.type}`, `r-${c.rarity}`, c.upgraded ? 'up' : '', h && !h.playable ? 'off' : '', h?.offPhase ? 'held' : '', h?.combo ? 'combo' : '', o.flow ? 'flow' : '', h?.lent ? 'lent' : '', o.cls || ''].filter(Boolean).join(' ');
   const val = h && (h.points || h.stops) ? `<span class="gx-val">${h.points ? `${h.hits > 1 ? `${Math.round(h.points / h.hits)}×${h.hits}` : h.points} pts` : ''}${h.points && h.stops ? ' · ' : ''}${h.stops ? `${h.stops} Stops` : ''}</span>` : '';
   const attrs = o.attrs || '';
   return `<${o.tag || 'button'} class="${cls}" ${attrs} title="${esc(c.name)}: ${esc(c.text)}${h && !h.playable && h.why ? ` (${esc(h.why)})` : ''}">
@@ -51,7 +51,8 @@ export function cardHTML(ref, h = null, o = {}) {
     <span class="gx-ctype">${esc(TYPE_LABEL[c.type] || c.type)}${c.rarity && !['starter', 'fatigue', 'special'].includes(c.rarity) ? ` · ${esc(c.rarity)}` : ''}</span>
     <span class="gx-ctext">${keywordHTML(c.text)}</span>
     <span class="gx-tags">${(c.tags || []).map(t => `<i class="tg-${esc(t.toLowerCase())}">${esc(t)}</i>`).join('')}</span>
-    ${val}${h?.combo ? '<span class="gx-badge combo">COMBO</span>' : o.flow ? '<span class="gx-badge flow">FLOW</span>' : ''}${h?.lent ? '<span class="gx-badge lent">LENT</span>' : ''}
+    ${val}${h?.offPhase ? `<span class="gx-badge held" title="${esc(h.why || 'Waits for the other side of the ball')}">HELD</span>` : h?.combo ? '<span class="gx-badge combo">COMBO</span>' : o.flow ? '<span class="gx-badge flow">FLOW</span>' : ''}${h?.lent ? '<span class="gx-badge lent">LENT</span>' : ''}
+    ${h?.offPhase && h.why ? `<span class="gx-held-why">${esc(h.why)}</span>` : ''}
   </${o.tag || 'button'}>`;
 }
 const statusHTML = st => Object.entries(st || {}).filter(([, n]) => n).map(([k, n]) => `<i class="gx-st st-${esc(k)}" title="${esc(KEYWORDS[k[0].toUpperCase() + k.slice(1)] || k)}">${esc(k[0].toUpperCase() + k.slice(1))} ${n}</i>`).join('');
@@ -66,15 +67,20 @@ export function runBarHTML(run) {
 
 // ---------------- run setup ----------------
 // players: [{player, kind: 'starter' | 'converted'}]; profile: {stats, feed, world}; saved: a run you can resume
-export function setupHTML({ players = [], profile = null, saved = null, feed = [], offline = false } = {}) {
+// notice: { kind: 'update', text } (qp4: the server is on another engine version); engine: this game's ENGINE_VERSION (a
+// saved run on other rules can only be ended)
+export function setupHTML({ players = [], profile = null, saved = null, feed = [], offline = false, notice = null, engine = null } = {}) {
   const st = profile?.stats || {};
+  const oldRules = !!saved && engine != null && (saved.engine ?? 1) !== engine;
   const card = (p, i, kind) => `<div class="gx-pcard ${kind}"><div class="gx-pk">${kind === 'converted' ? 'CONVERTED ICON' : 'STARTER'}</div><h3>${esc(p.name)}</h3>${kind === 'converted' && (p.overall || p.position) ? `<div class="gx-pmeta">${p.overall ? `<b>${esc(p.overall)}</b> OVR` : ''}${p.position ? ` · ${esc(p.position)}` : ''}${p.archetype ? ` · ${esc(String(p.archetype).replace(/_/g, ' '))}` : ''}</div>` : ''}
     ${statBars(p.stats, { base: kind === 'converted' ? p.base : null })}
     <p class="muted small">${D.maxHpForStat ? '' : ''}Health ${30 + 6 * (p.stats.health || 1)} · ${(p.stats.stamina || 1) >= 9 ? 5 : (p.stats.stamina || 1) >= 5 ? 4 : 3} energy a turn · +${Math.floor((p.stats.shooting || 0) / 2)} on Shots · +${Math.floor((p.stats.defense || 0) / 2)} on Defense</p>
     <button class="btn primary" data-pick-player="${i}">Run with ${esc(p.name)}</button></div>`;
   return `<section class="gx-setup"><div class="gx-head"><div class="eyebrow">THE GAUNTLET</div><h1>Run the Gauntlet</h1>
     <p class="muted">Three phases of bracket play and the Final. Build a deck as you go, read every opponent's next move, and remember: the people you beat remember you too.</p></div>
-    ${saved ? `<div class="gx-resume"><div><b>Run in progress</b><small>${esc(saved.player.name)} · ${saved.phase > 3 ? 'The Final' : `Phase ${saved.phase}`} · ${Math.round(saved.hp)}/${saved.maxHp} Health · ${saved.deck.length} cards</small></div><button class="btn primary" data-gx="resume">Resume</button><button class="btn ghost" data-gx="abandon">Abandon</button></div>` : ''}
+    ${notice?.kind === 'update' ? `<div class="gx-notice" data-notice="update"><b>Update needed</b><p>${esc(notice.text || 'Update the game to play the Gauntlet.')} This copy of the game plays a different version of its rules than the server does.</p><button class="btn ghost" data-gx="dismiss">OK</button></div>` : ''}
+    ${saved && oldRules ? `<div class="gx-notice" data-notice="old-rules"><b>Run from the old rules</b><p>${esc(saved.player.name)}'s run (${saved.phase > 3 ? 'the Final' : `Phase ${saved.phase}`}) was started before the Gauntlet played in possessions, so it can't be continued. End it here: what it won is paid by its counts.</p><button class="btn primary" data-gx="end-old">End the run</button></div>` : ''}
+    ${saved && !oldRules ? `<div class="gx-resume"><div><b>Run in progress</b><small>${esc(saved.player.name)} · ${saved.phase > 3 ? 'The Final' : `Phase ${saved.phase}`} · ${Math.round(saved.hp)}/${saved.maxHp} Health · ${saved.deck.length} cards</small></div><button class="btn primary" data-gx="resume">Resume</button><button class="btn ghost" data-gx="abandon">Abandon</button></div>` : ''}
     <div class="gx-setup-cols"><div class="gx-players">${players.map((x, i) => card(x.player, i, x.kind)).join('')}</div>
     <aside class="gx-feed"><h4>Word on the street</h4>${feed.length ? `<ul>${feed.slice(-8).reverse().map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="muted small">Nobody\'s talking yet. Run the Gauntlet and they will.</p>'}
       <h4>Your record</h4><p class="small">${st.started ?? st.runs ?? 0} runs · ${st.completed ?? 0} completed${st.bestPhase ? ` · best: ${st.bestPhase > 3 ? 'the Final' : `Phase ${st.bestPhase}`}` : ''}${st.vc ? ` · ${Number(st.vc).toLocaleString('en-US')} VC earned` : ''}</p>
@@ -136,23 +142,29 @@ export function matchHTML(run, view = {}) {
   // (the Flow chain from the engine: deck/combat.js flowView; flowLeft null once every Flow this turn is used)
   const fv = hand.flow || D.flowView(run), chain = fv.chain || [], flowLeft = (fv.flows || 0) < (fv.max || 1) ? fv.need : null;
   const statNow = { stamina: run.player.stats.stamina, shooting: (m.stats?.shooting ?? run.player.stats.shooting) + (m.mods?.shooting || 0), defense: (m.stats?.defense ?? run.player.stats.defense) + (m.mods?.defense || 0), health: run.player.stats.health };
+  // (qp4: an opponent's button is who he is and how much Heart he has left; what he's playing this possession is the set
+  // panel beside them: run.match.foeSet, face up or face down)
   const opp = (o, i) => {
-    const it = o.intent, down = o.heart <= 0;
+    const down = o.heart <= 0;
     return `<button class="gx-opp ${down ? 'down' : ''} ${i === tgt && !down ? 'tgt' : ''}" data-target="${i}" ${down ? 'disabled' : ''}>
       <span class="gx-on">${esc(o.name)}${o.boss ? ' <em>BOSS</em>' : ''}<small>${esc(rankName(o.rank))}</small></span>${hpBar(o.heart, o.maxHeart, 'heart')}
-      ${o.stops ? `<span class="gx-stops opp">${o.stops} Stops</span>` : ''}<span class="gx-sts">${statusHTML(o.status)}</span>
-      ${it && !down ? `<span class="gx-intent k-${esc(it.kind)}"><i>${esc(it.kind === 'shoot' ? 'SHOOT' : it.kind === 'defend' ? 'DEFEND' : it.kind === 'buff' ? 'BUFF' : it.kind === 'debuff' ? 'DEBUFF' : it.kind === 'unknown' ? '?' : String(it.kind || '').toUpperCase())}</i><b>${esc(it.text)}</b></span>` : ''}
-      ${o.next && !down ? `<span class="gx-intent next"><i>THEN</i><b>${esc(o.next.text)}</b></span>` : ''}</button>`;
+      ${o.stops ? `<span class="gx-stops opp">${o.stops} Stops</span>` : ''}<span class="gx-sts">${statusHTML(o.status)}</span></button>`;
   };
+  // while the possession plays out on the court the table shows that clash (view.lastClash), not the next one's
+  const foeWho = m.opps.filter(o => o.heart > 0).map(o => o.name).join(' & ');
+  const possession = view.busy
+    ? (view.lastClash ? `<div class="gx-clash r-played" data-clash><span class="gx-cl-you"><small>${view.lastClash.youOff ? 'YOU · O' : 'YOU · D'}</small><b>${esc(view.lastClash.you)}</b></span><span class="gx-cl-vs">vs</span><span class="gx-cl-them"><b>${esc(view.lastClash.them)}</b><small>${view.lastClash.youOff ? 'D · THEM' : 'O · THEM'}</small></span><em class="gx-cl-res">${esc(view.lastClash.text)}</em></div>` : '')
+    : `${foeSetHTML(m.foeSet, { side: m.foeSet?.side || (m.ball === 'them' ? 'offense' : 'defense'), who: foeWho })}`;
   const keys = '1234567890';
   return `<section class="gx-match ${view.busy ? 'busy' : ''}">
     <div class="gx-courttop">
-      <div class="gx-score"><span class="you"><b>${esc(run.player.name)}</b><em data-score="0">${view.score ? view.score[0] : m.score[0]}</em></span><span class="mid"><small>${esc(KIND_LABEL[m.kind] || 'Match')}${m.boss ? ' · ' + esc(D.bossInfo(m.boss)?.title || '') : ''}</small><b>TURN ${m.turn}</b></span><span class="them"><em data-score="1">${view.score ? view.score[1] : m.score[1]}</em><b>${esc(m.opps.length > 1 ? m.opps.map(o => o.name.split(' ').pop()).join(' & ') : m.opps[0]?.name || '')}</b></span></div>
+      <div class="gx-score"><span class="you"><b>${esc(run.player.name)}</b><em data-score="0">${view.score ? view.score[0] : m.score[0]}</em></span><span class="mid"><small>${esc(KIND_LABEL[m.kind] || 'Match')}${m.boss ? ' · ' + esc(D.bossInfo(m.boss)?.title || '') : ''}</small><b>POSS. ${m.turn}</b></span><span class="them"><em data-score="1">${view.score ? view.score[1] : m.score[1]}</em><b>${esc(m.opps.length > 1 ? m.opps.map(o => o.name.split(' ').pop()).join(' & ') : m.opps[0]?.name || '')}</b></span></div>
+      ${view.busy ? '' : turnBannerHTML(m).replace('class="gx-turn', 'class="gx-turn gx-turn-top')}
       <div class="gx-caption" data-caption>${esc(view.caption || '')}</div>
       <div class="gx-cine-ctl"><button class="gx-pill" data-gx="skip" title="Skip the play (Space)">Skip ▸</button><button class="gx-pill ${view.fast ? 'on' : ''}" data-gx="fast" title="Fast-forward (F)">▸▸</button></div>
     </div>
     <div class="gx-table">
-      <div class="gx-opps">${m.opps.map(opp).join('')}</div>
+      <div class="gx-opps">${m.opps.map(opp).join('')}<div class="gx-possession" data-possession>${possession}</div></div>
       <div class="gx-row">
         <div class="gx-me">
           <div class="gx-energy" title="Energy (Stamina)"><b>${m.energy}</b><small>/${m.maxEnergy}</small></div>
@@ -162,7 +174,8 @@ export function matchHTML(run, view = {}) {
         </div>
         <div class="gx-hand" data-hand>${hand.map((h, i) => { const c = D.cardInfo(h.ref); const flow = flowLeft != null && flowLeft > 0 && (c.tags || []).some(t => !chain.includes(t)) && h.playable; return cardHTML(h.ref, h, { attrs: `data-card="${i}"`, key: keys[i] || '', flow }); }).join('') || '<p class="muted">No cards in hand.</p>'}</div>
         <div class="gx-side">
-          <button class="btn primary gx-end" data-gx="end" ${view.over ? 'disabled' : ''}>End Turn <kbd>E</kbd></button>
+          ${view.busy ? '' : clashBarHTML(m)}
+          <button class="btn primary gx-end" data-gx="end" ${view.over || view.busy ? 'disabled' : ''}>${m.ball === 'them' ? 'Defend' : 'Play it out'} <kbd>E</kbd></button>
           <div class="gx-piles"><button class="gx-pile" data-pile="draw">Draw<b>${m.drawPile.length}</b></button><button class="gx-pile" data-pile="discard">Discard<b>${m.discard.length}</b></button><button class="gx-pile" data-pile="burned">Burn<b>${m.burned.length}</b></button></div>
           <div class="gx-rules">${m.rules.length ? m.rules.map(r => `<span class="gx-rule" title="${esc(r.text)}"><b>${esc(r.name)}</b><small>${esc(r.text)}</small></span>`).join('') : '<span class="muted small">No special rules</span>'}</div>
           ${m.powers?.length ? `<div class="gx-powers">${m.powers.map(p => `<i>${esc(D.cardName ? D.cardName(p.id) : p.id)}</i>`).join('')}</div>` : ''}
@@ -297,4 +310,65 @@ export function summaryHTML(run, over, fin = null, opts = {}) {
     ${outcomes.length ? `<h3>Who'll remember this run</h3><div class="gx-outs">${outcomes.map(o => `<div class="gx-out o-${esc(o.result || '')}"><b>${esc(o.name || run.chars?.[o.charId]?.name || o.charId)}</b><small>${esc(OUT[o.result] || o.result || '')}</small></div>`).join('')}</div>` : ''}
     ${(fin?.feed || []).length ? `<h3>Word on the street</h3><ul class="gx-feedl">${fin.feed.slice(0, 6).map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
     <div class="row gap end"><button class="btn ghost" data-gx="menu">Main menu</button><button class="btn primary" data-gx="again" ${fin?.retry ? 'disabled' : ''}>Run it again</button></div></div></section>`;
+}
+
+// ---------------- qp4: the Gauntlet in possessions (scratchpad contract QP4 §1-§4) ----------------
+// Building blocks for the match screen, from the engine's match state as the contract shapes it (run.match.turnType,
+// turnLabel, ball, foeSet, preview); wired into the controller once the engine has them.
+//   turnBannerHTML(m)   what this turn is: "Offense", "Fast break · you stole it", ...
+//   foeSetHTML(set, o)  the opponent's committed set: face-up cards (name, number, animation, text) or face-down "?"
+//                       with why, and the total
+//   clashBarHTML(m)     "You 14 vs 9 Them" (O against D, "?" when hidden) and what it comes to; updateClash(root, m)
+//                       swaps it in place as cards are played
+export const TURN_LABEL = { jump_ball: 'Jump ball', offense: 'Offense', defense: 'Defense', fast_break: 'Fast break', second_chance: 'Second chance', free_throws: 'Free throws' };
+// an animation tag as the three letters on a card
+export const ANIM_TAG = { jumper: 'JMP', three: '3PT', layup: 'LAY', dunk: 'DNK', floater: 'FLT', post: 'PST', crossover: 'XVR', spin: 'SPN', stepback: 'STB', pass: 'PAS', lob: 'LOB', closeout: 'CLS', contest: 'CNT', block: 'BLK', steal: 'STL', rebound: 'REB', foul: 'FOU', celebrate: 'CEL', gassed: 'GAS' };
+const titleCase = s => String(s || '').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+// whose turn it is on the floor: the turn type (the engine's, else from the phase and the ball) and its label
+export function turnBannerHTML(m) {
+  if (!m) return '';
+  const type = m.turnType || (m.phase === 'jump' ? 'jump_ball' : m.ball === 'them' ? 'defense' : 'offense');
+  const side = type === 'jump_ball' ? 'jump' : m.ball === 'them' ? 'them' : 'you';
+  return `<div class="gx-turn tt-${esc(type)} side-${side}" data-turn><b>${esc(TURN_LABEL[type] || titleCase(type))}</b>${m.turnLabel ? `<span>${esc(m.turnLabel)}</span>` : ''}</div>`;
+}
+// one committed card of theirs, face up or face down
+function foeCardHTML(c) {
+  if (!c || c.hidden) return '<div class="gx-fcard down" title="Hidden: you can\'t read this card"><b>?</b></div>';
+  const tag = ANIM_TAG[c.anim] || (c.anim ? String(c.anim).slice(0, 3).toUpperCase() : '');
+  return `<div class="gx-fcard k-${esc(c.kind || 'play')}" title="${esc(c.name)}${c.text ? `: ${esc(c.text)}` : ''}">
+    <span class="gx-fv">${c.value != null ? esc(c.value) : '–'}</span><span class="gx-fn">${esc(c.name)}</span>${tag ? `<i class="gx-fa">${esc(tag)}</i>` : ''}
+    ${c.text ? `<small>${keywordHTML(c.text)}</small>` : ''}${(c.tags || []).length ? `<span class="gx-tags">${c.tags.map(t => `<i class="tg-${esc(String(t).toLowerCase())}">${esc(t)}</i>`).join('')}</span>` : ''}</div>`;
+}
+// the set they've committed this turn. o.side: what it is to them ('defense' on your offense turns, 'offense' on yours
+// to defend); o.who: their name(s)
+export function foeSetHTML(set, o = {}) {
+  if (!set) return '';
+  const side = o.side || 'defense', unit = side === 'offense' ? 'pts' : 'Stops';
+  const cards = set.cards || [], total = set.total == null ? '?' : set.total;
+  return `<div class="gx-foeset side-${esc(side)} ${set.hidden ? 'hidden' : ''}" data-foeset>
+    <div class="gx-fs-head"><small>${esc(o.who ? `${o.who} · ` : '')}${side === 'offense' ? 'THEIR PLAY' : 'THEIR DEFENSE'}</small><b data-foe-total>${esc(total)}<em>${unit}</em></b></div>
+    <div class="gx-fs-cards">${cards.length ? cards.map(foeCardHTML).join('') : '<span class="muted small">Nothing committed.</span>'}</div>
+    ${set.hidden || set.why ? `<p class="gx-fs-why">${esc(set.why || 'You can\'t read their set.')}</p>` : ''}</div>`;
+}
+// the clash as it stands: your number against theirs (O: the offense's points, D: the defense's Stops; defense wins
+// ties) and the result. m: the match (preview, ball)
+export function clashBarHTML(m) {
+  const pv = m?.preview;
+  if (!pv) return '';
+  const youOff = m.ball !== 'them', you = youOff ? pv.o : pv.d, them = youOff ? pv.d : pv.o;
+  const fmt = v => (v == null ? '?' : Math.round(v));
+  const known = you != null && them != null, pct = known ? Math.round(100 * Math.max(0, you) / Math.max(1, Math.max(0, you) + Math.max(0, them))) : 50;
+  const res = pv.result === 'score' ? (youOff ? `You score ${pv.points | 0}` : `They score ${pv.points | 0}`) : pv.result === 'stopped' ? (youOff ? 'Stopped' : 'You stop them') : 'Can\'t tell: their set is hidden';
+  return `<div class="gx-clash ${youOff ? 'off' : 'def'} r-${esc(pv.result || 'unknown')}" data-clash title="The higher number wins; defense wins ties">
+    <span class="gx-cl-you"><small>YOU · ${youOff ? 'O' : 'D'}</small><b>${fmt(you)}</b></span><span class="gx-cl-vs">vs</span><span class="gx-cl-them"><b>${fmt(them)}</b><small>${youOff ? 'D' : 'O'} · THEM</small></span>
+    <span class="gx-cl-bar ${known ? '' : 'unknown'}"><i style="width:${pct}%"></i></span><em class="gx-cl-res">${esc(res)}</em></div>`;
+}
+// the bar swapped in place (a card played: run.match.preview moved) without redrawing the table
+export function updateClash(root, m) {
+  const el = root?.querySelector?.('[data-clash]');
+  if (!el) return false;
+  const html = clashBarHTML(m);
+  if (!html) { el.remove(); return true; }
+  el.outerHTML = html;
+  return true;
 }

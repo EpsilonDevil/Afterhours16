@@ -56,8 +56,8 @@ export const STYLES = {
   playmaker: {
     name: 'Playmaker', heart: 33, moves: [
       M('shoot', { pts: 6, anim: 'floater', w: 3, name: 'Floater' }),
-      M('debuff', { you: { cold: 2 }, fatigue: { id: 'heavy_legs', n: 1 }, anim: 'pass', w: 1, name: 'Runs you ragged' }),
-      M('buff', { hot: 2, anim: 'pass', w: 1, name: 'Sets the table' }),
+      M('debuff', { you: { cold: 2 }, fatigue: { id: 'heavy_legs', n: 1 }, anim: 'pass', w: 1, name: 'Runs you ragged', side: 'defense' }),
+      M('buff', { hot: 2, you: { screened: 1 }, anim: 'pass', w: 1, name: 'Sets the table', side: 'offense' }),
       M('shoot', { pts: 4, hits: 2, anim: 'lob', w: 1, name: 'Lob to the roller' }),
     ], rival: M('debuff', { you: { cold: 2, exposed: 2 }, fatigue: { id: 'cramp', n: 1 }, pts: 6, anim: 'stepback', w: 2, name: 'Takes you apart' }),
   },
@@ -96,9 +96,28 @@ export const TRAITS = {
   vengeful: { name: 'Vengeful', text: 'His Shots score +2 against you.' },
   closer: { name: 'Closer', text: 'His Shots score +50% when he\'s below half Heart.' },
   film_junkie: { name: 'Film junkie', text: 'His defend moves give +4 Stops.' },
+  poker_face: { name: 'Poker face', text: 'You can\'t see which cards he plays, only his total.' },
 };
 Object.setPrototypeOf(TRAITS, null);
 export const TRAIT_IDS = Object.keys(TRAITS);
+// v0.4.8.9 qp4 possessions: every opponent always has a card for both sides of the ball (GAUNTLET.md §15). A style's
+// moves sort themselves: the ones that score are his offense, the ones that give Stops his defense (a move with both is
+// in both), and a pure buff or debuff rides along with a main card (RIDER_P of his possessions, on the side it names, or
+// a debuff on defense and a buff on offense). A style missing a side gets the default card, at the style's scale
+export const DEFAULT_OFF = M('shoot', { pts: 4, anim: 'jumper', name: 'Takes what\'s there' });
+export const DEFAULT_DEF = M('defend', { stops: 6, anim: 'contest', name: 'Stays in front' });
+export const RIDER_P = 0.35;
+export function splitMoves(list, scale = x => ({ ...x })) {
+  const off = [], def = [], ride = [];
+  for (const mv of list || []) {
+    if (mv.pts) off.push(mv);
+    if (mv.stops) def.push(mv);
+    if (!mv.pts && !mv.stops) ride.push({ ...mv, side: mv.side || (mv.you || mv.fatigue ? 'defense' : 'offense') });
+  }
+  if (!off.length) off.push(scale(DEFAULT_OFF));
+  if (!def.length) def.push(scale(DEFAULT_DEF));
+  return { off, def, ride };
+}
 export const READ_TRAIT = { Handle: 'read_handle', Drive: 'read_drive', Post: 'read_post', Perimeter: 'read_perimeter', Pass: 'read_pass', Hustle: 'read_hustle' };
 
 const scaleMove = (mv, d) => {
@@ -117,5 +136,5 @@ export function foeStats({ style, phase = 1, round = 0, rival = false, rank = 0,
   const d = PHASE_DMG[p] * grow * (rival ? RIVAL.dmg : 1);
   const moves = S.moves.map(mv => scaleMove(mv, d));
   if (rival) moves.push(scaleMove(S.rival, d));
-  return { style, styleName: S.name, heart: Math.round(heart), shooting: RANK_SHOOT * rank + (traits.includes('vengeful') ? 2 : 0), defense: traits.includes('film_junkie') ? 4 : 0, moves };
+  return { style, styleName: S.name, heart: Math.round(heart), pools: splitMoves(moves, mv => scaleMove(mv, d)), shooting: RANK_SHOOT * rank + (traits.includes('vengeful') ? 2 : 0), defense: traits.includes('film_junkie') ? 4 : 0, moves };
 }

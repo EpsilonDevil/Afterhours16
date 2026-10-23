@@ -204,10 +204,11 @@ rollConverted(seed, convertedPlayer) -> player              // 1–5 for starter
 availableNodes(run) -> [nodeId]
 enterNode(run, nodeId) -> { kind: 'match' | 'rival' | 'boss' | 'cooler' | 'shop' | 'event' }
 // run.match: { turn, energy, maxEnergy, hand, drawPile, discard, burned, you:{hp, maxHp, stops, status},
-//              opps:[{ id, charId, name, look, heart, maxHeart, stops, status, intent:{kind, value, text} }],
-//              rules:[{ id, name, text }], score:[you, them] }
-playCard(run, handIndex, target = 0) -> events
-endTurn(run) -> events
+//              opps:[{ id, charId, name, look, heart, maxHeart, stops, status, set:[move], intent:{kind, value, text} }],
+//              rules:[{ id, name, text }], score:[you, them],
+//              (qp4, §15) phase, ball, turnType, turnLabel, foeSet, preview, intro }
+playCard(run, handIndex, target = 0) -> events      // the card's own effects now; a Shot is lined up for End Turn
+endTurn(run) -> events                              // the whole possession, in order (§15.9)
 // events: [{ t, actor: 'you' | oppIndex, anim, made, points, stops, text }]
 // anim is one of: jumper, three, layup, dunk, floater, post, crossover, spin, stepback, pass, lob,
 //   closeout, contest, block, steal, rebound, celebrate, gassed, foul
@@ -226,3 +227,196 @@ worldAfterRun(world, runSummary, seed) -> { world, feed: [line] }   // grow, reg
 worldTick(world, seed) -> { world, feed }                           // between runs
 charLine(world, charId, situation, seed) -> string                  // generated, never real people's words
 ```
+
+v0.4.8.9 qp4 additions (possessions, §15). Every name below is the contract's (QP4 §4); nothing was renamed.
+
+```js
+ENGINE_VERSION                 // 2. newRun records it as run.engine; a replay start must carry engine: 2 (§15.10)
+canPlay(run | match, handIndex) -> { ok, why, cost }    // phase-aware: "Shots can't be played on defense"
+run.match.phase                // 'jump' (inside startMatch only) | 'offense' | 'defense': which side of the ball you're on
+run.match.ball                 // 'you' | 'them'
+run.match.turnType             // 'offense' | 'defense' | 'fast_break' | 'second_chance' (whoever has the ball: see .ball)
+run.match.turnLabel            // the banner: "Your ball", "Fast break: you stole it", "Make-it, take-it: your ball again", ...
+run.match.foeSet               // { side: 'offense' | 'defense' (the side their cards play), hidden: bool,
+                               //   cards: [{ name, kind: 'shot'|'stops'|'buff'|'debuff'|'special', value, anim, tags, text, actor }
+                               //          | { hidden: true, actor }], total: number | null, why?: string }
+run.match.preview              // { o, d, result: 'score' | 'stopped' | '?', points }: live, as you play cards (null = hidden)
+run.match.intro                // the tip-off and the match's opening events: play them before the first turn
+run.match.opps[i].set          // his committed cards this possession (the engine's; hidden ones too: the UI shows foeSet)
+run.match.opps[i].intent       // kept: his first card this possession ({ kind: 'unknown', value: null, text: '?' } when hidden)
+handView(run)[i].offPhase      // true: this card waits for the other side of the ball (the dead-hand rule, §15.7)
+handView(run)[i].points        // a Shot's points now (before the defense); Stops for a Defense card as before
+```
+New event types: `jump` (the tip: actor = who won it, anim rebound), `possession` { to, turnType, text }, `clash`
+{ o, d, winner: 'offense' | 'defense' }, `rebound` { offensive }, `foul`, `ft` { points }, `wall` (The Wall's cap). A `shot`
+event now carries `how` ('made' | 'assist' | 'and_one' | 'block' | 'steal' | 'contest' | 'charge') and, when assisted,
+`assist` (the passer: 'you' or an opponent index). `free_throws` is never a turn of its own: free throws are `foul` + `ft`
+events inside the possession that drew them (there is no choice to make, so there is no turn to show). playCard's
+events carry anim: null (table text only); endTurn's are the possession on the court.
+
+## 15. Possessions (v0.4.8.9 qp4): how a match plays
+
+David's brief: turn based, like a real game; every match opens with a jump ball; the side with the ball plays its
+offense with its energy while the other side commits its defense; End Turn plays both out together; what you see
+(score, steal, block, assist) comes from the two sides' cards; you can read the opponent's cards unless something
+stops you; the higher number always wins (defense wins ties). Heart and Health stay: your baskets take his Heart,
+his take your run Health. Everything else (stats, cards and their numbers, combos, Flow, Depth / Tight, the bracket,
+rewards, abilities, bosses, the nemesis world, VC) is as it was, read per possession instead of per turn.
+
+### 15.1 A match is possessions
+1. **Tip-off.** A seeded coin from the match's own stream (run seed, node, match count), 50/50: whoever wins it has
+   the ball first (`jump` event, then `possession`). The same start replays to the same tip.
+2. **A turn is one possession.** At its start: your energy refills (Stamina, abilities, Charge), you draw to 5 as
+   ever, and every opponent still standing **commits** his set for it: his offense card when he has the ball, his
+   defense card when you do. You see his set (`foeSet`) and the live clash (`preview`) before you play.
+3. You play cards with your energy. Card effects (Stops, draws, energy, statuses, Flow) happen as you play; Shots are
+   lined up. **End Turn** plays the possession: the defense's cards, the offense's setup, each shot in order, the
+   clash, then who has the ball next.
+4. A match ends the moment his Heart (or your Health) is gone, even mid-possession; `end` is its last event.
+
+### 15.2 Turn types
+| Turn (`turnType`) | When | You play | They play |
+| --- | --- | --- | --- |
+| tip-off (`phase` 'jump', only inside startMatch) | the start of every match | nothing: the coin | nothing |
+| `offense` | you have the ball | Shots, Moves, Plays, Mentalities | one defensive card (+ maybe a rider) |
+| `defense` | they have the ball | Defense cards, Plays, Mentalities | one offensive card each (+ maybe a rider) |
+| `fast_break` (yours) | you stole it | as offense | only the first opponent gets back, one card, his Stops count half (`BREAK_STOPS` 0.5) |
+| `fast_break` (theirs) | they stole it | one Defense card at most; your Stops count half | as offense |
+| `second_chance` | the shots were stopped but the offense won the boards | as offense / defense, again | a new set |
+| make-it-take-it (`offense` / `defense`, its own label) | Make-It-Take-It: the scorer keeps the ball | as offense / defense | as ever |
+| free throws (inside the possession: `foul` + `ft`) | a fouled shot | nothing | nothing |
+
+Plays and Mentalities are the two-way cards. Fatigue is as ever (unplayable, burns, bites from your hand).
+
+### 15.3 Their set
+* Every opponent has both sides: his moves split into **scoring** cards (points), **Stops** cards and **riders** (pure
+  buffs / debuffs: Hot, Cold, Exposed, Gassed, Screened, Fatigue). Each possession he commits one card from the side he's
+  on (a cycle in order for a boss, a weighted pick that never repeats a card three times for everyone else) and, 35% of
+  the time (`RIDER_P`), a rider that fits that side. A style with no card for a side gets a plain one (`DEFAULT_OFF`
+  "Takes what's there", `DEFAULT_DEF` "Stays in front", at the phase's scale). foes.js `splitMoves`.
+* A scoring card that also gives Stops (a post-up, The Wall's "Swats and runs") scores now; its Stops wait for his next
+  defense, as yours do.
+* Bosses commit from their own hooks: `offense(m, o, X, k)` / `defense(...)` on his k-th possession on that side
+  (Showtime, the Professor, the Shadow), else their cycle split the same way.
+* His riders land after the possession (your new Cold, Exposed, Screened: the next possessions).
+
+### 15.4 The clash: the higher number wins
+* **O** (the offense's number) = the points of its Shots this possession, each worked out exactly as a Shot always
+  was (Shooting's ⌊stat/2⌋, Hot / Cold / Exposed, combos, Tight / Depth / Clutch, Mentalities, abilities, rules). His
+  O: his cards' points (his Shooting, Hot, the rules, Cold / Exposed, boss multipliers), times hits.
+* **D** (the defense's number) = its Stops pool: Stops from this possession's Defense cards (Defense's ⌊stat/2⌋, ...),
+  plus the Stops it gained with the ball last time (a Putback, a post-up), plus Hustle Stops kept from its last
+  defense. Halved on a fast break (rounded down).
+* **O > D: the offense scores O − D** (off his Heart, or your Health). **O ≤ D: stopped.** Nothing random touches it;
+  the only randomness is which animation variant the court plays.
+* Shots resolve **in play order** against what's left of the pool, so an early shot can be stopped and a later one go
+  in; the total is always exactly max(0, O − D).
+* One exception, The Wall: a basket that beats his Stops counts at most 10 (`hitCap`); the rest becomes his Stops for
+  his next defense. The winner is still whoever has the higher number; the cap only trims how much a winning basket
+  counts. `preview.points` shows the capped total.
+* Free throws come on top and never flip a clash: the first fouled shot of a possession (Physical Night: every Drive or
+  Post shot; a card that `foul`s: Ref's Favorite's drives) is an **and-one** if it went in (`FT_AND_ONE`, a quarter of
+  its points, at least 1) or **two shots** if it didn't (`FT_MISSED`, a third, at least 1), uncontested. Tight Whistle:
+  no fouls.
+
+### 15.5 What it looks like: the outcome table (combat.js `stopHow`, pinned by tests/v0489deck_possession.test.mjs)
+| Shot | Condition (checked in this order) | `how` | anim |
+| --- | --- | --- | --- |
+| made | it was fouled | `and_one` | the shot's, then `foul`, `ft` |
+| made | a Pass card came before it this possession (yours), or his set has a Pass card (his) | `assist` | the shot's |
+| made | otherwise | `made` | the shot's (jumper / three / layup / dunk / floater / post / lob / stepback) |
+| stopped | you defended with Take the Charge and the shot went inside | `charge` | the shot's |
+| stopped | the defense's biggest card is a block (anim block, or a Post Defense card) and the shot went inside (a Drive or Post shot, or a layup / dunk / floater / post / lob) | `block` | the shot's, the defender's block |
+| stopped | the defense played a steal card (anim steal) and the offense leaned on Handle or Pass this possession | `steal` | |
+| stopped | otherwise | `contest` | then the boards |
+
+Who has the ball next (the **last** shot of the possession decides):
+| What happened | Next |
+| --- | --- |
+| Shot Clock violation (your offense with no Shot) | take 3, their ball |
+| no shot at all | turnover: the other side; a `fast_break` for the defense if it went for the ball (a steal card) and the offense handled it (Handle or Pass: "Picked off") |
+| the last shot went in (fouled or not) | the other side; Make-It-Take-It: the scorer again (and you draw 1 when it's you) |
+| a fouled miss | the other side, after the free throws |
+| the last shot was a steal | `fast_break` for the stealer |
+| a charge | the defense's ball |
+| a contest | the boards: the offense played more Hustle cards this possession than the defense → `second_chance`; else the defense's ball |
+
+### 15.6 Statuses, Stops and the rest, per possession
+* **Stops last until you next defend:** whatever you gain with the ball is there on your next defense; after a
+  defense what's left is gone, except Hustle Stops (`hustle` cards), which last one more defense. Wristbands' 5 Stops
+  wait for your first defense. His leftover Stops go the same way.
+* **Statuses count down where they matter:** Exposed and Gassed at the end of a possession where their owner defended,
+  Cold where their owner had the ball, Screened after any possession. Hot lasts the match.
+* Points on a Defense card (Swat Party's "Score 5") become an **outlet**: + that much on your first Shot of your next
+  offense.
+* A "turn" in a card's or ability's text is a possession (draws, Flow once a turn, Spotlight's 6 cards, first card this
+  turn, Charge "next turn", Captain's Band and Playbook's first turn).
+
+### 15.7 The dead-hand rule
+A card you can't play on this side of the ball stays in your hand for the next possession (up to the hand cap of 10);
+on-phase cards you didn't play are discarded as ever (Hold and Muscle Memory as ever). So a defense draw full of Shots
+isn't wasted: they're waiting when you get the ball. Measured with tools/deck_sim.mjs (`m.log.dead`: possessions that
+open with nothing playable): 0.3-0.6% of possessions across the four configurations.
+
+### 15.8 Hidden sets: who and why
+Hiding changes only what you see (`foeSet.cards` face down, `total` / `preview` "?"), never the result (tested: the same
+possession hidden and open plays out the same).
+| Who | What's hidden | Why |
+| --- | --- | --- |
+| The Shadow (Final) | everything, every possession | he plays your own deck back at you: you can't scout yourself |
+| The Professor (P2 boss) | his cards; the total shows | he copies your last card: you know the grade, not the question |
+| Showtime (P1 boss) | everything, on his fast breaks only | in transition he's all flash |
+| the `poker_face` nemesis trait (new; grown like the other traits) | his cards; the total shows | a rival who's learned not to tip his hand |
+| **Screened** (a debuff on you) | everything, for your next possession | the Playmaker style's "Sets the table" and the Full-Court Press's "Trap and score" screen you |
+| Franchise Tag (boss ability) | everything, all run | its drawback was "can't see enemy intents" |
+| Scouting Report (ability) | reads all of these; against the Shadow or Showtime, the total only | it was "see intents two turns ahead" |
+
+### 15.9 endTurn's events for one possession, in order
+the Fatigue in your hand · the defense's cards (`card`) · the offense's setup cards (`card`) · for each shot in play order:
+`shot` { how, made, points, stops, assist? } (+ `foul`, `ft` on the first fouled one; `down` / `heal` as Heart moves;
+`wall`) · "Picked off" (`shot` how steal) when there was no shot · `clash` { o, d, winner } · Hot Hand / Trash Talk /
+Shot Clock · banked Stops · his riders (`status`, `fatigue`) · a betrayal · `rebound` { offensive } · `possession`
+{ to, turnType, text } · the next turn's draws and its `turn` · or, when the match ended, `end` last.
+
+### 15.10 Versions and replays
+`deck/index.js` exports `ENGINE_VERSION = 2`; newRun records it (`run.engine`). A replay start is
+`{ engine, seed, player, world, unlocks }`; `replay()` refuses a start whose `engine` isn't 2 (missing = 1) with
+"old engine (1, this is 2)" at -1 before anything else runs. A run started on the old rules can't be continued by this
+engine: the client tells the player and lets them end it, and the server pays it by its count checks (`verified:
+false`), never 409 (server/gauntlet.py, the Server agent). The server must store `engine: 2` in the start it records
+at `/api/gauntlet/start` for new runs (or take it from the client), and the client must send it.
+
+### 15.11 Balance (tools/deck_sim.mjs, 200 runs per row; the policies read foeSet / preview, never a hidden set: a hidden
+set is guessed from what that opponent usually brings, the Shadow's from your own deck)
+A possession is one end of the floor, so at the old Heart a match took about twice the turns and cards. combat.js
+`POSS` scales every opponent's Heart and damage (the tables in foes.js / bosses.js are unchanged): normal matches
+and Rivals Heart ×0.4, damage ×0.85; bosses Heart ×0.55, damage ×1.35 (bosses stay the walls). `REPUTATION` for a
+converted player: Heart ×1.15, damage ×1.2 (was 1.25 / 1.25). Free throws: and-one ¼, two shots ⅓. Ref's Favorite:
+only his drives draw fouls (a foul every possession of his was a third of a starter's Health a match).
+
+| | before (turns) | after (possessions) |
+| --- | --- | --- |
+| smart, starters: Final won | 20.0% | 20.0% |
+| smart, starters: minutes a completed run | 70 | 76 |
+| smart, converted: Final won | 42.0% | 50.0% |
+| smart, converted: minutes a completed run | 71 | 70 |
+| greedy, starters / converted: Final won | 0.5% / 3.5% | 1.5% / 12.5% |
+| VC a completed run (smart, starters / converted) | 8000 / 7974 | 7980 / 7967 |
+| turns (possessions) a completed run, smart starters | 59 | 72 |
+| dead hands | n/a | 0.3-0.6% of possessions |
+
+### 15.12 What was reinterpreted for possessions
+Rules: **Make-It-Take-It** (was "draw 1 after you score"): whoever scores keeps the ball, and you draw 1 when you do.
+**Shot Clock** (was "a Shot every 2 turns or take 3"): on offense, put up a Shot or take 3 and lose the ball.
+**Physical Night**: also every Drive or Post shot draws a foul. **Overtime** (was "from turn 5"): from the 9th
+possession. **Trash Talk**, **And-One Night**: per possession. **Tight Whistle**: also no fouls.
+Abilities: **Chalk Bag** (turn 1 → your first possession with the ball). **Wristbands**: the 5 Stops wait for your
+first defense. **Mouthguard**: the first basket against you. **Scouting Report** (intents two turns ahead → reads hidden
+sets). **Franchise Tag** (no intents → no sets). **Hot Hand**: 15+ in one possession.
+Bosses: **The Wall**'s cap applies to a basket after his Stops (it used to cut each hit before them). **Showtime**:
+his combo every third time he has the ball; hidden on his fast breaks. **Ref's Favorite**: a Ticky-Tack Foul each
+time he gets the ball; his drives draw free throws. **The Professor**: copies your last card on both ends; hides his
+card. **The Phenom**: Hot each time he has the ball. **The Shadow**: his set is five of your cards, their points on his
+offense, their Stops on his defense; hidden. The Press's "Trap and score" and the Playmaker's "Sets the table" now
+Screen you.
+Cards: Swat Party's points are an outlet for your next offense. Events: unchanged (they act on the run, not the match).

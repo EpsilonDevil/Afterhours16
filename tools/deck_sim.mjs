@@ -6,7 +6,7 @@
 import * as G from '../client/js/deck/index.js';
 import { cardDef, canUpgrade } from '../client/js/deck/cards.js';
 import { stream, next, shuffle, int } from '../client/js/deck/rng.js';
-import { oppHit } from '../client/js/deck/combat.js';
+import { oppHit, oppHits, oppStops, BREAK_STOPS, SHADOW } from '../client/js/deck/combat.js';
 import { BOSSES } from '../client/js/deck/bosses.js';
 
 const clone = x => structuredClone(x);
@@ -16,25 +16,50 @@ const LOGS = new WeakMap();
 const act = (run, kind, ...a) => { const l = LOGS.get(run); return l ? G.act(run, l, kind, ...a) : G.applyChoice(run, [kind, ...a]); };
 
 // ---------- combat ----------
-function incoming(m) {
-  let n = 0;
-  for (const o of m.opps) {
-    if (o.heart <= 0) continue;
-    const mv = o.queue[0];
-    if (mv?.pts) n += oppHit(m, o, mv) * (mv.hits || 1) * (o.boss && BOSSES[o.boss]?.hitsMult ? BOSSES[o.boss].hitsMult(m, o) : 1);
-  }
-  return n;
-}
+// The policies play possessions (GAUNTLET.md §15) the way a player would: they read the opponents' committed set
+// (run.match.foeSet / preview) and never peek at a hidden one: a hidden set is guessed from what the opponent usually
+// brings (his card pool, or the Shadow's: your own deck). On offense they want O − D (and the kill); on defense, the
+// least O − D against them; Stops gained with the ball are worth what they'll stop on the next defense.
 const heartSum = m => { const seen = new Set(); let s = 0; for (const o of m.opps) { if (o.shared) { if (seen.has(o.shared)) continue; seen.add(o.shared); } s += Math.max(0, o.heart); } return s; };
-function evalM(m0h, m, hpw) {
+const aliveOpps = m => m.opps.filter(o => o.heart > 0);
+const poolOf = o => ((o.mv.second || (o.shared && o.id === 1)) && o.pools2 ? o.pools2 : o.pools);
+function shadowMean(m, k) {
+  const cs = m.deck.map(cardDef).filter(d => d && d.type !== 'fatigue');
+  const sb = Math.floor(m.stats.shooting / 2), db = Math.floor(m.stats.defense / 2);
+  const per = cs.reduce((s, d) => s + (k === 'pts' ? (d.fx.pts ? (d.fx.pts + sb) * (d.fx.hits || 1) : 0) : (d.fx.stops ? d.fx.stops + (d.type === 'defense' ? db : 0) : 0)), 0) / Math.max(1, cs.length);
+  return per * SHADOW.cards * (k === 'pts' ? SHADOW.pts : SHADOW.stops);
+}
+// what he usually brings on a side
+function meanOff(m, o) { if (o.boss === 'the_shadow') return shadowMean(m, 'pts'); const l = poolOf(o).off; return l.reduce((s, mv) => s + oppHit(m, o, mv) * oppHits(m, o, mv), 0) / l.length; }
+function meanDef(m, o) { if (o.boss === 'the_shadow') return shadowMean(m, 'stops'); const l = poolOf(o).def; return l.reduce((s, mv) => s + oppStops(m, o, mv), 0) / l.length; }
+function estD(m) {
+  if (m.preview?.d != null) return m.preview.d;
+  const al = aliveOpps(m), brk = m.turnType === 'fast_break';
+  const d = al.reduce((s, o, i) => s + o.stops + (brk && i > 0 ? 0 : meanDef(m, o)), 0);
+  return brk ? Math.floor(d * BREAK_STOPS) : d;
+}
+function estO(m) { return m.preview?.o != null ? m.preview.o : aliveOpps(m).reduce((s, o) => s + meanOff(m, o), 0); }
+const nextIn = m => aliveOpps(m).reduce((s, o) => s + meanOff(m, o), 0);
+// the position after the cards played so far this possession (before End Turn)
+function evalM(m0, m, hpw) {
   if (m.over) return m.over.won ? 100000 + m.you.hp * 20 : -100000;
-  const dmg = m0h - heartSum(m);
-  const loss = Math.max(0, incoming(m) - m.you.stops);
-  let v = dmg - loss * hpw - Math.max(0, -m.you.hp) * 50;
-  v += (m.you.status.hot || 0) * 2.5 + m.powers.length * 7 + m.you.keep * 0.4 + (m.you.status.charge || 0) * 4;
-  for (const o of m.opps) if (o.heart > 0) { v += Math.min(2, (o.status.exposed || 0) - 1) * 3 + (o.status.cold ? 1 : 0); v -= o.stops * 0.3; }
+  const sixth = m.ab.includes('sixth_man') && !m.flags.sixthUsed;
+  let v = -Math.max(0, m0.hp - m.you.hp) * hpw + Math.max(0, m.you.hp - m0.hp) * 0.5 * hpw;
+  if (m.ball === 'you') {
+    const dmg = m.preview?.points != null ? m.preview.points : Math.max(0, (m.preview?.o || 0) - estD(m)), hs = heartSum(m);
+    v += Math.min(dmg, hs) + (dmg >= hs ? 400 : 0);
+    v += Math.min(m.you.stops, nextIn(m)) * 0.75 * hpw; // (Stops gained with the ball: there on the next defense)
+    if (!m.t.shots && m.rules.some(r => r.id === 'shot_clock')) v -= 3 * hpw + 6;
+  } else {
+    const loss = Math.max(0, estO(m) - (m.preview?.d || 0));
+    v -= loss * hpw + (loss >= m.you.hp && !sixth ? 400 : 0);
+    v += Math.min(m.you.keep, nextIn(m)) * 0.5 * hpw + m.you.outlet * 0.8;
+  }
+  v += (m.you.status.hot || 0) * 2.5 + m.powers.length * 7 + (m.you.status.charge || 0) * 4;
+  for (const o of aliveOpps(m)) v += Math.min(2, (o.status.exposed || 0) - 1) * 3 + (o.status.cold ? 1 : 0);
   v += m.hand.filter(r => cardDef(r)?.hold).length * 1.5;
-  v += m.hand.length * 1.2 + m.energy * 0.5; // (options left this turn: what draws and energy are worth to a one-card-at-a-time player)
+  // (options left this possession: what draws and energy are worth to a one-card-at-a-time player)
+  v += m.hand.filter((r, i) => G.canPlay(m, i).ok).length * 1.2 + m.energy * 0.5;
   return v;
 }
 const tgt = m => { let b = 0, bh = Infinity; m.opps.forEach((o, i) => { if (o.heart > 0 && o.heart < bh) { bh = o.heart; b = i; } }); return b; };
@@ -52,7 +77,7 @@ function playable(m) {
 export function _greedyTurn(...a) { return greedyTurn(...a); }
 function greedyTurn(run, st, hpw) {
   for (let guard = 0; guard < 25 && !run.match.over; guard++) {
-    const m = run.match, h0 = heartSum(m);
+    const m = run.match, h0 = { hp: m.you.hp };
     let best = null, bv = evalM(h0, m, hpw);
     for (const i of playable(m)) {
       const c = sims(m, st); G.playCard({ match: c, hp: run.hp, flags: {} }, i, tgt(c));
@@ -67,7 +92,7 @@ function greedyTurn(run, st, hpw) {
 export function _smartTurn(...a) { return smartTurn(...a); }
 function smartTurn(run, st, hpw, W = 5, D = 7) {
   for (let guard = 0; guard < 25 && !run.match.over; guard++) {
-    const m = run.match, h0 = heartSum(m);
+    const m = run.match, h0 = { hp: m.you.hp };
     let beam = [{ m, first: null }], best = { v: evalM(h0, m, hpw), first: null };
     for (let d = 0; d < D && beam.length; d++) {
       const nxt = [];
@@ -212,17 +237,17 @@ const takeR = (run, pk) => act(run, 'reward', pk.card ?? null, run.reward.abilit
 export function playMatch(run, policy, st) {
   const P = POL[policy];
   const boss = run.match.kind === 'boss';
-  for (let t = 0; t < 60 && !run.match.over; t++) {
+  for (let t = 0; t < 150 && !run.match.over; t++) {
     const hpw = 1.15 + 1.6 * (1 - run.hp / run.maxHp) + (boss ? 0.25 : 0);
     P.turn(run, st, hpw);
     if (!run.match.over) act(run, 'end');
   }
-  if (!run.match.over) return { won: false, stalled: true }; // (60 turns: the policy is stuck; the run stops here)
+  if (!run.match.over) return { won: false, stalled: true }; // (150 possessions: the policy is stuck; the run stops here)
   return G.matchOver(run);
 }
 export function playRun(seed, policy = 'smart', { player = null, world = null, forceBoss = null, ai = null, now = undefined } = {}) {
   const P = POL[policy], st = stream(seed, 'policy', policy);
-  const start = { seed, player: player || G.rollStarters(seed)[0], world, unlocks: null };
+  const start = { engine: G.ENGINE_VERSION, seed, player: player || G.rollStarters(seed)[0], world, unlocks: null };
   const run = G.newRun({ ...start, ai, now });
   const log = []; LOGS.set(run, log);
   if (forceBoss) for (const ph of run.map.phases) for (const n of Object.values(ph.nodes)) if (n.kind === 'boss' && BOSSES[forceBoss].phase === ph.phase && n.foes.length === 1) n.boss = forceBoss;
@@ -236,7 +261,7 @@ export function playRun(seed, policy = 'smart', { player = null, world = null, f
     if (r.kind === 'match' || r.kind === 'rival' || r.kind === 'boss') {
       const hp0 = run.hp;
       const mo = playMatch(run, policy, st);
-      fights.push({ kind: r.kind === 'boss' ? (n.phase === 4 ? 'final' : 'boss') : r.kind, phase: n.phase, turns: run.match.turn, cards: run.match.log.played, lost: hp0 - run.hp, won: mo.won });
+      fights.push({ kind: r.kind === 'boss' ? (n.phase === 4 ? 'final' : 'boss') : r.kind, phase: n.phase, turns: run.match.turn, cards: run.match.log.played, lost: hp0 - run.hp, won: mo.won, dead: run.match.log.dead, offense: run.match.log.poss.you });
       if (r.kind === 'boss') bosses.push({ id: n.boss, phase: n.phase, won: mo.won, hpIn: hp0 / run.maxHp });
       if (mo.stalled) break;
       if (mo.won && run.stage === 'reward') takeR(run, P.reward(run, run.reward));
@@ -269,10 +294,11 @@ function report(rows, label) {
   console.log(`  Final won: ${pct(won.length / n)}   reached P2 ${pct(reach(2))}  P3 ${pct(reach(3))}  Final ${pct(rows.filter(r => r.bosses.some(b => b.phase === 4)).length / n)}`);
   console.log(`  minutes (completed): avg ${avg(won, r => r.minutes).toFixed(0)}  min ${Math.min(...won.map(r => r.minutes), Infinity)}  max ${Math.max(...won.map(r => r.minutes), 0)}   (all runs avg ${avg(rows, r => r.minutes).toFixed(0)})`);
   console.log(`  VC (completed): avg ${avg(won, r => r.vc).toFixed(0)} (before the cap ${avg(won, r => r.vcRaw).toFixed(0)})   failed avg ${avg(rows.filter(r => !r.completed), r => r.vc).toFixed(0)}`);
-  console.log(`  deck at end ${avg(rows, r => r.deck).toFixed(1)} cards, ${avg(rows, r => r.abilities).toFixed(1)} abilities, ${avg(won, r => r.turns).toFixed(0)} turns a completed run`);
+  console.log(`  deck at end ${avg(rows, r => r.deck).toFixed(1)} cards, ${avg(rows, r => r.abilities).toFixed(1)} abilities, ${avg(won, r => r.turns).toFixed(0)} possessions a completed run`);
+  { let t = 0, d = 0, of = 0; for (const r of rows) for (const f of r.fights) { t += f.turns; d += f.dead || 0; of += f.offense || 0; } console.log(`  possessions: ${pct(of / Math.max(1, t))} yours; dead hands (nothing playable at the start of a turn) ${pct(d / Math.max(1, t))}`); }
   const fk = {};
   for (const r of rows) for (const f of r.fights) { const k = `${f.kind}${f.kind === 'final' ? '' : ' P' + f.phase}`; const x = fk[k] || (fk[k] = { n: 0, t: 0, c: 0, l: 0 }); x.n++; x.t += f.turns; x.c += f.cards; x.l += f.lost; }
-  console.log('  fights (count a run, turns, cards, Health lost): ' + Object.entries(fk).sort().map(([k, x]) => `${k} ${(x.n / n).toFixed(1)}× ${(x.t / x.n).toFixed(1)}t ${(x.c / x.n).toFixed(1)}c -${(x.l / x.n).toFixed(1)}`).join(' | '));
+  console.log('  fights (count a run, possessions, cards, Health lost): ' + Object.entries(fk).sort().map(([k, x]) => `${k} ${(x.n / n).toFixed(1)}× ${(x.t / x.n).toFixed(1)}t ${(x.c / x.n).toFixed(1)}c -${(x.l / x.n).toFixed(1)}`).join(' | '));
   const deaths = {};
   for (const r of rows) if (!r.completed) { const b = r.bosses.find(x => !x.won); const lf = r.fights.find(f => !f.won); const k = b ? `boss ${b.id}` : `P${r.phase} ${lf ? lf.kind : 'other'}`; deaths[k] = (deaths[k] || 0) + 1; }
   console.log('  where runs end: ' + Object.entries(deaths).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pct(v / n)}`).join(', '));

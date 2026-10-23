@@ -161,7 +161,15 @@ button.gx-card:hover:not(.off), button.gx-card:focus-visible { transform: transl
 .gx-mev { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .gx-flow { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .gx-flow.on { color: #7fd8ff; } .gx-flow small { font-weight: 400; letter-spacing: 0; color: var(--dim); } .gx-flow.done { color: #9dffbe; }
-.gx-hand { display: flex; justify-content: center; align-items: flex-end; gap: 10px; padding: 12px 6px 4px; min-height: 196px; overflow-x: auto; overflow-y: visible; }
+.gx-hand { display: flex; justify-content: safe center; align-items: flex-end; gap: 10px; padding: 12px 6px 4px; min-height: 196px; overflow-x: auto; overflow-y: visible; }
+/* (qp4: cards held across possessions make bigger hands, up to 10: past 7 they overlap like a fanned hand instead of
+   running off the edge; the one under the pointer or pad focus comes to the front) */
+.gx-hand:has(> :nth-child(8)) { gap: 0; }
+.gx-hand:has(> :nth-child(8)) > * + * { margin-left: -44px; }
+.gx-hand:has(> :nth-child(9)) > * + * { margin-left: -54px; }
+.gx-hand:has(> :nth-child(10)) > * + * { margin-left: -64px; }
+.gx-hand:has(> :nth-child(8)) > * { position: relative; }
+.gx-hand:has(> :nth-child(8)) > :hover, .gx-hand:has(> :nth-child(8)) > :focus-within, .gx-hand:has(> :nth-child(8)) > :focus-visible { z-index: 5; }
 .gx-side { display: flex; flex-direction: column; gap: 8px; }
 .gx-end { font-size: 18px; padding: 12px; } .gx-end kbd { font-size: 11px; opacity: .7; }
 .gx-piles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -248,3 +256,54 @@ button.gx-card:hover:not(.off), button.gx-card:focus-visible { transform: transl
 .gx-root { background: rgba(7, 7, 9, .82); min-height: 100%; box-sizing: border-box; }
 #ui.gx-full .gx-root { background: none; }
 .gx-verified { font-style: normal; margin-left: 8px; padding: 1px 6px; border-radius: 4px; font-size: 10px; letter-spacing: .08em; color: #7be0a0; border: 1px solid rgba(123, 224, 160, .5); }
+
+/* qp4: the Gauntlet in possessions: the turn banner, their committed set, the clash bar */
+.gx-turn { display: inline-flex; align-items: baseline; gap: 10px; padding: 6px 14px; border-radius: 8px; background: rgba(10,12,16,.82); border: 1px solid rgba(255,255,255,.14); }
+.gx-turn b { font-family: var(--display); font-size: 15px; letter-spacing: .14em; text-transform: uppercase; }
+.gx-turn span { font-size: 12.5px; color: #cfc6b8; }
+.gx-turn.side-you { border-color: rgba(255,77,36,.6); } .gx-turn.side-you b { color: var(--accent); }
+.gx-turn.side-them { border-color: rgba(63,160,255,.6); } .gx-turn.side-them b { color: #7cc0ff; }
+.gx-turn.side-jump b { color: var(--gold); }
+.gx-turn.tt-fast_break b, .gx-turn.tt-second_chance b { color: #7be0a0; }
+.gx-foeset { padding: 8px 10px; border-radius: 10px; background: rgba(10,12,16,.78); border: 1px solid rgba(255,255,255,.12); max-width: 520px; }
+.gx-fs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.gx-fs-head small { font-size: 10.5px; letter-spacing: .14em; color: #a8a090; }
+.gx-fs-head b { font-family: var(--display); font-size: 22px; color: #f3eee4; }
+.gx-fs-head b em { font-style: normal; font-size: 11px; color: #a8a090; margin-left: 4px; letter-spacing: .08em; }
+.gx-fs-cards { display: flex; gap: 6px; flex-wrap: wrap; }
+.gx-fcard { position: relative; width: 92px; min-height: 96px; padding: 24px 6px 6px; border-radius: 9px; display: flex; flex-direction: column; gap: 3px; background: linear-gradient(170deg, #20242c, #12151a); border: 1px solid rgba(255,255,255,.14); font-size: 11px; }
+.gx-fcard.k-shot { background: linear-gradient(170deg, #3a1d16, #15100e 70%); border-color: rgba(255,77,36,.45); }
+.gx-fcard.k-defense { background: linear-gradient(170deg, #172a3e, #0f141b 70%); border-color: rgba(63,160,255,.45); }
+.gx-fcard .gx-fv { position: absolute; top: 4px; left: 6px; font-family: var(--display); font-size: 15px; color: #f3eee4; }
+.gx-fcard .gx-fa { position: absolute; top: 5px; right: 6px; font-style: normal; font-size: 9px; letter-spacing: .08em; padding: 1px 4px; border-radius: 3px; background: rgba(255,255,255,.12); color: #ddd6ca; }
+.gx-fcard .gx-fn { font-weight: 700; font-size: 11.5px; line-height: 1.15; color: #f3eee4; }
+.gx-fcard small { font-size: 10px; color: #bfb7aa; line-height: 1.2; }
+.gx-fcard.down { align-items: center; justify-content: center; padding: 6px; background: repeating-linear-gradient(135deg, #1a1e25 0 8px, #14171c 8px 16px); border-style: dashed; }
+.gx-fcard.down b { font-family: var(--display); font-size: 30px; color: #8e877b; }
+.gx-fs-why { margin: 6px 0 0; font-size: 11.5px; color: #c9b38a; }
+.gx-clash { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px 10px; padding: 8px 14px; border-radius: 10px; background: rgba(10,12,16,.84); border: 1px solid rgba(255,255,255,.12); min-width: 260px; }
+.gx-clash span small { display: block; font-size: 10px; letter-spacing: .14em; color: #a8a090; }
+.gx-clash b { font-family: var(--display); font-size: 26px; line-height: 1; }
+.gx-cl-you { text-align: right; } .gx-cl-you b { color: var(--accent); }
+.gx-cl-them b { color: #7cc0ff; }
+.gx-cl-vs { font-size: 11px; letter-spacing: .14em; color: #8e877b; text-transform: uppercase; }
+.gx-cl-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: rgba(63,160,255,.55); overflow: hidden; }
+.gx-cl-bar i { display: block; height: 100%; background: var(--accent); transition: width .25s; }
+.gx-cl-bar.unknown { background: repeating-linear-gradient(90deg, rgba(255,255,255,.15) 0 6px, rgba(255,255,255,.05) 6px 12px); }
+.gx-cl-bar.unknown i { background: rgba(255,77,36,.5); }
+.gx-cl-res { grid-column: 1 / -1; font-style: normal; text-align: center; font-size: 12.5px; color: #ddd6ca; }
+.gx-clash.r-score.off .gx-cl-res, .gx-clash.r-stopped.def .gx-cl-res { color: #7be0a0; }
+.gx-clash.r-score.def .gx-cl-res, .gx-clash.r-stopped.off .gx-cl-res { color: #ff9a7a; }
+/* qp4 round 2: the match table in possessions */
+.gx-turn-top { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 3; }
+.gx-possession { margin-left: auto; display: flex; align-items: flex-start; gap: 10px; }
+.gx-possession .gx-foeset { max-width: 560px; }
+.gx-side .gx-clash { min-width: 0; padding: 6px 10px; margin-bottom: 8px; }
+.gx-side .gx-clash b { font-size: 22px; }
+.gx-clash.r-played { grid-template-columns: 1fr auto 1fr; }
+.gx-card.held { filter: saturate(.55) brightness(.78); border-style: dashed; }
+.gx-badge.held { background: rgba(120,130,150,.85); color: #f3eee4; }
+.gx-held-why { font-size: 10px; line-height: 1.2; color: #c9b38a; }
+.gx-notice { margin: 12px 0; padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(255,196,64,.55); background: rgba(40,30,8,.75); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.gx-notice b { color: #ffd77a; }
+.gx-notice p { margin: 0; flex: 1 1 320px; color: #e8dfcf; font-size: 13.5px; }

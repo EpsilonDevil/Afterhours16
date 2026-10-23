@@ -21,15 +21,21 @@
 // Events from playCard / endTurn: { t, actor, anim, made, points, stops, text, type, ... } where t is the event's
 // offset in ms on the court's timeline for that call (each animated event moves it on by its anim's length), and
 // type is one of card, shot, stops, status, heal, energy, draw, flow, combo, power, burn, fatigue, hurt, move,
-// wall, rule, ability, ally, betray, phase, down, turn, end, invalid.
-// A match's opening events (turn 1, an ally lending a card, start-of-match abilities) are in run.match.intro.
+// wall, rule, ability, ally, betray, phase, down, turn, end, invalid; and since qp4 jump, possession, clash, rebound,
+// foul, ft (GAUNTLET.md §14, §15.9).
+// A match's opening events (the tip-off, turn 1, an ally lending a card, start-of-match abilities) are in run.match.intro.
+// v0.4.8.9 qp4, possessions (GAUNTLET.md §15): ENGINE_VERSION (2; every new run records it as run.engine, and a replay
+// start must carry engine: 2), canPlay(run, handIndex) -> { ok, why, cost } (phase-aware), and on run.match: phase
+// ('jump' | 'offense' | 'defense'), ball ('you' | 'them'), turnType, turnLabel, foeSet, preview, intro. endTurn's events
+// for a possession: card, shot { how }, foul, ft, rebound, clash { o, d, winner }, possession { to, turnType, text }, end.
 // eventChoose may return { fight: true }: the Mystery Stop became a match (run.stage 'match'); finish it as any other.
 // rollConverted(seed, { id, name, look, base: { stamina, shooting, defense, health } }): base is the build's rating
 // for each stat, 0-99 (60 → 6 ... 99 → 10, linear; below 60 → 6) or already on 6-10.
 export { ANIMS } from './anims.js';
 export { EFFECT_KINDS } from './events.js';
 export { newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopView, shopBuy, shopRemove, eventView, eventChoose, runOver, leaveNode, nodeOf } from './run.js';
-export { playCard, endTurn, handView, flowView } from './combat.js';
+export { playCard, endTurn, handView, flowView, canPlay } from './combat.js';
+export { ENGINE_VERSION } from './run.js';
 export { cardInfo, canUpgrade } from './cards.js';
 export { abilityInfo } from './abilities.js';
 export { worldAfterRun, worldTick, charLine, emptyWorld, rankName } from './nemesis.js';

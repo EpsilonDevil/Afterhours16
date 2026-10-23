@@ -15,6 +15,12 @@ helper, `server/verify/gauntlet_replay.mjs`.
   have taken at least the real time they need. The same fallback is used when the helper fails or runs over its time.
   These runs are recorded as not verified.
 
+Since qp4 every run's start records the engine version it's played on (`ENGINE_VERSION` in `client/js/deck/run.js`,
+read by the service when it starts). A run started on the old rules (before qp4: no version, or 1) can't be replayed by
+the new engine, so it's paid by its counts and recorded as not verified, never refused for it. A client on a different
+version, or one that doesn't send its version (every client from before qp4), is told "Update the game to play the
+Gauntlet." instead of starting a run.
+
 The service's start banner says which applies, for example `Gauntlet replay checks: on (Node.js v18.19.1)` or
 `Gauntlet replay checks: off: Node.js not found (runs are checked by their counts)`.
 

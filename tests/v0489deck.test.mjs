@@ -118,8 +118,9 @@ test('match state has the §14 shape, and every event too', () => {
 });
 
 test('the Flow chain is public: flowView and handView(run).flow', () => {
-  const run = G.newRun({ seed: 2, player: G.rollStarters(2)[0] });
-  G.enterNode(run, G.availableNodes(run)[0]);
+  // (a match where you won the tip: Moves and Shots are offense cards)
+  let run = null;
+  for (let seed = 2; !run || run.match.ball !== 'you'; seed++) { run = G.newRun({ seed, player: G.rollStarters(seed)[0] }); G.enterNode(run, G.availableNodes(run)[0]); }
   run.match.hand = ['crossover', 'outlet_pass', 'jumper', 'jumper']; run.match.energy = 3;
   assert.deepEqual(G.handView(run).flow, { chain: [], wild: 0, flowed: false, flows: 0, max: 1, need: 3 });
   G.playCard(run, 0); G.playCard(run, 0);

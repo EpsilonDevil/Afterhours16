@@ -173,7 +173,8 @@ test('the bracket: every node of the phase, the kinds, the ones you can pick, ru
   assert.match(V.runBarHTML(run), new RegExp(`Deck · ${run.deck.length}`));
 });
 
-test('the match table: the hand with costs and text, energy, the four stats, Stops, Heart and intent, score, rules, piles, End Turn', () => {
+// (qp4: an opponent's intent gave way to the possession: the turn banner, his committed set (foeSet) and the clash bar)
+test('the match table: the hand with costs and text, energy, the four stats, Stops, Heart, the possession (banner, his set, the clash), score, rules, piles, End Turn', () => {
   const run = newRun();
   D.enterNode(run, D.availableNodes(run).find(id => D.nodeOf(run, id).kind === 'match'));
   const m = run.match, h = V.matchHTML(run, { target: 0 });
@@ -183,7 +184,16 @@ test('the match table: the hand with costs and text, energy, the four stats, Sto
   assert.match(h, new RegExp(`<b>${m.energy}</b><small>/${m.maxEnergy}`));
   assert.equal(count(h, /class="gx-stat s-/g), 4);
   assert.match(h, /Stops/);
-  assert.match(h, new RegExp(m.opps[0].name)); assert.match(h, /class="gx-intent k-/); assert.match(h, new RegExp(m.opps[0].intent.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(h, new RegExp(m.opps[0].name)); assert.doesNotMatch(h, /gx-intent/);
+  assert.match(h, /data-turn/); assert.match(h, new RegExp(m.turnLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(h, /data-foeset/); assert.match(h, m.foeSet.side === 'offense' ? /THEIR PLAY/ : /THEIR DEFENSE/);
+  assert.match(h, /data-clash/);
+  // while the possession plays on the court: that clash, not the next one's set
+  const busy = V.matchHTML(run, { target: 0, busy: true, lastClash: { youOff: true, you: 9, them: 4, text: 'You scored' } });
+  assert.doesNotMatch(busy, /data-foeset/); assert.match(busy, /You scored/); assert.match(busy, /data-gx="end" disabled/);
+  // a card for the other side of the ball is held, with why
+  const held = D.handView(run).map((x, i) => (i === 0 ? { ...x, playable: false, offPhase: true, why: 'Shots can\'t be played on defense.' } : x));
+  assert.match(V.matchHTML(run, { hand: held }), /gx-card [^"]*held[^]*HELD[^]*Shots can&#39;t be played on defense/);
   assert.match(h, /data-pile="draw"/); assert.match(h, /data-pile="discard"/); assert.match(h, /data-pile="burned"/);
   assert.match(h, /data-gx="end"/);
   for (const r of m.rules) assert.match(h, new RegExp(r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -191,7 +201,7 @@ test('the match table: the hand with costs and text, energy, the four stats, Sto
   // a card that can't be played shows it; a combo lights
   const hv = D.handView(run).map(x => ({ ...x, playable: false, why: 'Not enough energy.' }));
   assert.match(V.matchHTML(run, { hand: hv }), /gx-card [^"]*off/);
-  const lit = D.handView(run).map((x, i) => ({ ...x, combo: i === 0 }));
+  const hv0 = D.handView(run), live = Math.max(0, hv0.findIndex(x => !x.offPhase)), lit = hv0.map((x, i) => ({ ...x, combo: i === live }));
   assert.match(V.matchHTML(run, { hand: lit }), /COMBO/);
   // the piles open
   assert.match(V.pileHTML('Draw pile', m.drawPile), new RegExp(`${m.drawPile.length} cards`));
@@ -301,7 +311,7 @@ test('the server routes: start and finish as the server takes them, guarded when
   assert.deepEqual(await GX.apiFinish(down, 'r1', {}, []), { error: 'offline', retry: true }, 'unreachable: kept for a retry');
   assert.equal(await GX.apiFinish(down, null, {}, []), null, 'no run id: nothing sent');
   assert.deepEqual(calls.map(c => (Array.isArray(c) ? c[0] : c)), ['/api/gauntlet/profile', '/api/gauntlet/start', '/api/gauntlet/finish']);
-  assert.deepEqual(calls[1][1], { seed: 5, player: { id: 'starter-5-0', name: 'Rook', converted: false } }, 'the server\'s keys: id, name, converted');
+  assert.deepEqual(calls[1][1], { seed: 5, engine: D.ENGINE_VERSION, player: { id: 'starter-5-0', name: 'Rook', converted: false } }, 'the server\'s keys: id, name, converted (qp4: and the engine version)');
   const no = { api: { mutate: async () => fail(400) } };
   assert.deepEqual(await GX.apiStart(no, 5, { id: 'x' }), { error: 'Nope.' });
   assert.deepEqual(await GX.apiFinish(no, 'R', {}, []), { error: 'Nope.', refused: true });
@@ -359,7 +369,7 @@ test('qp1: a run played through the screen logs every engine call; the log repla
     await g.start(0);
     const run0 = g.run;
     assert.equal(run0.player.id, 'starter-4242-0');
-    assert.deepEqual(g.meta.start, { seed: 4242, player: D.rollStarters(4242)[0], world: world0, unlocks: null }, 'the start is the server\'s snapshot');
+    assert.deepEqual(g.meta.start, { engine: D.ENGINE_VERSION, seed: 4242, player: D.rollStarters(4242)[0], world: world0, unlocks: null }, 'the start is the server\'s snapshot (qp4: on this engine)');
     assert.equal(run0.seed, 4242);
     // a refused call isn't logged
     const pref = ['event', 'shop', 'cooler', 'match', 'rival', 'boss'];
@@ -441,7 +451,7 @@ test('qp1: a run played through the screen logs every engine call; the log repla
     assert.match(V.summaryHTML(g.run, D.runOver(g.run), refused), /data-replay-refused[^]*doesn&#39;t replay: card 3 not in hand/);
     // a converted player's start is his profile entry as the server has it: the replay rolls him exactly as the screen did
     const entry = { id: 'cv-xyz', character_id: 'xyz', name: 'Dex Ward', converted: true, stats: { stamina: 99, shooting: 91, defense: 74, health: 88 }, icon: 'the_clamp', overall: 99, build: { name: 'Dex Ward', position: 'PG', appearance: { skin: 2 } } };
-    const rc = D.rollConverted(9001, entry), rr = D.replay({ seed: 9001, player: entry, world: world0, unlocks: null }, []);
+    const rc = D.rollConverted(9001, entry), rr = D.replay({ engine: D.ENGINE_VERSION, seed: 9001, player: entry, world: world0, unlocks: null }, []);
     assert.equal(rr.ok, true, rr.error); assert.deepEqual(rr.run.player.stats, rc.stats);
     assert.equal(rr.hash, D.outcomeHash(D.newRun({ seed: 9001, player: rc, world: world0, unlocks: null })));
     // a run saved before the log (v0.4.8.9) plays on and finishes without one (paid by its counts)

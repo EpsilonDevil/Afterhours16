@@ -93,7 +93,7 @@ class ReplayChecks(unittest.TestCase):
 
     @classmethod
     def start_run(cls, p, seed):
-        status, out = cls.raw(p, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "seed": seed, "player": {"id": f"starter-{seed}-0", "name": "S"}})
+        status, out = cls.raw(p, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": seed, "player": {"id": f"starter-{seed}-0", "name": "S"}})
         assert status == 200, out
         with cls.service.db.transaction() as c:  # (played for an hour)
             c.execute("UPDATE gauntlet_runs SET started_at=started_at-3600 WHERE id=?", (out["run_id"],))
@@ -114,7 +114,9 @@ class ReplayChecks(unittest.TestCase):
         ai = self.service.shared_world()["seed"]
         self.assertEqual((st["world"]["aiSeed"], st["world"]["chars"], st["unlocks"], st["replay"]), (ai, {}, None, True))
         start = json.loads(self.row(st["run_id"])["start"])
-        self.assertEqual(start, {"seed": self.seed, "player": {"id": f"starter-{self.seed}-0", "converted": False}, "world": st["world"], "unlocks": None})
+        # (qp4: and the engine version it's played and replayed on)
+        self.assertEqual(start, {"engine": G.ENGINE_VERSION, "seed": self.seed, "player": {"id": f"starter-{self.seed}-0", "converted": False}, "world": st["world"], "unlocks": None})
+        self.assertEqual(st["engine"], G.ENGINE_VERSION)
 
     def test_an_honest_run_is_verified_and_paid_from_its_replay(self):
         st = self.start_run(self.p, self.seed)

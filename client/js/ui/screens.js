@@ -23,7 +23,7 @@ import { titleMusic } from '../core/titlemusic.js';
 
 // v0.4.7.5: the modes and your player across the top; Stats and Locker Codes are icon buttons on the right (and tiles
 // on Home), so the bar never runs into itself
-const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['inventory', 'Inventory'], ['park', 'The Park'], ['prorun', 'The Pro Run'], ['proam', 'Pro-Am'], ['practice', 'Practice']];
+const NAV = [['home', 'Home'], ['myplayer', 'MyPlayer'], ['store', 'VC Store'], ['inventory', 'Inventory'], ['park', 'The Park'], ['prorun', 'The Pro Run'], ['proam', 'Pro-Am'], ['gauntlet', 'The Gauntlet'], ['practice', 'Practice']]; // (qp4: The Gauntlet's own tab; its Home tile stays)
 const ICON = {
   stats: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9h3v8H3Zm5.5 0V3h3v14h-3ZM14 17v-5h3v5h-3Z" fill="currentColor"/></svg>',
   codes: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V6Zm10 0v2h1.5V6H12Zm0 3.5v1h1.5v-1H12Zm0 2.5v2h1.5v-2H12Z" fill="currentColor"/></svg>',

@@ -326,6 +326,37 @@ def pool_stats():
         return {**_pool.stats, "idle": len(_pool.idle)}
 
 
+# ---------------- v0.4.8.9 qp4: the engine version (the rules a run is played and replayed on) ----------------
+# deck/run.js ENGINE_VERSION (re-exported by deck/index.js), read from the engine itself when the service starts, so the
+# two never drift: 2 since the Gauntlet plays in possessions. /api/gauntlet/start returns it, records it in the run's
+# start (start.engine, what the replay checks), and refuses a client that plays another version or doesn't say (every
+# client from before qp4): "Update the game". A run whose start has no engine (or 1) was started on the old rules: no replay can check it, so it's paid by
+# its counts (verified: false), never refused for it.
+ENGINE_FILE = ROOT / "client" / "js" / "deck" / "run.js"
+ENGINE_FALLBACK = 2           # (only if the engine file can't be read: the version this service was written for)
+UPDATE_MSG = "Update the game to play the Gauntlet."
+
+
+def read_engine_version(path=ENGINE_FILE):
+    try:
+        m = re.search(r"^export const ENGINE_VERSION = (\d+);", Path(path).read_text(encoding="utf8"), re.M)
+    except OSError:
+        m = None
+    if not m:
+        print(f"[gauntlet] couldn't read ENGINE_VERSION from {path}; using {ENGINE_FALLBACK}", flush=True)
+        return ENGINE_FALLBACK
+    return int(m.group(1))
+
+
+ENGINE_VERSION = read_engine_version()
+
+
+def start_engine(start):
+    """The engine version a run's start was recorded with: 1 for a start from before qp4 (no engine in it)."""
+    v = (start or {}).get("engine", 1)
+    return v if isinstance(v, int) and not isinstance(v, bool) else 1
+
+
 _COUNT_KEYS = {"matchesWon": int, "rivals": int, "bosses": int, "final": bool, "turns": int, "cardsPlayed": int, "nonMatchNodes": int, "phase": int, "completed": bool, "over": bool}
 
 
@@ -640,7 +671,12 @@ class Gauntlet:
 
     def start(self, aid, data, now=None):
         now = time.time() if now is None else now
-        builds.strict_keys(data, ("key", "seed", "player"))
+        builds.strict_keys(data, ("key", "seed", "player", "engine"))
+        # (qp4: a client on other rules can't play a run this service checks. One that sends no engine is from before
+        # qp4: told to update before it plays a run its finish couldn't check)
+        engine = data.get("engine")
+        if not isinstance(engine, int) or isinstance(engine, bool) or engine != ENGINE_VERSION:
+            raise Invalid(UPDATE_MSG)
         seed = data.get("seed")
         seed = secrets.randbelow(SEED_MAX) + 1 if seed is None else _int(seed, 1, SEED_MAX, "seed")
         p = data.get("player")
@@ -668,11 +704,12 @@ class Gauntlet:
             # account's AI world seed. Unlocks: the engine's run unlocks (none are kept server-side yet: null)
             world, _ = load_world(c, aid)
             world = {**world, "aiSeed": ai_seed} if world else {"v": 1, "aiSeed": ai_seed, "runs": 0, "ticks": 0, "chars": {}, "feed": []}
-            start = {"seed": seed, "player": rplayer, "world": world, "unlocks": None}
+            start = {"engine": ENGINE_VERSION, "seed": seed, "player": rplayer, "world": world, "unlocks": None}
             rid = uuid.uuid4().hex
             c.execute("INSERT INTO gauntlet_runs(id, account_id, seed, player, status, started_at, start) VALUES(?,?,?,?,?,?,?)",
                       (rid, aid, seed, json.dumps(player), "running", now, json.dumps(start, separators=(",", ":"))))
-            return {"run_id": rid, "seed": seed, "player": player, "started_at": now, "world": world, "unlocks": None, "replay": replay_status()["on"]}
+            return {"run_id": rid, "seed": seed, "player": player, "started_at": now, "world": world, "unlocks": None, "replay": replay_status()["on"],
+                    "engine": ENGINE_VERSION}
         return self.s.db.once(aid, data.get("key"), "gauntlet_start", {k: v for k, v in data.items() if k != "key"}, run)
 
     def finish(self, aid, data, now=None):
@@ -704,6 +741,8 @@ class Gauntlet:
         try:
             if start is None:
                 raise ReplayUnavailable("a run started before replay checks")
+            if start_engine(start) != ENGINE_VERSION:  # (qp4: started on the old rules: nothing can replay it)
+                raise ReplayUnavailable(f"a run started on engine {start_engine(start)}, this is {ENGINE_VERSION}")
             if choices is None:
                 if replay_status()["on"]:
                     raise Invalid("The run's choices are needed to check it.")

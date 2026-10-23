@@ -7,28 +7,28 @@
 // Called by: combat.js (what each rule does), map.js (pickRules for each match node).
 
 export const RULES = [
-  { id: 'make_it_take_it', name: 'Make-It-Take-It', text: 'Draw 1 after you score (up to 2 a turn).', good: true },
+  { id: 'make_it_take_it', name: 'Make-It-Take-It', text: 'Whoever scores keeps the ball; you draw 1 when you do.', good: true },
   { id: 'threes_double', name: 'Threes Count Double', text: 'Perimeter shots +50%, his threes too.' },
-  { id: 'shot_clock', name: 'Shot Clock', text: 'Play a Shot card every 2 turns or take 3.', bad: true },
-  { id: 'physical', name: 'Physical Night', text: 'Defense +2, Shots −1, for both sides.' },
+  { id: 'shot_clock', name: 'Shot Clock', text: 'On offense, put up a Shot or take 3 and lose the ball.', bad: true },
+  { id: 'physical', name: 'Physical Night', text: 'Defense +2, Shots −1, both sides; every Drive or Post shot draws a foul.' },
   { id: 'win_by_2', name: 'Win By 2', text: 'The opponent heals once when he hits 1 Heart.', bad: true },
   { id: 'no_timeouts', name: 'No Timeouts', text: 'No healing in this match.', bad: true },
   { id: 'run_and_gun', name: 'Run & Gun', text: '+1 energy, and both sides\' shots +2.' },
   { id: 'old_school', name: 'Old School', text: 'No Mentalities.', bad: true },
   { id: 'home_crowd', name: 'Home Crowd', text: 'You start Hot 1.', good: true },
   { id: 'hostile_crowd', name: 'Hostile Crowd', text: 'You start Cold 1.', bad: true },
-  { id: 'and_one_night', name: 'And-One Night', text: 'Your first Shot each turn scores +3.', good: true },
+  { id: 'and_one_night', name: 'And-One Night', text: 'Your first Shot each possession scores +3.', good: true },
   { id: 'ball_movement', name: 'Ball Movement', text: 'Your first Pass card each turn costs 0.', good: true },
   { id: 'up_tempo', name: 'Up-Tempo', text: 'Draw 6 cards a turn; his shots +1.' },
   { id: 'short_game', name: 'Short Game', text: 'He has 25% less Heart, but his shots score +25%.' },
   { id: 'no_blood', name: 'No Blood, No Foul', text: 'Fatigue cards burn when drawn, and you draw another.', good: true },
   { id: 'windy', name: 'Windy Night', text: 'Perimeter shots −2, Drive shots +2.' },
   { id: 'king_court', name: 'King of the Court', text: 'He has +20% Heart; the match pays +50% coins.' },
-  { id: 'overtime', name: 'Overtime', text: 'From turn 5, both sides\' shots +3.' },
-  { id: 'tight_whistle', name: 'Tight Whistle', text: 'Nobody can be made Cold, Exposed or Gassed.' },
+  { id: 'overtime', name: 'Overtime', text: 'From the 9th possession, both sides\' shots +3.' },
+  { id: 'tight_whistle', name: 'Tight Whistle', text: 'Nobody can be made Cold, Exposed or Gassed, and no fouls.' },
   { id: 'deep_bench', name: 'Deep Bench', text: 'Depth cards count 8 more cards; nothing is Tight.' },
   { id: 'half_court', name: 'Half Court', text: 'Tight always applies; Depth counts nothing.' },
-  { id: 'trash_talk', name: 'Trash Talk', text: 'Whoever scores 12+ in one turn becomes Hot 1.' },
+  { id: 'trash_talk', name: 'Trash Talk', text: 'Whoever scores 12+ in one possession becomes Hot 1.' },
 ];
 export const RULE_IDS = RULES.map(r => r.id);
 export const RULE_BY_ID = Object.assign(Object.create(null), Object.fromEntries(RULES.map(r => [r.id, r])));

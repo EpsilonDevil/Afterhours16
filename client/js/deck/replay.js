@@ -16,14 +16,15 @@
 // matchOver(run) isn't a choice: it only settles a finished match and is applied the moment one ends (it's idempotent;
 // the UI may call it any time). The views (handView, shopView, ...) change nothing.
 //
-// The run's start is { seed, player, world, unlocks }, exactly as passed to newRun: the seed (1 to 2^32-1), the player
+// The run's start is { engine, seed, player, world, unlocks }: engine is the rules version the run was started on
+// (ENGINE_VERSION, 2 since qp4; missing means 1 and the replay refuses it: 'old engine'), the rest exactly as passed to newRun: the seed (1 to 2^32-1), the player
 // (a starter from rollStarters(seed), or a converted player from rollConverted(seed, profile entry)), the stored
 // nemesis world (its aiSeed is the account's AI world seed) and the unlocks. newRun's `ai` and `now` are cosmetic
 // (names and looks) and aren't part of the start: compare runs with outcomeHash, which leaves the cosmetics out.
 //
 // The UI logs through act(run, log, kind, ...args): it makes the call and logs it only if it succeeded.
 // Called by: index.js: ui/gauntlet.js logs through act(); server/verify/gauntlet_replay.mjs runs replay().
-import { newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopBuy, shopRemove, leaveNode, eventChoose, runOver } from './run.js';
+import { ENGINE_VERSION, newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopBuy, shopRemove, leaveNode, eventChoose, runOver } from './run.js';
 import { playCard, endTurn, canPlay } from './combat.js';
 import { normWorld } from './nemesis.js';
 import { stateHash, outcomeHash } from './rng.js';
@@ -200,6 +201,8 @@ export function replay(start, choices, opts = {}) {
   };
   try {
     if (!start || typeof start !== 'object') return out(false, 'no start');
+    // (a run started on the old rules can't be replayed on these: the server pays it by its counts, §5)
+    if ((start.engine ?? 1) !== ENGINE_VERSION) return out(false, `old engine (${String(start.engine ?? 1).slice(0, 8)}, this is ${ENGINE_VERSION})`);
     const seed = start.seed;
     if (!Number.isInteger(seed) || seed < 1 || seed > 0xffffffff) return out(false, 'bad seed');
     const pc = canonicalPlayer(seed, start.player, opts.strictPlayer !== false);

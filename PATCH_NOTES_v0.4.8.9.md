@@ -143,3 +143,41 @@ Every time you left a place, the game kept its whole scene on your graphics card
 - **Game setup:** it's sent about 1.7 times faster. The server keeps the store catalog ready instead of rebuilding it for every player.
 - **Gauntlet checks:** two helpers stay running to check finished Gauntlet runs, so a check takes about **0.03 s instead of 0.15 s**. The same helpers will check park and Pro-Am results once the new engine is in.
 - **Park memory:** the park's per-player records are tidied up, so they no longer grow forever on a long-running server.
+
+---
+
+## Quick patch 4 (Oct 23): The Gauntlet plays like a real game
+
+**The Gauntlet has its own tab** at the top of the menu, between PRO-AM and PRACTICE. The Home tile is still there.
+
+### Matches are played in possessions
+- **Tip-off:** every match starts with a jump ball. Whoever wins it has the ball first.
+- **Your ball:** you spend your energy on your offense: Shots, Moves, Plays and Mentalities. At the same moment your opponent commits his defense.
+- **Their ball:** he commits his play and you pick your defense: Defense cards, Plays and Mentalities.
+- **End Turn** plays the whole possession out on the court: both sides' cards, every shot, then who has the ball next.
+- **Held cards:** cards you can't use on this side of the ball stay in your hand for your next possession (up to 10), so a hand full of Shots on defense isn't wasted.
+
+### You can read his cards
+- **Before you play,** you see the cards your opponent has committed and their total, next to a live **You vs Them** number.
+- **Some players can't be read:**
+  - The Shadow hides everything.
+  - The Professor hides his cards but not his total.
+  - Showtime hides his fast breaks.
+  - Rivals who learn to keep a poker face hide their cards but not their total.
+  - Some players can **Screen** you, so you can't see their next set.
+
+### The higher number wins
+- **Your number vs his:** the offense's number is its Shots' points, worked out exactly as before. The defense's number is its Stops.
+- **Scoring:** if the offense's number is higher, it scores the difference. If not, the shot is stopped. **Ties go to the defense.** No hidden luck can change it.
+- **How it plays out comes from the cards on both sides:**
+  - a pass before the shot is an **assist**;
+  - a block card against a drive or a post shot is a **block**;
+  - a steal card against a ball handler is a **steal**, and the stealer gets a **fast break** against a defense caught out of position;
+  - otherwise a stopped shot is a contested miss, and whoever played more Hustle wins the rebound; winning it on offense is a **second chance**;
+  - Physical Night and some drives draw fouls: an **and-one** or free throws.
+
+### What stays the same
+Heart and Health work as before. Your baskets take away your opponent's Heart, his take away your run Health, and you win the match when his Heart is gone. The stats, the cards, combos and Flow, the brackets, bosses, rewards, abilities, the rivals who remember you and the VC are all unchanged. A good run with a starter still wins about one time in five.
+
+### Runs from before this update
+A Gauntlet run you started before this update can't continue under the new rules. When you open the Gauntlet, you can end it and get paid what it earned. To start a run, your game has to be up to date; an old version is told to update.

@@ -41,7 +41,7 @@ function saveLocalWorld(app, w) { try { store()?.setItem(worldKey(app), JSON.str
 export async function apiProfile(app) { try { const r = await app.api.get('/api/gauntlet/profile'); return r && typeof r === 'object' ? r : null; } catch { return null; } }
 // start: the run issued (null offline; {error} when the server refused it: the screen says why)
 export async function apiStart(app, seed, player) {
-  try { const r = await app.api.mutate('/api/gauntlet/start', { seed, player: { id: String(player.id), name: player.name, converted: !!player.converted } }); return r?.run_id ? r : null; }
+  try { const r = await app.api.mutate('/api/gauntlet/start', { seed, engine: D.ENGINE_VERSION, player: { id: String(player.id), name: player.name, converted: !!player.converted } }); return r?.run_id ? r : null; }
   catch (e) { return e?.status >= 400 && e.status < 500 ? { error: e.message || 'The run couldn\'t start.' } : null; }
 }
 // finish: the server's answer; {error, refused} when it turned the run down (4xx), {error, retry} when it couldn't be
@@ -127,7 +127,7 @@ export class Gauntlet {
     const saved = loadSaved(app);
     // (a run that ended while the server couldn't be reached: its finish is sent again)
     if (saved?.run.over && saved.meta?.runId && !saved.meta.fin) { this.resume(saved); return; }
-    if (saved && !saved.run.over && this.params.resume) { this.resume(saved); return; }
+    if (saved && !saved.run.over && this.params.resume && !this.oldRules(saved)) { this.resume(saved); return; }
     this.setup(saved && !saved.run.over ? saved.run : null);
   }
   close() { globalThis.removeEventListener?.('keydown', this.onKey); this.dropCourt(); }
@@ -156,7 +156,19 @@ export class Gauntlet {
     const conv = (Array.isArray(this.profile?.converted) ? this.profile.converted : []).filter(c => c && c.id).map(c => ({ player: D.rollConverted(this.seed, c), kind: 'converted', entry: c }));
     this.players = [...conv, ...starters];
     this.view = { name: 'setup' };
-    this.html(V.setupHTML({ players: this.players, profile: this.profile, saved, feed: this.feed, offline: this.offline }));
+    this.html(V.setupHTML({ players: this.players, profile: this.profile, saved, feed: this.feed, offline: this.offline, notice: this.notice, engine: D.ENGINE_VERSION }));
+  }
+  // (qp4) a saved run from before the Gauntlet played in possessions can't go on under the new rules: it's ended where
+  // it stands and sent; the server pays what it won by its counts (unverified)
+  oldRules(saved) { return !!saved?.run && (saved.run.engine ?? 1) !== D.ENGINE_VERSION; }
+  endOldRun() {
+    const saved = loadSaved(this.app);
+    if (!saved || !this.oldRules(saved)) return;
+    this.run = { ...saved.run, over: saved.run.over || { completed: false, ended: 'old rules' }, stage: 'over' };
+    // (no choices: the old engine's log can't be replayed by this one; the server pays the run by its counts)
+    this.meta = { ...(saved.meta || { runId: null, seed: saved.run.seed, started: Date.now() }), partial: true };
+    if (!Array.isArray(this.meta.log)) this.meta.log = [];
+    this.summary();
   }
   async start(i) {
     const pick = this.players[i]; if (!pick || this.starting) return;
@@ -164,15 +176,19 @@ export class Gauntlet {
     const st = await apiStart(this.app, this.seed, pick.player);
     this.starting = false;
     if (!this.live()) return;
-    if (st?.error) { this.toast(st.error, 'error'); return; }
+    if (st?.error) {
+      // (qp4: a server on another engine version: "Update the game to play the Gauntlet." stays on the screen)
+      if (/update the game/i.test(st.error)) { this.notice = { kind: 'update', text: st.error }; this.setup(null); return; }
+      this.toast(st.error, 'error'); return;
+    }
     // the run's start, exactly the server's snapshot (the seed it kept, its world and unlocks), so its replay starts the
     // same: a starter as the seed rolls him (his id is the seed's own), a converted player rolled from his profile entry
     // as it is (deck/replay.js canonicalPlayer rolls the same). Offline: this computer's world.
     const seed = (st?.seed >>> 0) || this.seed;
     const player = pick.kind === 'converted' && pick.entry ? D.rollConverted(seed, pick.entry) : pick.player;
     const start = st
-      ? { seed, player: pick.kind === 'converted' && pick.entry ? pick.entry : player, world: 'world' in st ? st.world : this.world, unlocks: 'unlocks' in st ? st.unlocks : null }
-      : { seed, player, world: this.world, unlocks: engineUnlocks(this.profile?.unlocks) };
+      ? { engine: D.ENGINE_VERSION, seed, player: pick.kind === 'converted' && pick.entry ? pick.entry : player, world: 'world' in st ? st.world : this.world, unlocks: 'unlocks' in st ? st.unlocks : null }
+      : { engine: D.ENGINE_VERSION, seed, player, world: this.world, unlocks: engineUnlocks(this.profile?.unlocks) };
     this.run = D.newRun({ seed, player, world: start.world, unlocks: start.unlocks, ai: this.app.ai || null, now: Date.now() });
     this.meta = { v: 2, runId: st?.run_id || null, seed, started: Date.now(), log: [], start, offline: !st, replay: !!st?.replay };
     this.save();
@@ -271,11 +287,17 @@ export class Gauntlet {
   endTurn() {
     const run = this.run, m = run.match;
     if (!m || this.over || this.overlayOn) return;
+    // (qp4: the last possession still playing on the court: End Turn finishes it first, so the next set is seen before
+    // anything is committed to it)
+    if (this.court?.busy) { this.court.skipAll(); this.drawMatch(); return; }
     const r = this.act('end');
     if (r.ok) this.after(r.result);
   }
   after(evs) {
     const m = this.run.match;
+    // (qp4: the possession's clash, shown on the table while it plays on the court)
+    const cl = (evs || []).find(e => e.type === 'clash');
+    if (cl) { const youOff = cl.actor === 'you'; this.lastClash = { youOff, you: youOff ? cl.o : cl.d, them: youOff ? cl.d : cl.o, text: cl.winner === 'offense' ? (youOff ? 'You scored' : 'They scored') : youOff ? 'Stopped' : 'You stopped them' }; }
     this.feedEvents(evs);
     if (m.opps[this.target]?.heart <= 0) this.target = Math.max(0, m.opps.findIndex(o => o.heart > 0));
     const res = D.matchOver(this.run);
@@ -289,7 +311,7 @@ export class Gauntlet {
     if (!this.run?.match) return;
     const busy = !!this.court?.busy;
     const score = busy ? this.court.score : this.run.match.score;
-    this.html(V.matchHTML(this.run, { target: this.target, busy, score, last: this.log, over: this.over, fast: !!this.court?.queue.fast, caption: this.captionText }), true);
+    this.html(V.matchHTML(this.run, { target: this.target, busy, score, last: this.log, over: this.over, fast: !!this.court?.queue.fast, caption: this.captionText, lastClash: this.lastClash }), true);
   }
   caption(t) { this.captionText = t; const el = this.root?.querySelector?.('[data-caption]'); if (el) el.textContent = t || ''; }
   scoreLanded(score) {
@@ -299,7 +321,8 @@ export class Gauntlet {
   pad() {
     // (the last play landed: the table's score is the engine's again)
     const busy = !!this.court?.busy;
-    if (this.wasBusy && !busy && this.run?.match) { this.court.score = this.run.match.score.slice(); this.scoreLanded(this.court.score); this.root?.querySelector?.('.gx-match')?.classList.remove('busy'); this.caption(''); }
+    // (qp4: and the table shows the next possession: its banner, their set, the live clash)
+    if (this.wasBusy && !busy && this.run?.match) { this.court.score = this.run.match.score.slice(); this.caption(''); this.drawMatch(); this.scoreLanded(this.court.score); }
     this.wasBusy = busy;
     const inp = this.app.input; if (!inp?.gp?.connected || this.view.name !== 'match' || this.app.modalOpen?.()) return;
     if (inp.gpEdge(PAD.Y)) { inp.gp.prev[PAD.Y] = true; this.endTurn(); }
@@ -433,7 +456,9 @@ export class Gauntlet {
   }
   action(a) {
     switch (a) {
-      case 'resume': { const s = loadSaved(this.app); if (s) this.resume(s); return; }
+      case 'resume': { const s = loadSaved(this.app); if (s && !this.oldRules(s)) this.resume(s); return; }
+      case 'end-old': return this.endOldRun();
+      case 'dismiss': this.notice = null; return this.setup(null);
       case 'abandon': clearSaved(this.app); this.setup(null); return;
       case 'deck': return this.deck();
       case 'end': return this.endTurn();

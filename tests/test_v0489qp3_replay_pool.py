@@ -29,7 +29,7 @@ def record(seed):
                        capture_output=True, timeout=60, cwd=str(ROOT))
     assert r.returncode == 0, r.stderr.decode()
     rec = json.loads(r.stdout.decode().splitlines()[-1])
-    return {"seed": seed, "player": {"id": f"starter-{seed}-0", "converted": False}, "world": {"aiSeed": 777, "chars": {}}, "unlocks": None}, rec["log"]
+    return {"engine": G.ENGINE_VERSION, "seed": seed, "player": {"id": f"starter-{seed}-0", "converted": False}, "world": {"aiSeed": 777, "chars": {}}, "unlocks": None}, rec["log"]
 
 
 def spawned(start, choices):

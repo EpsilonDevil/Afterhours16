@@ -57,7 +57,7 @@ test('the choice vocabulary and the log: act logs exactly the calls that worked;
   assert.deepEqual(l2, [['play', 2, 0], ['reward', null, true], ['cooler', 'upgrade', 3], ['leave']]);
   for (const bad of [['dance'], ['play', -1], ['play', 1.5], ['cooler', 'nap'], ['shopBuy', 'car', 0], ['node', 5], ['end', 1]]) assert.throws(() => G.recordChoice([], ...bad), bad.join());
   // the replay of that log is the same run
-  const rp = G.replay({ seed: 5, player: G.rollStarters(5)[0], world: null, unlocks: null }, log);
+  const rp = G.replay({ engine: G.ENGINE_VERSION, seed: 5, player: G.rollStarters(5)[0], world: null, unlocks: null }, log);
   assert.ok(rp.ok); assert.equal(rp.fullHash, G.stateHash(run)); assert.equal(rp.hash, G.outcomeHash(run));
 });
 
@@ -135,11 +135,12 @@ test('a tampered log is refused at the right index', () => {
 });
 
 test('hostile input: bad shapes, huge numbers, unknown kinds, too-long logs, all refused within budget', () => {
-  const start = { seed: 77, player: G.rollStarters(77)[0], world: null, unlocks: null };
+  const start = { engine: 2, seed: 77, player: G.rollStarters(77)[0], world: null, unlocks: null };
   const first = G.newRun({ seed: 77, player: start.player }).map.phases[0].rows[0][0];
   const t0 = performance.now();
-  for (const [s, re] of [[null, /no start/], [{ seed: 0, player: start.player }, /bad seed/], [{ seed: 2 ** 40, player: start.player }, /bad seed/], [{ seed: NaN, player: start.player }, /bad seed/],
-    [{ seed: 77, player: null }, /bad player/], [{ seed: 77, player: { id: 'x'.repeat(500) } }, /bad player/], [{ seed: '77', player: start.player }, /bad seed/]]) {
+  for (const [s, re] of [[null, /no start/], [{ engine: 2, seed: 0, player: start.player }, /bad seed/], [{ engine: 2, seed: 2 ** 40, player: start.player }, /bad seed/], [{ engine: 2, seed: NaN, player: start.player }, /bad seed/],
+    [{ engine: 2, seed: 77, player: null }, /bad player/], [{ engine: 2, seed: 77, player: { id: 'x'.repeat(500) } }, /bad player/], [{ engine: 2, seed: '77', player: start.player }, /bad seed/],
+    [{ seed: 77, player: start.player }, /old engine/], [{ ...start, engine: 1 }, /old engine/], [{ ...start, engine: '2' }, /old engine/], [{ ...start, engine: 3 }, /old engine/]]) {
     const rp = G.replay(s, []); assert.equal(rp.ok, false); assert.match(rp.error, re); assert.equal(rp.at, -1);
   }
   const junkWorld = { aiSeed: 'x', chars: Object.fromEntries(Array.from({ length: 500 }, (_, i) => ['ai-' + i, { rank: 1e9, name: { a: 1 }, memories: 'no', rel: [1, 2] }])), feed: { x: 1 } };
