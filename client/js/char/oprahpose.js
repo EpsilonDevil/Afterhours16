@@ -10,12 +10,13 @@ import { P } from './pose.js';
 import { BALL_R } from '../sim/constants.js';
 import { opK, oprahFacing, oprahHand, oprahBall } from '../sim/oprah.js';
 import { trunkPoint } from '../sim/snags.js';
+import { hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
 const wrap = a => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
-const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const norm = v => { const l = hypot3(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 
 // the finish, in seconds after the release: in its shape by `in`, held to `hold`, gone by hold + out; the body turns
 // back to the sim's facing over `back` (the Spin Dish carries its turn round over `spin`); another action cuts it

@@ -3,6 +3,12 @@ import { COURT, BALL_R, GRAVITY } from './constants.js';
 
 const RT = COURT.rimR + COURT.rimTube; // torus centerline radius
 const SUB = 4;
+// (perf: the hoops a substep checks, as constant arrays, not two new ones every substep; they're only iterated)
+const SIDES_HALF = [1], SIDES_FULL = [1, -1];
+// v0.4.2: a real rim isn't a perfect torus: the ring flexes and the net hooks pull on it, so each contact deflects a
+// little differently. The jitter is a deterministic hash of the contact point, so the pre-simulated make/miss stays
+// exact. (perf: a module function, not a closure made on every rim contact)
+const rimHash = v => { const s = Math.sin(v) * 43758.5453; return s - Math.floor(s); };
 
 export class Ball {
   constructor() {
@@ -48,7 +54,7 @@ export class Ball {
     const py = this.y;
     this.x += this.vx * h; this.y += this.vy * h; this.z += this.vz * h;
     // hoops
-    const sides = this.halfOnly ? [1] : [1, -1];
+    const sides = this.halfOnly ? SIDES_HALF : SIDES_FULL;
     for (const side of sides) {
       const cz = side * COURT.hoopZ, cy = COURT.rimY;
       // score detection: crossing rim plane downward inside the ring
@@ -111,10 +117,7 @@ export class Ball {
       this.x += nx * pen; this.y += ny * pen; this.z += nz * pen;
       const vn = this.vx * nx + this.vy * ny + this.vz * nz;
       if (vn < 0) {
-        // v0.4.2: a real rim isn't a perfect torus: the ring flexes and the net hooks pull on it, so each
-        // contact deflects a little differently. The jitter is a deterministic hash of the contact point, so
-        // the pre-simulated make/miss stays exact.
-        const hsh = v => { const s = Math.sin(v) * 43758.5453; return s - Math.floor(s); };
+        const hsh = rimHash; // (the rim's flex: see rimHash)
         const j1 = hsh(this.x * 127.1 + this.z * 311.7 + this.y * 74.7) - 0.5, j2 = hsh(this.x * 269.5 + this.z * 183.3 + this.y * 246.1) - 0.5;
         const tl = Math.hypot(-nz, nx) || 1;
         let mx = nx + (-nz / tl) * j1 * 0.22, my = ny + j2 * 0.12, mz = nz + (nx / tl) * j1 * 0.22;

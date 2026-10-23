@@ -7,6 +7,7 @@ import { music } from '../core/music.js';
 import { promptGlyph } from '../core/input.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
+import { releaseScene } from '../world/release.js';
 import { AFFILIATIONS, THEMES, EVENTS, courtPlayRect, SQUAD_ROWS, parkInfo } from '../world/themes.js';
 import { StreakFX, streakLevel } from '../world/streakfx.js';
 import { boostedBuild } from '../sim/ratings.js';
@@ -1017,6 +1018,7 @@ export class ParkHub {
 
   // ---------------- frame ----------------
   frame(dt) {
+    if (this.disposed) return; // (QP3: left, its scene freed; the loop can still call it until the next controller is up)
     const app = this.app, inp = app.input;
     this.viewTick();
     // athletes being built: a small slice per frame (a bigger one while your own game is getting ready)
@@ -1123,12 +1125,16 @@ export class ParkHub {
     this.keepOffCourts(me, px, pz, dt); // (v0.4.8.7 qp2: like the park-goers, no walking onto a court with a game on)
     // bump into people
     for (const w of this.walkers) this.separate(me, w.p);
-    for (const c of this.courts) for (const s of [c.session, c.live]) if (s) for (const p of s.game.players) this.separate(me, { x: p.x + c.origin[0], z: p.z + c.origin[2], phys: p.phys }, true);
+    // (QP3: the courts' games and the ones you watch, through one scratch body instead of a new object a player a frame)
+    const sep = this._sepBody || (this._sepBody = { x: 0, z: 0, phys: null });
+    for (const c of this.courts) for (let k = 0; k < 2; k++) { const s = k ? c.live : c.session; if (s) for (const p of s.game.players) { sep.x = p.x + c.origin[0]; sep.z = p.z + c.origin[2]; sep.phys = p.phys; this.separate(me, sep, true); } }
     for (const w of this.peers.list()) this.separate(me, w.p, true);
     this.meVisual.anim.update(dt, { x: me.x, y: 0, z: me.z, facing: me.facing }, me, null, null, {});
     this.meVisual.place(me.x, 0, me.z);
     this.rig.updateRoam(dt, me, inp, b, this.venue.solids);
-    this.scene.shadowFocus = { center: [me.x, 0, me.z + 2], radius: 16 };
+    const sf = this._roamFocus || (this._roamFocus = { center: [0, 0, 0], radius: 16 }); // (QP3: one object, moved)
+    sf.center[0] = me.x; sf.center[1] = 0; sf.center[2] = me.z + 2;
+    this.scene.shadowFocus = sf;
     // interactions
     this.prompt = '';
     const store = this.venue.store, boosts = this.venue.boosts, wheel = this.venue.wheel;
@@ -1238,7 +1244,7 @@ export class ParkHub {
   // is yours the moment you stand on it; a squad still steps on court only with everyone on his circle (lineSet)
   spotHeld(c, r, w) { const sp = c.rows[r]?.[0]; return !!sp && !!w && w.state === 'queued' && Math.hypot(w.p.x - sp.x, w.p.z - sp.z) < SPOT_R; }
   holdLines() {
-    for (const c of this.courts || []) c.lines.forEach((l, r) => { if (l?.pending && !l.dir && !l.mirror && this.spotHeld(c, r, l.members[0])) { l.pending = false; this.markFull(c, l); } });
+    for (const c of this.courts || []) for (let r = 0; r < c.lines.length; r++) { const l = c.lines[r]; if (l?.pending && !l.dir && !l.mirror && this.spotHeld(c, r, l.members[0])) { l.pending = false; this.markFull(c, l); } }
   }
   // an AI group that was only on its way to spot r (someone stood on it first): to the other spot if it's free, else back
   // to hanging out
@@ -2529,6 +2535,7 @@ export class ParkHub {
     if (this.practice) this.practice.dispose();
     if (this.meVisual) this.meVisual.dispose();
     this.pool.dispose();
+    releaseScene(this.r?.ctx, this.scene); // (QP3: the park's own geometry and textures; the caches keep theirs)
   }
 }
 

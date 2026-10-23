@@ -4,7 +4,7 @@
 // breaks, after school, evenings, night owls, weekend warriors, grinders), so who is online — and who is
 // at your park — changes through the day. Skill comes in clear tiers, from casuals to park legends, and the
 // tier drives attributes, badges, rep, gear and basketball IQ together.
-import { RNG, hashString } from '../core/rng.js';
+import { RNG, hashString, hashJoin } from '../core/rng.js';
 import { makeBot, wearUnlocked, BADGE_POOL } from './bots.js';
 import { ICON_FOR_ARCH } from './badges.js';
 import { capBadges, badgeCaps, caps, overall, iconNeed, buildFit, legendRaise, iconStatus, BADGE_IDS, OVR_CAP, BASE_OVR_CAP, PRORUN_GAMES_PER_OVR,
@@ -12,6 +12,7 @@ import { capBadges, badgeCaps, caps, overall, iconNeed, buildFit, legendRaise, i
 import { squadWindowAt, nextSquadWindow, pickTrio, squadOutfit, setSquadClock, FIT_SLOTS } from './iconsquad.js';
 
 export const POOL_SIZE = 900;
+const AI_IDS = Object.freeze(Array.from({ length: POOL_SIZE }, (_, i) => 'ai-' + i)); // (the pool's ids, made once)
 export const PARKS = ['harbor', 'brick', 'foundry'];
 const REP_TIERS = ['Rookie', 'Pro', 'All-Star', 'Superstar', 'Legend'];
 export const repLabel = lvl => (lvl >= 20 ? 'Legend' : `${REP_TIERS[Math.floor(lvl / 5)]} ${lvl % 5 + 1}`);
@@ -178,9 +179,9 @@ export class AIWorld {
   rng(id, salt = '') { return new RNG(hashString(id + '|' + salt) ^ this.seed); }
 
   // cheap header: tier, habit, home park, rep, iq (no build yet)
-  account(id) {
+  // today: the world's day, read by the caller once for a whole loop (pick); left out, it's read here
+  account(id, today = Math.floor(worldNow() / DAY)) {
     // (v0.4.8.7: rep goes by the world's day, so a game loaded yesterday and one loaded now agree: a new day, new headers)
-    const today = Math.floor(worldNow() / DAY);
     if (today !== this.cacheDay) { if (this.cacheDay != null) { this.cache.clear(); this.frames.clear(); } this.cacheDay = today; }
     let a = this.cache.get(id);
     if (a) return a;
@@ -529,13 +530,16 @@ export class AIWorld {
   // for a given key so the same guys tend to come back
   pick({ position = null, level = 0.6, exclude = new Set(), online = true, key = '' } = {}, t = Date.now()) {
     let best = null, bv = Infinity;
+    // (perf: the day read once for the whole scan, the ids from one shared list, and the tie-break hash taken without
+    // building id + '#' + key: the same numbers, 900 fewer clock reads and strings a call)
+    const today = Math.floor(worldNow() / DAY), ids = AI_IDS;
     for (let i = 0; i < POOL_SIZE; i++) {
-      const id = 'ai-' + i;
+      const id = ids[i];
       if (exclude.has(id)) continue;
-      const a = this.account(id);
+      const a = this.account(id, today);
       if (position && a.position !== position) continue;
       if (online && this.squadOf(id, t)) continue; // (v0.4.8.6: busy with his ICON Squad)
-      let v = Math.abs(a.level - level) * 4 + (hashString(id + '#' + key) % 1000) / 1000 * 0.7;
+      let v = Math.abs(a.level - level) * 4 + (hashJoin(id, '#', key) % 1000) / 1000 * 0.7;
       if (online && !this.online(id, t)) v += 3;
       if (v < bv) { bv = v; best = id; }
     }

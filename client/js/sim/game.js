@@ -277,6 +277,10 @@ export const LAYUP_BODY = {
 // v0.4.8.7 qp3: the closest a layup's shooter gets to the rim's centre (m, on the floor plan) while he still has the ball
 export const LAYUP_FIN = 0.95;
 
+// (settleBodies' weight of a body in a contact, a module function, not a closure every call)
+const bodyMass = p => p.phys.W * (0.7 + 0.6 * p.phys.strength);
+// (the actions a box-out can't come from or go to: boxOuts' busy, hoisted)
+const BOX_BUSY = ['stumble', 'shoot', 'layup', 'dunk', 'hang', 'celebrate'];
 // (the actions a set screen can't be: isSetScreener, hoisted so it isn't rebuilt for every contact)
 const NOT_SCREENING = ['shoot', 'layup', 'dunk', 'land', 'celebrate', 'stumble', 'bump'];
 
@@ -642,7 +646,13 @@ export class Game {
   rimFor(team) { return rimOf(this.attackDir[team]); }
   sideFor(team) { return this.attackDir[team]; }
   opponents(p) { return this.teams[1 - p.team]; }
-  mates(p) { return this.teams[p.team].filter(q => q !== p); }
+  // his teammates. perf: worked out once per player per game and shared (frozen): the teams are fixed when the Game is
+  // made and a player never changes team, and every caller (here, ai.js, game/session.js, game/grade.js) only reads,
+  // iterates, indexes or filters the list. A caller that wants to sort it must copy it first
+  mates(p) {
+    const c = this._mates || (this._mates = []);
+    return c[p.id] || (c[p.id] = Object.freeze(this.teams[p.team].filter(q => q !== p)));
+  }
   isAI(p) { return !p.human || this.assist || !!p.auto; }
   // v0.4.8.7 qp5: a person's player, played by him: not the AI's, not on auto-play (the game's, offline: assist; or his
   // own seat's, online: p.auto, from his inputs: the same tick on every screen)
@@ -800,16 +810,22 @@ export class Game {
 
   step(dt) {
     this.events.length = 0;
-    for (const p of this.players) { p.prevX = p.x; p.prevZ = p.z; p.prevY = p.y; p.prevFacing = p.facing; p.landed = false; }
+    // (perf: the per-tick player loops here are indexed loops over this.players, in the same order as for...of, so no
+    // array iterator is made for them)
+    const ps = this.players;
+    for (let i = 0; i < ps.length; i++) { const p = ps[i]; p.prevX = p.x; p.prevZ = p.z; p.prevY = p.y; p.prevFacing = p.facing; p.landed = false; }
     this.ball.px = this.ball.x; this.ball.py = this.ball.y; this.ball.pz = this.ball.z;
-    if (this.over) { this.overT = (this.overT || 0) + dt; for (const p of this.players) { p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); this.startFlips(); return; }
+    if (this.over) { this.overT = (this.overT || 0) + dt; for (let i = 0; i < ps.length; i++) { const p = ps[i]; p.intent = blankIntent(); p.move(dt, false, 1); this.tickAction(p, dt); } this.updateBall(dt); this.startFlips(); return; }
     this.time += dt; this.tick++;
-    for (const p of this.players) {
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       // (v0.4.8.7 qp5 online: each seat's auto-play rides in his inputs (it.auto), so it's on from the same tick on every
       // screen: the AI plays him from there, with the game's own rng, until his inputs say it's off)
       const mi = this.multi && p.human && !this.assist ? this.multiIntent(p) : null;
       if (mi && !!mi.auto !== !!p.auto) this.setAuto(p, !!mi.auto);
       if (this.controlled(p)) { p.intent = mi || { ...this.humanIntent }; }
+      // (a new blank intent each tick for the AI. Measured in v0.4.8.9 qp3: wiping one per player in place instead saves
+      // ~1 KB a tick but makes the tick ~5-15% slower; V8 makes a fresh literal almost for free, so this stays)
       else p.intent = blankIntent();
       // v0.4.5: the Lock-In grade feeds the user's stamina; takeovers run on real seconds. v0.4.7.5: every AI
       // player keeps a Lock-In grade of his own too (aiGrades), so good and bad play move their stamina as well
@@ -823,11 +839,11 @@ export class Game {
     this.updatePhase(dt);
     const hp = this.human, hpAct = hp && hp.action ? hp.action.id : 0;
     const acts = this.multi ? this.multiPresses() : null;
-    for (const p of this.players) this.applyIntent(p, dt);
+    for (let i = 0; i < ps.length; i++) this.applyIntent(ps[i], dt);
     this.humanActed = !!hp && (hp.action ? hp.action.id : 0) !== hpAct;
     if (acts) this.multiActed(acts);
-    for (const p of this.players) this.tickAction(p, dt);
-    for (const p of this.players) this.moveOne(p, dt);
+    for (let i = 0; i < ps.length; i++) this.tickAction(ps[i], dt);
+    for (let i = 0; i < ps.length; i++) this.moveOne(ps[i], dt);
     this.boxOuts(dt);
     this.collide(dt);
     this.updateBall(dt);
@@ -915,7 +931,7 @@ export class Game {
     if (!p.screenSet && live) {
       const side = this.attackDir[p.team];
       let sx = hd.x - (h.x - hd.x) * 0.15 + (h.x > 0 ? -0.6 : 0.6), sz = hd.z - side * 0.55;
-      if (this.ai?.clampCourt) [sx, sz] = this.ai.clampCourt(sx, sz, this.half);
+      if (this.ai?.clampCourt) { const cc = this.ai.clampCourt(sx, sz, this.half); sx = cc[0]; sz = cc[1]; }
       const dx = sx - p.x, dz = sz - p.z, d = Math.hypot(dx, dz);
       if (d > 0.55) { const k = Math.min(1, d / 0.45); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 2.4; it.face = null; it.stickFace = true; return; }
     }
@@ -960,12 +976,17 @@ export class Game {
   // client's own grade drives a player there)
   updateAIGrades(dt) {
     if (this.practice) return;
-    for (const p of this.players) {
+    // (perf: indexed loops; the grades also sit in a list in the Map's insertion order, which is the order values()
+    // gives: grades are only ever added, here, and never removed)
+    const ps = this.players, list = this._gradeList || (this._gradeList = []), evs = this.events;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       if (this.controlled(p) && !this.multi) continue;
-      if (!this.aiGrades.has(p.id)) this.aiGrades.set(p.id, new LockedInGrade(this, p.id));
+      if (!this.aiGrades.has(p.id)) { const gr = new LockedInGrade(this, p.id); this.aiGrades.set(p.id, gr); list.push(gr); }
     }
-    for (const g of this.aiGrades.values()) {
-      for (const e of this.events) g.onEvent(e);
+    for (let j = 0; j < list.length; j++) {
+      const g = list[j];
+      for (let k = 0; k < evs.length; k++) g.onEvent(evs[k]);
       g.tick(dt);
     }
   }
@@ -3246,13 +3267,15 @@ export class Game {
   // (boxOut / boxedOut) so the animator can show it: the boxer low and wide with his arms out, the man held off.
   boxOuts(dt) {
     const b = this.ball;
-    for (const p of this.players) { if (p.boxOut) p.boxOutPrev = p.boxOut.on; else p.boxOutPrev = null; p.boxOut = null; p.boxedOut = null; }
+    const ps = this.players; // (perf: indexed loops, for...of order)
+    for (let i = 0; i < ps.length; i++) { const p = ps[i]; if (p.boxOut) p.boxOutPrev = p.boxOut.on; else p.boxOutPrev = null; p.boxOut = null; p.boxedOut = null; }
     const up = b.mode === 'flight' && ((b.kind === 'shot' && b.flightTime > 0.2) || b.kind === 'loose') && (b.y > 1.2 || b.vy > 0);
     if (!up || this.phase === 'dead') return;
     const shooterTeam = b.info?.team ?? this.possession;
     const rim = rimOf(b.info?.side ?? this.sideFor(shooterTeam));
-    const busy = q => q.airborne || ['stumble', 'shoot', 'layup', 'dunk', 'hang', 'celebrate'].includes(q.action?.type);
-    for (const p of this.players) {
+    const busy = q => q.airborne || BOX_BUSY.includes(q.action?.type);
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       if (busy(p) || (b.info && b.info.shooter === p.id)) continue;
       const rx = p.x - rim.x, rz = p.z - rim.z, rl = Math.hypot(rx, rz);
       if (rl > 6.5 || rl < 0.5) continue;
@@ -3458,7 +3481,7 @@ export class Game {
   // contact. Then two more position-only passes over the bodies, so a crowd (a drive into help, a scrum for a
   // rebound) doesn't leave anyone half inside someone else.
   settleBodies() {
-    const ps = this.players, mass = p => p.phys.W * (0.7 + 0.6 * p.phys.strength);
+    const ps = this.players, mass = bodyMass;
     const h = this.holder(), b = this.ball;
     if (h && (b.mode === 'dribble' || b.mode === 'held') && h.action?.type !== 'hang') {
       const bp = this.holdPoint(h, this._ballProbe || (this._ballProbe = {}));
@@ -3565,9 +3588,11 @@ export class Game {
   laneRules(dt) {
     const b = this.ball, off = this.possession, side = this.sideFor(off), h = this.holder();
     const shotUp = b.mode === 'flight' && b.kind === 'shot';
-    if (this._laneTeam !== off) { this._laneTeam = off; for (const p of this.players) p.paintT = 0; }
+    const ps = this.players; // (perf: indexed loops, for...of order)
+    if (this._laneTeam !== off) { this._laneTeam = off; for (let i = 0; i < ps.length; i++) ps[i].paintT = 0; }
     const control = h ? h.team === off : b.mode === 'flight' && b.kind === 'pass' && b.info?.team === off;
-    for (const p of this.players) {
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       const inside = inLane(p.x, p.z, side, RULES.laneMargin);
       if (!inside || shotUp || p.airborne) { p.paintT = 0; continue; }
       if (p.team === off) {
@@ -3584,7 +3609,8 @@ export class Game {
         }
       } else if (this.mode === 'proam') {
         let guarding = false;
-        for (const q of this.teams[off]) if (q.dist(p) < RULES.def3Guard) { guarding = true; break; }
+        const ot = this.teams[off];
+        for (let j = 0; j < ot.length; j++) if (ot[j].dist(p) < RULES.def3Guard) { guarding = true; break; }
         if (guarding) { p.paintT = 0; continue; }
         p.paintT = (p.paintT || 0) + dt / this.speed;
         if (p.paintT > RULES.def3) {

@@ -64,5 +64,5 @@ export class RecordTags {
     return seen.size;
   }
   drop(key, tg = this.map.get(key)) { if (!tg) return; this.scene.remove(tg.mesh); if (tg.mesh.material.map) this.r.ctx.disposeTexture?.(tg.mesh.material.map); this.map.delete(key); }
-  dispose() { for (const [key, tg] of [...this.map]) this.drop(key, tg); }
+  dispose() { for (const [key, tg] of [...this.map]) this.drop(key, tg); if (this.geo) { this.r.ctx.disposeGeometry?.(this.geo); this.geo = null; } } // (QP3: and the quad they shared)
 }

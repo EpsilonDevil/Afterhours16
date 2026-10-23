@@ -9,16 +9,17 @@ import { B, BONES, ARM_ANGLE } from './skeleton.js';
 import { P } from './pose.js';
 import * as M from '../core/math.js';
 import { torsoTableInto } from './athlete.js';
+import { hypot2, hypot3 } from '../gfx/fastmath.js';
 
 // ---------- vector helpers ----------
 const _skinM = M.m4(), _skinL = M.m4(); // (updateSkin's two scratch matrices)
 const tmpQ = M.q4(), tmpQ2 = M.q4();
-const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const norm = v => { const l = hypot3(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 function qrot(q, v) { const o = [0, 0, 0]; M.v3transformQuat(o, v, q); return o; }
 // (the same three, writing into `o`)
-function normTo(o, x, y, z) { const l = Math.hypot(x, y, z) || 1; o[0] = x / l; o[1] = y / l; o[2] = z / l; return o; }
+function normTo(o, x, y, z) { const l = hypot3(x, y, z) || 1; o[0] = x / l; o[1] = y / l; o[2] = z / l; return o; }
 function crossTo(o, a, b) { const x = a[1] * b[2] - a[2] * b[1], y = a[2] * b[0] - a[0] * b[2], z = a[0] * b[1] - a[1] * b[0]; o[0] = x; o[1] = y; o[2] = z; return o; }
 function qrotTo(o, q, x, y, z) { _qv[0] = x; _qv[1] = y; _qv[2] = z; return M.v3transformQuat(o, _qv, q); }
 const _qv = [0, 0, 0], _tv = [0, 0, 0], _tt = [0, 0, 0, 0, 0];
@@ -75,7 +76,7 @@ export function segSegDist(p1, q1, p2, q2) {
     if (tc < 0) { tc = 0; sc = Math.max(0, Math.min(1, -c / a)); } else if (tc > 1) { tc = 1; sc = Math.max(0, Math.min(1, (b - c) / a)); }
   } else if (e > 1e-9) tc = Math.max(0, Math.min(1, f / e));
   const x = p1[0] + d1x * sc - p2[0] - d2x * tc, y = p1[1] + d1y * sc - p2[1] - d2y * tc, z = p1[2] + d1z * sc - p2[2] - d2z * tc;
-  return Math.hypot(x, y, z);
+  return hypot3(x, y, z);
 }
 // where the arm is probed against the torso column, as [share of the segment, the r2 it must keep]: the padded
 // column's r2 is 1 at an arm's radius outside the skin and ~0.6 at the skin itself; a hanging upper arm sits in the
@@ -98,8 +99,8 @@ export class Rig {
     this.world = M.m4();
     const o = this.off;
     this.len = {
-      upper: Math.hypot(...o[B.foreL]), fore: Math.hypot(...o[B.handL]),
-      thigh: Math.hypot(...o[B.shinL]), shin: Math.hypot(...o[B.footL]),
+      upper: hypot3(o[B.foreL][0], o[B.foreL][1], o[B.foreL][2]), fore: hypot3(o[B.handL][0], o[B.handL][1], o[B.handL][2]),
+      thigh: hypot3(o[B.shinL][0], o[B.shinL][1], o[B.shinL][2]), shin: hypot3(o[B.footL][0], o[B.footL][1], o[B.footL][2]),
     };
     const s40 = Math.sin(ARM_ANGLE), c40 = Math.cos(ARM_ANGLE);
     this.armA0 = { L: [norm(o[B.foreL]), norm(o[B.handL])], R: [norm(o[B.foreR]), norm(o[B.handR])] };
@@ -151,7 +152,7 @@ export class Rig {
       const dir = norm([opts.look[0] - headPos[0], opts.look[1] - headPos[1], opts.look[2] - headPos[2]]);
       const inv = M.qinvert(M.q4(), this.rot[B.chest]);
       const ld = qrot(inv, dir);
-      let yaw = Math.atan2(ld[0], ld[2]), pitch = -Math.atan2(ld[1], Math.hypot(ld[0], ld[2]));
+      let yaw = Math.atan2(ld[0], ld[2]), pitch = -Math.atan2(ld[1], hypot2(ld[0], ld[2]));
       yaw = M.clamp(yaw, -1.25, 1.25) * opts.lookW; pitch = M.clamp(pitch, -0.6, 0.7) * opts.lookW;
       M.qmul(neckQ, neckQ, M.qeuler(tmpQ2, pitch * 0.35, yaw * 0.4, 0));
       M.qmul(headQ, headQ, M.qeuler(tmpQ2, pitch * 0.65, yaw * 0.6, 0));
@@ -224,7 +225,7 @@ export class Rig {
       if (!this.armClear(S, E, W, T, chestInv)) break;
       ({ E, W, n } = this.twoBone(S, T, this.len.upper, this.len.fore, pole));
     }
-    this.reach[side] = Math.hypot(T[0] - W[0], T[1] - W[1], T[2] - W[2]);
+    this.reach[side] = hypot3(T[0] - W[0], T[1] - W[1], T[2] - W[2]);
     const a0 = this.armA0[side], n0 = this.armN0[side];
     frameRot(this.rot[up], a0[0], n0, norm([E[0] - S[0], E[1] - S[1], E[2] - S[2]]), n);
     this.pos[up][0] = S[0]; this.pos[up][1] = S[1]; this.pos[up][2] = S[2];
@@ -269,7 +270,7 @@ export class Rig {
     const c = [S[0] + ax[0] * dot([E[0] - S[0], E[1] - S[1], E[2] - S[2]], ax), 0, 0];
     const t0 = dot([E[0] - S[0], E[1] - S[1], E[2] - S[2]], ax);
     c[0] = S[0] + ax[0] * t0; c[1] = S[1] + ax[1] * t0; c[2] = S[2] + ax[2] * t0;
-    const r0 = [E[0] - c[0], E[1] - c[1], E[2] - c[2]], h = Math.hypot(...r0) || 1e-4;
+    const r0 = [E[0] - c[0], E[1] - c[1], E[2] - c[2]], h = hypot3(r0[0], r0[1], r0[2]) || 1e-4;
     const u = norm(r0), w = cross(ax, u);
     let best = null, bv = Infinity;
     for (let k = 1; k <= 12; k++) for (const sg of [1, -1]) {
@@ -286,10 +287,12 @@ export class Rig {
   // column: the pad is an arm's thickness, so that is the skin) or the head: 0 when it clears
   armPenetration(S, E, W, chestInv) {
     let v = 0;
-    for (const [k, thr] of ARM_PROBE_UPPER) v = this.penProbe(v, S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr, chestInv);
-    for (const [k, thr] of ARM_PROBE_FORE) v = this.penProbe(v, E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr, chestInv);
+    // (index loops, not destructuring for-of: that made an iterator and an array per probe, per player, per frame)
+    for (let j = 0; j < ARM_PROBE_UPPER.length; j++) { const k = ARM_PROBE_UPPER[j][0]; v = this.penProbe(v, S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, ARM_PROBE_UPPER[j][1], chestInv); }
+    for (let j = 0; j < ARM_PROBE_FORE.length; j++) { const k = ARM_PROBE_FORE[j][0]; v = this.penProbe(v, E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, ARM_PROBE_FORE[j][1], chestInv); }
     // ...and the forearm and hand against the thighs and shins (a raised knee, a pike)
-    for (const [lp, lq, r] of this.legCapsules()) { const dd = segSegDist(E, W, lp, lq); if (dd < r) v += (r - dd) / r; }
+    const caps = this.legCapsules();
+    for (let j = 0; j < caps.length; j++) { const c = caps[j], r = c[2], dd = segSegDist(E, W, c[0], c[1]); if (dd < r) v += (r - dd) / r; }
     return v;
   }
   // one armPenetration probe: v plus how far the point sits inside the torso (below thr) and inside the head
@@ -298,7 +301,7 @@ export class Rig {
     const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
     const t = this.torsoAtXYZ(px, py, pz, chestInv);
     if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr) v += thr - r2; }
-    const dd = Math.hypot(px - cx, py - cy, pz - cz);
+    const dd = hypot3(px - cx, py - cy, pz - cz);
     if (dd < hr - 0.005 * H) v += (hr - dd) / hr;
     return v;
   }
@@ -313,11 +316,11 @@ export class Rig {
     const probe = (px, py, pz, thr) => {
       const t = this.torsoAtXYZ(px, py, pz, chestInv);
       if (t) { const r2 = t.x * t.x + t.z * t.z; if (r2 < thr && thr - r2 > worstT) { worstT = thr - r2; outDir = { x: t.x, z: t.z }; } }
-      const dx = px - cx, dy = py - cy, dz = pz - cz, dd = Math.hypot(dx, dy, dz);
+      const dx = px - cx, dy = py - cy, dz = pz - cz, dd = hypot3(dx, dy, dz);
       if (dd < hr - 0.005 * H && dd > 1e-5 && (!headPush || hr - dd > headPush[3])) headPush = [dx / dd, dy / dd, dz / dd, hr - dd];
     };
-    for (const [k, thr] of ARM_PROBE_UPPER) probe(S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, thr);
-    for (const [k, thr] of ARM_PROBE_FORE) probe(E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, thr);
+    for (let j = 0; j < ARM_PROBE_UPPER.length; j++) { const k = ARM_PROBE_UPPER[j][0]; probe(S[0] + (E[0] - S[0]) * k, S[1] + (E[1] - S[1]) * k, S[2] + (E[2] - S[2]) * k, ARM_PROBE_UPPER[j][1]); }
+    for (let j = 0; j < ARM_PROBE_FORE.length; j++) { const k = ARM_PROBE_FORE[j][0]; probe(E[0] + (W[0] - E[0]) * k, E[1] + (W[1] - E[1]) * k, E[2] + (W[2] - E[2]) * k, ARM_PROBE_FORE[j][1]); }
     // a forearm or hand on a thigh or shin: the hand lifts away from the leg's line
     let legPush = null;
     for (const [lp, lq, r] of this.legCapsules()) {
@@ -326,7 +329,7 @@ export class Rig {
         // away from the leg: from the leg's nearest point to the hand, mostly upward
         const lx = lq[0] - lp[0], ly = lq[1] - lp[1], lz = lq[2] - lp[2], ll = lx * lx + ly * ly + lz * lz || 1e-6;
         const t = Math.max(0, Math.min(1, ((W[0] - lp[0]) * lx + (W[1] - lp[1]) * ly + (W[2] - lp[2]) * lz) / ll));
-        const nx = W[0] - (lp[0] + lx * t), ny = W[1] - (lp[1] + ly * t) + 0.02 * H, nz = W[2] - (lp[2] + lz * t), nl = Math.hypot(nx, ny, nz) || 1e-6;
+        const nx = W[0] - (lp[0] + lx * t), ny = W[1] - (lp[1] + ly * t) + 0.02 * H, nz = W[2] - (lp[2] + lz * t), nl = hypot3(nx, ny, nz) || 1e-6;
         legPush = [nx / nl, ny / nl, nz / nl, r - dd];
       }
     }
@@ -335,7 +338,7 @@ export class Rig {
     if (worstT) {
       // out through the nearest skin: forward of the chest for an arm across the front, backward for one behind the
       // back, sideways for one along the flank (the probe's own direction from the column's axis, chest frame)
-      const dl = Math.hypot(outDir.x, outDir.z) || 1, dir = dl < 0.2 ? [0, 0, 1] : [outDir.x / dl, 0, outDir.z / dl];
+      const dl = hypot2(outDir.x, outDir.z) || 1, dir = dl < 0.2 ? [0, 0, 1] : [outDir.x / dl, 0, outDir.z / dl];
       const f = qrot(this.rot[B.chest], dir), step = ARM_CLEAR_STEP * H * Math.min(1, 0.5 + worstT);
       T[0] += f[0] * step; T[1] += f[1] * step; T[2] += f[2] * step;
     }
@@ -353,7 +356,7 @@ export class Rig {
   clearHead(T) {
     const H = this.d.H, hd = this.pos[B.head], r = 0.07 * H;
     const cx = hd[0], cy = hd[1] + 0.055 * H, cz = hd[2] + 0.01 * H;
-    const dx = T[0] - cx, dy = T[1] - cy, dz = T[2] - cz, dd = Math.hypot(dx, dy, dz);
+    const dx = T[0] - cx, dy = T[1] - cy, dz = T[2] - cz, dd = hypot3(dx, dy, dz);
     if (dd >= r || dd < 1e-5) return;
     const k = r / dd; T[0] = cx + dx * k; T[1] = cy + dy * k; T[2] = cz + dz * k;
   }
@@ -365,17 +368,17 @@ export class Rig {
       J[side] = [hips[0] + hj[0], hips[1] + hj[1], hips[2] + hj[2]];
       K[side] = this.twoBone(J[side], FT[side], this.len.thigh, this.len.shin, [pose[ki], pose[ki + 1], pose[ki + 2]]).E;
     }
-    let d = Math.hypot(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
+    let d = hypot3(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
     if (d >= min) return out;
     // turn each knee outward (left knee to +x, right to -x) in steps until they clear
     for (let k = 1; k <= 8 && d < min; k++) {
       for (const side of ['L', 'R']) {
         const ki = P['knee' + side], sx = side === 'L' ? 1 : -1;
-        const base = [pose[ki], pose[ki + 1], pose[ki + 2]], bl = Math.hypot(...base) || 1;
+        const base = [pose[ki], pose[ki + 1], pose[ki + 2]], bl = hypot3(base[0], base[1], base[2]) || 1;
         out[side] = [base[0] / bl + sx * 0.18 * k, base[1] / bl, base[2] / bl];
         K[side] = this.twoBone(J[side], FT[side], this.len.thigh, this.len.shin, out[side]).E;
       }
-      d = Math.hypot(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
+      d = hypot3(K.L[0] - K.R[0], K.L[1] - K.R[1], K.L[2] - K.R[2]);
     }
     return out;
   }
@@ -383,11 +386,11 @@ export class Rig {
   footTargets(pose) {
     const s = this.s, H = this.d.H, L = P.footL, R = P.footR;
     const a = [pose[L] * s, pose[L + 1] * s, pose[L + 2] * s], b = [pose[R] * s, pose[R + 1] * s, pose[R + 2] * s];
-    const min = 0.062 * H, dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2], dd = Math.hypot(dx, dy, dz);
+    const min = 0.062 * H, dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2], dd = hypot3(dx, dy, dz);
     if (dd < min) {
       // apart sideways (left foot to the left), keeping their heights and how far forward each is
       const push = (min - dd) / 2, sx = dx >= 0 ? 1 : -1;
-      const lat = Math.hypot(dx, dz) > 1e-4 ? [dx / Math.hypot(dx, dz), 0, dz / Math.hypot(dx, dz)] : [sx, 0, 0];
+      const lat = hypot2(dx, dz) > 1e-4 ? [dx / hypot2(dx, dz), 0, dz / hypot2(dx, dz)] : [sx, 0, 0];
       a[0] += lat[0] * push; a[2] += lat[2] * push; b[0] -= lat[0] * push; b[2] -= lat[2] * push;
     }
     return { L: a, R: b };
@@ -395,7 +398,7 @@ export class Rig {
 
   twoBone(A, T, l1, l2, pole) {
     let dx = T[0] - A[0], dy = T[1] - A[1], dz = T[2] - A[2];
-    let dist = Math.hypot(dx, dy, dz) || 1e-4;
+    let dist = hypot3(dx, dy, dz) || 1e-4;
     const dn = [dx / dist, dy / dist, dz / dist];
     dist = M.clamp(dist, Math.abs(l1 - l2) + 1e-3, (l1 + l2) * 0.9995);
     const W = [A[0] + dn[0] * dist, A[1] + dn[1] * dist, A[2] + dn[2] * dist];
@@ -404,7 +407,7 @@ export class Rig {
     let p = norm(pole);
     const pd = dot(p, dn);
     p = [p[0] - dn[0] * pd, p[1] - dn[1] * pd, p[2] - dn[2] * pd];
-    if (Math.hypot(p[0], p[1], p[2]) < 1e-4) p = norm(cross(dn, [1, 0, 0])); else p = norm(p);
+    if (hypot3(p[0], p[1], p[2]) < 1e-4) p = norm(cross(dn, [1, 0, 0])); else p = norm(p);
     const E = [A[0] + dn[0] * a + p[0] * h, A[1] + dn[1] * a + p[1] * h, A[2] + dn[2] * a + p[2] * h];
     const n = norm(cross(dn, p));
     return { E, W, n };

@@ -24,6 +24,7 @@ import { audio } from '../core/audio.js';
 import { mirrorBall, beamGeo } from './retro.js';
 import * as T from '../gfx/textures.js';
 import { cachedTexture } from './court.js';
+import { freeMeshes } from './release.js';
 import { skinGeo, ghostGeo, poseGhost, flashScene } from './horror.js';
 import { kiteParts } from './favela.js';
 import * as SP from '../core/spooky.js';
@@ -545,7 +546,8 @@ export class StreakFX {
   }
 
   dispose() {
-    for (const m of this.meshes) this.scene.remove(m); this.meshes = [];
+    for (const m of this.meshes) this.scene.remove(m);
+    freeMeshes(this.ctx, this.meshes); this.meshes = []; // (QP3: its own geometry; its textures are the shared caches')
     if (this.lightsOn) { for (const l of this.discoLights) { const i = this.scene.lights.indexOf(l); if (i >= 0) this.scene.lights.splice(i, 1); } this.lightsOn = false; }
     if (this.hLights) { for (const q of this.hLights) { q.l.color = [...q.color]; q.l.intensity = q.intensity; } this.hTint = false; } // (v0.4.8.5 quick patch 2: the haunt gives the floodlights back)
     if (this.kind === 'rain') { RAINS.get(this.scene)?.delete(this); if (this.baseExposure != null) this.scene.exposure = this.baseExposure; } }

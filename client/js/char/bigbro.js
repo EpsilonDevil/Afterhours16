@@ -16,6 +16,7 @@ import { P } from './pose.js';
 import { BLOCK_BY_ID } from '../sim/blocks.js';
 import { BALL_R } from '../sim/constants.js';
 import { qeuler, qmul, v3transformQuat } from '../core/math.js';
+import { hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -51,7 +52,7 @@ function armReach(an) {
 // a hand target kept within the arm's reach of the shoulder as the lean has it
 function reachFrom(an, T, side, sh) {
   const i = P['hand' + side], R = armReach(an);
-  const dx = T[i] - sh[0], dy = T[i + 1] - sh[1], dz = T[i + 2] - sh[2], dd = Math.hypot(dx, dy, dz);
+  const dx = T[i] - sh[0], dy = T[i + 1] - sh[1], dz = T[i + 2] - sh[2], dd = hypot3(dx, dy, dz);
   if (dd <= R || dd < 1e-6) return;
   const f = R / dd; T[i] = sh[0] + dx * f; T[i + 1] = sh[1] + dy * f; T[i + 2] = sh[2] + dz * f;
 }
@@ -87,7 +88,7 @@ export function bigBroBlockPose(an, T, a, c) {
   const start = [ls * 0.42, 1.05, 0.12], start2 = [-ls * 0.42, 1.05, 0.12];
   // the ball, the palm on it: the wrist short of its middle by a palm, toward the shoulder
   const sh0 = [ls * 0.19, 1.62, -0.02], two = S.lead === 'two', spread = S.spread ?? 0;
-  const onBall = (off = 0) => { const p = [bx + off, by, bz], dx = sh0[0] - p[0], dy = sh0[1] - p[1], dz = sh0[2] - p[2], dl = Math.hypot(dx, dy, dz) || 1, g = BALL_R / (an.H / 2) * 0.55; return [p[0] + dx / dl * g, p[1] + dy / dl * g, p[2] + dz / dl * g]; };
+  const onBall = (off = 0) => { const p = [bx + off, by, bz], dx = sh0[0] - p[0], dy = sh0[1] - p[1], dz = sh0[2] - p[2], dl = hypot3(dx, dy, dz) || 1, g = BALL_R / (an.H / 2) * 0.55; return [p[0] + dx / dl * g, p[1] + dy / dl * g, p[2] + dz / dl * g]; };
   let hand = onBall(two ? ls * spread / 2 : 0), off = null, ePole = [ls * 0.8, -0.2, -0.45], oPole = [-ls * 0.9, -0.3, -0.4];
   let palmL = { normal: [ls * 0.25, 0.15, 1], fingers: [0, 1, 0.1], w: 0.9 * pre };
   const reachTo = (cock) => L3(L3(start, hand, preS), L3(L3(start, cock, wind), hand, fire), S.cock);

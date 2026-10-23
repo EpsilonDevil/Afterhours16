@@ -117,3 +117,28 @@ At the start of a run you pick one player: one of three random starters, or one 
 ### Cleaner code
 - **Tidied:** unused code and imports removed throughout.
 - **Easier to follow:** every major file now starts with a short note on what it does and who uses it, with clear section headings inside. The server's routes are grouped by feature (session, online, builds, store, AI world, games, crews and the Cup, Pro-Am, the Gauntlet).
+
+---
+
+## Quick patch 3 (Oct 23): Memory leak fix + performance
+
+### Fixed: the game kept using more graphics memory the longer you played
+Every time you left a place, the game kept its whole scene on your graphics card: the park, Crew HQ, the Pro-Am HUB, a match's venue, the Gauntlet court. Each round of the park, HQ, HUB, a Pro-Am game and the Gauntlet added about **77 MB** that never came back, so long sessions got slower and could run out of graphics memory.
+- **Now:** leaving a place frees everything it built. In testing, graphics memory stays flat after the first lap at under 500 MB; before, it passed 1 GB after five laps and kept climbing.
+- **Walking between places:** the park, Crew HQ and the Pro-Am HUB stay ready together, so going back and forth between them doesn't rebuild anything. Places you haven't visited for a while are freed first when the game needs room.
+
+### Smoother on your PC
+- **Nets:** a park's nets cost about **70% less** per frame.
+- **Players:** posing and animating them costs about 10% less again, with a third less memory churned every frame.
+- **Score bug:** the score display no longer redraws 60 times a second during live play; it updates when something on it changes.
+- **Effects:** busy moments with lots of particles do less work per frame.
+- **Ground textures:** the park asphalt and the Harbor sand are painted in the background right after you sign in, so entering the park no longer waits on them. Painting them is also up to **twice as fast** when it does happen.
+- **Court lines:** each court's line texture now frees its 30 MB painting copy as soon as it's on the graphics card. The texture itself stays the same size, because shrinking it would have changed what you see.
+- **Simulation:** it churns 7–10% less memory every tick, with identical results.
+
+### Faster online server
+- **Saving:** the server no longer waits for the disk on every save. Saves are written to disk about once a second instead, so the server answers saves up to **3 times faster** on a typical cloud disk. If the server program crashes, nothing is lost. Only a power cut or a crash of the whole machine could lose about the last second of saves. A server owner can set `RIMRIFT_DB_SYNC=full` to go back to waiting on every save.
+- **Database lookups:** looking up a build's games, crew members, sign-ins and Pro-Am requests uses an index now, instead of reading the whole table.
+- **Game setup:** it's sent about 1.7 times faster. The server keeps the store catalog ready instead of rebuilding it for every player.
+- **Gauntlet checks:** two helpers stay running to check finished Gauntlet runs, so a check takes about **0.03 s instead of 0.15 s**. The same helpers will check park and Pro-Am results once the new engine is in.
+- **Park memory:** the park's per-player records are tidied up, so they no longer grow forever on a long-running server.

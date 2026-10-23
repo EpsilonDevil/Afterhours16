@@ -22,6 +22,7 @@ import { PARK_COURTS } from './themes.js';
 import { shadedPlane, camClear } from './harbor.js';
 import { skinGeo, figureParts, poseFigure, MOVES, FB } from './horror.js';
 import * as FX from '../core/favelasound.js';
+import { share } from './release.js'; // (QP3: the figures' geometry cache is kept for the next build)
 
 const lin = hex => M.hexLinear(hex);
 const c4 = (hex, a = 1) => (typeof hex === 'string' ? [...lin(hex), a] : hex);
@@ -325,7 +326,7 @@ export function peopleGeo(specs) {
   return skinGeo(all);
 }
 const FIGS = new WeakMap(); // (GL context → key → geometry: the events' figures are made once)
-export function figGeo(ctx, key, specs) { let m = FIGS.get(ctx); if (!m) FIGS.set(ctx, m = new Map()); let g = m.get(key); if (!g) m.set(key, g = ctx.geometry(peopleGeo(specs))); return g; }
+export function figGeo(ctx, key, specs) { let m = FIGS.get(ctx); if (!m) FIGS.set(ctx, m = new Map()); let g = m.get(key); if (!g) m.set(key, g = share(ctx.geometry(peopleGeo(specs)))); return g; }
 // where a figure's hand is (its forearm's end): bones, slot, right (6) or left (4)
 export function handAt(bones, slot, b = 6) { const o = (slot * FB + b) * 16, m = bones; return [m[o + 12] - 0.29 * m[o + 4], m[o + 13] - 0.29 * m[o + 5], m[o + 14] - 0.29 * m[o + 6]]; }
 // a cast of figures, two to a mesh: pose(j, x, y, z, yaw, P, k) poses figure j

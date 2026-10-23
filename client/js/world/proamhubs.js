@@ -22,6 +22,7 @@ import * as M from '../core/math.js';
 import { RNG, hashString } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { buildCourt, buildHoop, woodTextures } from './court.js';
+import { buildScope } from './release.js';
 import * as PR from './props.js';
 import { applyLighting } from './venues.js';
 import { COURT } from '../sim/constants.js';
@@ -997,7 +998,9 @@ export function hubCourtSpec(tier, look) {
 
 // ---------------- the venue ----------------
 // opts.team: the team (the server's team view: name, abbr, primary/secondary or colors, logo, court, custom)
-export function buildProamHub(r, scene, tierIn, opts = {}) {
+// (QP3: the court caches it uses are held by this scene until it's released: world/release.js)
+export function buildProamHub(r, scene, tierIn, opts = {}) { return buildScope(scene, () => proamHubIn(r, scene, tierIn, opts)); }
+function proamHubIn(r, scene, tierIn, opts) {
   const tier = HUB_TIERS.includes(tierIn) ? tierIn : hubTier(opts.team);
   const ctx = r.ctx, plan = hubPlan(tier), theme = HUB_THEMES[tier], plat = tier === 'platinum';
   let look = hubLook(opts.team || {});

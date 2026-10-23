@@ -17,6 +17,7 @@ import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
 import { buildVenue } from '../world/venues.js';
 import { cachedTexture } from '../world/court.js';
+import { releaseScene } from '../world/release.js';
 import { Player } from '../sim/player.js';
 import { resolveLook, makeBot } from '../sim/bots.js';
 import { Game } from '../sim/game.js';
@@ -27,6 +28,7 @@ import { RNG, hashString } from '../core/rng.js';
 import { audio } from '../core/audio.js';
 import { PlayerVisual } from './session.js';
 import * as M from '../core/math.js';
+import { hypot2, hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 const HZ = COURT.hoopZ, RIM = { x: 0, y: COURT.rimY, z: HZ }, G0 = 9.81;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -121,7 +123,7 @@ class Actor {
     const p = this.p;
     let vx = 0, vz = 0;
     if (this.target) {
-      const dx = this.target.x - p.x, dz = this.target.z - p.z, d = Math.hypot(dx, dz);
+      const dx = this.target.x - p.x, dz = this.target.z - p.z, d = hypot2(dx, dz);
       if (d < 0.04) this.target = null;
       else { const sp = Math.min(this.speed, d / Math.max(dt, 1e-3), 1.2 + d * 3); vx = dx / d * sp; vz = dz / d * sp; }
     }
@@ -313,7 +315,7 @@ export class DeckCourt {
     else if (C.shot === 'tight') { const a = this.play?.off || this.play?.def || this.you; pos = [a.p.x - 3.6, 2.4, a.p.z - 3.4]; tgt = [a.p.x, 1.3, a.p.z]; fov = 38; }
     else { const mz = fz * 0.45 + (HZ - 1.5) * 0.55; pos = [-15.5, 7.4, mz - 2.6]; tgt = [fx * 0.4, 1.2, mz + 0.6]; fov = 42; }
     // (the court has the top of the screen: aim a little under the play so it sits up there, over the cards)
-    const d = Math.hypot(pos[0] - tgt[0], pos[1] - tgt[1], pos[2] - tgt[2]);
+    const d = hypot3(pos[0] - tgt[0], pos[1] - tgt[1], pos[2] - tgt[2]);
     tgt[1] -= d * Math.tan((fov * M.DEG) / 2) * (1 - this.frameTop) * 0.9;
     pos = [pos[0] + ox, pos[1], pos[2] + oz]; tgt = [tgt[0] + ox, tgt[1], tgt[2] + oz];
     if (C.cut) { C.pos = pos; C.tgt = tgt; C.fov = fov; C.cut = false; }
@@ -351,6 +353,8 @@ export class DeckCourt {
     if (this.disposed) return;
     this.disposed = true;
     for (const a of this.actors) a.dispose();
+    // (QP3: the court's venue and ball, in a scene of its own (none passed in), are freed with it: world/release.js)
+    if (!this.opts.scene) releaseScene(this.r?.ctx, this.scene);
   }
 }
 
@@ -364,17 +368,17 @@ const ACT = {
       const tRel = o.tRel ?? 0.52, h = o.h ?? 0.5, tUp = Math.sqrt(2 * h / G0), takeoff = Math.max(0.1, tRel - tUp * 0.9);
       dc.ball.mode = 'held';
       a.face = toRim(a.p.x, a.p.z); a.target = null;
-      a.act('shoot', tRel + 0.6, { tRel, takeoff, jumpH: h, kind: o.kind || 'jumper', dRim: Math.hypot(a.p.x, a.p.z - HZ), fade: !!o.fade, stepback: !!o.fade, post: o.post || null, hookShape: o.post ? 'jump' : undefined, startX: a.p.x, startZ: a.p.z, moving: 0, hustle: null });
+      a.act('shoot', tRel + 0.6, { tRel, takeoff, jumpH: h, kind: o.kind || 'jumper', dRim: hypot2(a.p.x, a.p.z - HZ), fade: !!o.fade, stepback: !!o.fade, post: o.post || null, hookShape: o.post ? 'jump' : undefined, startX: a.p.x, startZ: a.p.z, moving: 0, hustle: null });
       a.hop(h, takeoff);
       dc.at(dc.playT + tRel, () => { if (dc.play?.cancel) return; a.p.action && (a.p.action.released = true); dc.shoot(a, made, o.arc ?? 52, { swish: o.swish }); });
     });
   },
   // a drive to the rim and a layup (style: basic | floater | finger | euro | spin | reverse | hop)
   layup(dc, a, at, made, lstyle = 'basic', from = 5.2) {
-    const sx = a.p.x, sz = a.p.z, ang = Math.atan2(sx, sz - HZ), dl = Math.hypot(sx, sz - HZ);
+    const sx = a.p.x, sz = a.p.z, ang = Math.atan2(sx, sz - HZ), dl = hypot2(sx, sz - HZ);
     const gx = Math.sin(ang) * Math.min(dl, from > 3 ? 1.6 : 2.6), gz = HZ + Math.cos(ang) * Math.min(dl, from > 3 ? 1.6 : 2.6);
     dc.at(at, () => { dc.ball.mode = 'dribble'; a.goTo(gx, gz, 7); });
-    const tArrive = at + Math.hypot(gx - sx, gz - sz) / 7;
+    const tArrive = at + hypot2(gx - sx, gz - sz) / 7;
     dc.at(tArrive, () => {
       const takeoff = 0.16, release = lstyle === 'floater' ? 0.36 : 0.48;
       dc.ball.mode = 'held'; a.target = null; a.face = toRim(gx, gz);
@@ -389,7 +393,7 @@ const ACT = {
     const sx = a.p.x, sz = a.p.z, ang = Math.atan2(sx, sz - HZ);
     const gx = Math.sin(ang) * 1.7, gz = HZ + Math.cos(ang) * 1.7;
     dc.at(at, () => { dc.ball.mode = 'dribble'; a.goTo(gx, gz, 7.4); });
-    const tArrive = at + Math.hypot(gx - sx, gz - sz) / 7.4;
+    const tArrive = at + hypot2(gx - sx, gz - sz) / 7.4;
     dc.at(tArrive, () => {
       const takeoff = 0.18, tUp = 0.42, slam = takeoff + tUp + 0.05;
       dc.ball.mode = 'held'; a.face = toRim(gx, gz);
@@ -417,7 +421,7 @@ const ACT = {
   },
   // the defender beaten by a move: his feet go (an ankle-breaker's stumble), or he just bites
   bite(dc, d, at, hard = false) { dc.at(at, () => { if (!d) return; d.act('stumble', hard ? 0.9 : 0.55, { fall: false, back: true, dir: dc.rng.next() < 0.5 ? 1 : -1, react: hard ? 'stagger' : undefined }); d.goTo(d.p.x - Math.sin(d.p.facing) * 0.6, d.p.z - Math.cos(d.p.facing) * 0.6, 2); }); },
-  contest(dc, d, at, off, jump = 0.35) { dc.at(at, () => { if (!d) return; d.face = Math.atan2(off.p.x - d.p.x, off.p.z - d.p.z); const dd = Math.hypot(off.p.x - d.p.x, off.p.z - d.p.z), k = dd > 1.05 ? Math.min(0.6, (dd - 0.95) / dd) : 0; d.goTo(lerp(d.p.x, off.p.x, k), lerp(d.p.z, off.p.z, k), 5.5); d.p.contestHand = 'R'; if (jump) { d.act('block', 0.8, { jumpAt: 0.05, jumpH: jump, jumped: true, air: 0.5 }); d.hop(jump, 0.05); } }); },
+  contest(dc, d, at, off, jump = 0.35) { dc.at(at, () => { if (!d) return; d.face = Math.atan2(off.p.x - d.p.x, off.p.z - d.p.z); const dd = hypot2(off.p.x - d.p.x, off.p.z - d.p.z), k = dd > 1.05 ? Math.min(0.6, (dd - 0.95) / dd) : 0; d.goTo(lerp(d.p.x, off.p.x, k), lerp(d.p.z, off.p.z, k), 5.5); d.p.contestHand = 'R'; if (jump) { d.act('block', 0.8, { jumpAt: 0.05, jumpH: jump, jumped: true, air: 0.5 }); d.hop(jump, 0.05); } }); },
   celebrate(dc, a, at, kind = 'flex', dur = 1.3) { dc.at(at, () => { a.target = null; a.act('celebrate', dur, { kind }); }); },
 };
 

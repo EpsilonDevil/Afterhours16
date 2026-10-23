@@ -9,6 +9,7 @@
 // A friend's crew you play in has its HQ for you as well (opts.online: no AI members of yours in it).
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
+import { releaseScene } from '../world/release.js';
 import { HQ, courtPlayRect } from '../world/themes.js';
 import { Player } from '../sim/player.js';
 import { resolveLook } from '../sim/bots.js';
@@ -240,6 +241,7 @@ export class CrewHQ {
 
   // ---------- frame ----------
   frame(dt) {
+    if (this.disposed) return; // (QP3: left, its scene freed; the loop can still call it until the next controller is up)
     const inp = this.app.input;
     if (this.pool.pending) this.pool.tick();
     for (const s of this.shooters) s.session.frame(dt);
@@ -412,6 +414,7 @@ export class CrewHQ {
     if (this.practice) this.practice.dispose();
     this.meVisual.dispose();
     this.pool.dispose();
+    releaseScene(this.r?.ctx, this.scene); // (QP3: the HQ's own geometry and textures; the caches keep theirs)
   }
 }
 

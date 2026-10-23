@@ -6,6 +6,7 @@
 import { GLContext } from './gl.js';
 import { STD_VS, STD_FS, SHADOW_VS, SHADOW_FS, FS_VS, SKY_FS, DOWN_FS, UP_FS, COMPOSITE_FS, PART_VS, PART_FS } from './shaders.js';
 import * as M from '../core/math.js';
+import { hypot3 } from './fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 let materialIds = 0;
 export class Material {
@@ -80,7 +81,7 @@ export class Mesh {
     out[0] = m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12];
     out[1] = m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13];
     out[2] = m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14];
-    const s = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
+    const s = Math.max(hypot3(m[0], m[1], m[2]), hypot3(m[4], m[5], m[6]), hypot3(m[8], m[9], m[10]));
     out[3] = b.radius * s;
     return out;
   }
@@ -619,34 +620,41 @@ class Particles {
   constructor(ctx) {
     this.ctx = ctx;
     this.max = 3000; // (v0.4.7.5: green release effects)
+    // the live particles are list[start ..], oldest first (qp3: at the cap the oldest is dropped by moving `start` on,
+    // not by shifting the whole array; draw() packs the list back to start at 0 every frame)
     this.list = [];
+    this.start = 0;
     this.pos = new Float32Array(this.max * 18);
     this.nrm = new Float32Array(this.max * 18);
     this.col = new Float32Array(this.max * 24);
     this.geo = null;
   }
   emit(o) {
-    if (this.list.length >= this.max) this.list.shift();
     // (v0.4.7.5: grow scales the size over the life, -1 shrinks to nothing; flick twinkles it at that rate)
     // hold: full brightness until the last fifth of its life (a shape an effect moves around itself)
-    const q = { x: o.x, y: o.y, z: o.z, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life || 1, age: 0, size: o.size || 0.05, color: o.color || [1, 1, 1], g: o.gravity ?? 0, drag: o.drag ?? 0.5, fade: o.fade ?? 1, grow: o.grow || 0, flick: o.flick || 0, ph: Math.random() * 6.3, hold: !!o.hold };
+    return this.add(o.x, o.y, o.z, o.vx || 0, o.vy || 0, o.vz || 0, o.life || 1, o.size || 0.05, o.color || [1, 1, 1], o.gravity ?? 0, o.drag ?? 0.5, o.fade ?? 1, o.grow || 0, o.flick || 0, !!o.hold);
+  }
+  add(x, y, z, vx, vy, vz, life, size, color, g, drag, fade, grow, flick, hold) {
+    if (this.list.length - this.start >= this.max) this.list[this.start++] = null; // (full: the oldest goes)
+    const q = { x, y, z, vx, vy, vz, life, age: 0, size, color, g, drag, fade, grow, flick, ph: Math.random() * 6.3, hold };
     this.list.push(q);
     return q;
   }
   burst(x, y, z, n, o = {}) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, e = (Math.random() - 0.3) * Math.PI, sp = (o.speed || 2) * (0.4 + Math.random() * 0.8);
-      this.emit({ x, y, z, vx: Math.cos(a) * Math.cos(e) * sp, vy: Math.sin(e) * sp + (o.up || 0), vz: Math.sin(a) * Math.cos(e) * sp, life: (o.life || 0.8) * (0.6 + Math.random() * 0.6), size: (o.size || 0.04) * (0.6 + Math.random() * 0.8), color: o.color, gravity: o.gravity ?? -4, drag: o.drag ?? 1.2 });
+      // (straight to add(): the same particle emit() would make from these, without the options object in between)
+      this.add(x, y, z, Math.cos(a) * Math.cos(e) * sp || 0, Math.sin(e) * sp + (o.up || 0) || 0, Math.sin(a) * Math.cos(e) * sp || 0, (o.life || 0.8) * (0.6 + Math.random() * 0.6) || 1, (o.size || 0.04) * (0.6 + Math.random() * 0.8) || 0.05, o.color || [1, 1, 1], o.gravity ?? -4, o.drag ?? 1.2, 1, 0, 0, false);
     }
   }
   draw(cam, dt) {
     if (this.preDraw) this.preDraw(dt); // (v0.4.7.5: the green release effects schedule their particles here)
-    if (!this.list.length) return;
+    if (this.list.length === this.start) { if (this.start) { this.list.length = 0; this.start = 0; } return; }
     const gl = this.ctx.gl, c = this.ctx;
-    const list = this.list, pos = this.pos, nrm = this.nrm, col = this.col;
+    const list = this.list, pos = this.pos, nrm = this.nrm, col = this.col, start = this.start;
     let n = 0, dead = 0;
     // (newest first, as always; the expired ones are dropped in one pass afterwards, keeping the order of the rest)
-    for (let i = list.length - 1; i >= 0; i--) {
+    for (let i = list.length - 1; i >= start; i--) {
       const p = list[i];
       p.age += dt;
       if (p.age >= p.life) { dead++; continue; }
@@ -665,7 +673,7 @@ class Particles {
       }
       n++;
     }
-    if (dead) { let w = 0; for (let i = 0; i < list.length; i++) { const p = list[i]; if (p.age < p.life) list[w++] = p; } list.length = w; }
+    if (dead || start) { let w = 0; for (let i = start; i < list.length; i++) { const p = list[i]; if (p.age < p.life) list[w++] = p; } list.length = w; this.start = 0; }
     if (!n) return;
     if (!this.geo) {
       this.geo = c.geometry({ position: this.pos, normal: this.nrm, color: this.col }, true);

@@ -5,6 +5,7 @@ import * as M from '../core/math.js';
 import { RNG } from '../core/rng.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import { buildCourt, buildHoop, cachedTexture } from './court.js';
+import { buildScope } from './release.js';
 import * as PR from './props.js';
 import { createParkLife } from './parklife.js';
 import { THEMES, PARK_COURTS, squadSpots, gotNextMid, AFFILIATIONS, parkInfo, PARK_HQ, PARK_HALL, PARK_PROAM, plazaLampOff, HQ } from './themes.js';
@@ -38,7 +39,9 @@ function batch(ctx, scene, parts, mat, opts = {}) {
   return mesh;
 }
 
-export function buildVenue(r, scene, themeId, opts = {}) {
+// (QP3: the court caches it uses are held by this scene until it's released: world/release.js)
+export function buildVenue(r, scene, themeId, opts = {}) { return buildScope(scene, () => venueIn(r, scene, themeId, opts)); }
+function venueIn(r, scene, themeId, opts) {
   const theme = THEMES[themeId] || THEMES.brick;
   applyLighting(r, scene, theme);
   if (theme.kind === 'park') return buildPark(r, scene, theme, opts);

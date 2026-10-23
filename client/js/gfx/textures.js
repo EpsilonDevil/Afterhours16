@@ -11,17 +11,24 @@ export function canvas(w, h) {
 }
 const ctx2d = c => c.getContext('2d', { willReadFrequently: false });
 
+// a normal map from a height field (wrapping, or clamped at the edges). (qp3 perf: the neighbours' columns come from two
+// small tables instead of a wrap/clamp per sample; every pixel comes out exactly as before.)
 function heightToNormal(height, w, h, strength = 2, wrap = true) {
   const out = new Uint8Array(w * h * 4);
-  const at = (x, y) => {
-    if (wrap) { x = (x + w) % w; y = (y + h) % h; } else { x = Math.max(0, Math.min(w - 1, x)); y = Math.max(0, Math.min(h - 1, y)); }
-    return height[y * w + x];
-  };
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * strength, dy = (at(x, y + 1) - at(x, y - 1)) * strength;
-    const l = Math.hypot(dx, dy, 1);
-    const i = (y * w + x) * 4;
-    out[i] = (-dx / l * 0.5 + 0.5) * 255; out[i + 1] = (-dy / l * 0.5 + 0.5) * 255; out[i + 2] = (1 / l * 0.5 + 0.5) * 255; out[i + 3] = 255;
+  const xl = new Int32Array(w), xr = new Int32Array(w);
+  for (let x = 0; x < w; x++) {
+    xl[x] = wrap ? (x - 1 + w) % w : Math.max(0, Math.min(w - 1, x - 1));
+    xr[x] = wrap ? (x + 1 + w) % w : Math.max(0, Math.min(w - 1, x + 1));
+  }
+  for (let y = 0; y < h; y++) {
+    const yu = wrap ? (y - 1 + h) % h : Math.max(0, Math.min(h - 1, y - 1)), yd = wrap ? (y + 1 + h) % h : Math.max(0, Math.min(h - 1, y + 1));
+    const row = y * w, up = yu * w, dn = yd * w;
+    for (let x = 0; x < w; x++) {
+      const dx = (height[row + xr[x]] - height[row + xl[x]]) * strength, dy = (height[dn + x] - height[up + x]) * strength;
+      const l = Math.hypot(dx, dy, 1);
+      const i = (row + x) * 4;
+      out[i] = (-dx / l * 0.5 + 0.5) * 255; out[i + 1] = (-dy / l * 0.5 + 0.5) * 255; out[i + 2] = (1 / l * 0.5 + 0.5) * 255; out[i + 3] = 255;
+    }
   }
   return { width: w, height: h, data: out };
 }
@@ -82,10 +89,55 @@ export function waterNormal(opts = {}) {
   return heightToNormal(H, S, S, opts.strength ?? 2.2);
 }
 
-export function asphalt(opts = {}) {
+// ---------- ground textures: asphalt and sand ----------
+// Each is painted as bytes (paintAsphalt / paintSand: {S, rgba, normal}, no canvas, so a worker can paint them too) and
+// handed out as {color: canvas, normal}. (qp3 perf: they're the slowest textures a first park load paints, so the game
+// can have them painted off the main thread ahead of time: prepaintGrounds, gfx/paintworker.js. A ground asked for
+// with the very options it was prepainted with is taken from there, byte for byte the same picture; anything else is
+// painted here and now, as always.)
+const PREPAINTED = new Map(), PAINTED_HERE = new Set();
+const groundKey = (kind, opts) => kind + '|' + JSON.stringify(opts);
+function groundOut(kind, opts, paint) {
+  const k = groundKey(kind, opts);
+  let p = PREPAINTED.get(k);
+  if (p) PREPAINTED.delete(k); else { PAINTED_HERE.add(k); p = paint(opts); }
+  const c = canvas(p.S, p.S), g = ctx2d(c), img = g.createImageData(p.S, p.S);
+  img.data.set(p.rgba);
+  g.putImageData(img, 0, 0);
+  return { color: c, normal: p.normal };
+}
+// grounds to paint in the background: [[kind ('asphalt' | 'sand'), opts], ...]. Each result waits (at most `keepMs`)
+// to be asked for; one already painted here is dropped. Without workers it does nothing.
+let paintWorker = null;
+export function prepaintGrounds(list, keepMs = 10 * 60 * 1000) {
+  if (typeof Worker === 'undefined' || !list.length) return false;
+  try {
+    if (!paintWorker) {
+      paintWorker = new Worker(new URL('./paintworker.js', import.meta.url), { type: 'module' });
+      paintWorker.onmessage = e => {
+        const { key, p } = e.data || {};
+        if (p && !PAINTED_HERE.has(key)) { PREPAINTED.set(key, p); setTimeout(() => PREPAINTED.delete(key), keepMs); }
+        if (--paintWorker.jobs <= 0) { paintWorker.terminate(); paintWorker = null; }
+      };
+      paintWorker.onerror = () => { paintWorker?.terminate(); paintWorker = null; };
+      paintWorker.jobs = 0;
+    }
+    for (const [kind, opts] of list) {
+      const key = groundKey(kind, opts);
+      if (PREPAINTED.has(key) || PAINTED_HERE.has(key)) continue;
+      paintWorker.jobs++;
+      paintWorker.postMessage({ key, kind, opts });
+    }
+    if (paintWorker && paintWorker.jobs <= 0) { paintWorker.terminate(); paintWorker = null; }
+    return true;
+  } catch { return false; }
+}
+export const GROUND_PAINTERS = { asphalt: o => paintAsphalt(o), sand: o => paintSand(o) };
+
+export function asphalt(opts = {}) { return groundOut('asphalt', opts, paintAsphalt); }
+export function paintAsphalt(opts = {}) {
   const S = opts.size || 1024, rng = new RNG(opts.seed || 5), noise = makeNoise2D(opts.seed || 5);
-  const c = canvas(S, S), g = ctx2d(c);
-  const img = g.createImageData(S, S), d = img.data, H = new Float32Array(S * S);
+  const d = new Uint8ClampedArray(S * S * 4), H = new Float32Array(S * S);
   const base = opts.base || [0.24, 0.24, 0.25];
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const n = noise.tile(x * 0.02, y * 0.02, S * 0.02, 5);
@@ -108,8 +160,7 @@ export function asphalt(opts = {}) {
       d[i] *= 0.45; d[i + 1] *= 0.45; d[i + 2] *= 0.45; H[yi * S + xi] -= 1.2;
     }
   }
-  g.putImageData(img, 0, 0);
-  return { color: c, normal: heightToNormal(H, S, S, 1.5) };
+  return { S, rgba: d, normal: heightToNormal(H, S, S, 1.5) };
 }
 
 // Court markings + paint. Full-court overlay covering [-W/2-margin, W/2+margin] x [-L/2-margin, L/2+margin].
@@ -657,10 +708,10 @@ export function concrete(opts = {}) {
 // shell and mineral specks, soft wind ripples that meander and fade where the sand has been walked over, a slow
 // tileable colour drift so the repeat doesn't show, darker damp patches and a couple of trails of footprints.
 // Returns {color, normal} (the normal map carries the ripples and the dimples).
-export function sand(opts = {}) {
+export function sand(opts = {}) { return groundOut('sand', opts, paintSand); }
+export function paintSand(opts = {}) {
   const S = opts.size || 1024, seed = opts.seed || 61, rng = new RNG(seed), noise = makeNoise2D(seed), n2 = makeNoise2D(seed + 7);
-  const c = canvas(S, S), g = ctx2d(c);
-  const img = g.createImageData(S, S), d = img.data, H = new Float32Array(S * S);
+  const d = new Uint8ClampedArray(S * S * 4), H = new Float32Array(S * S);
   const base = opts.color || [0.84, 0.76, 0.62];
   const TAU = Math.PI * 2;
   // damp patches (toroidal blobs so the tile wraps) and footprint trails (pairs of ovals, alternating feet)
@@ -727,8 +778,7 @@ export function sand(opts = {}) {
     d[o] = Math.min(255, base[0] * v * (1 + tint) * 255); d[o + 1] = Math.min(255, base[1] * v * 255); d[o + 2] = Math.min(255, base[2] * v * (1 - tint - wet * 0.05) * 255); d[o + 3] = 255;
     H[i] = h * (1 - wet * 0.5);
   }
-  g.putImageData(img, 0, 0);
-  return { color: c, normal: heightToNormal(H, S, S, opts.strength ?? 1.1) };
+  return { S, rgba: d, normal: heightToNormal(H, S, S, opts.strength ?? 1.1) };
 }
 
 // v0.4.8.5: a soft, tileable wisp texture for the low rolling fog (white, the shape is in the alpha)

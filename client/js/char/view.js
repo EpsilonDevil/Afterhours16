@@ -22,11 +22,12 @@ export function placeFlipped(o, x, y, z, yaw, angle, py) {
 }
 
 // textures shared by every athlete on a GL context (detail normals, body skin per tone)
+// (QP3: marked shared, world/release.js: a scene's disposal never frees them)
 const shared = new WeakMap();
 function sharedTex(ctx, key, make, opts) {
   let m = shared.get(ctx);
   if (!m) { m = new Map(); shared.set(ctx, m); }
-  if (!m.has(key)) m.set(key, ctx.texture(make(), opts));
+  if (!m.has(key)) { const t = ctx.texture(make(), opts); if (t && typeof t === 'object') t.shared = true; m.set(key, t); }
   return m.get(key);
 }
 

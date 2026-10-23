@@ -91,11 +91,13 @@ export class HUD {
     el.innerHTML = html; el.hidden = false; this.root.classList.add('intro-on');
   }
 
+  // (qp3: keyed by what the bug shows, not the whole info as JSON: the shot clock is a float that moved every frame, so
+  // the bug's HTML was rebuilt every frame of live play though it only shows the clock's whole seconds)
   setScore(info) {
-    const key = JSON.stringify(info);
+    const t = info.teams, shot = info.shot;
+    const key = `${t[0].abbr}|${t[0].color}|${t[1].abbr}|${t[1].color}|${info.score[0]}|${info.score[1]}|${info.poss}|${info.clock}|${info.sub}|${shot != null ? Math.ceil(shot) : ''}|${shot <= 5}`;
     if (key === this.lastScoreKey) return;
     this.lastScoreKey = key;
-    const t = info.teams;
     this.score.innerHTML = `
       <div class="sb-team" style="--c:${t[0].color}"><span class="sb-abbr">${esc(t[0].abbr)}</span><b>${info.score[0]}</b>${info.poss === 0 ? '<i class="sb-poss"></i>' : ''}</div>
       <div class="sb-mid"><div class="sb-clock">${esc(info.clock)}</div><div class="sb-sub">${esc(info.sub)}</div></div>

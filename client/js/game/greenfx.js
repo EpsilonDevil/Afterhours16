@@ -10,6 +10,7 @@
 //   fx.hold(n, dur, make(i), place(i, k, p))  n particles that live dur and that place() moves every frame (shapes
 //     that turn and follow him: smooth at any frame rate)
 //   fx.power  1 normally, more on threes and big shots (a bigger show)
+import { hypot2, hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 export const GREEN_FX = {
   gfx_basic: 'Green Burst',
   gfx_fireworks: 'Green Fireworks',
@@ -77,7 +78,7 @@ const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[
 // a point on a flat shape that faces the camera: (gx, gy) in metres around c
 const flat = (fx, c, gx, gy) => { const [r, u] = fx.basis(); return [c[0] + r[0] * gx + u[0] * gy, c[1] + r[1] * gx + u[1] * gy, c[2] + r[2] * gx + u[2] * gy]; };
 // the camera's forward on the floor (toward the viewer), for shapes that sit behind a player
-const toward = fx => { const [r, u] = fx.basis(), f = [u[1] * r[2] - u[2] * r[1], u[2] * r[0] - u[0] * r[2], u[0] * r[1] - u[1] * r[0]], l = Math.hypot(f[0], f[2]) || 1; return [f[0] / l, 0, f[2] / l]; };
+const toward = fx => { const [r, u] = fx.basis(), f = [u[1] * r[2] - u[2] * r[1], u[2] * r[0] - u[0] * r[2], u[0] * r[1] - u[1] * r[0]], l = hypot2(f[0], f[2]) || 1; return [f[0] / l, 0, f[2] / l]; };
 const setP = (p, P) => { p.x = P[0]; p.y = P[1]; p.z = P[2]; };
 function sphereDir() { const u = rnd(-1, 1), th = rnd(0, Math.PI * 2), s = Math.sqrt(1 - u * u); return [s * Math.cos(th), u, s * Math.sin(th)]; }
 
@@ -135,7 +136,7 @@ const EFFECTS = {
       const top = add(end, rnd(-1, 1), 6, rnd(-1, 1)), pts = [top];
       for (let i = 1; i <= 10; i++) { const t = i / 10, j = 0.45 * (1 - t); pts.push([top[0] + (end[0] - top[0]) * t + rnd(-j, j), top[1] + (end[1] - top[1]) * t, top[2] + (end[2] - top[2]) * t + rnd(-j, j)]); }
       pts[10] = end;
-      const seg = (a, b, sz) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), n = Math.ceil(d / 0.07); for (let i = 0; i <= n; i++) { const t = i / n; fx.emit({ x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, z: a[2] + (b[2] - a[2]) * t, life, size: sz, color: [1.5, 3, 1.8], gravity: 0, drag: 0 }); } };
+      const seg = (a, b, sz) => { const d = hypot3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), n = Math.ceil(d / 0.07); for (let i = 0; i <= n; i++) { const t = i / n; fx.emit({ x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, z: a[2] + (b[2] - a[2]) * t, life, size: sz, color: [1.5, 3, 1.8], gravity: 0, drag: 0 }); } };
       for (let i = 0; i < 10; i++) seg(pts[i], pts[i + 1], 0.055);
       for (const bi of [3, 6]) { const s = pts[bi], e = add(s, rnd(-0.9, 0.9), -rnd(0.6, 1.1), rnd(-0.9, 0.9)); seg(s, e, 0.03); }
     };
@@ -158,7 +159,7 @@ const EFFECTS = {
       const fw = [up[1] * rt[2] - up[2] * rt[1], up[2] * rt[0] - up[0] * rt[2], up[0] * rt[1] - up[1] * rt[0]]; // toward the camera
       const tip = 0.35, c = Math.cos(a) * r, d = Math.sin(a) * r;
       // a horizontal ring (right × forward-on-the-floor), tipped about the camera's right axis
-      const fl = Math.hypot(fw[0], fw[2]) || 1, fx2 = fw[0] / fl, fz2 = fw[2] / fl;
+      const fl = hypot2(fw[0], fw[2]) || 1, fx2 = fw[0] / fl, fz2 = fw[2] / fl;
       return [h[0] + rt[0] * c + fx2 * d * Math.cos(tip), h[1] + d * Math.sin(tip), h[2] + rt[2] * c + fz2 * d * Math.cos(tip)];
     };
     fx.hold(n, dur, i => ({ size: i % 8 === 0 ? 0.05 : 0.032, color: i % 8 === 0 ? WHITE : GW }), (i, k, p) => {
@@ -332,7 +333,7 @@ const EFFECTS = {
         if (e > 0) {
           // peel: rotate the strip about the stem, outward and up, curling more toward the tip
           const phi = e * (1.6 + 1.2 * s), vx = gx - top[0], vy = gy - top[1];
-          const along = Math.hypot(vx, vy) || 1e-6, dx = vx / along, dy = vy / along;
+          const along = hypot2(vx, vy) || 1e-6, dx = vx / along, dy = vy / along;
           const cx = Math.cos(phi), sx = Math.sin(phi);
           gx = top[0] + along * (dx * cx + o[0] * sx * 0.9) + o[0] * off * (1 + e);
           gy = top[1] + along * (dy * cx + 0.35 * sx);
@@ -471,7 +472,7 @@ const EFFECTS = {
     parts.push(...fx.hold(holes.length, HOLD, i => ({ size: 0, color: L.candle.slice() }), (i, k, p) => {
       const t = k * HOLD, q = holes[i], c = centre(t), F = frame(), s = size(t), a = rock(t), P = place(c, F, s, q.x, q.y, q.z * 0.86, a), on = lit(t);
       setP(p, P);
-      const mid = 1 - Math.min(1, Math.hypot(q.x / R, (q.y / RV + 0.15) * 0.8));
+      const mid = 1 - Math.min(1, hypot2(q.x / R, (q.y / RV + 0.15) * 0.8));
       for (let j = 0; j < 3; j++) p.color[j] = (L.candle[j] + (L.core[j] - L.candle[j]) * mid * 0.6) * on;
       p.size = t >= burstAt ? 0 : 0.032 * s * Math.min(1, on * 1.6);
     }));
@@ -497,7 +498,7 @@ const EFFECTS = {
       // the shell blown out in chunks (out from the middle, up a little, falling)
       for (const q of shell) {
         if (Math.random() < 0.45) continue;
-        const P = place(c, F, s, q.x, q.y, q.z, a), d = [P[0] - c[0], P[1] - c[1], P[2] - c[2]], l = Math.hypot(...d) || 1, sp = rnd(2.2, 4.2);
+        const P = place(c, F, s, q.x, q.y, q.z, a), d = [P[0] - c[0], P[1] - c[1], P[2] - c[2]], l = hypot3(d[0], d[1], d[2]) || 1, sp = rnd(2.2, 4.2);
         fx.emit({ x: P[0], y: P[1], z: P[2], vx: d[0] / l * sp, vy: d[1] / l * sp + 1.6, vz: d[2] / l * sp, life: rnd(0.55, 0.95), size: rnd(0.028, 0.045), color: Math.random() < 0.3 ? L.chunk.map(v => v * 0.45) : L.chunk, gravity: -7, drag: 0.6 });
       }
       for (let i = 0; i < 30; i++) { const d = sphereDir(), sp = rnd(1, 3); fx.emit({ x: c[0], y: c[1], z: c[2], vx: d[0] * sp, vy: d[1] * sp + 1, vz: d[2] * sp, life: rnd(0.3, 0.6), size: 0.022, color: L.candle, flick: 20, gravity: -2, drag: 1 }); }
@@ -565,7 +566,7 @@ const EFFECTS = {
       const nk = Math.min(14, Math.round(10 * power)), kites = [];
       for (let i = 0; i < nk; i++) {
         const a = Math.PI * (0.08 + 0.84 * (i + rnd(0.2, 0.8)) / nk), dep = rnd(-0.45, 0.45), ca = Math.cos(a), sa = Math.sin(a);
-        const d = [r0[0] * ca + u0[0] * sa + f0[0] * dep, r0[1] * ca + u0[1] * sa + f0[1] * dep, r0[2] * ca + u0[2] * sa + f0[2] * dep], l = Math.hypot(...d);
+        const d = [r0[0] * ca + u0[0] * sa + f0[0] * dep, r0[1] * ca + u0[1] * sa + f0[1] * dep, r0[2] * ca + u0[2] * sa + f0[2] * dep], l = hypot3(d[0], d[1], d[2]);
         const pa = Math.floor(rnd(0, K.papers.length));
         kites.push({ d: d.map(v => v / l), sp: rnd(3.6, 5.2), tau: rnd(0.45, 0.65), rise: rnd(0.3, 0.6), ph: rnd(0, 6.3), sc: rnd(0.95, 1.25), A: K.papers[pa], B: K.papers[(pa + 1 + Math.floor(rnd(0, K.papers.length - 1))) % K.papers.length], life: rnd(K.life - 0.3, K.life) });
       }

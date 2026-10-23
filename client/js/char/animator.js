@@ -14,6 +14,7 @@ import { postPackageOf } from '../sim/post.js';
 import { redBackdown, redArms, redShot, generalSalute } from './redpose.js'; // (v0.4.8.5 qp5: Sexy Red's back-downs, The General's Salute)
 import { snagFrame, snagSpin, trunkPoint } from '../sim/snags.js';
 import { opFacing, oprahPose, oprahHold, oprahHands, oprahLook } from './oprahpose.js'; // (v0.4.8.5 qp5: Oprah's passes)
+import { hypot2, hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 // v0.4.8 the Sharp Eye backflip (sim game.js FLIP): its time in the air, and how far over he is (radians, backwards
@@ -357,7 +358,7 @@ export class Animator {
     const c = Math.cos(this.f), sn = Math.sin(this.f);
     const vx = p.vx, vz = p.vz;
     const lvx = c * vx - sn * vz, lvz = sn * vx + c * vz;
-    const speed = Math.hypot(vx, vz);
+    const speed = hypot2(vx, vz);
     // acceleration for lean
     const ax = (vx - this.prevV.x) / Math.max(dt, 1e-3), az = (vz - this.prevV.z) / Math.max(dt, 1e-3);
     this.prevV.x = vx; this.prevV.z = vz;
@@ -456,7 +457,7 @@ export class Animator {
         this.toLocal(F.wx, 0, F.wz, tmp);
         local = [tmp[0] / s, 0.08, tmp[2] / s];
         const dx = local[0] - idle[k][0], dz = local[2] - idle[k][2];
-        const off = Math.hypot(dx, dz);
+        const off = hypot2(dx, dz);
         if (!F.step && off > (defense ? 0.16 : 0.2) && !(this.feet[1 - k].step)) F.step = { t: 0, from: local.slice(), dur: 0.2 };
         if (F.step) {
           F.step.t += dt;
@@ -628,7 +629,7 @@ export class Animator {
     if (has && ball && !(a && (a.type === 'hang'))) { this.ballHands(T, p, g, a, lbs, bmode); if (this.redOn) redArms(this, T, this.redOn); } // (qp5: Sexy Red's back-downs: the off arm's bar)
     else if (ball && !has && g && g.ball.mode === 'flight') {
       // reach for an incoming pass / loose ball near the hands
-      const dist = Math.hypot(lb[0], lb[1] - 1.3 * s, lb[2]);
+      const dist = hypot3(lb[0], lb[1] - 1.3 * s, lb[2]);
       const coming = g.ball.kind === 'pass' && g.ball.info?.to === p.id;
       // (v0.4.8.5: not the ball a Big Brother block just swatted away: his swat follows through)
       const swatted = a?.type === 'block' && a.hit && BLOCK_BY_ID[a.bstyle]?.icon;
@@ -700,7 +701,7 @@ export class Animator {
       const hips = by < 1.05, chest = by > 1.42;
       const rx = (hips ? 0.235 : chest ? 0.225 : 0.215) * g, rz = (hips ? 0.15 : chest ? 0.15 : 0.145) * g;
       const zc = Math.max(0, by - 0.9) * Math.sin(lean) * 0.9 + (hips ? -0.01 : 0.01);
-      const ex = f[o] / rx, ez = (f[o + 2] - zc) / rz, e = Math.hypot(ex, ez);
+      const ex = f[o] / rx, ez = (f[o + 2] - zc) / rz, e = hypot2(ex, ez);
       if (e >= 1) continue;
       if (e < 0.15) { f[o] = side * rx; continue; } // dead center: push to the hand's own side
       f[o] *= 1 / e; f[o + 2] = zc + (f[o + 2] - zc) / e;
@@ -720,7 +721,7 @@ export class Animator {
         if (q === p || Math.abs(q.x - this.x) > 1.6 || Math.abs(q.z - this.z) > 1.6) continue;
         const Hq = q.phys.H, y0 = q.y + 0.44 * Hq, y1 = q.y + 0.84 * Hq;
         if (wy < y0 || wy > y1) continue;
-        const r = q.phys.radius * 0.92, dx = wx - q.x, dz = wz - q.z, d = Math.hypot(dx, dz);
+        const r = q.phys.radius * 0.92, dx = wx - q.x, dz = wz - q.z, d = hypot2(dx, dz);
         if (d >= r) continue;
         const k = d > 1e-4 ? r / d : 1; wx = q.x + (d > 1e-4 ? dx : this.x - q.x) * k; wz = q.z + (d > 1e-4 ? dz : this.z - q.z) * k; moved = true;
       }
@@ -820,7 +821,7 @@ export class Animator {
     // (and crossing hands keep a forearm's length between them, the crossing hand moved forward, so the forearms
     // pass in front of each other: short arms used to be pulled in by the reach clamp until they met)
     if (S.lead === 'cross' || S.lead === 'far') {
-      const li = P['hand' + ld], ti = P['hand' + tr], dd = Math.hypot(T[li] - T[ti], T[li + 1] - T[ti + 1], T[li + 2] - T[ti + 2]);
+      const li = P['hand' + ld], ti = P['hand' + tr], dd = hypot3(T[li] - T[ti], T[li + 1] - T[ti + 1], T[li + 2] - T[ti + 2]);
       if (dd < 0.3) { T[ti + 2] += 0.3 - dd; this.clampReach(T, tr); }
     }
     const twoUp = S.lead === 'two' || S.off === 'mirror' || S.lead === 'cross';
@@ -846,7 +847,7 @@ export class Animator {
     const d = this.view?.model?.d, k = d ? 2 / this.H : 1;
     const sx = (side === 'L' ? 1 : -1) * (d ? d.shoulderX * k : 0.2), sy = d ? (d.hipY + d.spineLen + d.chestLen + d.clavY) * k : 1.61, sz = d ? -0.012 * this.H * k : -0.024;
     const reach = (d ? (d.upperLen + d.foreLen + 0.5 * d.handLen) * k : 0.74) * REACH_K;
-    const i = P['hand' + side], dx = T[i] - sx, dy = T[i + 1] - sy, dz = T[i + 2] - sz, dd = Math.hypot(dx, dy, dz);
+    const i = P['hand' + side], dx = T[i] - sx, dy = T[i + 1] - sy, dz = T[i + 2] - sz, dd = hypot3(dx, dy, dz);
     if (dd <= reach || dd < 1e-6) return;
     const f = reach / dd; T[i] = sx + dx * f; T[i + 1] = sy + dy * f; T[i + 2] = sz + dz * f;
   }
@@ -986,7 +987,7 @@ export class Animator {
     const sh = trunkPoint(this.H, F.body, [hs * (d ? d.shoulderX : 0.094 * this.H), 0.099 * this.H, -0.008 * this.H]);
     // (the shoulder in the trunk's frame; a spin turns the whole view, so it's already in the ball's frame)
     let nx = b[0] - sh[0] / s, ny = b[1] - sh[1] / s, nz = b[2] - sh[2] / s;
-    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    const nl = hypot3(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
     const g1 = r + 0.05, one = [b[0] - nx * g1, b[1] - ny * g1, b[2] - nz * g1];
     set3(T, 'hand' + H1, lerp(one[0], two[H1][0], w), lerp(one[1], two[H1][1], w), lerp(one[2], two[H1][2], w));
     mix3(T, 'hand' + H2, two[H2][0], two[H2][1], two[H2][2], w);
@@ -1520,7 +1521,7 @@ export class Animator {
           const tgt0 = g?.players[a.to];
           const tgt = tgt0 && g.worldOf ? g.worldOf(tgt0) : tgt0;
           let dx = 0, dz = 1;
-          if (tgt) { const lt = [0, 0, 0]; this.toLocal(tgt.x, 1.2, tgt.z, lt); const l = Math.hypot(lt[0], lt[2]) || 1; dx = lt[0] / l; dz = lt[2] / l; }
+          if (tgt) { const lt = [0, 0, 0]; this.toLocal(tgt.x, 1.2, tgt.z, lt); const l = hypot2(lt[0], lt[2]) || 1; dx = lt[0] / l; dz = lt[2] / l; }
           const y = a.ptype === 'bounce' ? 0.9 : a.ptype === 'lob' || a.ptype === 'alley' ? 1.9 : 1.32;
           set3(T, 'handL', 0.14 + dx * 0.55, y, 0.2 + dz * 0.5); set3(T, 'handR', -0.14 + dx * 0.55, y, 0.2 + dz * 0.5);
           this.palm.L = { normal: [0, -0.3, 1], fingers: [0.2, 0.3, 0.9], w: 0.7 }; this.palm.R = { normal: [0, -0.3, 1], fingers: [-0.2, 0.3, 0.9], w: 0.7 };
@@ -1535,7 +1536,7 @@ export class Animator {
         const hd = a.hand === 'L' ? 'L' : 'R', sg = hd === 'L' ? 1 : -1;
         T[P.spine] = 0.2 + k * (a.low ? 0.55 : 0.4); T[P.chest + 1] = sg * 0.25 * k; T[P.root + 1] = -0.1 - k * (a.low ? 0.2 : 0.12);
         set3(T, 'foot' + hd, sg * 0.18, 0.08, 0.1 + k * 0.38);
-        const reach = b && Math.hypot(b[0], b[2]) < 1.6 ? [b[0], Math.max(a.low ? 0.35 : 0.6, b[1]), b[2]] : [sg * 0.1, a.low ? 0.55 : 0.95, 0.8];
+        const reach = b && hypot2(b[0], b[2]) < 1.6 ? [b[0], Math.max(a.low ? 0.35 : 0.6, b[1]), b[2]] : [sg * 0.1, a.low ? 0.55 : 0.95, 0.8];
         set3(T, 'hand' + hd, lerp(sg * 0.25, reach[0], k), lerp(1.0, reach[1], k), lerp(0.2, reach[2], k));
         set3(T, 'elbow' + hd, sg * 0.5, -1, 0);
         this.palm[hd] = { normal: [-sg * 0.3, -0.6, 0.6], fingers: [0, -0.2, 1], w: 0.6 * k };
@@ -1580,7 +1581,7 @@ export class Animator {
             // v0.4.8.5 Open Arms, the badge's name: both arms thrown wide open as he rises, chest up, closing on the ball
             // as it comes to him. (It used to be a fixed rip down on a clock, ball or no ball; the board itself is now
             // the snag's, whenever and however he gets it: sim/snags.js)
-            const near = b ? sm(1.25, 0.45, Math.hypot(b[0], b[1] - 2.3, b[2] - 0.3)) : 0, open = up * (1 - near);
+            const near = b ? sm(1.25, 0.45, hypot3(b[0], b[1] - 2.3, b[2] - 0.3)) : 0, open = up * (1 - near);
             set3(T, 'handL', lerp(lerp(0.42, 0.92, open), tx + 0.19, near), lerp(1.05, lerp(2.2, ty, near), up), lerp(0.12, lerp(0.08, tz, near), up));
             set3(T, 'handR', lerp(lerp(-0.42, -0.92, open), tx - 0.19, near), lerp(1.05, lerp(2.2, ty, near), up), lerp(0.12, lerp(0.08, tz, near), up));
             this.clampReach(T, 'L'); this.clampReach(T, 'R');

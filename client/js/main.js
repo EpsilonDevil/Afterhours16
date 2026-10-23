@@ -10,6 +10,7 @@ import { settings, saveSettings, autoQuality, volumeGain, SETTINGS_KEY } from '.
 import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
+import { prepaintGrounds } from './gfx/textures.js';
 import { resolveLook } from './sim/bots.js';
 import { refreshSlots, slotOpenedText } from './sim/builds.js';
 import { initWorld, setEventVenue, setEventSchedule } from './sim/world.js';
@@ -111,6 +112,9 @@ function afterLogin() {
   app.selectedId = chars.find(c => c.id === settings.character)?.id || chars[0].id;
   Screens.go(app, 'home');
   noteBadgeUpdates(app);
+  // qp3 perf: the ground every park court stands on (and Harbor Point's beach, for its regulars) painted on a worker
+  // while the menus are up, so the first park load doesn't stop to paint them (gfx/textures.js prepaintGrounds)
+  setTimeout(() => prepaintGrounds([['asphalt', {}], ...(app.char()?.affiliation === 'harbor' ? [['sand', { meters: 12 }]] : [])]), 2500);
 }
 
 // v0.4.8.5: badges that caught up with the current requirements as the profile loaded (a lowered mark, Handles for

@@ -28,6 +28,8 @@ CHECK_EVERY, SNAP_EVERY = 10, 60
 GRACE = 3.0          # (s: a new epoch waits this long for a client handing the old one back)
 LINGER = 60.0        # (s: an empty park keeps its epoch this long)
 PACT_RATE = (30, 10.0)  # (at most 30 pacts in 10 s from one client)
+WANT_GAP = 3            # (s: a client's pwant is answered at most this often)
+SWEEP_EVERY = 60.0      # (s: how often the per-account pact and pwant tables drop accounts with nothing recent)
 MAX_STATE = 256 * 1024
 MAX_LOG = 20000
 DECIDE_AFTER = 6.0   # (s: a check is decided once everyone there has sent theirs, or this long after the first)
@@ -75,6 +77,7 @@ class ParkDirector:
         self.sessions = {}
         self.rate = {}         # aid -> [monotonic times of recent pacts]
         self.wanted = {}       # aid -> monotonic time of the last pwant answered
+        self.swept = mono()    # (qp3: both are pruned every SWEEP_EVERY, so they don't grow with every account seen)
         self.stopped = False
 
     # ---- time ----
@@ -260,7 +263,7 @@ class ParkDirector:
         place = conn.info.get("park")
         s = self.sessions.get(place)
         now = self.mono()
-        if not s or s.pending is not None or msg.get("place") != place or now - self.wanted.get(conn.aid, -99) < 3:
+        if not s or s.pending is not None or msg.get("place") != place or now - self.wanted.get(conn.aid, -99) < WANT_GAP:
             return
         self.wanted[conn.aid] = now
         self.send_state(s, [conn.aid])
@@ -307,6 +310,8 @@ class ParkDirector:
     # ---- once a quarter second ----
     def pulse(self):
         now = self.mono()
+        if now - self.swept >= SWEEP_EVERY:
+            self.sweep(now)
         for place, s in list(self.sessions.items()):
             if s.empty is not None and now - s.empty > self.linger and not self.there(place):
                 del self.sessions[place]
@@ -325,6 +330,15 @@ class ParkDirector:
                 self.hub.send_to(self.there(place), {"t": "pt", "place": place, "epoch": s.epoch, "k": k})
             if s.checks:
                 self.decide(s)
+
+    def sweep(self, now):
+        """Forgets the accounts whose pact times are all outside PACT_RATE's window and whose last pwant is WANT_GAP or
+        more ago: pact() and want() treat them exactly like accounts they've never seen."""
+        self.swept = now
+        for aid in [a for a, times in self.rate.items() if not any(now - t < PACT_RATE[1] for t in times)]:
+            del self.rate[aid]
+        for aid in [a for a, t in self.wanted.items() if now - t >= WANT_GAP]:
+            del self.wanted[aid]
 
     def start(self, every=0.25):
         def run():

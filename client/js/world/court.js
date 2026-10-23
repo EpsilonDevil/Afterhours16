@@ -6,12 +6,19 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import { Net } from './net.js';
 import { COURT } from '../sim/constants.js';
 import * as M from '../core/math.js';
+import { leaseEntry, use } from './release.js';
 
+// (QP3: every entry is leased, world/release.js: kept while a scene uses it and, unused, within the cache budget; its
+// texture is marked shared so no scene's disposal frees it)
 const texCache = new Map();
+const texBytesOf = t => Math.round((t?.width || 0) * (t?.height || 0) * 4 * 4 / 3);
+function cacheEntry(cache, key, ctx, res, extra) {
+  return leaseEntry({ ctx, res, bytes: res.reduce((s, t) => s + texBytesOf(t), 0), drop() { if (cache.get(key) === this) cache.delete(key); }, ...extra });
+}
 export function cachedTexture(ctx, key, make, opts) {
   let t = texCache.get(key);
-  if (!t || t.ctx !== ctx) { t = { ctx, tex: ctx.texture(make(), opts) }; texCache.set(key, t); }
-  return t.tex;
+  if (!t || t.ctx !== ctx) { const tex = ctx.texture(make(), opts); t = cacheEntry(texCache, key, ctx, [tex], { tex }); texCache.set(key, t); }
+  return use(t).tex;
 }
 
 function boardMarkings() {
@@ -136,17 +143,19 @@ export function buildHoop(ctx, side, style = 'park', opts = {}) {
 // A court's floor overlay (its lines, paint, logo and wear) is a big canvas (about 2100 x 3600 px at 110 px a metre:
 // 30-40 MB on the GPU) and the same picture every time for the same spec (courtOverlay is a pure function of it). So it
 // is drawn and uploaded once per spec and shared: a park built again (you come back to it) reuses its six courts'
-// overlays instead of drawing six new ones and leaving the old ones on the GPU. The keys are the specs as JSON.
+// overlays instead of drawing six new ones and leaving the old ones on the GPU. The keys are the specs as JSON. (QP3: leased
+// like cachedTexture, so the overlays of arenas and parks nobody's in are freed past the cache budget.)
 const overlayCache = new Map();
 function courtOverlayTexture(ctx, spec) {
   const key = JSON.stringify(spec);
   let o = overlayCache.get(key);
   if (!o || o.ctx !== ctx) {
-    const ov = T.courtOverlay(spec);
-    o = { ctx, tex: ctx.texture(ov.canvas, { wrap: 'clamp', aniso: 16 }), ov: { rect: ov.rect, width: ov.width, length: ov.length } };
+    const ov = T.courtOverlay(spec), tex = ctx.texture(ov.canvas, { wrap: 'clamp', aniso: 16 });
+    ov.canvas.width = ov.canvas.height = 0; // (qp3: its ~30 MB of pixels are on the GPU now: let the canvas's go at once)
+    o = cacheEntry(overlayCache, key, ctx, [tex], { tex, ov: { rect: ov.rect, width: ov.width, length: ov.length } });
     overlayCache.set(key, o);
   }
-  return o;
+  return use(o);
 }
 
 // Floor + markings. spec from venue; returns {meshes, floor, overlay: {rect, width, length}}
@@ -180,17 +189,27 @@ export function buildCourt(ctx, spec, origin = [0, 0, 0], rotY = 0) {
   return { meshes, floor, overlay: ov };
 }
 
-let woodCache = null, asphaltCache = null;
+// (QP3: one entry per wood tone, leased like the rest; the single slot it was dropped a tone's maps on the GPU every time
+// the tone changed)
+const woodCache = new Map(), asphaltCache = new Map();
 export function woodTextures(ctx, tone) {
   const key = 'wood' + (tone || '');
-  if (woodCache && woodCache.key === key && woodCache.ctx === ctx) return woodCache;
-  const t = T.hardwood({ tone: tone || [0.82, 0.6, 0.38] });
-  woodCache = { key, ctx, color: ctx.texture(t.color, { aniso: 16 }), normal: ctx.texture(t.normal, { srgb: false, aniso: 16 }) };
-  return woodCache;
+  let w = woodCache.get(key);
+  if (!w || w.ctx !== ctx) {
+    const t = T.hardwood({ tone: tone || [0.82, 0.6, 0.38] });
+    const color = ctx.texture(t.color, { aniso: 16 }), normal = ctx.texture(t.normal, { srgb: false, aniso: 16 });
+    w = cacheEntry(woodCache, key, ctx, [color, normal], { key, color, normal });
+    woodCache.set(key, w);
+  }
+  return use(w);
 }
 export function asphaltTextures(ctx) {
-  if (asphaltCache && asphaltCache.ctx === ctx) return asphaltCache;
-  const t = T.asphalt({});
-  asphaltCache = { ctx, color: ctx.texture(t.color, { aniso: 16 }), normal: ctx.texture(t.normal, { srgb: false, aniso: 16 }) };
-  return asphaltCache;
+  let a = asphaltCache.get('asphalt');
+  if (!a || a.ctx !== ctx) {
+    const t = T.asphalt({});
+    const color = ctx.texture(t.color, { aniso: 16 }), normal = ctx.texture(t.normal, { srgb: false, aniso: 16 });
+    a = cacheEntry(asphaltCache, 'asphalt', ctx, [color, normal], { color, normal });
+    asphaltCache.set('asphalt', a);
+  }
+  return use(a);
 }

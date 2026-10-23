@@ -26,6 +26,14 @@ import { bk } from './badges.js';
 import { MOVE_IDS, MOVES as MOVE_DEF, MOVE_STYLE, COMBOS } from './moves.js';
 
 // ---------- tuning constants ----------
+// (lineBrake's easing along one axis, a module function rather than a closure made every call: same arithmetic)
+function easeLine(it, brake, pos, vel, lo, hi, key) {
+  const dir = Math.sign(it[key]);
+  if (!dir) return;
+  const room = dir > 0 ? hi - pos : pos - lo, v = Math.max(0, vel * dir), stop = v * v / (2 * brake);
+  if (room <= stop + 0.15) it[key] = -dir * Math.min(1, (stop + 0.15 - room) * 2 + 0.2); // brake now
+  else if (room < 1.2) it[key] *= Math.max(0, (room - stop) / 1.2);                     // ease in
+}
 const ARC_SPOTS = ['top', 'wingL', 'wingR', 'cornerL', 'cornerR', 'slotL', 'slotR'];
 const MOVE_FAM = Object.fromEntries(Object.entries(MOVE_DEF).map(([k, v]) => [k, v.fam]));
 const hyp = Math.hypot;
@@ -209,26 +217,27 @@ export class AI {
 
   // ---------- think: the per-tick dispatch ----------
   think(dt) {
-    const g = this.g;
+    const g = this.g, ps = g.players; // (perf: indexed loops over the players, in for...of order: no array iterators)
     // (perf: the last 40 ticks of where everyone was, for seen(); the oldest entry is reused instead of a new one a tick.
     // seen()'s callers read an entry at once and never keep it)
-    for (const p of g.players) {
-      const h = p._hist || (p._hist = []);
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i], h = p._hist || (p._hist = []);
       if (h.length >= 40) { const e = h.shift(); e.x = p.x; e.z = p.z; e.vx = p.vx; e.vz = p.vz; h.push(e); } else h.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz });
     }
     // v0.4.7.5: how long each handler has had the ball (dead-dribble check); a new touch resets a screen call
-    for (const p of g.players) { const o = this.m(p); if (g.ball.holder === p.id) { if (!o.ballT) o.fresh = true; o.ballT = (o.ballT || 0) + dt; } else { o.ballT = 0; o.screenAsk = false; o.fresh = false; o.inMove = false; } }
+    for (let i = 0; i < ps.length; i++) { const p = ps[i], o = this.m(p); if (g.ball.holder === p.id) { if (!o.ballT) o.fresh = true; o.ballT = (o.ballT || 0) + dt; } else { o.ballT = 0; o.screenAsk = false; o.fresh = false; o.inMove = false; } }
     if (g.possession !== this.lastPossession) {
       this.lastPossession = g.possession; this.matchups(g.possession); this.variant[g.possession] = g.rng.int(0, 2);
-      for (const p of g.players) {
-        const o = this.m(p); o.plan = null; o.cutT = 0;
+      for (let i = 0; i < ps.length; i++) {
+        const p = ps[i], o = this.m(p); o.plan = null; o.cutT = 0;
         // (qp3) his own moment to turn and get back, and whether he jogs the first stretch
         const spd = n(p.ratings.speed), IQ = this.iq(p);
         o.transAt = g.time + TRANS.delay0 + TRANS.delaySpd * Math.max(0, 1 - spd) + g.rng.range(0, TRANS.jitter) * Math.max(0, 1.2 - IQ);
         o.transJog = g.rng.next() < TRANS.jog0 + TRANS.jogSpd * Math.max(0, 1 - spd) + TRANS.jogIQ * Math.max(0, 1 - IQ);
       }
     }
-    for (const p of g.players) {
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
       if (!g.isAI(p)) { this.humanAssistHints(p, dt); continue; }
       if (g.practice && p.team === 1) { this.practiceDefender(p, dt); continue; }
       if (g.phase === 'ft' || g.phase === 'ftflight') { this.ftLane(p, dt); continue; }
@@ -249,7 +258,7 @@ export class AI {
   seek(p, x, z, opts = {}) {
     // v0.4.7.5 quick patch: in play, nobody runs at a spot out of bounds, and nobody runs through a line (see lineBrake)
     const live = this.g.phase === 'live' && !opts.allowOut;
-    if (live) [x, z] = this.clampCourt(x, z, this.g.half);
+    if (live) { const cc = this.clampCourt(x, z, this.g.half); x = cc[0]; z = cc[1]; }
     // (qp3: the man with the ball never heads back over the half-court line once he has crossed it)
     if (live && !this.g.half && this.g.frontcourt && this.g.ball.holder === p.id) { const sd = this.g.sideFor(p.team); if (z * sd < PAINT.frontKeep) z = sd * PAINT.frontKeep; }
     const dx = x - p.x, dz = z - p.z, d = hyp(dx, dz);
@@ -266,21 +275,18 @@ export class AI {
   // given how hard he can brake.
   lineBrake(p) {
     const g = this.g, it = p.intent, brake = Math.max(6, (p.phys.brake || 17) * 0.55);
-    const ease = (pos, vel, lo, hi, key) => {
-      const dir = Math.sign(it[key]);
-      if (!dir) return;
-      const room = dir > 0 ? hi - pos : pos - lo, v = Math.max(0, vel * dir), stop = v * v / (2 * brake);
-      if (room <= stop + 0.15) it[key] = -dir * Math.min(1, (stop + 0.15 - room) * 2 + 0.2); // brake now
-      else if (room < 1.2) it[key] *= Math.max(0, (room - stop) / 1.2);                     // ease in
-    };
-    ease(p.x, p.vx, -COURT.width / 2 + 0.35, COURT.width / 2 - 0.35, 'mx');
-    ease(p.z, p.vz, g.half ? 0.2 : -COURT.length / 2 + 0.35, COURT.length / 2 - 0.35, 'mz');
+    easeLine(it, brake, p.x, p.vx, -COURT.width / 2 + 0.35, COURT.width / 2 - 0.35, 'mx');
+    easeLine(it, brake, p.z, p.vz, g.half ? 0.2 : -COURT.length / 2 + 0.35, COURT.length / 2 - 0.35, 'mz');
   }
   face(p, x, z) { p.intent.face = Math.atan2(x - p.x, z - p.z); }
+  // returns [x, z] in a scratch array of the AI's (perf: no new array per seek). Every caller destructures it on the
+  // spot, before any other clampCourt call, and never keeps it; it's only good until the next call
   clampCourt(x, z, half) {
     x = Math.max(-COURT.width / 2 + 0.4, Math.min(COURT.width / 2 - 0.4, x));
     z = Math.max(half ? 0.5 : -COURT.length / 2 + 0.4, Math.min(COURT.length / 2 - 0.4, z));
-    return [x, z];
+    const out = this._cc || (this._cc = [0, 0]);
+    out[0] = x; out[1] = z;
+    return out;
   }
 
   // ---------- offense ----------
@@ -306,7 +312,10 @@ export class AI {
   // look: how far ahead (s) a closing defender is projected (v0.4.7.5 quick patch: shot decisions look 0.5 s ahead,
   // the time a jumper takes to get off, now that closeouts come on the pass)
   estimateContest(p, defs, rim, look = 0.3) {
-    const cs = [];
+    // (perf: a scratch list, emptied each call: it's sorted and read here and nowhere else, and nothing in the loop calls
+    // back into estimateContest)
+    const cs = this._cs || (this._cs = []);
+    cs.length = 0;
     const fx = rim.x - p.x, fz = rim.z - p.z, fl = hyp(fx, fz) || 1;
     // (v0.4.8.5 qp: the rise the defense counts: a Sharp Eye hop's extra height is for the eye, shots.js showKOf)
     const relH = p.phys.reach * 0.93 + p.phys.vertical * p.shotPkg.jumpK * (1 - S.showKOf(p.shotPkg)) * 0.5;
@@ -860,7 +869,8 @@ export class AI {
     let best = null, bv = -1e9;
     for (let k = 0; k < 8; k++) {
       const ang = k * Math.PI / 4, r = 2.2;
-      let [tx, tz] = this.clampCourt(p.x + Math.sin(ang) * r, p.z + Math.cos(ang) * r, g.half);
+      const cc = this.clampCourt(p.x + Math.sin(ang) * r, p.z + Math.cos(ang) * r, g.half);
+      let tx = cc[0], tz = cc[1];
       if (g.half && (tz - rim.z) * side > -0.6) continue;
       let room = 9; for (const q of defs) room = Math.min(room, hyp(q.x - tx, q.z - tz));
       const look = this.shotValue(p, tx, tz, defs).val;
@@ -928,7 +938,7 @@ export class AI {
       // v0.4.3: stretch bigs pop to the arc after the screen
       o.rollT -= dt;
       const dx = p.x - rim.x, dz = p.z - rim.z, dl = hyp(dx, dz) || 1;
-      const [tx, tz] = this.clampCourt(rim.x + dx / dl * 7.6, rim.z + dz / dl * 7.6, g.half);
+      const cc = this.clampCourt(rim.x + dx / dl * 7.6, rim.z + dz / dl * 7.6, g.half), tx = cc[0], tz = cc[1];
       this.seek(p, tx, tz, { sprint: true, arrive: 0.5 });
       it.face = h ? Math.atan2(h.x - p.x, h.z - p.z) : null;
       if (isThree(p.x, p.z, side) && this.openness(p) > 1.8 && g.rng.next() < threeTend(p)) it.call = true; // (qp3: a weak or big shooter calls for it at the arc less)
@@ -1074,7 +1084,7 @@ export class AI {
       if (slack >= 0) { best = { x, z }; break; }
       if (-slack < bd) { bd = -slack; best = { x, z }; }
     }
-    if (!best) { const [cx, cz] = this.clampCourt(b.x + b.vx * 0.3, b.z + b.vz * 0.3, g.half); best = { x: cx, z: cz }; }
+    if (!best) { const cc = this.clampCourt(b.x + b.vx * 0.3, b.z + b.vz * 0.3, g.half); best = { x: cc[0], z: cc[1] }; }
     this.seek(p, best.x, best.z, { sprint: Math.hypot(best.x - p.x, best.z - p.z) > 2, arrive: 0.45 });
     this.face(p, b.x, b.z);
   }
@@ -1242,7 +1252,7 @@ export class AI {
       if (p.dist(man) < 3) it.defense = p.speed < 3.5 || it.defense;
       this.face(p, (man.x + bx) / 2, (man.z + bz) / 2);
     }
-    [tx, tz] = this.clampCourt(tx, tz, g.half);
+    { const cc = this.clampCourt(tx, tz, g.half); tx = cc[0]; tz = cc[1]; }
     const urgent = hyp(tx - p.x, tz - p.z) > (ballHandlerIsMan && o.recover ? 1.5 : 2.2);
     this.seek(p, tx, tz, { sprint: urgent && !it.defense, arrive: 0.6 });
     if (it.defense && urgent) it.defense = false;
@@ -1327,7 +1337,7 @@ export class AI {
     const g = this.g, b = g.ball, it = p.intent;
     // predict where the ball comes down to ~2.6m
     const land = this.predictLanding(b, 2.4);
-    [land.x, land.z] = this.clampCourt(land.x, land.z, g.half);
+    { const cc = this.clampCourt(land.x, land.z, g.half); land.x = cc[0]; land.z = cc[1]; }
     const myTeamShot = b.info && b.info.team === p.team;
     const rim = b.info ? rimOf(b.info.side ?? g.sideFor(b.info.team)) : rimOf(g.sideFor(p.team));
     const toBall = hyp(land.x - p.x, land.z - p.z);

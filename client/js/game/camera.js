@@ -2,6 +2,7 @@
 // Used by game/session.js (the game camera) and game/park.js (roaming); CAM_MODES is the cycle the camera button walks.
 import * as M from '../core/math.js';
 import { COURT } from '../sim/constants.js';
+import { hypot2 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 export const CAM_MODES = ['2k', 'broadcast', 'player'];
 export const CAM_LABEL = { '2k': '2K Cam', broadcast: 'Broadcast', player: 'Player Lock' };
@@ -43,7 +44,7 @@ export class CameraRig {
       fov = ctx.half ? 40 : 44;
     } else if (this.mode === 'player' && ctx.me) {
       const rimZ = oz + s * COURT.hoopZ;
-      const dx = ox - ctx.me.x, dz = rimZ - ctx.me.z, dl = Math.hypot(dx, dz) || 1;
+      const dx = ox - ctx.me.x, dz = rimZ - ctx.me.z, dl = hypot2(dx, dz) || 1;
       const ux = dx / dl, uz = dz / dl;
       pos = [ctx.me.x - ux * 6.4, 3.5, ctx.me.z - uz * 6.4];
       tgt = [ctx.me.x + ux * 3.6, 1.3, ctx.me.z + uz * 3.6];
@@ -92,7 +93,7 @@ export class CameraRig {
   // turns the player smoothly with the view instead of keeping a stale direction and running him off the floor.
   updateLiveBasis(dt, pos, tgt, cut) {
     const fx = tgt[0] - pos[0], fz = tgt[2] - pos[2];
-    if (Math.hypot(fx, fz) < 0.5) return;
+    if (hypot2(fx, fz) < 0.5) return;
     const want = Math.atan2(fx, fz);
     if (cut || this.basisYaw == null) this.basisYaw = want;
     else { const d = Math.atan2(Math.sin(want - this.basisYaw), Math.cos(want - this.basisYaw)); this.basisYaw += d * (1 - Math.exp(-5.5 * dt)); }
@@ -124,13 +125,13 @@ export class CameraRig {
   inputBasis() {
     const b = this.inGame ? (this.liveBasis || this.restBasis) : this.restBasis;
     if (!b) return this.groundBasis();
-    const l = Math.hypot(b.fx, b.fz) || 1, fx = b.fx / l, fz = b.fz / l;
+    const l = hypot2(b.fx, b.fz) || 1, fx = b.fx / l, fz = b.fz / l;
     return { fx, fz, rx: -fz, rz: fx };
   }
 
   // forward direction on the ground for camera-relative movement
   groundBasis() {
-    const fx = this.tgt[0] - this.pos[0], fz = this.tgt[2] - this.pos[2], l = Math.hypot(fx, fz) || 1;
+    const fx = this.tgt[0] - this.pos[0], fz = this.tgt[2] - this.pos[2], l = hypot2(fx, fz) || 1;
     return { fx: fx / l, fz: fz / l, rx: -fz / l, rz: fx / l };
   }
 

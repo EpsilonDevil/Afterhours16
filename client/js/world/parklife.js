@@ -7,6 +7,7 @@ import * as M from '../core/math.js';
 import { Material, Mesh } from '../gfx/renderer.js';
 import * as PR from './props.js';
 import { audio } from '../core/audio.js';
+import { share } from './release.js'; // (QP3: the caches below are kept for the next build: never freed with a scene)
 import * as TX from '../gfx/textures.js';
 import { AVE, EL_Z, STEAM_VENTS } from './street.js';
 import * as RT from './retro.js';
@@ -880,7 +881,7 @@ function retroEvents(env, R) {
 }
 // a texture for the retro events, made once per GL context
 const evTex = new Map();
-function ctx2tex(env, key, make, opts = {}) { const ctx = env.r.ctx; let t = evTex.get(key); if (!t || t.ctx !== ctx) { t = { ctx, tex: ctx.texture(make(), opts) }; evTex.set(key, t); } return t.tex; }
+function ctx2tex(env, key, make, opts = {}) { const ctx = env.r.ctx; let t = evTex.get(key); if (!t || t.ctx !== ctx) { t = { ctx, tex: share(ctx.texture(make(), opts)) }; evTex.set(key, t); } return t.tex; }
 
 // ---------------- v0.4.8.5 quick patch 2: The Monster Mash ----------------
 // Monsters on the loose round the park, each a skinned figure (horror.js: one mesh moves two of them, its glowing bits a
@@ -891,7 +892,7 @@ function ctx2tex(env, key, make, opts = {}) { const ctx = env.r.ctx; let t = evT
 // slasher stalking slowly round the block with his lantern, and the Lantern Man beckoning at the carnival's gate.
 // env: the createParkLife closures. Returns what the horror events need
 const HSK = new Map(); // skinned geometries, made once per GL context
-let poolTex = null; const poolTexOf = ctx => (poolTex && poolTex.ctx === ctx ? poolTex.t : (poolTex = { ctx, t: ctx.texture(TX.glowSpot(128, 1.6), { wrap: 'clamp' }) }).t);
+let poolTex = null; const poolTexOf = ctx => (poolTex && poolTex.ctx === ctx ? poolTex.t : (poolTex = { ctx, t: share(ctx.texture(TX.glowSpot(128, 1.6), { wrap: 'clamp' })) }).t);
 function horrorLife(env) {
   const { r, ctx, rng, add, updExtra, town } = env;
   // (a strong cold sheen: the moon rims them, so they read against the dark; a breath of emission so nobody vanishes)
@@ -899,7 +900,7 @@ function horrorLife(env) {
   const gmat = new Material({ color: [2.8, 2.8, 2.8], shading: 'unlit', fog: false });
   const ghostMat = new Material({ color: [0.8, 1.15, 1.0], shading: 'unlit', blend: 'alpha', depthWrite: false, fog: false });
   const batMat = new Material({ color: [1, 1, 1], roughness: 0.85, doubleSided: true, emissive: [0.1, 0.085, 0.12] });
-  const sgeo = (key, make) => { let e = HSK.get(key); if (!e || e.ctx !== ctx) { const g = make(); e = { ctx, v: g.geo ? { geo: ctx.geometry(g.geo), glow: g.glow ? ctx.geometry(g.glow) : null } : { geo: ctx.geometry(g) } }; HSK.set(key, e); } return e.v; };
+  const sgeo = (key, make) => { let e = HSK.get(key); if (!e || e.ctx !== ctx) { const g = make(); e = { ctx, v: g.geo ? { geo: share(ctx.geometry(g.geo)), glow: g.glow ? share(ctx.geometry(g.glow)) : null } : { geo: share(ctx.geometry(g)) } }; HSK.set(key, e); } return e.v; };
   const bounds = (m, pts) => { let cx = 0, cz = 0, cy = 0; for (const q of pts) { cx += q[0]; cy += q[1]; cz += q[2]; } cx /= pts.length; cy /= pts.length; cz /= pts.length; let rr = 0; for (const q of pts) rr = Math.max(rr, Math.hypot(q[0] - cx, q[1] - cy, q[2] - cz)); m.boundsOverride = { center: [cx, cy + 1, cz], radius: rr + 3 }; };
   // a mesh with one or two figures: pose(i, ...) poses figure i; done() updates the culling sphere
   const group = specs => {

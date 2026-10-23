@@ -1,5 +1,8 @@
-// Verlet-simulated basketball net rendered as individual knotted strands (thin tubes).
+// Verlet-simulated basketball net rendered as individual knotted strands (thin tubes). Owned by world/court.js buildHoop;
+// every hoop's update() runs it each frame.
 import { COURT, BALL_R } from '../sim/constants.js';
+// (qp3: hypot2/hypot3 are Math.hypot without its per-call allocation, bit-identical; shared with char/* and the renderer)
+import { hypot2, hypot3 } from '../gfx/fastmath.js';
 
 export class Net {
   constructor(ctx, rim, material, opts = {}) {
@@ -93,7 +96,7 @@ export class Net {
     }
     for (let it = 0; it < 4; it++) {
       for (let s = 0; s < this.strands.length; s++) this.solve(this.strands[s][0], this.strands[s][1], this.rest[s], 1);
-      for (const [a, b, r] of this.rings) this.solve(a, b, r, 0.35);
+      for (let i = 0; i < this.rings.length; i++) { const g = this.rings[i]; this.solve(g[0], g[1], g[2], 0.35); }
       if (ball) this.collide(ball);
     }
     this.updateMesh();
@@ -101,7 +104,7 @@ export class Net {
   solve(a, b, rest, stiff) {
     const p = this.p, ia = a * 3, ib = b * 3;
     const dx = p[ib] - p[ia], dy = p[ib + 1] - p[ia + 1], dz = p[ib + 2] - p[ia + 2];
-    const d = Math.hypot(dx, dy, dz) || 1e-6;
+    const d = hypot3(dx, dy, dz) || 1e-6;
     if (d < rest && stiff < 1) return; // ring constraints only resist stretching
     const diff = (d - rest) / d * stiff;
     const wa = a < this.cols ? 0 : 0.5, wb = b < this.cols ? 0 : 0.5;
@@ -116,7 +119,7 @@ export class Net {
     for (let i = this.cols; i < p.length / 3; i++) {
       const j = i * 3;
       const dx = p[j] - ball.x, dy = p[j + 1] - ball.y, dz = p[j + 2] - ball.z;
-      const d = Math.hypot(dx, dy, dz);
+      const d = hypot3(dx, dy, dz);
       if (d < R && d > 1e-6) {
         const k = (R - d) / d;
         p[j] += dx * k; p[j + 1] += dy * k; p[j + 2] += dz * k;
@@ -128,11 +131,11 @@ export class Net {
     const S = this.strands.length, R = this.radial, p = this.p, rad = 0.0045;
     let v = 0;
     for (let s = 0; s < S; s++) {
-      const [a, b] = this.strands[s];
+      const st = this.strands[s], a = st[0], b = st[1];
       const ax = p[a * 3], ay = p[a * 3 + 1], az = p[a * 3 + 2], bx = p[b * 3], by = p[b * 3 + 1], bz = p[b * 3 + 2];
-      let tx = bx - ax, ty = by - ay, tz = bz - az; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      let tx = bx - ax, ty = by - ay, tz = bz - az; const tl = hypot3(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
       // perpendicular frame
-      let nx = -tz, ny = 0, nz = tx; let nl = Math.hypot(nx, nz); if (nl < 1e-4) { nx = 1; nz = 0; nl = 1; } nx /= nl; nz /= nl;
+      let nx = -tz, ny = 0, nz = tx; let nl = hypot2(nx, nz); if (nl < 1e-4) { nx = 1; nz = 0; nl = 1; } nx /= nl; nz /= nl;
       const bxv = ty * nz - tz * ny, byv = tz * nx - tx * nz, bzv = tx * ny - ty * nx;
       for (let end = 0; end < 2; end++) {
         const cx = end ? bx : ax, cy = end ? by : ay, cz = end ? bz : az;

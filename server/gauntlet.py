@@ -35,8 +35,10 @@
   They're kept on every build of the account (characters.data park_cards), so every game's entry carries them.
 """
 import collections
+import itertools
 import json
 import os
+import queue
 import re
 import secrets
 import shutil
@@ -108,9 +110,9 @@ def _env():
     return env
 
 
-def _limits():  # (in the child, before node starts: Linux and macOS)
+def _limits(cpu=REPLAY_CPU_SECS):  # (in the child, before node starts: Linux and macOS)
     import resource
-    for lim, val in ((resource.RLIMIT_CPU, REPLAY_CPU_SECS), (resource.RLIMIT_DATA, REPLAY_DATA_BYTES), (resource.RLIMIT_CORE, 0), (resource.RLIMIT_FSIZE, 1 << 20)):
+    for lim, val in ((resource.RLIMIT_CPU, cpu), (resource.RLIMIT_DATA, REPLAY_DATA_BYTES), (resource.RLIMIT_CORE, 0), (resource.RLIMIT_FSIZE, 1 << 20)):
         try:
             resource.setrlimit(lim, (val, val))
         except (ValueError, OSError):
@@ -151,6 +153,179 @@ def replay_banner():
     return f"on (Node.js {st['version']})" if st["on"] else f"off: {st['why']} (runs are checked by their counts)"
 
 
+# ---------------- v0.4.8.9 qp3: the long-running replay workers (server/verify/replay_worker.mjs) ----------------
+# A check no longer starts Node for itself: up to POOL_SIZE workers, started when the first check comes, answer checks
+# one at a time over newline-delimited JSON (docs/REPLAY-WORKER.md). Same sandbox as the one-off helper: no shell, the
+# minimal environment, the repo as its folder, the heap cap and no code from strings, on Linux/macOS the memory and
+# core/file-size limits (the CPU limit covers WORKER_REQUESTS checks; one check is bounded by the wall-clock timeout,
+# which kills the worker), the input capped before it's sent and the answer capped as it's read. A worker is replaced
+# after WORKER_REQUESTS checks, when it reports more than WORKER_RSS, when it dies, and when it has sat idle so long it's
+# about to exit by itself. If no worker can answer (it won't start, crashes, answers garbage), that check falls back to
+# the one-off helper, and from there to the count checks. A check that runs over its time goes straight to the count
+# checks: the same log would run over again. RIMRIFT_REPLAY_POOL=0 turns the workers off (every check spawns the helper).
+WORKER = ROOT / "server" / "verify" / "replay_worker.mjs"
+_STANDARD_HELPER = HELPER     # (a different HELPER, a test's fake or a debugging copy, is run the one-off way)
+POOL_SIZE = REPLAY_PARALLEL
+WORKER_REQUESTS = 100
+WORKER_RSS = 200 * 1024 * 1024
+WORKER_IDLE = 300             # (seconds a worker waits for work before it exits; it's started again when needed)
+WORKER_KINDS = ("gauntlet",)  # (what replay_worker.mjs KINDS answers)
+
+
+class _WorkerFailed(Exception):
+    pass
+
+
+class _WorkerTimeout(Exception):
+    pass
+
+
+def _pool_on():
+    return str(os.environ.get("RIMRIFT_REPLAY_POOL", "1")).strip().lower() not in ("0", "off", "false", "no")
+
+
+class _Worker:
+    def __init__(self, node):
+        kw = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.DEVNULL, "cwd": str(ROOT), "env": _env(), "shell": False, "bufsize": 0}
+        if os.name == "posix":
+            kw["preexec_fn"] = lambda: _limits(REPLAY_CPU_SECS * WORKER_REQUESTS)
+        elif hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            self.proc = subprocess.Popen([node, f"--max-old-space-size={REPLAY_HEAP_MB}", "--disallow-code-generation-from-strings", str(WORKER), str(WORKER_IDLE)], **kw)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise _WorkerFailed(f"couldn't start: {e}")
+        self.node, self.served, self.used, self.rss = node, 0, time.monotonic(), 0
+        self.lines = queue.Queue()
+        threading.Thread(target=self._read, name="replay-worker-out", daemon=True).start()
+
+    def _read(self):
+        try:
+            while True:
+                line = self.proc.stdout.readline(REPLAY_MAX_OUT + 1)
+                if not line:
+                    break
+                self.lines.put(line)
+                if len(line) > REPLAY_MAX_OUT or not line.endswith(b"\n"):
+                    break  # (more than an answer can be: the check fails, and the worker goes)
+        except (OSError, ValueError):
+            pass
+        self.lines.put(None)
+
+    def usable(self, node):
+        return self.node == node and self.proc.poll() is None and self.served < WORKER_REQUESTS and self.rss <= WORKER_RSS and time.monotonic() - self.used < WORKER_IDLE - 10
+
+    def ask(self, msg, timeout):
+        """One check: the answer (a dict), _WorkerTimeout (it's been killed) or _WorkerFailed."""
+        self.served += 1
+        killer = threading.Timer(timeout, self.kill)  # (the deadline covers sending the request too)
+        killer.daemon = True
+        killer.start()
+        t0 = time.monotonic()
+        try:
+            try:
+                self.proc.stdin.write(json.dumps(msg, separators=(",", ":")).encode() + b"\n")
+                self.proc.stdin.flush()
+            except (OSError, ValueError) as e:
+                raise _WorkerTimeout() if time.monotonic() - t0 >= timeout else _WorkerFailed(f"didn't take the check: {e}")
+            try:
+                line = self.lines.get(timeout=max(0.0, timeout - (time.monotonic() - t0)))
+            except queue.Empty:
+                self.kill()
+                raise _WorkerTimeout()
+            if line is None:
+                raise _WorkerTimeout() if time.monotonic() - t0 >= timeout else _WorkerFailed("stopped before it answered")
+        finally:
+            killer.cancel()
+            self.used = time.monotonic()
+        if len(line) > REPLAY_MAX_OUT or not line.endswith(b"\n"):
+            raise _WorkerFailed("answered too much")
+        try:
+            out = json.loads(line.decode("utf8"))
+        except (ValueError, UnicodeDecodeError):
+            raise _WorkerFailed("answered something that isn't JSON")
+        if not isinstance(out, dict) or out.get("id") != msg["id"]:
+            raise _WorkerFailed("answered something other than the check")
+        if isinstance(out.get("rss"), int):
+            self.rss = out["rss"]
+        return out
+
+    def kill(self):
+        try:
+            self.proc.kill()
+        except OSError:
+            pass
+        for f in (self.proc.stdin, self.proc.stdout):
+            try:
+                f.close()
+            except (OSError, ValueError):
+                pass
+        try:
+            self.proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+class ReplayPool:
+    """Up to POOL_SIZE idle workers; replay_check's slots (REPLAY_PARALLEL) decide how many checks run at once."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.idle = []
+        self.ids = itertools.count(1)
+        self.stats = {"checks": 0, "started": 0, "recycled": 0, "failed": 0, "timeouts": 0}
+
+    def check(self, node, msg, timeout):
+        assert msg.get("kind") in WORKER_KINDS
+        with self.lock:
+            w = None
+            while self.idle:
+                cand = self.idle.pop()
+                if cand.usable(node):
+                    w = cand
+                    break
+                self.stats["recycled"] += 1
+                cand.kill()
+        if w is None:
+            w = _Worker(node)  # (_WorkerFailed when it won't start)
+            with self.lock:
+                self.stats["started"] += 1
+        try:
+            out = w.ask({"id": next(self.ids), **msg}, timeout)
+        except _WorkerTimeout:
+            w.kill()
+            with self.lock:
+                self.stats["timeouts"] += 1
+            raise
+        except _WorkerFailed:
+            w.kill()
+            with self.lock:
+                self.stats["failed"] += 1
+            raise
+        with self.lock:
+            self.stats["checks"] += 1
+            if len(self.idle) < POOL_SIZE:
+                self.idle.append(w)
+                w = None
+        if w is not None:
+            w.kill()
+        return out
+
+    def close(self):
+        with self.lock:
+            idle, self.idle = self.idle, []
+        for w in idle:
+            w.kill()
+
+
+_pool = ReplayPool()
+
+
+def pool_stats():
+    with _pool.lock:
+        return {**_pool.stats, "idle": len(_pool.idle)}
+
+
 _COUNT_KEYS = {"matchesWon": int, "rivals": int, "bosses": int, "final": bool, "turns": int, "cardsPlayed": int, "nonMatchNodes": int, "phase": int, "completed": bool, "over": bool}
 
 
@@ -166,11 +341,19 @@ def replay_check(start, choices):
     if not _slots.acquire(timeout=REPLAY_WAIT):
         raise ReplayUnavailable("every replay slot busy")
     try:
-        r = _spawn([st["node"], f"--max-old-space-size={REPLAY_HEAP_MB}", "--disallow-code-generation-from-strings", str(HELPER)], payload, REPLAY_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        raise ReplayUnavailable(f"timed out after {REPLAY_TIMEOUT:g} s (killed)")
-    except (OSError, subprocess.SubprocessError) as e:
-        raise ReplayUnavailable(f"couldn't run: {e}")
+        if POOL_SIZE > 0 and HELPER == _STANDARD_HELPER and _pool_on():
+            try:
+                return _answer(_pool.check(st["node"], {"kind": "gauntlet", "start": start, "choices": choices}, REPLAY_TIMEOUT))
+            except _WorkerTimeout:
+                raise ReplayUnavailable(f"timed out after {REPLAY_TIMEOUT:g} s (killed)")
+            except _WorkerFailed as e:  # (no worker this time: today's helper, started for this one check)
+                log(f"replay worker: {e}; replaying with the one-off helper")
+        try:
+            r = _spawn([st["node"], f"--max-old-space-size={REPLAY_HEAP_MB}", "--disallow-code-generation-from-strings", str(HELPER)], payload, REPLAY_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise ReplayUnavailable(f"timed out after {REPLAY_TIMEOUT:g} s (killed)")
+        except (OSError, subprocess.SubprocessError) as e:
+            raise ReplayUnavailable(f"couldn't run: {e}")
     finally:
         _slots.release()
     if r.returncode != 0:
@@ -181,6 +364,11 @@ def replay_check(start, choices):
         out = json.loads(r.stdout.decode("utf8").strip().splitlines()[-1])
     except (ValueError, IndexError, UnicodeDecodeError):
         raise ReplayUnavailable("answered something that isn't JSON")
+    return _answer(out)
+
+
+def _answer(out):
+    """A helper's or a worker's answer, checked for shape: the replay_check result, or ReplayUnavailable."""
     if not isinstance(out, dict) or not isinstance(out.get("ok"), bool):
         raise ReplayUnavailable("answered the wrong shape")
     c = out.get("counts")

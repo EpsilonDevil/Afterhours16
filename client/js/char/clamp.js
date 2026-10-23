@@ -7,6 +7,7 @@
 import { P } from './pose.js';
 import { BALL_R } from '../sim/constants.js';
 import { CLAMP_HIT, clampStealBody, clampPickBody, clampJab } from '../sim/clamp.js';
+import { hypot2 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -22,7 +23,7 @@ function mix3(T, g, v, w) { const o = P[g]; T[o] += (v[0] - T[o]) * w; T[o + 1] 
 // from where it was then (a.cAim), whatever the ball does after (in his hands, poked away or still with the man).
 export function clampStealPose(an, T, a, p, b) {
   const t = a.t, dur = a.dur || 0.46, hd = a.hand === 'L' ? 'L' : 'R', of = hd === 'L' ? 'R' : 'L', sg = hd === 'L' ? 1 : -1;
-  const near = b && Math.hypot(b[0], b[2]) < 1.6;
+  const near = b && hypot2(b[0], b[2]) < 1.6;
   const live = near ? [clamp(b[0], -0.62, 0.62), b[1], clamp(b[2], 0.28, 0.95)] : [sg * 0.12, 0.95, 0.75];
   if (t >= CLAMP_HIT && !a.cAim) a.cAim = live;
   const aim = t >= CLAMP_HIT && a.cAim ? a.cAim : live;

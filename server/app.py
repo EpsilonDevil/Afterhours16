@@ -38,6 +38,20 @@ def env(name, default=None):
 
 
 CATALOG = {item["id"]: item for item in json.loads((ROOT / "server/catalog.json").read_text())}
+# qp3: /api/config's catalog, encoded once. CATALOG only ever gains items at runtime (proam.ProAm.sync_catalog adds a
+# season's items as it comes) and no item is changed in place, so the items' identities are the cache key: a new or
+# replaced item encodes it again. catalog_json() is spliced in where CATALOG_MARK encodes, which gives the same bytes as
+# encoding the whole reply (sort_keys and the separators are the same at every level).
+CATALOG_MARK = "\x00catalog\x00"
+_catalog_json = (None, None)
+
+
+def catalog_json():
+    global _catalog_json
+    key = tuple(map(id, CATALOG.values()))
+    if _catalog_json[0] != key:
+        _catalog_json = (key, encode(list(CATALOG.values())))
+    return _catalog_json[1]
 # v0.4.8.5 qp5: Icon items a build that already held the badge gets put on once, each with its own flag on the
 # character (so one never stands in for another): Sexy Red's Post Move Package, The General's Salute
 ICON_EQUIP_ONCE = {"post_sexy_red": "icon_pkg_v0485qp5_sr", "cel_general_salute": "icon_pkg_v0485qp5_gen",
@@ -775,7 +789,7 @@ class Service:
         return aid, username, self.db.session(aid)
 
     def close(self):
-        self.db.conn.close()
+        self.db.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -818,7 +832,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'{ws}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
     def respond(self, status, payload, cookie=None):
-        data = encode(payload).encode()
+        self.respond_text(status, encode(payload), cookie)
+
+    def respond_text(self, status, text, cookie=None):
+        """respond() for a reply that's encoded already."""
+        data = text.encode()
         self.send_response(status)
         self.headers_common()
         if status >= 400:
@@ -917,11 +935,11 @@ class Handler(BaseHTTPRequestHandler):
                 s.last_ping = time.monotonic()
                 return self.respond(200, {"ok": True})
             if path == "/api/config":
-                return self.respond(200, {
+                text = encode({
                     "version": VERSION, "positions": builds.POSITIONS, "archetypes": builds.ARCHETYPES, "attributes": builds.ATTRIBUTES,
                     "skin": builds.SKIN, "hair": builds.HAIR, "hair_colors": builds.HAIR_COLORS, "faces": builds.FACES, "beards": builds.BEARDS, "eyes": builds.EYES,
                     "equip_slots": builds.EQUIP_SLOTS, "default_equipment": builds.DEFAULT_EQUIPMENT,
-                    "venues": VENUES, "affiliations": progression.AFFILIATIONS, "catalog": list(CATALOG.values()),
+                    "venues": VENUES, "affiliations": progression.AFFILIATIONS, "catalog": CATALOG_MARK,
                     "event": cup.public_event(cup.active_event()), "event_venues": sorted(cup.EVENT_VENUES),
                     "event_schedule": cup.public_schedule(), "server_time": time.time(),  # (qp4: the client follows the handovers itself)
                     "badges": progression.BADGES, "rep_thresholds": progression.REP_THRESHOLDS, "rep_tiers": progression.REP_TIERS,
@@ -939,6 +957,7 @@ class Handler(BaseHTTPRequestHandler):
                     "online": {"hosting": s.hosting, "join_code": bool(s.join_code), "server": s.online_default()[0],
                                "server_code": s.online_default()[1] if self.is_local() else None}, "build": s.build,
                 })
+                return self.respond_text(200, text.replace(encode(CATALOG_MARK), catalog_json(), 1))  # (qp3: the catalog, encoded once)
             if path == "/api/me":
                 return self.respond(200, s.profile(self.account()))
             if path == "/api/wallet":

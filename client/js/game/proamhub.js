@@ -22,6 +22,7 @@
 // service's park director and court claims out of them, as for a Crew HQ.
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
+import { releaseScene } from '../world/release.js';
 import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, customizable, HUB_NAMES } from '../world/proamhubs.js';
 import { proamInfo } from '../world/proamparks.js';
 import { courtPlayRect } from '../world/themes.js';
@@ -114,6 +115,7 @@ export class ProamHub {
     this.rng = new RNG((Date.now() & 0xffff) ^ 0x5a5a);
     this.world = app.ai; this.catalog = app.catalog;
     this.pool = opts.pool || new VisualPool(this.r, { maxFree: 10, budgetMs: 3 });
+    this.ownPool = !opts.pool; // (qp3: a pool the caller handed in is the caller's to dispose)
     this.peers = new Peers(this);
     this.shooters = new Map(); // a team member's shootaround here, on his screen: id -> {slot, session, seen}
     this.arrivals = new Map(); // id -> {at, known}: when each one here arrived (the Captain is the one here longest)
@@ -283,6 +285,7 @@ export class ProamHub {
 
   // ---------------- frame ----------------
   frame(dt) {
+    if (this.disposed) return; // (QP3: left, its scene freed; the loop can still call it until the next controller is up)
     const inp = this.app.input;
     if (this.pool.pending) this.pool.tick();
     this.venue.update?.(dt, {});
@@ -616,7 +619,8 @@ export class ProamHub {
     if (this.session) this.session.dispose();
     if (this.practice) this.practice.dispose();
     this.meVisual.dispose();
-    this.pool.dispose?.();
+    if (this.ownPool) this.pool.dispose?.();
+    releaseScene(this.r?.ctx, this.scene); // (QP3: the hub's own geometry and textures; the caches keep theirs)
   }
 }
 const COURT_SIDE = 9.6; // (m from the court's middle: where you start 3s on the home court, by either sideline)

@@ -10,8 +10,9 @@
 // inside one turn the piece out of it about the knot, and the spring's swing settles where the cloth comes to rest.
 // Pure maths, no graphics (tests/v0487favelaitems.test.mjs and tests/v0489bandana.test.mjs run it).
 import { B } from './skeleton.js';
+import { hypot3 } from '../gfx/fastmath.js'; // (qp3: Math.hypot, without its per-call allocation)
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const len = a => Math.hypot(a[0], a[1], a[2]);
+const len = a => hypot3(a[0], a[1], a[2]);
 const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

@@ -27,6 +27,11 @@ export class GLContext {
     // (making or updating one, a render target) calls forgetTextures().
     this.unit = -1;
     this.bound = [];
+    // QP3: the live GL objects on this context by kind, counted where they're made and deleted (every create/delete goes
+    // through these, whoever calls it), and the bytes held by textures and render targets. The leak checks read them;
+    // they change nothing that's drawn.
+    this.live = { textures: 0, buffers: 0, vaos: 0, framebuffers: 0, renderbuffers: 0, programs: 0, shaders: 0, texBytes: 0 };
+    this.noteBytes = countObjects(gl, this.live);
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.lost = true; });
   }
 
@@ -209,6 +214,7 @@ export class GLContext {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, opts.nearest ? gl.NEAREST : gl.LINEAR);
     if (this.aniso && mips) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(this.maxAniso, opts.aniso ?? 8));
     const w = source.width, h = source.height;
+    this.noteBytes(tex, texBytes(w, h, 4, mips));
     return { tex, width: w, height: h, srgb };
   }
 
@@ -218,6 +224,7 @@ export class GLContext {
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, t.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
     gl.generateMipmap(gl.TEXTURE_2D);
+    this.noteBytes(t.tex, texBytes(source?.width || t.width, source?.height || t.height, 4, true));
   }
 
   // Render target. opts: {float, depth: 'tex'|'rb'|false, samples, mipmaps, linear}
@@ -274,6 +281,11 @@ export class GLContext {
     }
     rt.complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const px = float ? 8 : 4, n = opts.samples > 0 ? opts.samples : 1;
+    if (rt.color) this.noteBytes(rt.color, texBytes(w, h, px, !!opts.mipmaps));
+    if (rt.depth) this.noteBytes(rt.depth, w * h * 4);
+    if (rt.colorRB) this.noteBytes(rt.colorRB, w * h * px * n);
+    if (rt.depthRB) this.noteBytes(rt.depthRB, w * h * 4 * n);
     return rt;
   }
 
@@ -318,6 +330,23 @@ export class GLContext {
     }
     this.stats.draws++;
   }
+}
+
+// ---------- QP3 resource counters ----------
+// (a mip chain adds a third)
+const texBytes = (w, h, px, mips) => Math.round((w || 0) * (h || 0) * px * (mips ? 4 / 3 : 1));
+const KINDS = [['Texture', 'textures'], ['Buffer', 'buffers'], ['VertexArray', 'vaos'], ['Framebuffer', 'framebuffers'], ['Renderbuffer', 'renderbuffers'], ['Program', 'programs'], ['Shader', 'shaders']];
+// wraps the context's create*/delete* calls to keep live counts (a second delete of the same object counts once); returns
+// noteBytes(object, bytes): what a texture or renderbuffer holds, kept in live.texBytes until it's deleted
+function countObjects(gl, live) {
+  const alive = new WeakMap(); // object -> its bytes (0 until noted)
+  for (const [k, n] of KINDS) {
+    const make = gl['create' + k], drop = gl['delete' + k];
+    if (typeof make !== 'function' || typeof drop !== 'function') continue;
+    gl['create' + k] = function (...a) { const o = make.apply(gl, a); if (o) { alive.set(o, 0); live[n]++; } return o; };
+    gl['delete' + k] = function (o) { if (o && alive.has(o)) { live.texBytes -= alive.get(o); alive.delete(o); live[n]--; } return drop.call(gl, o); };
+  }
+  return (o, bytes) => { if (o && alive.has(o)) { live.texBytes += bytes - alive.get(o); alive.set(o, bytes); } };
 }
 
 export function computeBounds(pos) {

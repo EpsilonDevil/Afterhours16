@@ -12,6 +12,7 @@ import * as G from '../gfx/geometry.js';
 import * as T from '../gfx/textures.js';
 import * as M from '../core/math.js';
 import { cachedTexture } from '../world/court.js';
+import { releaseScene } from '../world/release.js';
 import { CameraRig, CAM_LABEL } from './camera.js';
 import { GRADE, SMOTHER } from '../sim/shots.js';
 import { promptGlyph, padGlyph } from '../core/input.js';
@@ -79,7 +80,7 @@ export class PlayerVisual {
     const ctx = r.ctx;
     const blobTex = cachedTexture(ctx, 'blob', () => T.radialBlob(128), { wrap: 'clamp' });
     if (!PlayerVisual.blobMat) PlayerVisual.blobMat = new Material({ map: blobTex, shading: 'unlit', blend: 'multiply', depthWrite: false, fog: false });
-    if (!PlayerVisual.blobGeo || PlayerVisual.blobCtx !== ctx) { PlayerVisual.blobGeo = ctx.geometry(G.plane(1, 1)); PlayerVisual.blobCtx = ctx; }
+    if (!PlayerVisual.blobGeo || PlayerVisual.blobCtx !== ctx) { PlayerVisual.blobGeo = ctx.geometry(G.plane(1, 1)); if (PlayerVisual.blobGeo && typeof PlayerVisual.blobGeo === 'object') PlayerVisual.blobGeo.shared = true; PlayerVisual.blobCtx = ctx; } // (QP3: shared by every ring and floor shadow: world/release.js)
     this.blob = new Mesh(PlayerVisual.blobGeo, PlayerVisual.blobMat, { castShadow: false, reflect: false });
     this.blob.order = 3;
     scene.add(this.blob);
@@ -502,6 +503,7 @@ export class MatchSession {
   }
 
   frame(dt) {
+    if (this.disposed) return; // (QP3: over and freed; the loop can still call it until the next controller is up)
     const g = this.game, inp = this.input;
     if (!this.background) {
       if (inp.wasPressed('camera')) this.hud.showCam(CAM_LABEL[this.rig.cycle()]);
@@ -827,8 +829,11 @@ export class MatchSession {
     const bx = M.lerp(b.px ?? b.x, b.x, alpha) + ox, by = M.lerp(b.py ?? b.y, b.y, alpha), bz = M.lerp(b.pz ?? b.z, b.z, alpha) + oz;
     // ball spin
     const w = Math.hypot(b.wx, b.wy, b.wz);
-    if (w > 1e-3) { const q = M.qaxis(M.q4(), b.wx / w, b.wy / w, b.wz / w, w * dt * this.timeScale); M.qmul(this.ballQ, q, this.ballQ); M.qnorm(this.ballQ, this.ballQ); }
-    M.m4compose(this.ballMesh.matrix, [bx, by, bz], this.ballQ);
+    // (qp3: the frame's scratch, reused: the spin's quaternion, the ball's position, each player's place for the animator)
+    const fs = this._fs || (this._fs = { q: M.q4(), p: [0, 0, 0], st: { x: 0, y: 0, z: 0, facing: 0 } });
+    if (w > 1e-3) { const q = M.qaxis(fs.q, b.wx / w, b.wy / w, b.wz / w, w * dt * this.timeScale); M.qmul(this.ballQ, q, this.ballQ); M.qnorm(this.ballQ, this.ballQ); }
+    fs.p[0] = bx; fs.p[1] = by; fs.p[2] = bz;
+    M.m4compose(this.ballMesh.matrix, fs.p, this.ballQ);
     this.ballMesh.visible = this.ballBlob.visible = !this.inIntro;
     M.m4fromYaw(this.ballBlob.matrix, bx, 0.011, bz, 0, Math.max(0.12, 0.42 - by * 0.06));
     const ballW = { x: bx, y: by, z: bz };
@@ -840,7 +845,7 @@ export class MatchSession {
       const f = M.angleLerp(p.prevFacing, p.facing, alpha);
       const k = cull ? this.animDt(v, dt * this.timeScale, x, z) : dt * this.timeScale;
       if (cull) { v.setCulled(k < 0); if (k < 0) continue; }
-      if (k > 0) v.anim.update(k, { x, y, z, facing: f }, p, this.gameProxy(), ballW);
+      if (k > 0) { const st = fs.st; st.x = x; st.y = y; st.z = z; st.facing = f; v.anim.update(k, st, p, this.gameProxy(), ballW); }
       else v.view.move?.(x, y, z, f);
       v.setStatus(p.hot, p.cold, dt);
       v.place(x, y, z);
@@ -1373,5 +1378,8 @@ export class MatchSession {
     this.r.ctx.disposeGeometry(this.ballMesh.geo);
     if (!this.background) { this.hud.clear(); const h = document.getElementById('help-overlay'); if (h) h.remove(); }
     if (this.offNet) { this.offNet(); this.offNet = null; }
+    // (QP3: a game with a scene of its own, its venue built for it by ui/modes.js or ui/prorun.js, frees it with itself; a
+    // hub's games (opts.hub) are drawn in the hub's scene, which the hub frees: world/release.js)
+    if (!this.opts?.hub) releaseScene(this.r?.ctx, this.scene);
   }
 }
