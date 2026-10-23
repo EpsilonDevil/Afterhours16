@@ -14,7 +14,7 @@ Full list in `PATCH_NOTES_v0.4.8.9.docx`. Design contract: `docs/GAUNTLET.md`.
 
 ## New in v0.4.8.8: The Pro-Am Overhaul
 
-Full list in `PATCH_NOTES_v0.4.8.8.docx`. Design contract: `docs/PROAM-OVERHAUL.md`.
+Full list in the v0.4.8.8 patch notes in the GitHub history. Design contract: `docs/PROAM-OVERHAUL.md`.
 - **Pro-Am teams and seasons:** create or join a Pro-Am team (search every team on the server, player and AI); 45-day seasons, Season 1 from the moment the server runs v0.4.8.8, everyone in Bronze.
 - **Series:** Bronze 3 games (first to 2), Silver 5 (first to 3), Gold+ 7 (first to 5), each game matchmade (real teams within 2 divisions first, AI teams after ~45 s), alternating home and away at the 12 new Pro-Am parks. A series win promotes the team a division (3 to Silver, 5 to Gold, 7 to Platinum); a loss resets RP to 0 and demotes anyone already at 0.
 - **GM draft:** the Captain drafts AI players from a clipboard (5 at a time, 3 free refreshes per series).
@@ -27,7 +27,7 @@ Full list in `PATCH_NOTES_v0.4.8.8.docx`. Design contract: `docs/PROAM-OVERHAUL.
 
 ## New in v0.4.8.7: the server runs the park
 
-Full list in `PATCH_NOTES_v0.4.8.7.docx`.
+Full list in the v0.4.8.7 patch notes in the GitHub history.
 - **One park online:** the online server keeps every park's time and order of events, and every player's game works the park out from them, so friends see the same courts, games, lines, ICON Squad and park-goers. No player hosts the park any more (no handover jumps, less work per PC). `RIMRIFT_PARK_DIRECTOR=0` on the server restores v0.4.8.6's host mode.
 - **Results checked:** online park and Pro-Am results must match the other players' before anything pays; a mismatch voids the game for everyone in it and returns the ante. Offline and solo play are unchanged.
 - **Quick patch 1:** Lockdowns' Hall of Fame badges are defensive: Deadeye, Catch & Shoot and Corner Specialist stop at Silver; Rebound Chaser reaches Hall of Fame, Chasedown and Brick Wall at every height, Rim Protector from 6'3" and Pick Pocket at 7'1"+. Lockdowns above the new caps are lowered to Silver on load (progress, earned cap breakers and an unlocked Icon badge kept).
@@ -39,7 +39,7 @@ Full list in `PATCH_NOTES_v0.4.8.7.docx`.
 
 ## New in v0.4.8.6: the RIMRIFT identity
 
-The game's identity is **RIMRIFT** (full list in `PATCH_NOTES_v0.4.8.6.docx`).
+The game's identity is **RIMRIFT** (full list in the v0.4.8.6 patch notes in the GitHub history).
 - **Title screen:** the game opens on its own title screen (key art, logo, MAKE YOUR OWN GRAVITY). Enter with a click, Enter/Space/Esc or a fresh A/Start press; Settings → Title screen shows it again.
 - **New look:** the menus use the new palette (Ember #FF4D24, Bone #F3EEE4, Carbon #080A0D), with gold kept where it means something (VC, Gold badges, Hall of Fame, ICON). The logo is vector.
 - **New name:** RIMRIFT appears in the menus, the arena, the Pro Run league (RIMRIFT Pro League), the soundtrack and the branded store gear. Item ids are unchanged.
@@ -60,7 +60,7 @@ All art, names, courts, gear and animations are original and generated in code. 
 
 ## New in v0.4.8.5
 
-Parks, ranks and a lot of small things (full list in `PATCH_NOTES_v0.4.8.5.docx`):
+Parks, ranks and a lot of small things (full list in the v0.4.8.5 patch notes in the GitHub history):
 
 - **Three parks rebuilt:** Harbor Point stands on sand among about 140 palms. The Old Brick Yard sits in a real street grid with crossings, signals, shopfronts, lit windows with people and blinds in them, taxis, a bus and police cruisers (with the odd chase). Foundry Works is surrounded by a power plant, an oil field, a refinery and a container port, under a low rolling fog.
 - **Pro-Am ranks:** every build climbs from **Bronze** through Silver, Gold, Platinum, Diamond and Master to **Grandmaster** on RP (ranked points). Each game's RP comes from the result, how strong the other team was, and how you played. Online, friends run Pro-Am together if they're within **2 ranks** of each other.
@@ -82,7 +82,7 @@ Parks, ranks and a lot of small things (full list in `PATCH_NOTES_v0.4.8.5.docx`
 
 ## New in v0.4.8
 
-Online play, made simple and exact (full list in `PATCH_NOTES_v0.4.8.docx`):
+Online play, made simple and exact (full list in the v0.4.8 patch notes in the GitHub history):
 
 - **Just sign in:** your copy connects to the game's own online server by itself (`online.json`) and asks you to sign in once. **Play offline** and **Connect** are in the Online tab.
 - **Green windows stay what you saw:** online, a release is graded on the window and the defense your meter showed when you let go, so a late closeout can't shrink the green after the fact. Your meter stops where you let go, and a let-go during a hitch is still graded where you made it.
@@ -97,7 +97,7 @@ Online play, made simple and exact (full list in `PATCH_NOTES_v0.4.8.docx`):
 
 ## New in v0.4.7.5
 
-The clean-up before the v0.5 graphics and physics overhaul (full list in `PATCH_NOTES_v0.4.7.5.docx`):
+The clean-up before the v0.5 graphics and physics overhaul (full list in the v0.4.7.5 patch notes in the GitHub history):
 
 - **Cleaner animation:** limbs collide with the body (elbows, hands, head, feet, knees, other players), poses ease on springs with secondary motion, players breathe and shift their weight, and jersey straps always show over the skin.
 - **Badges by build:** each badge has a highest tier set by your archetype and height (for you and the AI), new badge art per tier, vibrant Hall of Fame everywhere and Icon badge designs.
