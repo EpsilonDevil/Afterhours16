@@ -26,6 +26,19 @@ function faceToPix(fx, fy, W) {
 
 const faceCache = new Map();
 const maskCache = new Map();
+// (qp3: the per-look canvas caches below are kept to a few dozen entries, least recently used out first, so a park full
+// of new looks can't grow them forever; a look that comes back is repainted, to the same pixels: every painter here is
+// seeded)
+function cached(map, key) {
+  const v = map.get(key);
+  if (v !== undefined) { map.delete(key); map.set(key, v); }
+  return v;
+}
+function keep(map, key, v, cap) {
+  map.set(key, v);
+  if (map.size > cap) map.delete(map.keys().next().value);
+  return v;
+}
 const U8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
 
 // Skin-tone-independent masks for the head atlas, computed once per resolution and cached as bytes.
@@ -205,7 +218,8 @@ const bodyCache = new Map();
 // Tileable body skin albedo (subtle mottling and grain)
 export function paintBodySkin(skinHex, S = 256) {
   const key = skinHex + S;
-  if (bodyCache.has(key)) return bodyCache.get(key);
+  const hit = cached(bodyCache, key);
+  if (hit) return hit;
   const skin = hexToRgb(skinHex || '#a56945');
   const noise = makeNoise2D(31);
   const c = canvas(S, S), g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
@@ -217,8 +231,7 @@ export function paintBodySkin(skinHex, S = 256) {
     d[i] = Math.min(255, skin[0] * k * r * 255); d[i + 1] = Math.min(255, skin[1] * k * 255); d[i + 2] = Math.min(255, skin[2] * k * 255); d[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  bodyCache.set(key, c);
-  return c;
+  return keep(bodyCache, key, c, 32);
 }
 
 function heightNormal(h, S, strength) {
@@ -265,7 +278,8 @@ export function detailNormal(kind) {
 const hairCache = new Map();
 export function paintHair(look) {
   const key = (look.hair || 'crop') + (look.hair_color || '');
-  if (hairCache.has(key)) return hairCache.get(key);
+  const hit = cached(hairCache, key);
+  if (hit) return hit;
   const W = 256, c = canvas(W, W), g = c.getContext('2d');
   const col = hexToRgb(look.hair_color || '#201b19');
   const noise = makeNoise2D(17);
@@ -285,8 +299,7 @@ export function paintHair(look) {
     d[i + 3] = Math.round(255 * Math.min(1, 0.4 + 0.6 * (noise(x * 2.3, y * 0.6) * 0.5 + 0.5)));
   }
   g.putImageData(img, 0, 0);
-  hairCache.set(key, c);
-  return c;
+  return keep(hairCache, key, c, 48);
 }
 
 // Jersey / tee / hoodie texture. spec: {family,color,trim,secondary,pattern,lettering,number,name,keep(yf,phi),hem,neckTop}
@@ -701,15 +714,16 @@ const clothCache = new Map();
 function boneCloth(g, W, spec, mask) {
   if (mask) { g.fillStyle = '#000'; g.fillRect(0, 0, W, W); return; }
   const key = spec.color || '#0b0b0e';
-  if (!clothCache.has(key)) {
+  let cloth = cached(clothCache, key);
+  if (!cloth) {
     const S = 256, c = canvas(S, S), cg = c.getContext('2d'), base = hexToRgb(key), noise = makeNoise2D(29), img = cg.createImageData(S, S), d = img.data;
     for (let i = 0, y = 0; y < S; y++) for (let x = 0; x < S; x++, i += 4) {
       const kk = 1 + noise(x * 1.1, y * 1.1) * 0.2 + noise(x * 0.12, y * 0.12) * 0.1;
       d[i] = Math.min(255, base[0] * kk * 255); d[i + 1] = Math.min(255, base[1] * kk * 255); d[i + 2] = Math.min(255, base[2] * kk * 255); d[i + 3] = 255;
     }
-    cg.putImageData(img, 0, 0); clothCache.set(key, c);
+    cg.putImageData(img, 0, 0); cloth = keep(clothCache, key, c, 16);
   }
-  g.drawImage(clothCache.get(key), 0, 0, W, W);
+  g.drawImage(cloth, 0, 0, W, W);
 }
 // the pelvis (front: the iliac wings, the sacrum seen between them, the hip sockets with the head of the femur in each,
 // the pubic bones and the sit bones round each obturator hole; back: the wings with the deep notch under them, the sacrum

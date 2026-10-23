@@ -126,6 +126,7 @@ At the start of a run you pick one player: one of three random starters, or one 
 Every time you left a place, the game kept its whole scene on your graphics card: the park, Crew HQ, the Pro-Am HUB, a match's venue, the Gauntlet court. Each round of the park, HQ, HUB, a Pro-Am game and the Gauntlet added about **77 MB** that never came back, so long sessions got slower and could run out of graphics memory.
 - **Now:** leaving a place frees everything it built. In testing, graphics memory stays flat after the first lap at under 500 MB; before, it passed 1 GB after five laps and kept climbing.
 - **Walking between places:** the park, Crew HQ and the Pro-Am HUB stay ready together, so going back and forth between them doesn't rebuild anything. Places you haven't visited for a while are freed first when the game needs room.
+- **Player looks:** every hair, shoe, chain, bandana and skin look used to keep its own texture on the graphics card forever, so a long session meeting lots of different players kept growing. Looks nobody is wearing are now kept up to a limit (96 MB) and the least recently seen are freed; a look that comes back is painted again, identically. In testing, 400 different looks used to take about 1.2 GB; now it holds at about 120 MB.
 
 ### Smoother on your PC
 - **Nets:** a park's nets cost about **70% less** per frame.

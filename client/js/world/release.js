@@ -9,6 +9,9 @@
 //  * everything else belongs to the scene it's drawn in, and releaseScene() frees it when that scene is left: every
 //    mesh's geometry and material textures, and the scene's env map. A piece taken out of the scene before then frees
 //    its own (freeMeshes).
+//  * the athletes' shared textures (char/view.js sharedTex: skin, hair, shoes, chains, bandanas...) are leased too, by
+//    hand: every AthleteView holds the entries it was built with (hold) and lets them go when it's disposed (letGo); a
+//    VisualPool's parked views keep theirs until the pool disposes them. Unheld ones stay up to ATHLETE_BUDGET.
 //  * the venue caches in world/court.js are leased: a cache entry made or used while a venue is being built (buildScope:
 //    world/venues.js buildVenue, world/proamhubs.js buildProamHub) is held by that scene until it's released; one used
 //    anywhere else is pinned for good. Entries nobody holds stay cached up to CACHE_BUDGET bytes (going back to a park
@@ -23,6 +26,12 @@ export function share(res) { if (res && typeof res === 'object') res.shared = tr
 // (bytes of venue textures kept with no scene using them: enough for a park, the Crew HQ and the Pro-Am HUB together
 // (measured 228 + 91 + 89 MB), so walking between them never builds one again)
 export const CACHE_BUDGET = 384 * 1048576;
+// (bytes of athlete textures nobody's wearing: a budget of their own, so a park's crowd coming and going never pushes a
+// venue's overlays out, or the other way round. A park's crowd wears about 40-60 MB of them at once; 96 MB more of the
+// ones just taken off covers the people who walk off and come back)
+export const ATHLETE_BUDGET = 96 * 1048576;
+const BUDGETS = { venue: CACHE_BUDGET, athlete: ATHLETE_BUDGET };
+export const texBytesOf = t => Math.round((t?.width || 0) * (t?.height || 0) * 4 * 4 / 3);
 const entries = new Set();
 let building = null, clock = 0;
 // run fn while scene's venue is built: the cache entries it uses are held by the scene
@@ -31,9 +40,10 @@ export function buildScope(scene, fn) {
   building = scene._leases || (scene._leases = new Set());
   try { return fn(); } finally { building = prev; }
 }
-// a cache entry: {res: [textures], bytes, drop()} (drop takes it out of its cache); every use goes through use()
-export function leaseEntry(entry) {
-  entry.refs = 0; entry.pinned = false; entry.last = 0;
+// a cache entry: {res: [textures], bytes, drop()} (drop takes it out of its cache); every use goes through use() (venue
+// caches) or hold() (athletes). group: whose budget it counts against
+export function leaseEntry(entry, group = 'venue') {
+  entry.refs = 0; entry.pinned = false; entry.last = 0; entry.group = group;
   for (const r of entry.res) share(r);
   entries.add(entry);
   return entry;
@@ -44,18 +54,35 @@ export function use(entry) {
   else if (!building.has(entry)) { building.add(entry); entry.refs++; }
   return entry;
 }
-// free the unheld entries past the budget, the ones unused longest first
-export function trimCaches(ctx, budget = CACHE_BUDGET) {
-  const idle = [...entries].filter(e => !e.pinned && e.refs <= 0).sort((a, b) => a.last - b.last);
-  let bytes = idle.reduce((s, e) => s + e.bytes, 0);
-  for (const e of idle) {
-    if (bytes <= budget) break;
-    entries.delete(e); e.drop();
-    for (const r of e.res) if (r && typeof r === 'object') { r.shared = false; freeTexture(e.ctx || ctx, r); } // (on the context that made it)
-    bytes -= e.bytes;
+// an athlete's hold on an entry (held: the view's own set), and letting go of all of them (its dispose)
+export function hold(entry, held) {
+  entry.last = ++clock;
+  if (held && !held.has(entry)) { held.add(entry); entry.refs++; }
+  return entry;
+}
+export function letGo(ctx, held) {
+  if (!held || !held.size) return;
+  for (const e of held) e.refs--;
+  held.clear();
+  trimCaches(ctx, null, 'athlete');
+}
+// free the unheld entries past the budget (each group's own, or the one given for all), the ones unused longest first
+export function trimCaches(ctx, budget = null, group = null) {
+  for (const gr of group ? [group] : Object.keys(BUDGETS)) {
+    const cap = budget ?? BUDGETS[gr];
+    let bytes = 0;
+    for (const e of entries) if (e.group === gr && !e.pinned && e.refs <= 0) bytes += e.bytes;
+    if (bytes <= cap) continue;
+    const idle = [...entries].filter(e => e.group === gr && !e.pinned && e.refs <= 0).sort((a, b) => a.last - b.last);
+    for (const e of idle) {
+      if (bytes <= cap) break;
+      entries.delete(e); e.drop();
+      for (const r of e.res) if (r && typeof r === 'object') { r.shared = false; freeTexture(e.ctx || ctx, r); } // (on the context that made it)
+      bytes -= e.bytes;
+    }
   }
 }
-export const cacheStats = () => { let held = 0, idle = 0, pinned = 0; for (const e of entries) { if (e.pinned) pinned += e.bytes; else if (e.refs > 0) held += e.bytes; else idle += e.bytes; } return { entries: entries.size, held, idle, pinned }; };
+export const cacheStats = (group = 'venue') => { let held = 0, idle = 0, pinned = 0, n = 0; for (const e of entries) { if (e.group !== group) continue; n++; if (e.pinned) pinned += e.bytes; else if (e.refs > 0) held += e.bytes; else idle += e.bytes; } return { entries: n, held, idle, pinned }; };
 
 // ---------- freeing ----------
 const MAPS = ['map', 'normalMap', 'roughMap', 'emissiveMap', 'detailMap'];

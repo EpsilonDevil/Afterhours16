@@ -6,12 +6,11 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import { Net } from './net.js';
 import { COURT } from '../sim/constants.js';
 import * as M from '../core/math.js';
-import { leaseEntry, use } from './release.js';
+import { leaseEntry, use, texBytesOf } from './release.js';
 
 // (QP3: every entry is leased, world/release.js: kept while a scene uses it and, unused, within the cache budget; its
 // texture is marked shared so no scene's disposal frees it)
 const texCache = new Map();
-const texBytesOf = t => Math.round((t?.width || 0) * (t?.height || 0) * 4 * 4 / 3);
 function cacheEntry(cache, key, ctx, res, extra) {
   return leaseEntry({ ctx, res, bytes: res.reduce((s, t) => s + texBytesOf(t), 0), drop() { if (cache.get(key) === this) cache.delete(key); }, ...extra });
 }

@@ -9,6 +9,7 @@ import { Material, Mesh } from '../gfx/renderer.js';
 import * as M from '../core/math.js';
 import { B } from './skeleton.js';
 import { TailSway, drapeBodies } from './sway.js'; // (v0.4.8.7: the bandana's swinging ends; v0.4.8.9: draped over him)
+import { leaseEntry, hold, letGo, texBytesOf } from '../world/release.js'; // (QP3: the shared textures' leases)
 
 // v0.4.8 the Sharp Eye backflip: the whole body turned head over heels (angle about his own left-right axis; negative
 // is backwards) round a point py up from his feet, then placed and turned to face where he faces
@@ -21,14 +22,24 @@ export function placeFlipped(o, x, y, z, yaw, angle, py) {
   return M.m4compose(o, _p, _q);
 }
 
-// textures shared by every athlete on a GL context (detail normals, body skin per tone)
-// (QP3: marked shared, world/release.js: a scene's disposal never frees them)
+// textures shared by every athlete on a GL context (detail normals, body skin per tone, hair, shoes, chains...)
+// (QP3: marked shared, world/release.js: a scene's disposal never frees them. Each one is a leased entry: the view being
+// built (HOLDER, set around every step of its build: AthleteView.steps) holds it until it's disposed; the ones nobody's
+// wearing stay cached up to release.js ATHLETE_BUDGET, then the least recently worn are freed, and painted again the
+// same if somebody wears them again)
 const shared = new WeakMap();
+let HOLDER = null;
 function sharedTex(ctx, key, make, opts) {
   let m = shared.get(ctx);
   if (!m) { m = new Map(); shared.set(ctx, m); }
-  if (!m.has(key)) { const t = ctx.texture(make(), opts); if (t && typeof t === 'object') t.shared = true; m.set(key, t); }
-  return m.get(key);
+  let e = m.get(key);
+  if (!e) {
+    const t = ctx.texture(make(), opts);
+    e = leaseEntry({ ctx, res: [t], tex: t, bytes: texBytesOf(t), drop() { if (m.get(key) === this) m.delete(key); } }, 'athlete');
+    m.set(key, e);
+  }
+  hold(e, HOLDER);
+  return e.tex;
 }
 
 // v0.4.7.5 qp3 perf: the far model of the people around the park (see AthleteView.init)
@@ -44,11 +55,23 @@ export const STAGED = Symbol('staged');
 export class AthleteView {
   constructor(renderer, build, look, opts = {}) {
     if (renderer === STAGED) return;
-    for (const _ of this.init(renderer, build, look, opts)) { /* build it all now */ }
+    for (const _ of this.steps(renderer, build, look, opts)) { /* build it all now */ }
   }
   static staged(renderer, build, look, opts = {}) {
     const v = new AthleteView(STAGED);
-    return { view: v, steps: v.init(renderer, build, look, opts) };
+    return { view: v, steps: v.steps(renderer, build, look, opts) };
+  }
+  // init's steps, each one run with this view as the holder of the shared textures it takes (QP3: see sharedTex). The
+  // holds are taken as the textures are, so one isn't freed between two steps of a build spread over frames
+  *steps(renderer, build, look, opts) {
+    const held = this.leases = new Set(), gen = this.init(renderer, build, look, opts);
+    for (;;) {
+      const prev = HOLDER; HOLDER = held;
+      let r;
+      try { r = gen.next(); } finally { HOLDER = prev; }
+      if (r.done) return;
+      yield;
+    }
   }
 
   *init(renderer, build, look, opts = {}) {
@@ -268,5 +291,6 @@ export class AthleteView {
     for (const m of this.meshes || []) this.ctx.disposeGeometry(m.geo);
     for (const t of this.textures || []) this.ctx.disposeTexture(t);
     this.meshes = []; this.textures = [];
+    letGo(this.ctx, this.leases); // (QP3: and its hold on the shared textures it wore)
   }
 }
