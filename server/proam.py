@@ -29,7 +29,7 @@ import json
 import time
 import uuid
 
-from . import builds, cup, progression
+from . import builds, crew, cup, progression
 
 # ---------------- divisions ----------------
 TIERS = (("bronze", "Bronze", 3), ("silver", "Silver", 5), ("gold", "Gold", 7), ("platinum", "Platinum", 7),
@@ -472,13 +472,14 @@ def join_team(c, aid, team_id, now=None):
         raise Invalid("Team not found.")
     if team_of(c, aid):
         raise Invalid("You're on a Pro-Am team already: leave it first.")
-    if len(members(c, team_id)) >= MAX_MEMBERS:
+    if team_size(c, team_id) >= MAX_MEMBERS:
         raise Invalid(f"That team is full ({MAX_MEMBERS} players).")
     if not t["data"].get("open", True):
         c.execute("INSERT OR IGNORE INTO pa_requests(team_id,account_id,created_at) VALUES(?,?,?)", (team_id, aid, now))
         return "requested"
     c.execute("INSERT INTO pa_members(account_id,team_id,joined_at) VALUES(?,?,?)", (aid, team_id, now))
     c.execute("DELETE FROM pa_requests WHERE account_id=?", (aid,))
+    c.execute("DELETE FROM pa_invites WHERE account_id=?", (aid,))
     return "joined"
 
 
@@ -493,10 +494,11 @@ def answer_request(c, founder, team_id, aid, accept, now=None):
         return "declined"
     if team_of(c, aid):
         return "taken"  # (he joined another team meanwhile)
-    if len(members(c, team_id)) >= MAX_MEMBERS:
+    if team_size(c, team_id) >= MAX_MEMBERS:
         raise Invalid(f"The team is full ({MAX_MEMBERS} players).")
     c.execute("INSERT INTO pa_members(account_id,team_id,joined_at) VALUES(?,?,?)", (aid, team_id, (time.time() if now is None else now)))
     c.execute("DELETE FROM pa_requests WHERE account_id=?", (aid,))
+    c.execute("DELETE FROM pa_invites WHERE account_id=?", (aid,))
     return "joined"
 
 
@@ -509,9 +511,11 @@ def leave_team(c, aid, now=None):
     c.execute("DELETE FROM pa_members WHERE account_id=?", (aid,))
     t = load_team(c, tid)
     left = members(c, tid)
-    if not left:
+    if not left:  # (the last real player out ends the team: its AI members go back to being free agents)
         c.execute("DELETE FROM pa_teams WHERE id=?", (tid,))
         c.execute("DELETE FROM pa_requests WHERE team_id=?", (tid,))
+        c.execute("DELETE FROM pa_invites WHERE team_id=?", (tid,))
+        c.execute("DELETE FROM pa_ai_members WHERE team_id=?", (tid,))
         c.execute("UPDATE pa_series SET status='void', updated_at=? WHERE team_id=? AND status='running'", ((time.time() if now is None else now), tid))
         return {"team": None}
     if t["founder"] == aid:
@@ -554,7 +558,7 @@ def search(c, q, limit=30):
 
 def team_brief(c, t):
     d = t["data"]
-    n = len(d.get("roster", [])) if t["ai"] else len(members(c, t["id"]))
+    n = len(d.get("roster", [])) if t["ai"] else team_size(c, t["id"])  # (qp12: AI members count toward the 10)
     return {"id": t["id"], "name": t["name"], "abbr": t["abbr"], "ai": t["ai"], "division": div_info(t["div"]), "rp": t["rp"], "record": d.get("record", [0, 0]),
             "series": d.get("series", [0, 0]), "size": n, "open": d.get("open", True) if not t["ai"] else False, "primary": d.get("primary"),
             "secondary": d.get("secondary"), "logo": d.get("logo"), "court": d.get("court"), "league": d.get("league"),
@@ -744,6 +748,85 @@ def lineup(seed, s, taken, humans):
     return out[:need]
 
 
+# ---------------- v0.4.8.9 qp12: the club's AI members and invites (docs/PROAM-OVERHAUL.md §11) ----------------
+# A member is a real player (pa_members) or an AI hooper of the AI world the team lives in (pa_ai_members: his id there,
+# on one team at most, and the inviting game's snapshot of him for the roster). The team's world is fixed by its first
+# AI member: the service's shared AI world when the team plays online (through the hub's socket, or a hosting service),
+# else the inviting account's own (ai_world). 10 members in all, real and AI. Any member invites (an AI friend joins at
+# once, like a crew; a real player gets an invite he accepts or declines); the founder removes anyone.
+INVITE_TTL = 14 * 86400
+AI_LOOK_MAX = 6000
+
+
+def ai_members(c, team_id):
+    """[{ai_id, name, build, look, joined_at, added_by}] in the order they joined."""
+    out = []
+    for r in c.execute("SELECT ai_id, data, added_by, joined_at FROM pa_ai_members WHERE team_id=? ORDER BY joined_at, ai_id", (team_id,)):
+        d = json.loads(r[1])
+        out.append({"ai_id": r[0], "name": d.get("name"), "build": d.get("build"), "look": d.get("look"), "added_by": r[2], "joined_at": r[3]})
+    return out
+
+
+def team_size(c, team_id):
+    return len(members(c, team_id)) + c.execute("SELECT COUNT(*) FROM pa_ai_members WHERE team_id=?", (team_id,)).fetchone()[0]
+
+
+def clean_ai_member(to):
+    """An AI member as the inviting game sends him: {ai_id, name, build: {position, overall, ...}, look}."""
+    ai_id = to.get("ai_id")
+    if not isinstance(ai_id, str) or not progression.AI_ID.match(ai_id):
+        raise Invalid("Pick an AI friend.")
+    b = to.get("build") if isinstance(to.get("build"), dict) else {}
+    build = {k: b[k] for k in ("position", "archetype", "overall", "height", "weight", "wingspan") if isinstance(b.get(k), (str, int, float)) and not isinstance(b.get(k), bool)}
+    build = {k: (v[:24] if isinstance(v, str) else v) for k, v in build.items()}
+    look = to.get("look") if isinstance(to.get("look"), dict) else None
+    if look is not None and len(json.dumps(look)) > AI_LOOK_MAX:
+        look = None
+    return ai_id, {"name": " ".join(str(to.get("name") or ai_id).split())[:40], "build": build, "look": look}
+
+
+def team_world(t):
+    w = t["data"].get("world")
+    return crew.AIWorld(w["seed"], w["born"]) if isinstance(w, dict) and w.get("seed") else None
+
+
+def ai_online(world, ai_id, now):
+    """Is he on right now, by his AI-world schedule (crew.AIWorld: client/js/sim/world.js sessions, ported)?"""
+    return bool(world) and world.online_ms(ai_id, now * 1000 - 1, now * 1000) > 0
+
+
+# Spare-time games (§4 of the qp12 contract): AI members who are on play the club's own series games, simulated here
+# like the AI teams' (no client involved), at most one series' worth in an AI_SIM_EVERY window, and only in a window
+# where at least CLUB_MIN_ON of them were on for CLUB_ON_SECS of it and no real member played the series. The chance of
+# a win is ai_simulate's division formula with the team's division moved by the strength of the five who played: each
+# AI member's level (crew.AIWorld account level, 0..1) and the draft's for the rest of the five (the division's par,
+# CLUB_PAR: the level the game gives a division's AI players, modes.js paFive), each 0.02 of level a division
+# (capped at CLUB_SHIFT divisions). A game moves the team's RP 15 either way (banked past 100, as the AI teams'), counts
+# on the series and the record; a series they finish moves the team by team_series_won / team_series_lost. No VC and no
+# personal RP for anyone real: nobody real played.
+CLUB_MIN_ON = 3
+CLUB_ON_SECS = 45 * 60
+CLUB_RP = 15
+CLUB_SHIFT = 6
+
+
+def club_par(div):
+    return min(0.95, 0.5 + 0.02 * div)
+
+
+def club_win_chance(team_div, opp_div, levels):
+    five = (sorted(levels, reverse=True) + [club_par(team_div)] * 5)[:5]
+    shift = max(-CLUB_SHIFT, min(CLUB_SHIFT, (sum(five) / 5 - club_par(team_div)) / 0.02))
+    return 1 / (1 + 10 ** ((opp_div - (team_div + shift)) / 6))
+
+
+def club_score(key, won):
+    """A plausible final for a simulated Pro-Am game (the whiteboard shows it): 55-85 a side, the winner ahead."""
+    a = 55 + cup.fnv(key + "|a") % 31
+    b = a - 1 - cup.fnv(key + "|b") % 14
+    return [a, max(40, b)] if won else [max(40, b), a]
+
+
 # ---------------- matchmaking (§3) ----------------
 class Matchmaker:
     """The queue (in memory: a queued team that restarts the server queues again). A team in it is paired with the first
@@ -850,7 +933,8 @@ def online_ticket_meta(pg):
             "venue": str(on.get("venue") or "")[:40], "home": on.get("home") is True, "div": num(on.get("div"), "div"), "online": True}
 
 
-ONLINE_ACTIONS = ("create", "update", "join", "leave", "answer", "kick", "handon", "draft", "queue", "lineup")
+ONLINE_ACTIONS = ("create", "update", "join", "leave", "answer", "kick", "handon", "draft", "queue", "lineup",
+                  "invite", "invites", "accept_invite", "decline_invite", "uninvite", "remove")  # (qp12: the club's invites)
 
 
 class ProAm:
@@ -908,11 +992,12 @@ class ProAm:
         return got
 
     # -- teams --
-    def my_team(self, c, aid, season_n):
+    def my_team(self, c, aid, season_n, now=None):
         tid = team_of(c, aid)
         t = load_team(c, tid) if tid else None
         if t:
             team_new_season(c, t, season_n)
+            self.club_simulate(c, t, season_n, now)  # (qp12: the AI members' spare-time games since the last look)
         return t
 
     def home_court_check(self, c, aid, venue, now=None):
@@ -949,7 +1034,7 @@ class ProAm:
                 best = {"character_id": ch.get("id"), "name": ch.get("name"), "position": ch.get("position"), "overall": ch.get("overall"), "state": st}
         if best is None:  # (qp6: a member playing from his own copy: the card his game sent, online_status)
             best = load_card(c, aid)
-        return {"account_id": aid, "username": u[0] if u else "?", "founder": aid == founder, "build": best}
+        return {"kind": "player", "account_id": aid, "username": u[0] if u else "?", "founder": aid == founder, "build": best}
 
     def team_view(self, c, t, viewer, season_n, seed=None):
         out = team_brief(c, t)
@@ -959,8 +1044,16 @@ class ProAm:
             out["roster"] = t["data"].get("roster", [])
         else:
             out["members"] = [self.member_view(c, a, season_n, t["founder"]) for a in members(c, t["id"])]
+            # (qp12: the AI members after the real ones: online by their schedule now, kind 'ai')
+            world, now = team_world(t), time.time()
+            out["members"] += [{"kind": "ai", "ai_id": m["ai_id"], "name": m["name"], "build": m["build"], "look": m["look"], "joined_at": m["joined_at"],
+                                "online": ai_online(world, m["ai_id"], now)} for m in ai_members(c, t["id"])]
             out["founder"] = t["founder"]
-            out["mine"] = viewer in [m["account_id"] for m in out["members"]]
+            out["mine"] = viewer in [m.get("account_id") for m in out["members"]]
+            if out["mine"]:  # (the invites the team has out: any member sees them, the dialog's "sent")
+                out["invites_sent"] = [{"account_id": r[0], "username": (c.execute("SELECT username FROM accounts WHERE id=?", (r[0],)).fetchone() or ["?"])[0],
+                                        "from": r[1], "at": r[2]} for r in c.execute("SELECT account_id, from_id, created_at FROM pa_invites WHERE team_id=? ORDER BY created_at", (t["id"],))]
+                out["ai_games"] = t["data"].get("ai_games", [])  # (the club's games its AI members played: "while you were away")
             if viewer == t["founder"]:
                 out["requests"] = [{"account_id": r[0], "username": (c.execute("SELECT username FROM accounts WHERE id=?", (r[0],)).fetchone() or ["?"])[0], "at": r[1]}
                                    for r in c.execute("SELECT account_id, created_at FROM pa_requests WHERE team_id=? ORDER BY created_at", (t["id"],))]
@@ -981,7 +1074,7 @@ class ProAm:
             out = {"me": aid, "season": season_public(season, now), "team": self.team_view(c, t, aid, n, seed) if t else None, "given": given,
                    "builds": [{"id": ch.get("id"), "name": ch.get("name"), "pa": public_state(ch["progression"]["pa"]), "history": ch["progression"].get("pa_history"),
                                "seasons": ch["progression"].get("pa_seasons", [])} for ch in chars],
-                   "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))],
+                   "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))], "invites": self.invites_for(c, aid),
                    "rules": {"max_members": MAX_MEMBERS, "logos": LOGOS, "parks": PARKS, "refreshes": DRAFT_REFRESHES, "queue_wait": QUEUE_WAIT,
                              "series_bonus": SERIES_BONUS, "boost": BOOST, "custom": {"floors": CUSTOM_FLOORS, "walls": CUSTOM_WALLS}, "tiers": [{"id": a, "name": b, "divs": n_} for a, b, n_ in TIERS]}}
         return out
@@ -1001,12 +1094,19 @@ class ProAm:
             team_new_season(c, t, season["n"])
             return {"team": self.team_view(c, t, aid, season["n"], seed)}
 
-    def action(self, aid, kind, data):
-        """POST /api/proam/<kind>: create, update, join, leave, answer, kick, handon, draft, queue, lineup."""
+    def action(self, aid, kind, data, online=None):
+        """POST /api/proam/<kind>: create, update, join, leave, answer, kick, handon, draft, queue, lineup; (qp12) invite,
+        invites, accept_invite, decline_invite, uninvite, remove. online: the call came over the hub's socket (a member
+        on his own copy: the team's AI world is this service's shared one)."""
         season = self.boot()
         seed = self.world_seed()
         n = season["n"]
+        online = bool(getattr(self.s, "hosting", False)) if online is None else online
         with self.s.db.transaction() as c:
+            if kind == "invites":
+                return {"invites": self.invites_for(c, aid)}
+            if kind in ("accept_invite", "decline_invite"):
+                return {"result": self.answer_invite(c, aid, str(data.get("team_id") or ""), kind == "accept_invite")}
             if kind == "create":
                 t = create_team(c, aid, data.get("team"), n)
                 return {"team": self.team_view(c, t, aid, n, seed)}
@@ -1029,6 +1129,14 @@ class ProAm:
             if kind == "handon":
                 hand_on(c, aid, t["id"], str(data.get("account_id") or ""))
                 return {"ok": True}
+            if kind == "invite":
+                if data.get("team_id") not in (None, t["id"]):
+                    raise Invalid("You invite players to your own team.")
+                return self.invite(c, aid, t, data.get("to"), online)
+            if kind == "uninvite":
+                return {"ok": self.uninvite(c, aid, t, str(data.get("account_id") or ""))}
+            if kind == "remove":
+                return {"ok": self.remove_ai(c, aid, t, str(data.get("ai_id") or ""))}
             sr = self.running_series(c, t["id"], n)
             if kind == "draft":
                 if not sr:
@@ -1052,9 +1160,9 @@ class ProAm:
             if kind == "lineup":
                 if not sr:
                     raise Invalid("No series on.")
-                ids = lineup(seed, sr, ai_fives(c), int(data.get("humans") or 1))
+                out = self.club_lineup(c, t, sr, seed, data)
                 self.save_series(c, sr)
-                return {"ai": ids}
+                return out
             if kind == "queue":
                 return self.queue(c, t, sr, n, data.get("action"), data=data)
         raise Invalid("Unknown Pro-Am action.")
@@ -1278,7 +1386,7 @@ class ProAm:
         if op == "report":
             return self.online_report(aid, args)
         if op in ONLINE_ACTIONS:
-            return self.action(aid, op, args)
+            return self.action(aid, op, args, online=True)
         raise Invalid("Unknown Pro-Am action.")
 
     def online_status(self, aid, card=None, now=None):
@@ -1296,10 +1404,10 @@ class ProAm:
             if t:
                 for r in c.execute("SELECT data FROM pa_series WHERE team_id=? AND status IN ('won','lost') ORDER BY updated_at DESC LIMIT 10", (t["id"],)):
                     sr = json.loads(r[0])
-                    if aid in (sr.get("players") or {}):
+                    if aid in (sr.get("players") or {}) and sr.get("finished_by") != "ai":  # (qp12: nobody real played the end of it)
                         settle.append({"series": sr["id"], "outcome": sr["status"], "div": sr["div"], "season": sr["season"], "character_id": sr["players"][aid]})
             return {"me": aid, "online": True, "season": season_public(season, now), "team": self.team_view(c, t, aid, n, seed) if t else None,
-                    "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))], "settle": settle,
+                    "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))], "settle": settle, "invites": self.invites_for(c, aid),
                     "rules": {"max_members": MAX_MEMBERS, "logos": LOGOS, "parks": PARKS, "refreshes": DRAFT_REFRESHES, "queue_wait": QUEUE_WAIT,
                               "series_bonus": SERIES_BONUS, "boost": BOOST, "custom": {"floors": CUSTOM_FLOORS, "walls": CUSTOM_WALLS}, "tiers": [{"id": a, "name": b, "divs": n_} for a, b, n_ in TIERS]}}
 
@@ -1354,6 +1462,184 @@ class ProAm:
             c.execute("UPDATE characters SET data=? WHERE id=?", (json.dumps(ch), ch["id"]))
             out.append({"series": sid, "outcome": it["outcome"], "bonus": bonus, "items": items_got, **move})
         return out
+
+    # -- v0.4.8.9 qp12: the club (docs/PROAM-OVERHAUL.md §11) --
+    def invites_for(self, c, aid):
+        """The invites waiting for him: [{team (brief), from (username), at}], the newest first; old ones dropped."""
+        now = time.time()
+        c.execute("DELETE FROM pa_invites WHERE account_id=? AND created_at<?", (aid, now - INVITE_TTL))
+        out = []
+        for r in c.execute("SELECT team_id, from_id, created_at FROM pa_invites WHERE account_id=? ORDER BY created_at DESC", (aid,)).fetchall():
+            t = load_team(c, r[0])
+            if t:
+                u = c.execute("SELECT username FROM accounts WHERE id=?", (r[1],)).fetchone()
+                out.append({"team": team_brief(c, t), "from": u[0] if u else "?", "at": r[2]})
+        return out
+
+    def team_world_for(self, c, aid, t, online):
+        """The AI world the team lives in, fixed by its first AI member (online: this service's shared one; offline: the
+        inviting account's own). -> its {seed, born}"""
+        w = t["data"].get("world")
+        if isinstance(w, dict) and w.get("seed"):
+            return w
+        sw = self.s.shared_world()
+        own = None if online else self.s.load_ai_world(c, aid)
+        w = {"seed": int(own["seed"]), "born": float(own.get("born") or sw["born"])} if own and own.get("seed") else {"seed": int(sw["seed"]), "born": float(sw["born"])}
+        t["data"]["world"] = w
+        return w
+
+    def invite(self, c, aid, t, to, online, now=None):
+        """{kind: 'player', username} -> an invite he answers; {kind: 'ai', ai_id, name, build, look} -> on the team now."""
+        now = (time.time() if now is None else now)
+        if not isinstance(to, dict) or to.get("kind") not in ("player", "ai"):
+            raise Invalid("Invite a player ({kind: 'player', username}) or an AI friend ({kind: 'ai', ai_id}).")
+        if team_size(c, t["id"]) >= MAX_MEMBERS:
+            raise Invalid(f"The team is full ({MAX_MEMBERS} members, real and AI).")
+        if to["kind"] == "ai":
+            ai_id, d = clean_ai_member(to)
+            row = c.execute("SELECT team_id FROM pa_ai_members WHERE ai_id=?", (ai_id,)).fetchone()
+            if row:
+                raise Invalid(f"{d['name']} is in your club already." if row[0] == t["id"] else f"{d['name']} plays for another Pro-Am club.")
+            w = self.team_world_for(c, aid, t, online)
+            own = None if online else self.s.load_ai_world(c, aid)
+            if own and int(own.get("seed") or 0) == w["seed"] and ai_id not in set(own.get("friends") or []):
+                raise Invalid("Only your AI friends join the club: add him as a friend first.")
+            c.execute("INSERT INTO pa_ai_members(ai_id,team_id,data,added_by,joined_at) VALUES(?,?,?,?,?)", (ai_id, t["id"], json.dumps(d), aid, now))
+            t["data"].setdefault("club_sim", int(now // AI_SIM_EVERY) - 1)  # (their spare-time games count from now)
+            save_team(c, t, now)
+            return {"result": "joined", "ai_id": ai_id}
+        name = str(to.get("username") or "").strip().lower()
+        r = c.execute("SELECT id, username FROM accounts WHERE username=?", (name,)).fetchone()
+        if not r:
+            raise Invalid("No player by that name here.")
+        who = r[0]
+        if who == aid:
+            raise Invalid("You're on the team already.")
+        other = team_of(c, who)
+        if other:
+            raise Invalid(f"{r[1]} is in your club already." if other == t["id"] else f"{r[1]} is on another Pro-Am team.")
+        if c.execute("SELECT 1 FROM pa_invites WHERE team_id=? AND account_id=?", (t["id"], who)).fetchone():
+            return {"result": "invited"}
+        c.execute("INSERT INTO pa_invites(team_id,account_id,from_id,created_at) VALUES(?,?,?,?)", (t["id"], who, aid, now))
+        hub = getattr(self.s, "hub", None)
+        if hub:  # (he's told at once when he's online here: the Pro-Am menu has it too)
+            u = c.execute("SELECT username FROM accounts WHERE id=?", (aid,)).fetchone()
+            hub.send_to([who], {"t": "pa-invite", "team": {"id": t["id"], "name": t["name"], "abbr": t["abbr"]}, "from": u[0] if u else "?"})
+        return {"result": "invited"}
+
+    def answer_invite(self, c, aid, team_id, accept, now=None):
+        row = c.execute("SELECT 1 FROM pa_invites WHERE team_id=? AND account_id=?", (team_id, aid)).fetchone()
+        if not row:
+            raise Invalid("That invite isn't there any more.")
+        c.execute("DELETE FROM pa_invites WHERE team_id=? AND account_id=?", (team_id, aid))
+        if not accept:
+            return "declined"
+        t = load_team(c, team_id)
+        if not t:
+            raise Invalid("That team isn't there any more.")
+        if team_of(c, aid):
+            raise Invalid("You're on a Pro-Am team already: leave it first.")
+        if team_size(c, team_id) >= MAX_MEMBERS:
+            raise Invalid(f"That team is full ({MAX_MEMBERS} members).")
+        c.execute("INSERT INTO pa_members(account_id,team_id,joined_at) VALUES(?,?,?)", (aid, team_id, (time.time() if now is None else now)))
+        c.execute("DELETE FROM pa_requests WHERE account_id=?", (aid,))
+        c.execute("DELETE FROM pa_invites WHERE account_id=?", (aid,))
+        return "joined"
+
+    def uninvite(self, c, aid, t, who):
+        r = c.execute("SELECT from_id FROM pa_invites WHERE team_id=? AND account_id=?", (t["id"], who)).fetchone()
+        if not r:
+            raise Invalid("No such invite.")
+        if aid not in (r[0], t["founder"]):
+            raise Invalid("The one who sent it, or the founder, takes an invite back.")
+        c.execute("DELETE FROM pa_invites WHERE team_id=? AND account_id=?", (t["id"], who))
+        return True
+
+    def remove_ai(self, c, aid, t, ai_id):
+        if t["founder"] != aid:
+            raise Invalid("Only the team's founder removes players.")
+        if c.execute("DELETE FROM pa_ai_members WHERE ai_id=? AND team_id=?", (ai_id, t["id"])).rowcount == 0:
+            raise Invalid("He isn't on the team.")
+        return True
+
+    def club_lineup(self, c, t, sr, seed, data):
+        """Who plays (§3): the real players ready (humans), then the AI members here (ai_members: the ones the game shows
+        in the HUB; else the ones on now by their schedule), then the AI squad mates who came (squad), then the draft
+        for whatever is still open. -> {ai: the AI ids on the floor in that order, humans, members, squad, draft}"""
+        humans = max(1, min(5, int(data.get("humans") or 1)))
+        mine = {m["ai_id"]: m for m in ai_members(c, t["id"])}
+        world, now = team_world(t), time.time()
+        asked = data.get("ai_members")
+        here = [i for i in asked if i in mine] if isinstance(asked, list) else [i for i in mine if ai_online(world, i, now)]
+        squad = [i for i in (data.get("squad") if isinstance(data.get("squad"), list) else []) if isinstance(i, str) and progression.AI_ID.match(i)]
+        open_ = 5 - humans
+        took = []
+        for i in [*dict.fromkeys(here), *dict.fromkeys(squad)]:
+            if len(took) < open_ and i not in took:
+                took.append(i)
+        members_ = [i for i in took if i in mine]
+        squad_ = [i for i in took if i not in mine]
+        need = open_ - len(took)
+        draft = [i for i in lineup(seed, sr, ai_fives(c), 0) if i not in took][:need] if need > 0 else []  # (the picks, then the clipboard)
+        return {"ai": took + draft, "humans": humans, "members": members_, "squad": squad_, "draft": draft}
+
+    def club_simulate(self, c, t, n, now=None):
+        """The AI members' spare-time games since the last look (lazily, on every read of the team: my_team): -> the
+        games played. See CLUB_MIN_ON above for the rules."""
+        now = (time.time() if now is None else now)
+        upto = int(now // AI_SIM_EVERY) - 1  # (windows that are over)
+        last = t["data"].get("club_sim")
+        if last is None or last >= upto or t["ai"]:
+            return []
+        ms = ai_members(c, t["id"])
+        world = team_world(t)
+        played = []
+        if len(ms) >= CLUB_MIN_ON and world:
+            for slot in range(max(last + 1, upto - 7), upto + 1):
+                ws, we = slot * AI_SIM_EVERY, (slot + 1) * AI_SIM_EVERY
+                sr = self.running_series(c, t["id"], n)
+                if sr and self.pending_game(sr):
+                    break  # (a game made for the real members and not played yet: they're in the middle of it)
+                if sr and any(g.get("by") != "ai" and g.get("result") and ws <= (g.get("at") or 0) < we for g in sr["games"]):
+                    continue  # (real members played the series in this window)
+                on = [m for m in ms if world.online_ms(m["ai_id"], ws * 1000, we * 1000) >= CLUB_ON_SECS * 1000]
+                if len(on) < CLUB_MIN_ON:
+                    continue
+                lv = {m["ai_id"]: world.account(m["ai_id"])["level"] for m in on}
+                on = sorted(on, key=lambda m: (-lv[m["ai_id"]], m["ai_id"]))[:5]
+                sr = sr or new_series(t, n, ws)
+                while True:
+                    avoid = sr["games"][-1]["opponent"]["id"] if sr["games"] else None
+                    opp = nearest_ai(c, sr["div"], n, avoid=avoid, salt=f"{sr['id']}|{len(sr['games'])}")
+                    if not opp:
+                        break
+                    g = add_game(sr, t, opp, "ai", we)
+                    p = club_win_chance(sr["div"], opp["div"], [lv[m["ai_id"]] for m in on])
+                    key = f"club|{t['id']}|{sr['id']}|{g['n']}"
+                    won = (cup.fnv(key) % 1000) / 1000 < p
+                    g.update({"result": "W" if won else "L", "score": club_score(key, won), "by": "ai", "ai": [m["name"] for m in on]})
+                    sr["wins" if won else "losses"] += 1
+                    t["data"].setdefault("record", [0, 0])[0 if won else 1] += 1
+                    t["rp"] = max(0, min(TEAM_RP_BANK, t["rp"] + (CLUB_RP if won else -CLUB_RP)))
+                    self.ai_result(c, opp["id"], not won, we)
+                    rec = {"series": sr["id"], "n": g["n"], "result": g["result"], "score": g["score"], "opponent": g["opponent"]["name"], "at": we, "ai": g["ai"], "rp": CLUB_RP if won else -CLUB_RP}
+                    played.append(rec)
+                    outcome = series_outcome(sr)
+                    if outcome:
+                        sr["status"], sr["ended_at"], sr["bonus"], sr["moved"], sr["finished_by"] = outcome, we, 0, {}, "ai"
+                        if outcome == "won":
+                            team_series_won(t, sr["div"])
+                        else:
+                            team_series_lost(t)
+                        t["data"].setdefault("series", [0, 0])[0 if outcome == "won" else 1] += 1
+                        rec["series_end"] = outcome
+                        break
+                self.save_series(c, sr, we)
+        t["data"]["club_sim"] = upto
+        if played:
+            t["data"]["ai_games"] = (t["data"].get("ai_games", []) + played)[-20:]
+        save_team(c, t, now)
+        return played
 
 
 def series_public(sr):

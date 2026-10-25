@@ -262,3 +262,41 @@ A series win moves the team up one division. Losing a series puts the team back 
 - **Single games:** a single game only changes an AI team's RP and record.
 - **The same RP rules:** RP past 100 is kept and carries into the next division on promotion. A lost series with RP over 100 drops the team to 100, a loss at 0 drops it a division, and any other loss resets it to 0.
 - **AI series:** AI teams still play series against each other every few hours, so the standings keep moving.
+
+---
+
+## Quick patch 12 (Oct 25): AI friends and online players in your Pro-Am club
+
+### Your club can have AI members
+- **Inviting AI friends:** invite AI friends from your friends list to your Pro-Am team and they join right away, like a crew. A club holds **10 members in all**, real players and AI together. **Any member can invite**, and the founder can remove anyone.
+- **They play in their spare time:** AI members play your club's own series games while you're away, by their usual schedules. Wins add team RP and losses take it away (15 a game), their games count on the series, and a series they finish moves the team up or down by the same rules as any other.
+  - **Pace:** they only play when at least 3 of them are on, and never faster than one series every 6 hours.
+  - **Fair rewards:** they never touch your own RP or VC.
+  - **Seeing it:** the whiteboard shows which games they played, and you get a "while you were away" summary.
+
+### Squad mates and AI members come to the HUB
+- **Squad mates:** AI friends in your squad walk into the Pro-Am HUB with you, offline and online.
+- **AI members:** club members who are on by their schedule are there too, hanging around the court and shooting around, and they gather in the office when a game is queued. Online, everyone in the HUB sees the same people.
+
+### Lineups: real players first, the draft last
+When the Captain queues, the five fill in this order:
+1. Real players in the HUB.
+2. AI club members who are on.
+3. AI squad mates.
+4. The draft, for any spots still empty.
+
+A full five without the draft is possible, and the AI teammates play with their own builds.
+
+### Invite online players
+- **From the team page:** the **Invite** button opens one dialog with tabs for AI friends, players (friends who are on, people here, or a username) and the invites you've sent.
+- **Getting an invite:** you get a popup if you're online, and the invite waits on your Pro-Am tab to join or decline. An invite gets you onto an invite-only team too.
+- **From every HUB office:** the middle school's tryouts sign-up sheet, the high school's varsity roster board, and the clubhouse's desk phone and roster screen all open the same invite dialog.
+
+---
+
+## Quick patch 13 (Oct 25): music in Pro-Am
+
+- **The soundtrack in Pro-Am:** the park's music now plays in the Pro-Am HUB (the building and its home court outside) and in every Pro-Am game, offline, online and series games alike.
+- **Quiet on purpose:** it plays at about **10%** of the level you hear in the park, so the arena's crowd and the game stay up front. Your music volume slider still sets that level, and turning music off still turns it off.
+- **Everywhere else is unchanged:** back in the park, the menus or the Crew HQ, the music returns to its normal level. Event parks keep their own soundtracks, and the Pro Run still has no music.
+

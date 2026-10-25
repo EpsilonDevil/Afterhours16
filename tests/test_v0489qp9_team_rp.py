@@ -113,8 +113,9 @@ class AITeamsSameRules(unittest.TestCase):
         P.team_series_lost(t)
         self.assertEqual((t["div"], t["rp"]), (2, 0))
         src = Path(P.__file__).read_text()
-        self.assertEqual(src.count("team_series_won("), 3, "the definition, a player team's series and the AI rounds")
-        self.assertEqual(src.count("team_series_lost("), 3)
+        # (qp12: and the series a club's AI members finish in their spare time: club_simulate)
+        self.assertEqual(src.count("team_series_won("), 4, "the definition, a player team's series, the AI rounds and the club's AI members")
+        self.assertEqual(src.count("team_series_lost("), 4)
 
     def test_an_ai_teams_game_never_moves_its_division(self):
         tmp = tempfile.TemporaryDirectory()

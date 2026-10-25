@@ -199,6 +199,54 @@ Players who play together online each play from their own copy of the game and k
 
 Each member's game sends his card with every status.
 
+## 11. The club: AI members and invites (v0.4.8.9 qp12)
+"Club" is the Pro-Am team. There are no new systems: AI members play the club's own series games. Everything else is as above.
+
+**Members:**
+- A member is a real player (`kind: 'player'`, as before) or an AI hooper (`kind: 'ai'`: `ai_id`, `name`, `build`, `look`, `online`).
+  - AI members live in `pa_ai_members` (migration 021): the AI's id in the team's AI world, and the inviting game's snapshot of him for the roster.
+  - The team's AI world is fixed by its first AI member. Online (the hub's socket, or a hosting service) it's the service's shared world; offline it's the inviting account's own.
+  - An AI hooper is on one team at most.
+- **10 members in all**, real and AI together.
+- **Any member invites:**
+  - An AI friend joins at once, like a crew member. Offline, only one of your AI friends (the `ai_world` friends list); online, any hooper of the shared world.
+  - A real player gets an invite (`pa_invites`). He accepts or declines it from his Pro-Am menu. Online he's also told at once (`pa-invite` on the socket: a popup).
+  - An invite gets him onto an invite-only team too. Invites expire after 14 days.
+- **Removing:** the founder removes anyone (`kick` for players, `remove {ai_id}` for AI). The founder or the one who sent an invite takes it back (`uninvite`).
+- **The last real player out ends the team.** Its AI members are free again.
+- **Ops**, over HTTP (`/api/proam/<op>`) and over the online socket (`pa_call`):
+  - `invite {to: {kind:'player', username} | {kind:'ai', ai_id, name, build, look}}`;
+  - `invites`, `accept_invite {team_id}`, `decline_invite {team_id}`, `uninvite {account_id}`, `remove {ai_id}`.
+  - Status carries `invites` (the ones waiting for you). The team view carries `invites_sent` and `ai_games`.
+- **UI:** the team page's **Invite** opens `openInviteDialog(app, team)` (`ui/proam.js`, re-exported by `ui/proamui.js`). Every HUB office's Invite spot calls the same dialog. Its tabs are AI friends, Players and Sent.
+
+**Lineups:** when the Captain queues, the `lineup` op answers `{ai, humans, members, squad, draft}`. The order is:
+1. the real players in the HUB;
+2. the AI members here: the HUB passes `ai_members`, or else the server takes the ones on now by their schedule (`crew.AIWorld`, the client's schedules ported);
+3. the AI squad mates who came (`squad`);
+4. the draft, for whatever is still open.
+
+`ai` is the AI ids on the floor in that order. Each one plays with his own build and IQ. A full five without the draft is possible.
+
+**Spare-time games** (`club_simulate`, worked out lazily on every read of the team):
+- **When:** AI members who are on play the club's own series games, simulated on the server like the AI teams' games, against the nearest AI team for each game.
+- **Pace:**
+  - at most one series' worth in an `AI_SIM_EVERY` window (6 h), and only windows that are over;
+  - only when at least 3 AI members were on for 45 minutes of the window;
+  - not in a window where real members played the series;
+  - not while a game made for the real members is still waiting to be played.
+- **Win chance:**
+  - `ai_simulate`'s formula, `1 / (1 + 10^((opp_div - div) / 6))`.
+  - The team's division is moved by the strength of the five who played: the AI members' levels, with the draft at the division's par (`min(0.95, 0.5 + 0.02 × div)`). Each 0.02 of level above or below par is one division, at most 6.
+- **Each game:**
+  - team RP ±15, banked past 100 as for every team;
+  - the series counter;
+  - the team's record;
+  - the opponent's record and RP;
+  - the whiteboard ("AI members").
+- **A series they finish** moves the team by `team_series_won` / `team_series_lost`. It pays no bonus and no personal RP, and it isn't settled for anyone: nobody real played its end.
+- **The real members** see it on the whiteboard and in a "while you were away" toast.
+
 ## Ownership (who edits what)
 - **Server/UI agent:**
   - New server files: `server/proam.py`, migration `016_v0488_proam.sql`.

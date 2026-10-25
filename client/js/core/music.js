@@ -1,6 +1,7 @@
 // v0.4.4 soundtrack: the player-supplied tracks in client/audio/music (listed in tracks.json) play
-// shuffled (v0.4.8.5: a new shuffle every startup, see shuffleQueue) through the menus, the park, park games and practice. They fade out for Pro-Am (the arena has its
-// own crowd) and pick up where they left off afterwards. Each new track gets an early-2000s style
+// shuffled (v0.4.8.5: a new shuffle every startup, see shuffleQueue) through the menus, the park, park games and practice.
+// (v0.4.8.9 qp13: Pro-Am has it too, the HUB and its games, at PROAM_MUSIC: about a tenth of the park's level, under the
+// arena's crowd. The Pro Run still sits it out.) Each new track gets an early-2000s style
 // "now playing" ticker in the bottom-left corner for its first few seconds.
 // v0.4.8.5 quick patch: playlists. 'main' is that soundtrack. A park event can bring its own (THEMES[id].music): And The
 // Beat Goes On plays the tracks in client/audio/beat and nothing else while you're at its park (park games included),
@@ -17,6 +18,10 @@ export const PLAYLISTS = {
   monster: { dir: 'audio/monster/', album: 'The Monster Mash · Event Soundtrack', recent: 'rimrift.music.recent.monster' },
 };
 
+// v0.4.8.9 qp13: the Pro-Am HUB and Pro-Am games play the main soundtrack at about 10% of the music level you'd hear
+// in the park (your music slider still sets that level): setPlaylist('main', { level: PROAM_MUSIC })
+export const PROAM_MUSIC = 0.10;
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export class Soundtrack {
@@ -24,6 +29,7 @@ export class Soundtrack {
     this.tracks = []; this.queue = []; this.current = null;
     this.el = null; this.loaded = null;
     this.suppressed = false; this.ducked = false; this.wanted = false;
+    this.scale = 1; // (qp13: the place's music level: 1 everywhere, PROAM_MUSIC in Pro-Am)
     this.level = 0; this.fadeTimer = 0;
     this.tickerT = 0;
     this.bad = new Set(); // tracks that failed to load (e.g. the music download wasn't extracted)
@@ -43,7 +49,11 @@ export class Soundtrack {
 
   // v0.4.8.5 quick patch: switch playlists (unknown names are the main soundtrack). The event's list starts a new
   // shuffle on every arrival; the main one resumes the track it was on, where it was.
-  setPlaylist(name) {
+  // (qp13: { level } is the place's music level; every place that asks for a playlist sets it, so leaving Pro-Am for
+  // anywhere else is back to the full level)
+  setPlaylist(name, { level = 1 } = {}) {
+    const scale = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 1;
+    if (scale !== this.scale) { this.scale = scale; this.fade(); }
     name = PLAYLISTS[name] ? name : 'main';
     if (name === this.list) return;
     const el = this.el;
@@ -59,7 +69,8 @@ export class Soundtrack {
     if (this.wanted) this.start();
   }
 
-  target() { return this.wanted && !this.suppressed ? volumeGain(settings.musicVol ?? 0.35) * (this.ducked ? 0.65 : 1) : 0; } // (qp3: the perceptual curve)
+  // (qp3: the perceptual curve; qp13: a quieter place's level wins over a park game's duck, never stacked on it)
+  target() { return this.wanted && !this.suppressed ? volumeGain(settings.musicVol ?? 0.35) * Math.min(this.scale, this.ducked ? 0.65 : 1) : 0; }
 
   element() {
     if (!this.el) {

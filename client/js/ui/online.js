@@ -54,6 +54,7 @@ export async function initOnline(app) {
   }));
   net.on('crew-pending', m => collectCrewXP(app, m.xp));
   net.on('pa-ready', m => paReadyMsg(app, m)); // (v0.4.8.8 Pro-Am: the team's ready check)
+  net.on('pa-invite', m => paInviteMsg(app, m)); // (qp12: a club invite: the Pro-Am menu has it too)
   net.on('pa-entries', m => paEntryWaiters.get(m.req)?.(m.people)); // (v0.4.8.8: a real-vs-real game's players, paEntries)
   net.on('crew', () => { crewSync(app); placeOf(app)?.onCrew?.(); });
   net.on('claimed', m => hubOf(app)?.onClaimed?.(m));
@@ -265,7 +266,7 @@ function popInvite(app, kind, o) {
   document.getElementById(id)?.remove();
   const el = document.createElement('div');
   el.id = id; el.className = 'ol-invite';
-  el.style.top = `${74 + 150 * Math.max(0, ['sq', 'ch', 'crew', 'pa'].indexOf(kind))}px`; // (v0.4.8.8: 'pa', the Pro-Am ready check)
+  el.style.top = `${74 + 150 * Math.max(0, ['sq', 'ch', 'crew', 'pa', 'painv'].indexOf(kind))}px`; // (v0.4.8.8: 'pa', the Pro-Am ready check; qp12: 'painv', a club invite)
   el.innerHTML = `<div class="eyebrow">${esc(o.eyebrow)}</div><b>${esc(o.title)}</b><small>${esc(o.text)}</small>
     <div class="row gap"><button class="btn small ghost" data-no>Not now</button><button class="btn small primary" data-yes>${esc(o.yes)}</button></div>`;
   document.body.appendChild(el);
@@ -310,6 +311,12 @@ export function paEntries(app, ids, ms = 5000) {
     paEntryWaiters.set(req, people => { clearTimeout(t); paEntryWaiters.delete(req); resolve(people && typeof people === 'object' ? people : {}); });
     net.send({ t: 'pa-entries', ids, req });
   });
+}
+// v0.4.8.9 qp12: a Pro-Am club invite, told at once (server/proam.py invite): join from here, or later from the Pro-Am menu
+export function paInviteMsg(app, m) {
+  if (!m?.team?.id) return;
+  popInvite(app, 'painv', { eyebrow: 'PRO-AM CLUB INVITE', title: m.team.name || 'A Pro-Am club', text: `${m.from || 'A member'} invites you to the club. It's in your Pro-Am menu too.`, yes: 'Join',
+    onYes: async () => { try { const P = await import('./proam.js'); await P.answerInvite(app, m.team.id, true); } catch (e) { toast(e.message, 'error'); } } });
 }
 export function paReadyMsg(app, m) {
   const net = app.net;

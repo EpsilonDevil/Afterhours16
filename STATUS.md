@@ -2,6 +2,23 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 13 (Oct 25): the soundtrack in Pro-Am, at about 10%
+| Area | Files | Notes |
+|---|---|---|
+| Music | `core/music.js` (`PROAM_MUSIC` 0.10; `setPlaylist(name, { level })` sets the place's level, default 1, so every other place is back to full; `target()` = gain × min(level, duck)), `ui/modes.js` (the offline, series and online Pro-Am games: level `PROAM_MUSIC`, no longer suppressed), `game/proamhub.js` (the HUB, both areas), `tests/v0485beat.test.mjs` (Pro-Am pin follows the new rule) | test `qp13proammusic` (new, 2); Node 815/817 (the usual missing-mp3 + 1 skip), Python 372 OK, golden identical |
+
+### v0.4.8.9 quick patch 12 (Oct 25): AI friends and online players in the Pro-Am club
+David's answers: no new systems (AI members' spare-time games are the club's own series games: ±15 team RP, series counter, `team_series_won`/`lost`); 10 members total, any member invites.
+
+| Area | Files | Notes |
+|---|---|---|
+| Server (Server/UI agent) | migration `021_v0489qp12_proam_club.sql` (`pa_ai_members` ai_id PK = one team max; `pa_invites`, 14-day expiry), `server/proam.py` (members `kind: 'player'|'ai'` with schedule `online` via `crew.AIWorld`; ops invite / invites / accept_invite / decline_invite / uninvite / remove over HTTP and `pa_call`; `pa-invite` push; lineup op `{ai, humans, members, squad, draft}`; `club_simulate` lazy on read: ≥3 AI on for 45 min of a window, ≤1 series per `AI_SIM_EVERY`, skipped when real members played or a real game is pending, win chance = `ai_simulate` formula with the five's level vs division par; each game ±15 banked; series by the shared functions, `finished_by: 'ai'`, no bonus/settle), `server/app.py`, `tests/test_server.py` (migrations 20 → 21), `docs/PROAM-OVERHAUL.md` §11 | test `test_v0489qp12_proam_club` (new, 9) |
+| Client (Server/UI agent) | `ui/proam.js` (AI members on the roster with AI tag, online/offline, founder Remove; Invite button; `openInviteDialog(app, team, opts)` (AI friends / Players / Sent); incoming invites; "while you were away"; `queue()` sends squad + the HUB's `aiMembers`), `ui/proamui.js` (re-export), `ui/online.js` (`pa-invite` popup) | test `v0489qp12club` (new, 5); `v0488proamui` lineup body pin |
+| HUB (Hub agent) | `game/proamhub.js` (squad mates follow you in, online peers' squads too; AI members on by schedule placed/animated deterministically from team + id + server clock; office gathering on queue; ready-check / lineup panel; Invite spot prompt + pause-menu entry), `world/proamhubs.js` (Invite spot per tier: Bronze tryouts sheet, Silver varsity roster board, Gold/Platinum desk phone + roster screen; roster boards list AI members) | test `qp12hub` (new, 9); offline e2e (squad + 3 AI friends, lineup to the game) and online two-browser e2e (same AI members on both screens) |
+
+Known limits: online, an AI invite can't be checked against the inviter's friends list (it lives in his save; the dialog only offers friends); the server's schedule port has no ICON-squad override, so on rare ICON-squad hours a member's on/off can differ between server and client.
+Python 372 OK, Node 813/815 (missing-mp3 soundtrack test in the cloud copy, 1 skip), golden unchanged.
+
 ### v0.4.8.9 quick patch 11 (Oct 25): AI teams climb by the same series rules
 `server/proam.py`: new `team_series_won(t, series_div, top)` / `team_series_lost(t)`, used by a player team's `finish_series` and by `ai_simulate`'s AI-vs-AI series rounds (every 6 h). `ai_result` (an AI team's game against a player team) now only moves RP (+15/−15, banked past 100) and the record, never the division: before qp11 an AI team promoted at 100 RP and a single lost game at 0 demoted it. `docs/PROAM-OVERHAUL.md` §4. Tests: `test_v0489qp9_team_rp` (+2: the shared rules; an AI game never moves its division).
 

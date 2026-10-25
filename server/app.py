@@ -1356,7 +1356,7 @@ class Handler(BaseHTTPRequestHandler):
                     return {"team": merged}
                 return self.respond(200, db.once(aid, data.get("key"), "proam_team", team, save_team))
             # v0.4.8.8 Pro-Am: create, update, join, leave, answer, kick, handon, draft, queue, lineup (server/proam.py)
-            pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup|settle)", path)  # (qp6: settle)
+            pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup|settle|invite|invites|accept_invite|decline_invite|uninvite|remove)", path)  # (qp6: settle; qp12: the club)
             if pa_route:
                 return self.respond(200, s.proam.action(aid, pa_route.group(1), data))
             # ---------- the Gauntlet ----------

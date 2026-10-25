@@ -23,7 +23,7 @@
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
 import { releaseScene } from '../world/release.js';
-import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, customizable, HUB_NAMES, teamProgress } from '../world/proamhubs.js';
+import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, rosterData, customizable, HUB_NAMES, teamProgress, CLUB_MAX } from '../world/proamhubs.js';
 import { proamInfo } from '../world/proamparks.js';
 import { courtPlayRect } from '../world/themes.js';
 import { Player } from '../sim/player.js';
@@ -36,7 +36,7 @@ import { personOf, setupEntry, seatPeople, inputDelay, newSeed, touchWhere } fro
 import { promptGlyph } from '../core/input.js';
 import { RNG, hashString } from '../core/rng.js';
 import { audio } from '../core/audio.js';
-import { music } from '../core/music.js';
+import { music, PROAM_MUSIC } from '../core/music.js';
 import { settings } from '../core/settings.js';
 import { boostedBuild } from '../sim/ratings.js';
 import * as M from '../core/math.js';
@@ -98,12 +98,132 @@ const contrast = hex => { const c = M.hexToRgb(hex); return 0.2126 * c[0] + 0.71
 const uniform = (color, trim, abbr) => ({ top: { family: 'jersey', color, trim, secondary: trim, pattern: 'panel', lettering: abbr, tucked: true }, bottom: { family: 'shorts', color, trim, stripe: trim } });
 export const HOME_FORMAT = 3; // (3s on the home court)
 
+// ---------------- qp12: the AI people in the HUB (docs/PROAM-OVERHAUL.md §11, scratchpad contract QP12 §2) ----------------
+// Two kinds come in: your AI squad mates (offline your local squad, online the squad's AI mates as the park carries them:
+// each real player's walk a step behind him), and the team's AI members who are on right now by their AI-world schedule
+// (AIWorld.status, on the service's clock online). What each AI member does is a pure function of the team, his id and
+// the time (aiPlan), so every screen in the HUB shows the same people doing the same things: standing around the court,
+// shooting around (HUB_AI_SHOOTERS at most, the first by id), and, while a queue is on, gathered in the office.
+export const HUB_AI_MAX = 8, HUB_AI_SHOOTERS = 2, HUB_AI_PERIOD = 45000, HUB_AI_SHOOT_PCT = 35;
+// {ai_id: on now?} for the team's AI members: the HUB's world when it's the team's world (t: this PC's clock; the world
+// applies the shared clock's skew itself), else the team view's own flag (the service's answer when the team was loaded)
+export function aiOnline(team, world, t = Date.now()) {
+  const out = {}, same = world && typeof world.status === 'function' && (!team?.world?.seed || team.world.seed === world.seed);
+  for (const m of team?.members || []) {
+    if (m?.kind !== 'ai' || typeof m.ai_id !== 'string') continue;
+    let on = !!m.online;
+    if (same) { try { on = !!world.status(m.ai_id, t); } catch { on = !!m.online; } }
+    out[m.ai_id] = on;
+  }
+  return out;
+}
+// the AI members in the HUB now: on by their schedule, not off with someone's squad (exclude), by id, HUB_AI_MAX at most
+export function hubAIMembers(team, world, t = Date.now(), exclude = new Set()) {
+  const on = aiOnline(team, world, t);
+  return Object.keys(on).filter(id => on[id] && !exclude.has(id)).sort().slice(0, HUB_AI_MAX);
+}
+// what each of them is doing at time t: ids (sorted), n: {shoot: the shootaround goals, hang: the places to stand}.
+// -> Map id -> {kind: 'shoot' (shooting around: slot) | 'watch' (by a goal someone shoots at: slot) | 'hang' (spot i)}.
+// Each changes what he's doing every HUB_AI_PERIOD, each at his own moment in it; the same answer on every screen.
+export function aiPlan(teamId, ids, t, n = {}) {
+  const out = new Map(), nS = Math.max(0, n.shoot | 0), nH = Math.max(1, n.hang | 0), taken = new Set();
+  let shooters = 0;
+  for (const id of [...ids].sort()) {
+    const k = Math.floor((t + hashString(id + '|phase') % HUB_AI_PERIOD) / HUB_AI_PERIOD), h = hashString(`${teamId}|${id}|${k}`);
+    if (nS && h % 100 < HUB_AI_SHOOT_PCT) {
+      const slot = (h >>> 8) % nS;
+      if (shooters < HUB_AI_SHOOTERS) { shooters++; out.set(id, { kind: 'shoot', slot, k }); continue; }
+      out.set(id, { kind: 'watch', slot, k }); continue;
+    }
+    let i = (h >>> 4) % nH;
+    for (let j = 0; j < nH && taken.has(i); j++) i = (i + 1) % nH;
+    taken.add(i);
+    out.set(id, { kind: 'hang', i, k });
+  }
+  return out;
+}
+// who's coming, as the HUB's ready-check view shows it (§3): the real players here, then the AI members here, then the
+// AI squad mates who came, then the draft (its picks first; the clipboard fills the rest). server: the lineup op's answer
+// ({members, squad, draft}: ids), when it's in: that is who plays.
+export function hubLineup({ humans = [], members = [], squad = [], picks = [], server = null, name = id => id } = {}) {
+  const H = humans.slice(0, 5);
+  let open = 5 - H.length, m, sq, d;
+  if (server) { m = server.members || []; sq = server.squad || []; d = server.draft || []; open = Math.max(0, open - m.length - sq.length - d.length); }
+  else {
+    m = members.slice(0, open); open -= m.length;
+    sq = squad.filter(i => !m.includes(i)).slice(0, open); open -= sq.length;
+    d = picks.filter(i => !m.includes(i) && !sq.includes(i)).slice(0, open); open -= d.length;
+  }
+  return { humans: H, members: m.map(name), squad: sq.map(name), draft: d.map(name), more: Math.max(0, open), final: !!server };
+}
+
+// an AI person walking the HUB (a squad mate following someone, or an AI member going about the place)
+class HubBot {
+  constructor(hub, id, entry, kind) {
+    this.hub = hub; this.id = id; this.kind = kind; this.entry = entry; this.name = entry.name;
+    this.p = new Player(0, 0, { build: entry.build, name: entry.name }, hub.catalog);
+    this.visual = new PlayerVisual(hub.r, hub.scene, entry.build, entry.look, { detail: 0.75, ...(hub.pool ? { pool: hub.pool } : {}) });
+    this.path = []; this.face = null; this.owner = null; this.slot = 0; this.session = null; this.plan = null; this.leaving = false; this.gone = false;
+  }
+  setPos(x, z, f = 0) { this.p.setPos(x, z, f); }
+  // to (x, z), through the office door when that's in another room; face: which way to stand once there
+  goTo(x, z, face = null) {
+    const hub = this.hub, p = this.p, R = r => hub.area === 'hub' ? hub.venue.roomAt?.(r.x, r.z)?.id || null : null;
+    const from = R(p), to = R({ x, z }), o = hub.venue.office, path = [];
+    if (o?.door && from !== to && (from === 'office' || to === 'office')) {
+      const oz = (o.room && hub.venue.rooms?.find(r => r.id === o.room)) || null, s = oz ? Math.sign((oz.z0 + oz.z1) / 2 - o.door.z) || 1 : 1;
+      const inside = { x: o.door.x, z: o.door.z + s * 0.9 }, outside = { x: o.door.x, z: o.door.z - s * 0.9 };
+      path.push(...(from === 'office' ? [inside, outside] : [outside, inside]));
+    }
+    path.push({ x, z });
+    this.path = path; this.face = face;
+  }
+  update(dt) {
+    const p = this.p, it = p.intent, hub = this.hub;
+    it.mx = 0; it.mz = 0; it.sprint = false; it.face = null;
+    if (this.session) return; // (he walks while his look is still being built: he's just not drawn yet)
+    if (this.owner) {
+      // a step behind whoever he came with, fanned out to the sides (as squad mates walk in the parks)
+      const o = this.owner, f = o.facing, slot = this.slot;
+      const back = 1.5 + Math.floor(slot / 2) * 1.2, lat = (slot % 2 ? 1 : -1) * (0.85 + Math.floor(slot / 2) * 0.3);
+      let tx = o.x - Math.sin(f) * back + Math.cos(f) * lat, tz = o.z - Math.cos(f) * back - Math.sin(f) * lat;
+      if (!hub.walkable(tx, tz)) { tx = o.x - Math.sin(f) * 1.1; tz = o.z - Math.cos(f) * 1.1; if (!hub.walkable(tx, tz)) { tx = o.x; tz = o.z; } }
+      const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+      // (left behind round a corner, through a door, or caught on something on the way: he catches up)
+      this.fprog = this.fprog || { d: Infinity, t: 0 };
+      if (d < this.fprog.d - 0.05 || d < 1.5) { this.fprog.d = d; this.fprog.t = 0; } else this.fprog.t += dt;
+      if (d > 8 || this.fprog.t > 1.2) { p.setPos(tx, tz, f); this.fprog = null; }
+      else if (d > 0.35) { const k = Math.min(1, d / 1.4) * (d > 3.5 ? 1 : 0.62); it.mx = dx / d * k; it.mz = dz / d * k; it.sprint = d > 4.5; }
+      else it.face = f;
+    } else if (this.path.length) {
+      const w = this.path[0], dx = w.x - p.x, dz = w.z - p.z, d = Math.hypot(dx, dz);
+      this.prog = this.prog && this.prog.w === w ? this.prog : { w, d: Infinity, t: 0 };
+      if (d < this.prog.d - 0.1) { this.prog.d = d; this.prog.t = 0; } else this.prog.t += dt;
+      if (d < 0.3 || this.prog.t > 3) { if (this.prog.t > 3) p.setPos(w.x, w.z, p.facing); this.path.shift(); if (!this.path.length && this.leaving) this.gone = true; }
+      else { const k = Math.min(1, d / 0.8) * (this.leaving || this.plan?.kind === 'office' ? 0.85 : 0.5); it.mx = dx / d * k; it.mz = dz / d * k; }
+    } else if (this.face != null) it.face = this.face;
+    const ox = p.x, oz = p.z;
+    p.move(dt * GAME_SPEED, false, 0); p.stamina = 1;
+    if (!hub.walkable(p.x, p.z)) { if (hub.walkable(p.x, oz)) p.z = oz; else if (hub.walkable(ox, p.z)) p.x = ox; else { p.x = ox; p.z = oz; } }
+    for (const s of hub.venue.solids || []) pushOut(p, s);
+    if (!hub.walkable(p.x, p.z)) { p.x = ox; p.z = oz; }
+  }
+  render(dt) {
+    if (this.session || this.visual.pending) return;
+    const p = this.p;
+    this.visual.anim.update(dt, { x: p.x, y: 0, z: p.z, facing: p.facing }, p, null, null, {});
+    this.visual.place(p.x, 0, p.z);
+  }
+  hide(h) { this.visual.view?.setVisible?.(!h); if (this.visual.blob) this.visual.blob.visible = !h; this.visual.setHidden?.(h); }
+  dispose() { this.session?.dispose(); this.session = null; this.visual.dispose(); this.disposed = true; }
+}
+
 // ---------------- the hub ----------------
 export class ProamHub {
   // opts: {team, season, from: 'menu'|'park', park (the park you came from), area: 'hub'|'park', at: 'walkout'
   // (coming back in through the home park's doors), officeUI (ui/proamui.js: openOffice, queue, load), pool}
   constructor(app, ui, opts = {}) {
-    music.setPlaylist?.('main');
+    music.setPlaylist?.('main', { level: PROAM_MUSIC }); music.setSuppressed?.(false); // (v0.4.8.9 qp13: the soundtrack, at about 10%)
     this.app = app; this.ui = ui; this.r = app.renderer; this.opts = opts;
     this.team = opts.team || {}; this.season = opts.season || null;
     this.from = opts.from === 'park' ? 'park' : 'menu'; this.park = opts.park || null;
@@ -148,6 +268,13 @@ export class ProamHub {
     audio.setCrowd?.(0); audio.setIndoor?.(this.area === 'hub' || !!proamInfo(this.parkId)?.indoor); audio.surface = this.area === 'hub' || proamInfo(this.parkId)?.indoor ? 'wood' : 'asphalt';
     this.arrivedAt = this.serverNow();
     this.stampAt = 0; this.shootAt = 0; this.boardT = 0; this.seeded = false;
+    // (qp12) the AI people: your squad mates with you, the team's AI members on now; the others' AI squad mates walk with
+    // them (Peers: the park's followers)
+    this.bots = new Map(); this.crowdT = 1; this.queueing = null;
+    this.peers.withAI = true;
+    this.spots = this.area === 'hub' ? crowdSpots(this.venue, this.main) : null;
+    this.offReady = this.net()?.on?.('pa-ready', m => this.onReady(m)) || null;
+    this.syncCrowd(true);
     this.onArrivals();
     this.refreshBoards();
     this.pool.flush?.();
@@ -263,7 +390,11 @@ export class ProamHub {
     if (!this.isCaptain()) { this.ui.toast(`Only the Captain queues the next game: ${this.captainName()}.`, 'error'); return false; }
     const U = await this.office();
     if (!U?.queue) { this.ui.toast('Queueing opens soon.', 'error'); return false; }
-    await U.queue(this.app, this.team, { members: this.membersHere() });
+    // (qp12: the AI members the HUB shows and the AI squad mates here go in the lineup before the draft; meanwhile they
+    // all go over to the office)
+    this.queueStarted();
+    await U.queue(this.app, this.team, { members: this.membersHere(), aiMembers: this.aiMembersHere(), squad: this.squadHere() });
+    if (!this.disposed) this.queueEnded();
     return true;
   }
   // the team as the service has it now (after the office changed it): the whiteboard, and a Gold clubhouse's look
@@ -281,6 +412,137 @@ export class ProamHub {
   refreshBoards() {
     if (this.area !== 'hub') return;
     this.venue.boards?.whiteboard?.set(whiteboardData(this.team, this.season || this.app.proam?.season || null));
+    this.venue.boards?.roster?.set(rosterData(this.team, aiOnline(this.team, this.world, Date.now()))); // (qp12: the Invite spot's roster)
+  }
+  // (qp12) the office's Invite spot: the club's invite dialog (ui/proam.js openInviteDialog: AI friends join at once,
+  // players get an invite), from the office UI module, or the Pro-Am tab's, whichever has it
+  async openInvite() {
+    const U = await this.office();
+    let f = U?.openInviteDialog || null;
+    if (typeof f !== 'function') { try { f = (await import('../ui/proam.js')).openInviteDialog; } catch (e) { console.warn('[hub] invites', e?.message || e); f = null; } }
+    if (typeof f !== 'function') { this.ui.toast('Invites open soon.', 'error'); return false; }
+    try { await f(this.app, this.team, { onChange: () => this.reloadTeam() }); }
+    catch (e) { console.warn('[hub] invites', e?.message || e); this.ui.toast('The invites couldn\'t open: ' + (e?.message || 'try again'), 'error'); return false; }
+    return true;
+  }
+
+  // ---------------- qp12: the AI people ----------------
+  // your AI squad mates (offline your local squad; online, yours as your game sends them with you)
+  squadMine() { try { return (this.world?.activeSquad?.() || []).filter(id => typeof id === 'string').slice(0, 4); } catch { return []; } }
+  // the AI squad mates the other people here brought (as the park carries them: each one's own, from the service)
+  squadPeers() {
+    const net = this.netHere(); if (!net) return [];
+    const out = [];
+    for (const [id, p] of net.people) for (const a of (p?.ai?.length ? p.ai : net.aiOf?.(id) || [])) if (typeof a?.id === 'string') out.push(a.id);
+    return out;
+  }
+  squadHere() { return [...new Set([...this.squadMine(), ...this.squadPeers()])]; }
+  aiMembersHere() { return [...this.bots.values()].filter(b => b.kind === 'member' && !b.leaving).map(b => b.id).sort(); }
+  aiEntry(id) {
+    try { const e = this.world?.gameEntry?.(id); if (!e?.build) return null; return { ...e, name: e.name || id, look: e.look || resolveLook({ ...e.build, name: e.name }, this.catalog) }; } catch { return null; }
+  }
+  aiName(id) { return this.bots.get(id)?.name || (this.team?.members || []).find(m => m?.ai_id === id)?.name || this.aiEntry(id)?.name || id; }
+  // who should be here (once a second): the squad mates follow you; the AI members on now come in through the door
+  // (first: already here when you come in) and walk out of it when they go off
+  syncCrowd(first = false) {
+    const t = Date.now(), mine = this.squadMine(); // (the AI world applies its shared clock itself: local time in)
+    const exclude = new Set([...mine, ...this.squadPeers()]);
+    const members = this.area === 'hub' ? hubAIMembers(this.team, this.world, t, exclude) : [];
+    const want = new Map();
+    mine.forEach((id, i) => want.set(id, { kind: 'squad', slot: i }));
+    for (const id of members) if (!want.has(id)) want.set(id, { kind: 'member' });
+    for (const [id, b] of [...this.bots]) {
+      const w = want.get(id);
+      if (w && w.kind === b.kind) { if (b.leaving) { b.leaving = false; b.planKey = null; } continue; }
+      if (b.kind === 'member' && !first && this.spots?.door && !b.gone) {
+        if (!b.leaving) { this.stopBotShoot(b); b.leaving = true; b.plan = null; b.planKey = null; b.goTo(this.spots.door.x, this.spots.door.z); }
+        continue;
+      }
+      this.dropBot(id);
+    }
+    for (const [id, w] of want) {
+      const b0 = this.bots.get(id);
+      if (b0) { if (w.kind === 'squad') b0.slot = w.slot; continue; }
+      const e = this.aiEntry(id); if (!e) continue;
+      let b;
+      try { b = new HubBot(this, id, e, w.kind); } catch (err) { console.warn('[hub] AI person', err?.message || err); continue; }
+      if (w.kind === 'squad') {
+        b.owner = this.me; b.slot = w.slot;
+        const f = this.me.facing, x = this.me.x - Math.sin(f) * (1.4 + w.slot * 0.5), z = this.me.z - Math.cos(f) * (1.4 + w.slot * 0.5);
+        if (this.walkable(x, z)) b.setPos(x, z, f); else b.setPos(this.me.x, this.me.z, f);
+      } else { const d = this.spots?.door || this.venue.spawn || { x: 0, z: 0 }; b.setPos(d.x, d.z, 0); b.fresh = first; }
+      this.bots.set(id, b);
+    }
+    this.planCrowd();
+  }
+  dropBot(id) { const b = this.bots.get(id); if (!b) return; b.dispose(); this.bots.delete(id); }
+  // what the AI members do now (aiPlan: the same on every screen); while a queue is on, everyone gathers in the office
+  planCrowd() {
+    if (!this.spots) { for (const b of this.bots.values()) if (b.kind === 'squad' && !b.owner) b.owner = this.me; return; }
+    const S = this.spots, members = [...this.bots.values()].filter(b => b.kind === 'member' && !b.leaving).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const squad = [...this.bots.values()].filter(b => b.kind === 'squad');
+    const go = (b, key, sp, face = null) => {
+      if (!sp || b.planKey === key) return;
+      b.planKey = key;
+      if (b.fresh) { b.fresh = false; b.setPos(sp.x, sp.z, face ?? sp.face ?? 0); b.path = []; b.face = face ?? sp.face ?? null; }
+      else b.goTo(sp.x, sp.z, face ?? sp.face ?? null);
+    };
+    if (this.queueing && S.office.length) {
+      const q = this.venue.office?.queue;
+      [...members, ...squad].forEach((b, i) => {
+        this.stopBotShoot(b); b.owner = null; b.plan = { kind: 'office', i };
+        const sp = S.office[i % S.office.length];
+        go(b, `office:${i}`, sp, q ? Math.atan2(q.x - sp.x, q.z - sp.z) : null);
+      });
+      return;
+    }
+    for (const b of squad) if (!b.owner) { b.owner = this.me; b.planKey = null; b.path = []; }
+    const plan = aiPlan(this.team?.id || this.look.name, members.map(b => b.id), this.serverNow(), { shoot: this.venue.shootSlots?.length || 0, hang: S.hang.length });
+    let watch = 0;
+    for (const b of members) {
+      const a = plan.get(b.id); if (!a) continue;
+      const key = `${a.kind}:${a.slot ?? a.i}:${a.k}`;
+      if (b.planKey === key) continue;
+      if (b.plan?.kind === 'shoot' && (a.kind !== 'shoot' || a.slot !== b.plan.slot)) this.stopBotShoot(b);
+      b.plan = a;
+      let sp = null;
+      if (a.kind === 'hang') sp = S.hang[a.i % S.hang.length];
+      else if (a.kind === 'shoot') { const sl = this.venue.shootSlots[a.slot]?.spot; sp = sl ? { x: sl.x, z: sl.z, face: Math.PI } : null; }
+      else { const g = S.goals[a.slot] || []; sp = g.length ? g[(watch++) % g.length] : S.hang[0]; }
+      if (b.session && a.kind === 'shoot') { b.planKey = key; continue; }
+      go(b, key, sp);
+    }
+  }
+  // an AI member shooting around: a background shootaround on his goal (as the people here shooting on their screens)
+  startBotShoot(b) {
+    const slot = b.plan?.slot;
+    if (b.session || !this.venue.shootSlots?.[slot]) return false;
+    try {
+      const entry = { ...b.entry, human: false };
+      b.session = new MatchSession(this.app, { background: true, hub: true, pool: this.pool, mode: 'practice', scene: this.scene, venue: this.venue, court: this.slotCourt(slot), rosters: [[entry], []], teams: [{ name: entry.name, abbr: '', color: this.look.primary }, { name: '', abbr: '', color: '#888' }], seed: (hashString(String(b.id)) % 1e6) + 1 });
+      b.hide(true);
+      return true;
+    } catch (e) { console.warn('[hub] AI shootaround', e?.message || e); b.session = null; b.plan = { ...b.plan, kind: 'watch' }; return false; }
+  }
+  stopBotShoot(b) {
+    if (!b.session) return;
+    const s = b.session, pl = s.game?.players?.[0], o = s.origin || [0, 0, 0];
+    b.session = null;
+    try { s.dispose(); } catch { /* gone */ }
+    let x = pl ? pl.x + o[0] : b.p.x, z = pl ? pl.z + o[2] : b.p.z;
+    if (!this.walkable(x, z)) { const sp = this.venue.shootSlots?.[b.plan?.slot]?.spot; if (sp) { x = sp.x; z = sp.z; } }
+    b.setPos(x, z, Math.PI); b.hide(false);
+  }
+  // the queue (yours, or the Captain's ready check reaching you): the AI people go over to the office for it
+  queueStarted(secs = 75) { this.queueing = { at: performance.now(), until: performance.now() + secs * 1000, lu: this.app.paLineup || null }; for (const b of this.bots.values()) b.planKey = null; this.planCrowd(); }
+  queueEnded() { if (!this.queueing) return; this.queueing = null; for (const b of this.bots.values()) b.planKey = null; this.planCrowd(); }
+  onReady(m) { if (this.disposed) return; if (m?.op === 'ask') this.queueStarted((+m.secs || 20) + 55); else if (m?.op === 'cancel') this.queueEnded(); }
+  // the HUB's ready-check view: who's coming (hubLineup): the server's lineup once it's in, else the HUB's own reckoning
+  lineupView() {
+    const q = this.queueing; if (!q) return null;
+    const lu = this.app.paLineup && this.app.paLineup !== q.lu ? this.app.paLineup : null;
+    const picks = Object.values(this.team?.current?.picks || {}).filter(id => typeof id === 'string');
+    return hubLineup({ humans: this.membersHere().map(m => m.name), members: this.aiMembersHere(), squad: this.squadHere(), picks, server: lu, name: id => this.aiName(id) });
   }
 
   // ---------------- frame ----------------
@@ -298,6 +560,19 @@ export class ProamHub {
     if (now - this.stampAt > 3000) { this.stampAt = now; this.stamp(); }
     if (this.mode === 'practice' && now - this.shootAt > 500) { this.shootAt = now; this.sendPracticePos(); }
     if ((this.boardT -= dt) <= 0) { this.boardT = 30; this.refreshBoards(); }
+    // (qp12: who's here, once a second; the AI people walk, shoot around, follow)
+    if (this.queueing && now > this.queueing.until) this.queueEnded();
+    if ((this.crowdT -= dt) <= 0) { this.crowdT = 1; this.syncCrowd(); }
+    const near = [...this.bots.values()].filter(b => !b.session);
+    for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) { separate(near[i].p, near[j].p); if (!this.walkable(near[i].p.x, near[i].p.z)) separate(near[j].p, near[i].p); }
+    for (const [id, b] of [...this.bots]) {
+      if (b.gone) { this.dropBot(id); continue; }
+      if (b.session) { b.session.frame(dt); continue; }
+      if (this.mode === 'match') continue;
+      b.update(dt); b.render(dt);
+      if (b.plan?.kind === 'shoot' && !b.owner && !b.leaving && !b.path.length && this.mode !== 'starting') this.startBotShoot(b);
+    }
+    for (const f of this.peers.followers()) if (this.area === 'hub' && !this.walkable(f.p.x, f.p.z)) f.p.setPos(f.owner.p.x, f.owner.p.z, f.owner.p.facing);
     if (this.mode === 'roam') this.roam(dt);
     else if (this.mode === 'match' && this.session) {
       if (inp.wasPressed('pause') && !this.session.ended && !this.session.paused && !this.app.modalOpen()) this.ui.pauseGame(this);
@@ -359,6 +634,7 @@ export class ProamHub {
     for (const s of this.venue.solids || []) pushOut(me, s);
     if (this.area === 'park' && (this.session || this.live) && this.mainRect) pushOut(me, this.mainRect);
     for (const w of this.peers.list()) separate(me, w.p);
+    for (const b of this.bots.values()) if (!b.session && !b.owner) separate(me, b.p);
     for (const s of this.shooters.values()) { const p = s.session.game.players[0], [sx, , sz] = s.session.origin; separate(me, { x: p.x + sx, z: p.z + sz, phys: p.phys }); }
     if (this.live) for (const p of this.live.game.players) separate(me, { x: p.x + this.main.origin[0], z: p.z + this.main.origin[2], phys: p.phys });
     if (!this.walkable(me.x, me.z)) { me.x = ox; me.z = oz; }
@@ -400,6 +676,7 @@ export class ProamHub {
       case 'draft': return cap ? `${E} Draft clipboard · pick for the open spots` : `${E} Draft clipboard · the Captain picks`;
       case 'settings': return this.isFounder() ? `${E} Team settings${customizable(this.tier) ? ' · floor, walls, logo, colors' : ''}` : `${E} Team settings · the founder's`;
       case 'queue': return cap ? `${E} Queue the next game · ready check` : `Queue the next game · ${this.captainName()} (Captain) queues`;
+      case 'invite': { const n = (this.team?.members || []).length; return `${E} Invite to the club · AI friends and players (${n}/${CLUB_MAX})`; }
       case 'shoot': return `${E} Shoot around`;
       case 'walkin': return `${E} Back into the clubhouse`;
       case 'home3s': { const n = this.realHere().length; return this.live ? 'A game is on · watch it from here' : `${E} Run 3s on the home court${n ? ` · ${n + 1} of you here` : ' · against the AI'}`; }
@@ -414,6 +691,7 @@ export class ProamHub {
       case 'draft': this.openPanel('draft'); return 'draft';
       case 'settings': this.openPanel('settings'); return 'settings';
       case 'queue': this.queueNext(); return 'queue';
+      case 'invite': this.openInvite(); return 'invite';
       case 'shoot': this.startPractice(it.slot || 0); return 'shoot';
       case 'walkin': this.walkIn(); return 'walkin';
       case 'home3s': if (this.live) return null; if (this.realHere().length) this.ui.pick3s(this); else this.startHome3s(); return 'home3s';
@@ -613,6 +891,8 @@ export class ProamHub {
   deactivate() { }
   dispose() {
     this.disposed = true;
+    this.offReady?.(); this.offReady = null;
+    for (const id of [...this.bots.keys()]) this.dropBot(id);
     this.peers.detach();
     if (this.live) this.live.dispose();
     for (const id of [...this.shooters.keys()]) this.stopShooter(id);
@@ -624,6 +904,29 @@ export class ProamHub {
   }
 }
 const COURT_SIDE = 9.6; // (m from the court's middle: where you start 3s on the home court, by either sideline)
+// (qp12) where the AI people go in a HUB: places to stand along the court (hang), by each shootaround goal (goals[slot]),
+// in the office (office, the nearest the queue first), and the door they come in by. Fixed by the building: the same
+// list on every screen
+export function crowdSpots(venue, main) {
+  const solids = venue.solids || [], its = venue.interactables || [];
+  const ok = (x, z) => venue.walkable(x, z, 0.5) && !solids.some(b => x > b.x0 - 0.55 && x < b.x1 + 0.55 && z > b.z0 - 0.55 && z < b.z1 + 0.55) && !its.some(i => Math.hypot(i.x - x, i.z - z) < Math.min(i.r, 1.2) + 0.35);
+  const rc = courtPlayRect(main, 0), hang = [];
+  for (let z = rc.z0 + 2; z <= rc.z1 - 2; z += 2.6) for (const x of [rc.x0 - 1.5, rc.x1 + 1.5]) if (ok(x, z)) hang.push({ x, z, face: x < (rc.x0 + rc.x1) / 2 ? Math.PI / 2 : -Math.PI / 2 });
+  for (let x = rc.x0 + 2; x <= rc.x1 - 2; x += 2.8) if (ok(x, rc.z0 - 1.6)) hang.push({ x, z: rc.z0 - 1.6, face: 0 });
+  const goals = (venue.shootSlots || []).map(sl => [[2.3, 1.4], [-2.3, 1.4], [3.2, -0.6], [-3.2, -0.6]].map(([dx, dz]) => ({ x: sl.spot.x + dx, z: sl.spot.z + dz })).filter(q => ok(q.x, q.z)).map(q => ({ ...q, face: Math.atan2(sl.spot.x - q.x, sl.spot.z - 2.5 - q.z) })));
+  const R = (venue.rooms || []).find(r => r.id === venue.office?.room), q = venue.office?.queue, office = [];
+  if (R && q) {
+    // (in the office anywhere free but on the queue spot itself; then, the office full, just outside its door)
+    const free = (x, z) => venue.walkable(x, z, 0.4) && !solids.some(b => x > b.x0 - 0.45 && x < b.x1 + 0.45 && z > b.z0 - 0.45 && z < b.z1 + 0.45) && Math.hypot(q.x - x, q.z - z) > 0.65;
+    for (let x = R.x0 + 0.55; x <= R.x1 - 0.55; x += 0.75) for (let z = R.z0 + 0.55; z <= R.z1 - 0.55; z += 0.75) if (free(x, z)) office.push({ x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100 });
+    office.sort((a, b) => Math.hypot(a.x - q.x, a.z - q.z) - Math.hypot(b.x - q.x, b.z - q.z));
+    const d = venue.office.door, s = Math.sign((R.z0 + R.z1) / 2 - d.z) || 1, out = [];
+    for (const dx of [0, -1, 1, -2, 2, -3, 3]) for (const dz of [1.6, 2.6]) { const x = d.x + dx * 0.85, z = d.z - s * dz; if (free(x, z) && !venue.roomAt?.(x, z)?.id?.startsWith('office')) out.push({ x, z }); }
+    office.splice(Math.min(office.length, 10), 0, ...out);
+  }
+  const door = venue.exit ? { x: venue.exit.x, z: venue.exit.z } : venue.spawn ? { x: venue.spawn.x, z: venue.spawn.z } : null;
+  return { hang, goals, office: office.slice(0, 16), door };
+}
 
 // ---------------- the way in ----------------
 // opts: {from: 'menu'|'park', park, area, at, team, season} (and for the tests: officeUI, modes, ui, toCreate, toast)
@@ -672,7 +975,7 @@ export class HubUI {
   async dom() { if (!this.C) this.C = await import('../ui/common.js'); return this.C; }
   mount() {
     const ui = document.querySelector('#ui');
-    ui.innerHTML = '<div class="park-top" id="park-top"></div><div class="friend-tags" id="friend-tags"></div>';
+    ui.innerHTML = '<div class="park-top" id="park-top"></div><div class="friend-tags" id="friend-tags"></div><div id="pa-lineup" class="pa-lineup" hidden style="position:absolute;right:18px;top:84px;max-width:340px;padding:12px 14px;border-radius:12px;background:rgba(12,14,18,.88);border:1px solid rgba(255,255,255,.12);color:#eef1f4;font-size:13px;line-height:1.45;pointer-events:none;z-index:5"></div>';
     ui.className = 'layer';
     this.tags = new Map(); this.lastTop = null; this.lastPrompt = null;
     this.dom();
@@ -681,8 +984,9 @@ export class HubUI {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const lk = hub.look, where = hub.area === 'park' ? `${proamInfo(hub.parkId)?.name || 'Home court'} · home court` : HUB_NAMES[hub.tier];
     const n = hub.realHere().length, cap = hub.isCaptain() ? 'You\'re the Captain' : `Captain: ${hub.captainName()}`;
+    const nAI = hub.aiMembersHere?.().length || 0, nSq = hub.squadHere?.().length || 0; // (qp12: the AI members on, the squad mates who came)
     const tp = teamProgress(hub.team); // (qp8: the team's own rank, apart from each player's)
-    return `<div class="park-badge pa-hub-badge" style="--c:${esc(lk.primary)}"><b>${esc(lk.name)} <span class="crew-tag sm">${esc(lk.abbr)}</span></b><small>${esc(where)} · ${n ? `${n + 1} of the team here` : 'just you here'} · ${esc(cap)}</small>${tp ? `<small class="pa-hub-rank">Team ${esc(tp.label)} · ${tp.raw} RP · ${esc(tp.text)}</small>` : ''}</div><div class="park-keys muted small" id="park-keys"></div>`;
+    return `<div class="park-badge pa-hub-badge" style="--c:${esc(lk.primary)}"><b>${esc(lk.name)} <span class="crew-tag sm">${esc(lk.abbr)}</span></b><small>${esc(where)} · ${n ? `${n + 1} of the team here` : 'just you here'}${nAI ? ` · ${nAI} AI member${nAI > 1 ? 's' : ''} on` : ''}${nSq ? ` · ${nSq} squad mate${nSq > 1 ? 's' : ''}` : ''} · ${esc(cap)}</small>${tp ? `<small class="pa-hub-rank">Team ${esc(tp.label)} · ${tp.raw} RP · ${esc(tp.text)}</small>` : ''}</div><div class="park-keys muted small" id="park-keys"></div>`;
   }
   intro(hub) {
     this.lastTop = null; this.update(hub);
@@ -701,10 +1005,28 @@ export class HubUI {
       top.hidden = hub.mode !== 'roam';
     }
     this.friendTags(hub);
+    this.lineupCard(hub);
+  }
+  // (qp12) the HUB's ready-check view: who's coming to the game while a queue is on (hub.lineupView)
+  lineupHTML(v) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const row = (k, list, tag) => (list.length ? `<div><b style="color:#9aa4ae;font-size:11px;letter-spacing:.08em">${k}</b><br>${list.map(n => `${esc(n)}${tag ? ` <span style="font-size:10px;padding:0 5px;border-radius:5px;background:${tag[1]};color:#fff">${tag[0]}</span>` : ''}`).join(', ')}</div>` : '');
+    return `<div style="font-size:11px;letter-spacing:.1em;color:#ff8a5c;font-weight:800">${v.final ? 'THE LINEUP' : 'READY CHECK · WHO\'S COMING'}</div>
+      ${row('PLAYERS', v.humans)}${row('AI MEMBERS', v.members, ['AI', '#2b6cb0'])}${row('SQUAD MATES', v.squad, ['SQUAD', '#1f8a4c'])}${row('DRAFT', v.draft, ['DRAFT', '#6b4a30'])}
+      ${v.more ? `<div style="color:#9aa4ae">${v.more} more from the draft clipboard</div>` : ''}`;
+  }
+  lineupCard(hub) {
+    const el = document.querySelector('#pa-lineup'); if (!el) return;
+    const v = hub.mode === 'roam' ? hub.lineupView?.() : null;
+    const h = v ? this.lineupHTML(v) : '';
+    if (h !== this.lastLineup) { this.lastLineup = h; el.innerHTML = h; el.hidden = !h; }
   }
   friendTags(hub) {
     const box = document.querySelector('#friend-tags'); if (!box) return;
-    const ws = hub.mode === 'roam' && settings.tags !== false ? hub.peers.list() : [];
+    const bots = [...(hub.bots?.values() || [])].filter(b => !b.session && !b.disposed).map(b => ({ id: 'ai:' + b.id, p: b.p, visual: b.visual, username: `${b.name} · ${b.kind === 'squad' ? 'squad' : 'AI'}` }));
+    // (qp12: the AI people too: the HUB's own, and the AI squad mates the others brought, with whose they are)
+    const fol = hub.peers.followers().map(f => ({ id: 'fol:' + (f.owner?.id || '') + ':' + f.aiId, p: f.p, visual: f.visual, username: `${f.entry?.name || 'AI'} · ${f.owner?.username ? `${f.owner.username}'s squad` : 'squad'}` }));
+    const ws = hub.mode === 'roam' && settings.tags !== false ? [...hub.peers.list(), ...bots, ...fol] : [];
     for (const [id, el] of this.tags) if (!ws.some(w => w.id === id)) { el.remove(); this.tags.delete(id); }
     for (const w of ws) {
       let el = this.tags.get(w.id);
@@ -723,7 +1045,7 @@ export class HubUI {
       <button class="btn primary" data-close>Resume</button>
       ${park ? '' : `<button class="btn" data-wb>Whiteboard</button><button class="btn" data-draft>Draft clipboard${cap ? '' : ' (the Captain picks)'}</button>
       <button class="btn" data-queue ${cap ? '' : 'disabled'}>Queue the next game${cap ? '' : ` · ${C.esc(hub.captainName())} queues`}</button>
-      ${hub.isFounder() ? '<button class="btn" data-settings>Team settings</button>' : ''}`}
+      ${hub.isFounder() ? '<button class="btn" data-settings>Team settings</button>' : ''}<button class="btn" data-invite>Invite to the club</button>`}
       <button class="btn" data-phone>Social</button>
       <button class="btn" data-opts>Settings & controls</button>
       ${park ? '<button class="btn" data-in>Back into the clubhouse</button>' : `<button class="btn" data-out>${hub.from === 'park' ? 'Back to the park' : 'Back to the Pro-Am menu'}</button>`}
@@ -733,6 +1055,7 @@ export class HubUI {
     on('[data-draft]', () => hub.openPanel('draft'));
     on('[data-queue]', () => hub.queueNext());
     on('[data-settings]', () => hub.openPanel('settings'));
+    on('[data-invite]', () => hub.openInvite());
     on('[data-phone]', () => Phone.openPhone(this.app));
     on('[data-opts]', () => Screens.openSettings(this.app));
     on('[data-in]', () => hub.walkIn());

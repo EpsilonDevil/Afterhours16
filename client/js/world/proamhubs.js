@@ -163,7 +163,8 @@ const PLANS = {
     ],
     spawn: { x: 9.7, z: -13.6, yaw: -Math.PI / 2 },
     exit: { x: 10.25, z: -13.6, r: 1.7, door: { x: 11.2, z: -13.6, yaw: -Math.PI / 2, w: 2.2 } },
-    office: { room: 'office', door: { x: 4.9, z: 15.7 }, whiteboard: { x: 4.7, z: 18.65, r: 1.05, at: { x: 4.7, y: 1.6, z: 19.46, yaw: Math.PI, w: 2.4, h: 1.25 } }, settings: { x: 6.55, z: 16.85, r: 0.75 }, draft: { x: 6.55, z: 18.0, r: 0.75 }, queue: { x: 3.3, z: 16.75, r: 0.75 } },
+    office: { room: 'office', door: { x: 4.9, z: 15.7 }, whiteboard: { x: 4.7, z: 18.65, r: 1.05, at: { x: 4.7, y: 1.6, z: 19.46, yaw: Math.PI, w: 2.4, h: 1.25 } }, settings: { x: 6.55, z: 16.85, r: 0.75 }, draft: { x: 6.55, z: 18.0, r: 0.75 }, queue: { x: 3.3, z: 16.75, r: 0.75 },
+      invite: { x: 6.95, z: 18.85, r: 0.7, at: { x: 6.95, y: 1.5, z: 19.46, yaw: Math.PI, w: 0.72, h: 0.94 } } }, // (qp12: the tryouts sign-up sheet)
     shoot: [{ x: 0, z: 9, r: 3.6 }, { x: -9.3, z: 12.6, r: 1.8 }],
   },
   silver: {
@@ -177,7 +178,8 @@ const PLANS = {
     ],
     spawn: { x: -8.6, z: -18.2, yaw: 0 },
     exit: { x: -8.6, z: -18.75, r: 1.7, door: { x: -8.6, z: -19.6, yaw: 0, w: 2.4 } },
-    office: { room: 'office', door: { x: 8.6, z: -19.6 }, whiteboard: { x: 9.4, z: -24.85, r: 1.15, at: { x: 9.4, y: 1.6, z: -25.76, yaw: 0, w: 3.4, h: 1.35 } }, settings: { x: 12.0, z: -23.4, r: 0.8 }, draft: { x: 13.35, z: -23.4, r: 0.8 }, queue: { x: 6.1, z: -20.45, r: 0.8 } },
+    office: { room: 'office', door: { x: 8.6, z: -19.6 }, whiteboard: { x: 9.4, z: -24.85, r: 1.15, at: { x: 9.4, y: 1.6, z: -25.76, yaw: 0, w: 3.4, h: 1.35 } }, settings: { x: 12.0, z: -23.4, r: 0.8 }, draft: { x: 13.35, z: -23.4, r: 0.8 }, queue: { x: 6.1, z: -20.45, r: 0.8 },
+      invite: { x: 13.0, z: -24.95, r: 0.75, at: { x: 13.0, y: 1.6, z: -25.76, yaw: 0, w: 1.2, h: 0.96 } } }, // (qp12: the varsity roster board)
     shoot: [{ x: 0, z: 9, r: 3.8 }, { x: 5.2, z: 16.2, r: 1.8 }],
   },
   gold: {
@@ -192,7 +194,8 @@ const PLANS = {
     spawn: { x: -5, z: -18.1, yaw: 0 },
     exit: { x: -5, z: -18.95, r: 1.7, door: { x: -5, z: -20, yaw: 0, w: 1.9 } },
     walkout: { x: -10.9, z: -2, r: 1.9, door: { x: -12, z: -2, yaw: Math.PI / 2, w: 3.2 } },
-    office: { room: 'office', door: { x: 19.4, z: -20 }, whiteboard: { x: 29.95, z: -24.3, r: 1.2, at: { x: 30.95, y: 1.7, z: -24.3, yaw: -Math.PI / 2, w: 4.0, h: 1.6 } }, settings: { x: 23.65, z: -27.3, r: 0.85 }, draft: { x: 25.65, z: -27.3, r: 0.85 }, queue: { x: 16.6, z: -21.15, r: 0.85 } },
+    office: { room: 'office', door: { x: 19.4, z: -20 }, whiteboard: { x: 29.95, z: -24.3, r: 1.2, at: { x: 30.95, y: 1.7, z: -24.3, yaw: -Math.PI / 2, w: 4.0, h: 1.6 } }, settings: { x: 23.65, z: -27.3, r: 0.85 }, draft: { x: 25.65, z: -27.3, r: 0.85 }, queue: { x: 16.6, z: -21.15, r: 0.85 },
+      invite: { x: 26.45, z: -25.05, r: 0.8, phone: { x: 26.0, z: -25.95 }, at: { x: 21.6, y: 1.75, z: -28.46, yaw: 0, w: 1.6, h: 0.96 } } }, // (qp12: the desk phone, the roster screen)
     shootCourt: [21.5, 0, -1.5],
     shoot: [{ x: 0, z: 9, r: 3.8 }, { x: 21.5, z: 7.5, r: 4 }],
   },
@@ -353,7 +356,7 @@ export function whiteboardData(team, season = null, now = Date.now() / 1000) {
     division: t.division?.label || 'Bronze 1', teamRP: prog.raw, nextBuilding: prog.text, record: Array.isArray(t.record) ? t.record : [0, 0], seriesRecord: Array.isArray(t.series) ? t.series : [0, 0],
     series: sr ? { label: sr.division?.label || t.division?.label || '', wins: sr.wins || 0, losses: sr.losses || 0, need: sr.need || 2, length: sr.length || 3, status: sr.status || 'open' } : null,
     games, next, season: seasonText,
-    members: (t.members || []).map(m => ({ name: m.username || m.name || '?', rank: m.build?.state?.label || '', rp: m.build?.state?.rp ?? null })).slice(0, 10),
+    members: (t.members || []).map(m => ({ name: m.username || m.name || '?', rank: m.build?.state?.label || '', rp: m.build?.state?.rp ?? null, ...(m.kind === 'ai' ? { ai: true } : {}) })).slice(0, 10), // (qp12: AI members tagged)
   };
 }
 // a whiteboard in marker: the team, the series game by game, the record, the next opponent, the season
@@ -399,6 +402,89 @@ export function drawWhiteboard(cvs, d) {
   g.strokeStyle = blue; g.lineWidth = 3; g.beginPath(); g.arc(W - 120, H - 80, 46, Math.PI, 0); g.stroke();
   for (const [x, y] of [[W - 170, H - 60], [W - 120, H - 140], [W - 70, H - 60]]) { g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke(); }
   g.strokeStyle = red; g.beginPath(); g.moveTo(W - 170, H - 60); g.quadraticCurveTo(W - 150, H - 120, W - 120, H - 132); g.stroke();
+}
+
+// ---------------- qp12: the club's roster (the office's Invite spot) ----------------
+// 10 members in all, real players and AI together (docs/PROAM-OVERHAUL.md §11). The roster as the Invite spot's board
+// shows it: the real members, then the AI ones (tagged AI, online by their AI-world schedule: online, when given, is
+// {ai_id: bool} from the HUB's own clock, else the team view's flag). Pure: the hub's tests read it.
+export const CLUB_MAX = 10;
+export function rosterData(team, online = null) {
+  const t = team || {}, look = hubLook(t);
+  const ms = (Array.isArray(t.members) ? t.members : []).map(m => {
+    if (m?.kind === 'ai') return { name: String(m.name || m.ai_id || '?'), ai: true, id: m.ai_id, online: online && m.ai_id in online ? !!online[m.ai_id] : !!m.online, pos: m.build?.position || '', ovr: Number.isFinite(+m.build?.overall) ? +m.build.overall : null };
+    const id = m?.account_id ?? m?.id;
+    return { name: String(m?.username || m?.name || '?'), ai: false, id, founder: !!m?.founder || (t.founder != null && id === t.founder), pos: m?.build?.position || '', ovr: Number.isFinite(+m?.build?.overall) ? +m.build.overall : null };
+  });
+  const sorted = [...ms.filter(m => !m.ai), ...ms.filter(m => m.ai)];
+  return { name: look.name, abbr: look.abbr, primary: look.primary, secondary: look.secondary, members: sorted.slice(0, CLUB_MAX), count: ms.length, max: CLUB_MAX, ai: ms.filter(m => m.ai).length };
+}
+// the roster, as each tier's office has it: a tryouts sign-up sheet in marker (Bronze), a printed varsity roster
+// (Silver), a lit screen by the desk phone (Gold, Platinum)
+export function drawRoster(cvs, d, tier = 'bronze') {
+  const g = cvs.getContext('2d'), W = cvs.width, H = cvs.height;
+  const style = tierRank(tier) >= 2 ? 'screen' : tier === 'silver' ? 'print' : 'sheet';
+  const rows = CLUB_MAX, top = style === 'screen' ? 0.2 : 0.24, rowH = (H * (1 - top - 0.1)) / rows;
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  const font = (px, w = 700) => (style === 'sheet' ? `${w} ${px}px "Comic Sans MS", "Segoe Print", "Bradley Hand", cursive` : `${w} ${px}px Arial, Helvetica, sans-serif`);
+  const text = (t, x, y, px, col, w, align = 'left') => { g.fillStyle = col; g.font = font(px, w); g.textAlign = align; g.fillText(t, x, y); };
+  const m = d?.members || [], n = d?.count ?? m.length;
+  if (style === 'screen') {
+    const pri = d?.primary || '#ff4d24';
+    g.fillStyle = '#0d1014'; g.fillRect(0, 0, W, H);
+    g.fillStyle = pri; g.fillRect(0, 0, W, H * 0.15);
+    text(`${d?.abbr || 'PRO-AM'} · ROSTER`, 24, H * 0.075, H * 0.08, inkOn(pri), 900);
+    text(`${n}/${d?.max ?? CLUB_MAX}`, W - 24, H * 0.075, H * 0.08, inkOn(pri), 900, 'right');
+    m.forEach((r, i) => {
+      const y = H * top + rowH * (i + 0.5);
+      if (i % 2) { g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(12, y - rowH / 2, W - 24, rowH); }
+      text(`${i + 1}`, 28, y, rowH * 0.5, '#7d8794', 700);
+      text(r.name.slice(0, 18), 78, y, rowH * 0.56, '#eef1f4', 700);
+      if (r.ai) { g.fillStyle = '#2b6cb0'; g.fillRect(W * 0.62, y - rowH * 0.3, W * 0.09, rowH * 0.6); text('AI', W * 0.665, y, rowH * 0.42, '#fff', 900, 'center'); }
+      else if (r.founder) text('FOUNDER', W * 0.62, y, rowH * 0.36, '#d8b04a', 900);
+      if (r.ai) { g.fillStyle = r.online ? '#3ddc84' : '#59616b'; g.beginPath(); g.arc(W * 0.77, y, rowH * 0.15, 0, Math.PI * 2); g.fill(); text(r.online ? 'ON' : 'OFF', W * 0.8, y, rowH * 0.36, r.online ? '#3ddc84' : '#7d8794', 700); }
+      if (r.pos || r.ovr != null) text(`${r.ovr ?? ''} ${r.pos}`.trim(), W - 24, y, rowH * 0.4, '#aab3bd', 700, 'right');
+    });
+    for (let i = m.length; i < rows; i++) text(`${i + 1}   open`, 28, H * top + rowH * (i + 0.5), rowH * 0.42, '#3f4650', 700);
+    text('INVITE · use the phone', W / 2, H * 0.95, H * 0.05, '#9aa4ae', 700, 'center');
+    return;
+  }
+  // paper: on cork (the middle school) or a bulletin board (the high school)
+  g.fillStyle = style === 'sheet' ? '#b48a5a' : '#2c3440'; g.fillRect(0, 0, W, H);
+  const px = W * 0.06, py = H * 0.04;
+  g.fillStyle = style === 'sheet' ? '#fbfaf3' : '#f4f2ea'; g.fillRect(px, py, W - px * 2, H - py * 2);
+  if (style === 'sheet') { g.strokeStyle = 'rgba(70,110,190,0.35)'; g.lineWidth = 2; for (let i = 0; i < rows; i++) { const y = H * top + rowH * (i + 1); g.beginPath(); g.moveTo(px + 10, y); g.lineTo(W - px - 10, y); g.stroke(); } g.fillStyle = '#c8322f'; g.beginPath(); g.arc(W / 2, py + 8, 9, 0, Math.PI * 2); g.fill(); }
+  else { g.fillStyle = d?.primary || '#1f3a68'; g.fillRect(px, py, W - px * 2, H * 0.12); }
+  const ink = '#1c1d20', head = style === 'sheet' ? 'TRYOUTS · SIGN UP' : 'VARSITY ROSTER';
+  text(head, W / 2, py + H * 0.065, H * 0.065, style === 'sheet' ? '#1f4fa8' : inkOn(d?.primary || '#1f3a68'), 900, 'center');
+  text(`${(d?.name || 'Pro-Am').slice(0, 22)} · ${n}/${d?.max ?? CLUB_MAX}`, W / 2, py + H * 0.15, H * 0.042, '#555b63', 700, 'center');
+  m.forEach((r, i) => {
+    const y = H * top + rowH * (i + 0.55);
+    text(`${i + 1}.`, px + 16, y, rowH * 0.55, ink, 700);
+    text(r.name.slice(0, 16), px + 70, y, rowH * 0.62, style === 'sheet' ? ['#1c1d20', '#1f4fa8', '#1f8a4c'][i % 3] : ink, style === 'sheet' ? 700 : 600);
+    if (r.ai) text(r.online ? 'AI · here today' : 'AI', W - px - 16, y, rowH * 0.44, '#c8322f', 900, 'right');
+    else if (r.founder) text(style === 'sheet' ? 'captain' : 'FOUNDER', W - px - 16, y, rowH * 0.42, '#555b63', 700, 'right');
+  });
+}
+// a roster on a wall (or a screen): the board's set(data) draws it
+function rosterBoardAt(B, at, tier) {
+  const { x, y, z, yaw, w, h } = at, screen = tierRank(tier) >= 2;
+  if (screen) B.boxAt('metal', w + 0.08, h + 0.08, 0.05, x, z, yaw, 0, y - h / 2 - 0.04, 0.0, '#121417');
+  else B.boxAt('matte', w + 0.06, h + 0.06, 0.02, x, z, yaw, 0, y - h / 2 - 0.03, 0.0, tier === 'silver' ? '#3b2a1e' : '#8a6a45');
+  const cvs = T.canvas(512, Math.round(512 * h / w)), tex = B.ctx.texture(cvs, { wrap: 'clamp' });
+  const mat = screen ? new Material({ map: tex, color: [1.2, 1.2, 1.2], shading: 'unlit', fog: false }) : new Material({ map: tex, color: [1, 1, 1], roughness: 0.85 });
+  const m = new Mesh(B.ctx.geometry(G.quad(w, h)), mat, { castShadow: false, reflect: false });
+  m.matrix = M.m4mul(M.m4(), TR(x, 0, z, yaw), TR(0, y, screen ? 0.032 : 0.016));
+  B.scene.add(m);
+  const board = { cvs, tex, mesh: m, data: null, draws: 0, set(d) { this.data = d; drawRoster(cvs, d, tier); this.draws++; B.ctx.updateTexture?.(tex, cvs); } };
+  board.set(null);
+  return board;
+}
+// the desk phone (Gold, Platinum: the Invite spot): a base, the handset, a lit keypad
+function deskPhone(B, x, y, z, yaw, plat) {
+  B.boxAt('metal', 0.22, 0.05, 0.2, x, z, yaw, 0, y, 0, plat ? '#d9dee3' : '#1b1d20');
+  B.boxAt('metal', 0.07, 0.04, 0.22, x, z, yaw, -0.07, y + 0.05, 0, plat ? '#eef1f4' : '#2a2d31');
+  B.L.glow.push({ geo: G.box(0.09, 0.004, 0.11), matrix: M.m4mul(M.m4(), TR(x, 0, z, yaw), TR(0.05, y + 0.052, 0)), color: c4('#7fd0ff') });
 }
 
 // ---------------- the builder ----------------
@@ -1033,6 +1119,10 @@ function proamHubIn(r, scene, tierIn, opts) {
   const extra = tier === 'bronze' ? dressBronze(B) : tier === 'silver' ? dressSilver(B) : dressGold(B, plat);
   // the office's whiteboard (all tiers)
   const whiteboard = whiteboardAt(B, plan.office.whiteboard.at);
+  // (qp12) the office's Invite spot: the roster on its board (a sign-up sheet, the varsity roster, a screen by the phone)
+  const inv = plan.office.invite;
+  const roster = rosterBoardAt(B, inv.at, tier);
+  if (inv.phone) deskPhone(B, inv.phone.x, 0.745, inv.phone.z, Math.PI, plat);
   // the batches
   const mats = {
     matte: new Material({ color: [1, 1, 1], roughness: 0.84 }),
@@ -1069,6 +1159,7 @@ function proamHubIn(r, scene, tierIn, opts) {
     { id: 'draft', x: o.draft.x, z: o.draft.z, r: o.draft.r },
     { id: 'settings', x: o.settings.x, z: o.settings.z, r: o.settings.r },
     { id: 'queue', x: o.queue.x, z: o.queue.z, r: o.queue.r },
+    { id: 'invite', x: o.invite.x, z: o.invite.z, r: o.invite.r },
     ...shootSlots.map((s, i) => ({ id: 'shoot', slot: i, x: s.spot.x, z: s.spot.z, r: s.spot.r })),
     ...(rack ? [{ id: 'shoot', slot: 0, x: rack.x, z: rack.z, r: rack.r }] : []),
   ];
@@ -1079,7 +1170,7 @@ function proamHubIn(r, scene, tierIn, opts) {
     courts: [C.mainCourt, ...(C.shootCourt ? [C.shootCourt] : [])], hoops: C.hoops, shootSlots,
     rooms: plan.rooms, gaps: plan.gaps, solids: B.solids, camSolids: [...wallLines(plan), ...B.solids], bounds,
     spawn: plan.spawn, exit: plan.exit, walkout: plan.walkout ? { ...plan.walkout, park: B.park } : null, office: plan.office,
-    interactables, boards: { whiteboard }, mats, extra, lights: B.lights, tris,
+    interactables, boards: { whiteboard, roster }, mats, extra, lights: B.lights, tris,
     walkable: (x, z, rr = 0.35) => walkableIn(plan, x, z, rr),
     roomAt(x, z) { return plan.rooms.find(R => inRect(R, x, z)) || null; },
     update(dt) { t += dt; for (const a of B.anim) a(dt, t); },

@@ -203,7 +203,7 @@ test('the queue: the matchmaker (waiting, then a game), the lineup, then the gam
   await flush(); await flush();
   const q = svc.calls.filter(c => c[1] === '/api/proam/queue').map(c => c[2].action);
   assert.deepEqual(q.slice(0, 3), ['join', 'poll', 'poll']);
-  assert.deepEqual(svc.calls.find(c => c[1] === '/api/proam/lineup')[2], { humans: 1 });
+  assert.deepEqual(svc.calls.find(c => c[1] === '/api/proam/lineup')[2], { humans: 1, squad: [] }); // (qp12: and the AI squad mates who came: none here)
   // proamGame took it from there: the ticket (the test stops there)
   assert.deepEqual(svc.ticket.pa_game, { series: 'sr1', n: 1 });
   assert.equal(svc.ticket.mode, 'proam');

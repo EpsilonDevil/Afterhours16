@@ -9,7 +9,7 @@ import { makeTeam, resolveLook } from '../sim/bots.js';
 import { RNG, hashString } from '../core/rng.js';
 import { settings, saveSettings } from '../core/settings.js';
 import { audio } from '../core/audio.js';
-import { music } from '../core/music.js';
+import { music, PROAM_MUSIC } from '../core/music.js';
 import * as Screens from './screens.js';
 import * as Rewards from './rewards.js';
 import { playOutro } from './outro.js';
@@ -775,7 +775,7 @@ export async function playProAm(app) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setPlaylist('main'); music.setSuppressed(true); // v0.4.4: the soundtrack sits out Pro-Am
+  music.setPlaylist('main', { level: PROAM_MUSIC }); music.setSuppressed(false); // (v0.4.8.9 qp13: the soundtrack plays in Pro-Am, at about 10%)
   audio.surface = 'wood';
   app.setController(world, scene);
 }
@@ -853,7 +853,7 @@ export async function proamGame(app, ctx = {}) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setPlaylist('main'); music.setSuppressed(true);
+  music.setPlaylist('main', { level: PROAM_MUSIC }); music.setSuppressed(false);
   audio.surface = venue.theme?.court?.surface === 'wood' ? 'wood' : 'asphalt';
   app.setController(world, scene);
 }
@@ -1061,7 +1061,7 @@ export async function playProAmOnline(app, setup, local) {
   app.world = world;
   app.mode = 'match';
   app.renderer.prewarm(scene);
-  music.setPlaylist('main'); music.setSuppressed(true);
+  music.setPlaylist('main', { level: PROAM_MUSIC }); music.setSuppressed(false);
   audio.surface = 'wood';
   app.setController(world, scene);
   const others = Object.values(setup.names || {}).filter(n => n !== net.you?.username);

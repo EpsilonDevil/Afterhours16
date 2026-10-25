@@ -10,4 +10,8 @@
 //     nearest AI team after 45 s), then the series game at the home team's park (Modes.proamGame). opts.members: the
 //     team members in the hub ([{id, name}], the Captain first); opts.ready(done, secs): the hub's own ready check, which
 //     calls done({humans, members}) when it's over.
-export { openOffice, queue, render, load } from './proam.js';
+//   openInviteDialog(app, team = null, opts = {}) -> Promise<card | null>   (qp12: the club's invite dialog, every office's
+//     Invite spot: AI friends join at once, players get an invite, the invites out)
+//   queue(app, team, opts): opts.aiMembers ([ai ids], the AI members the HUB shows) and opts.squad ([ai ids], the AI squad
+//     mates who came) go in the lineup before the draft; without them the server takes the AI members on by their schedule
+export { openOffice, queue, render, load, openInviteDialog } from './proam.js';

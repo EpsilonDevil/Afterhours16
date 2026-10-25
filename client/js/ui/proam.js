@@ -62,6 +62,7 @@ export async function load(app) {
   }
   app.proam = st;
   if (st.given?.length) toast(`Pro-Am rewards: ${st.given.map(i => app.catalog[i]?.name || i).join(', ')}`);
+  awayNote(st);
   return st;
 }
 
@@ -142,7 +143,7 @@ export async function render(app, root, params = {}) {
     if (view === 'start') root.innerHTML = `<section class="panel wide-panel pa-tab"><div class="eyebrow">PRO-AM</div><h1>Pro-Am teams</h1>${season}
       <p class="muted">Pro-Am is played as a team: up to ${st.rules.max_members} players, five on the floor, series by series up the ranks. Create a team or join one.</p>
       <div class="pa-start"><button class="pa-big" data-go="create"><b>Create a Pro-Am team</b><small>Your name, colors, logo, jerseys and home court</small></button>
-      <button class="pa-big" data-go="join"><b>Join one</b><small>Search every team on this server</small></button></div>${myRanks(st)}</section>`;
+      <button class="pa-big" data-go="join"><b>Join one</b><small>Search every team on this server</small></button></div>${invitesBlock(st)}${myRanks(st)}</section>`;
     else if (view === 'create') root.innerHTML = `<section class="panel wide-panel pa-tab"><div class="eyebrow">PRO-AM · NEW TEAM</div><h1>Create a Pro-Am team</h1>${season}
       ${settingsForm(st, null)}<div class="row gap end"><button class="btn ghost" data-go="start">Back</button><button class="btn primary" data-create>Create the team</button></div></section>`;
     else if (view === 'join') root.innerHTML = `<section class="panel wide-panel pa-tab"><div class="eyebrow">PRO-AM · JOIN</div><h1>Find a team</h1>${season}
@@ -178,6 +179,17 @@ export async function render(app, root, params = {}) {
       if (!(await confirmBox('Leave the team? Your own rank and RP stay yours.', 'Leave'))) return;
       try { await paReq(app, 'POST', '/api/proam/leave', {}); toast('You left the team.'); view = 'start'; await reload(true); } catch (e) { toast(e.message, 'error'); }
     };
+    // (qp12: the club: invite, the founder's remove of an AI member, the invites waiting for you)
+    const ib = $('[data-invite]', root); if (ib) ib.onclick = () => openInviteDialog(app, st.team, { onChange: () => reload() });
+    $$('[data-removeai]', root).forEach(b => b.onclick = async () => {
+      if (!(await confirmBox('Remove him from the club?', 'Remove'))) return;
+      try { await paReq(app, 'POST', '/api/proam/remove', { ai_id: b.dataset.removeai }); await reload(); } catch (e) { toast(e.message, 'error'); }
+    });
+    $$('[data-acceptinv], [data-declineinv]', root).forEach(b => b.onclick = async () => {
+      if (b.disabled) return; busy(b, true);
+      const yes = !!b.dataset.acceptinv;
+      try { await answerInvite(app, yes ? b.dataset.acceptinv : b.dataset.declineinv, yes); if (yes) view = 'team'; await reload(true); } catch (e) { toast(e.message, 'error'); busy(b, false); }
+    });
     $$('[data-answer]', root).forEach(b => b.onclick = async () => {
       if (b.disabled) return; busy(b, true);
       try { await paReq(app, 'POST', '/api/proam/answer', { account_id: b.dataset.answer, accept: b.dataset.yes === '1' }); await reload(); } catch (e) { toast(e.message, 'error'); busy(b, false); }
@@ -219,7 +231,7 @@ function teamRow(t, st) {
 function teamPage(app, st) {
   const t = st.team, me = paMe(app, st), founder = t.founder === me;
   const sr = t.current;
-  const members = (t.members || []).map(m => `<tr><td><b>${esc(m.username)}</b>${m.founder ? ' <em class="tag">FOUNDER</em>' : ''}</td><td>${m.build ? esc(m.build.name) : '<span class="muted">no build</span>'}</td><td>${m.build ? divChip(m.build.state) : ''}</td><td>${m.build ? rpBar(m.build.state.rp) : ''}</td></tr>`).join('');
+  const members = (t.members || []).map(m => memberRow(m, founder)).join('');
   const reqs = founder && t.requests?.length ? `<h4>Asking to join</h4>${t.requests.map(r => `<div class="pa-row"><b>${esc(r.username)}</b><span class="grow"></span><button class="btn small" data-answer="${esc(r.account_id)}" data-yes="1">Accept</button><button class="btn ghost small" data-answer="${esc(r.account_id)}" data-yes="0">Decline</button></div>`).join('')}` : '';
   return `<section class="panel wide-panel pa-tab pa-team" style="--c1:${esc(t.primary)};--c2:${esc(t.secondary)}">
     <div class="pa-head">${logoTag(t)}<div><div class="eyebrow">PRO-AM TEAM · ${t.open ? 'OPEN' : 'INVITE-ONLY'}</div><h1>${esc(t.name)}</h1><div class="pa-season">${esc(seasonLine(st.season))}</div></div>
@@ -232,10 +244,128 @@ function teamPage(app, st) {
           <button class="pa-big" data-office="whiteboard"><b>Whiteboard</b><small>${sr ? `${esc(sr.division.label)} series: ${sr.wins}-${sr.losses} (first to ${sr.need})` : 'No series on: queue a game to start one'}</small></button>
           <button class="pa-big" data-office="draft"><b>Draft clipboard</b><small>${sr ? `${sr.refreshes_left} refreshes left this series` : `${st.rules.refreshes} refreshes a series`}</small></button>
           ${founder ? '<button class="pa-big" data-office="settings"><b>Team settings</b><small>Name, colors, logo, jerseys, home court, open or closed</small></button>' : ''}
+          <button class="pa-big" data-invite><b>Invite</b><small>AI friends join at once; players online get an invite (${(t.members || []).length}/${st.rules.max_members})</small></button>
           <button class="pa-big primary" data-queue><b>Queue for the next game</b><small>Ready check, then a team within 2 divisions (or the AI)</small></button>
         </div>
-        ${myRanks(st)}
+        ${invitesBlock(st)}${myRanks(st)}
         <div class="row gap"><button class="btn ghost small" data-go="join">Find teams</button><button class="btn ghost small" data-leave>Leave team</button></div></div></div></section>`;
+}
+
+// ---------------- v0.4.8.9 qp12: the club (docs/PROAM-OVERHAUL.md §11) ----------------
+// A roster row: a real player (his own rank) or an AI member (an AI tag, online or offline by his schedule; the founder
+// removes him here)
+export function memberRow(m, founder = false) {
+  if (m.kind === 'ai') return `<tr class="pa-ai"><td><b>${esc(m.name || m.ai_id)}</b> <em class="tag pa-ai-tag">AI</em></td><td>${m.build?.overall ? `${m.build.overall} ${esc(m.build.position || '')}` : ''}</td><td colspan="2"><span class="pa-on${m.online ? ' on' : ''}">${m.online ? 'Online' : 'Offline'}</span>${founder ? ` <button class="btn ghost small" data-removeai="${esc(m.ai_id)}">Remove</button>` : ''}</td></tr>`;
+  return `<tr><td><b>${esc(m.username)}</b>${m.founder ? ' <em class="tag">FOUNDER</em>' : ''}</td><td>${m.build ? esc(m.build.name) : '<span class="muted">no build</span>'}</td><td>${m.build ? divChip(m.build.state) : ''}</td><td>${m.build ? rpBar(m.build.state.rp) : ''}</td></tr>`;
+}
+// the invites waiting for you (the Pro-Am tab: join or decline)
+export function invitesBlock(st) {
+  if (!st.invites?.length) return '';
+  return `<div class="pa-invites"><h4>Club invites</h4>${st.invites.map(i => `<div class="pa-row">${logoTag(i.team)}<span class="pa-row-main"><b>${esc(i.team.name)}</b><small>${esc(i.from)} invited you · ${i.team.size}/${st.rules?.max_members || 10} · ${esc(i.team.division?.label || '')}${st.team ? ' · leave your team to join' : ''}</small></span><button class="btn small" data-acceptinv="${esc(i.team.id)}" ${st.team ? 'disabled' : ''}>Join</button><button class="btn ghost small" data-declineinv="${esc(i.team.id)}">Decline</button></div>`).join('')}</div>`;
+}
+export async function answerInvite(app, teamId, yes) {
+  const r = await paReq(app, 'POST', yes ? '/api/proam/accept_invite' : '/api/proam/decline_invite', { team_id: teamId });
+  toast(yes ? 'You\'re in the club.' : 'Invite declined.');
+  return r;
+}
+// "while you were away": the club's games its AI members played since you last looked (server/proam.py club_simulate)
+function awayNote(st) {
+  const t = st.team, gs = t?.ai_games;
+  if (!gs?.length) return;
+  const k = `rimrift.pa.aiseen.${t.id}`;
+  let seen = 0;
+  try { seen = Number(localStorage.getItem(k)) || 0; } catch { /* private mode */ }
+  const fresh = gs.filter(g => g.at > seen);
+  if (!fresh.length) return;
+  try { localStorage.setItem(k, String(Math.max(...gs.map(g => g.at)))); } catch { /* private mode */ }
+  const w = fresh.filter(g => g.result === 'W').length, rp = fresh.reduce((n, g) => n + (g.rp || 0), 0), ends = fresh.filter(g => g.series_end).map(g => g.series_end);
+  toast(`While you were away, your AI members played ${fresh.length} game${fresh.length === 1 ? '' : 's'} (${w}-${fresh.length - w}) · team RP ${rp >= 0 ? '+' : ''}${rp}${ends.length ? ` · series ${ends.join(', ')}` : ''}.`, w * 2 >= fresh.length ? 'good' : '');
+}
+// the AI squad mates who come along: online, the squad's AI mates of the real players in the game (as the park carries
+// them); offline, your own squad
+async function paSquadIds(app, members) {
+  try {
+    if (app.net?.connected) {
+      const Online = await import('./online.js');
+      const ids = [app.net.myId, ...(members || []).map(m => m.id).filter(id => id && id !== app.net.myId)];
+      return [...new Set(Online.squadAIPlayers(app, ids).map(x => x.entry?.sq?.id).filter(Boolean))].slice(0, 4);
+    }
+    return (app.ai?.activeSquad?.() || []).slice(0, 4);
+  } catch { return []; }
+}
+// the AI member as the invite sends him: his id in the team's AI world, and a snapshot for the roster
+function aiInvitee(app, id) {
+  const e = aiEntry(app, id);
+  const b = e?.build || {};
+  let look = e?.look || null;
+  try { if (look && JSON.stringify(look).length > 6000) look = null; } catch { look = null; }
+  return { kind: 'ai', ai_id: id, name: e?.name || id, build: { position: b.position, archetype: b.archetype, overall: b.overall, height: b.height, weight: b.weight, wingspan: b.wingspan }, look };
+}
+
+// The one invite dialog, the Pro-Am tab's and every HUB office's (game/proamhub.js calls it): AI friends (from your
+// friends list, not on a team) join at once; players (online: your friends and the people here, or a username; offline:
+// a username on this service) get an invite; and the ones the team has out. Any member invites. -> the dialog's card
+export async function openInviteDialog(app, team = null, opts = {}) {
+  let st = app.proam;
+  try { st = await load(app); } catch (e) { if (!st) { toast(e.message, 'error'); return null; } }
+  team = st.team || team;
+  if (!team) { toast('You\'re not on a Pro-Am team.', 'error'); return null; }
+  let tab = opts.tab || 'ai', busyNow = false;
+  const card = modal('<div class="pa-invite-dlg" data-invdlg></div>', { wide: true, close: true, cls: 'pa-office-card' });
+  const host = $('[data-invdlg]', card);
+  const max = st.rules?.max_members || 10;
+  const size = () => (team.members || []).length;
+  const onTeam = () => new Set((team.members || []).map(m => m.ai_id || m.account_id));
+  const friends = () => {
+    const w = app.ai, on = onTeam();
+    if (!w?.friends) return [];
+    return w.friends.filter(id => !on.has(id)).map(id => ({ id, e: aiEntry(app, id), online: (() => { try { return !!w.online(id); } catch { return false; } })() })).filter(x => x.e);
+  };
+  const players = () => {
+    const net = app.net, on = onTeam(), out = new Map();
+    if (!net?.connected) return [];
+    for (const f of net.friends || []) if (f.status === 'friends' && f.presence?.online && !on.has(f.id)) out.set(f.id, { id: f.id, username: f.username, why: 'friend, online' });
+    for (const [id, p] of net.people || []) if (id !== net.myId && !on.has(id) && !out.has(id)) out.set(id, { id, username: p.username, why: 'here now' });
+    return [...out.values()];
+  };
+  const paint = () => {
+    const full = size() >= max;
+    const tabs = [['ai', 'AI friends'], ['players', 'Players'], ['sent', `Sent${team.invites_sent?.length ? ` (${team.invites_sent.length})` : ''}`]];
+    let body = '';
+    if (tab === 'ai') {
+      const fs = friends();
+      body = fs.length ? fs.map(x => `<div class="pa-row"><b>${esc(x.e.name)}</b><small class="muted">${x.e.build?.overall ?? '?'} ${esc(x.e.build?.position || '')} · ${x.online ? 'online' : 'offline'}</small><span class="grow"></span><button class="btn small" data-invai="${esc(x.id)}" ${full ? 'disabled' : ''}>Add to the club</button></div>`).join('')
+        : '<p class="muted">No AI friends who aren\'t in the club. Make friends at the park, then bring them in.</p>';
+    } else if (tab === 'players') {
+      const ps = players();
+      body = `${ps.length ? ps.map(p => `<div class="pa-row"><b>${esc(p.username)}</b><small class="muted">${esc(p.why)}</small><span class="grow"></span><button class="btn small" data-invuser="${esc(p.username)}" ${full ? 'disabled' : ''}>Invite</button></div>`).join('') : `<p class="muted small">${app.net?.connected ? 'None of your friends are online right now.' : 'Offline: invite a player on this game by username.'}</p>`}
+        <div class="row gap"><input class="text" data-invname maxlength="24" placeholder="Username"><button class="btn" data-invname-go ${full ? 'disabled' : ''}>Invite</button></div>`;
+    } else {
+      const sent = team.invites_sent || [];
+      body = sent.length ? sent.map(i => `<div class="pa-row"><b>${esc(i.username)}</b><small class="muted">waiting</small><span class="grow"></span><button class="btn ghost small" data-uninv="${esc(i.account_id)}">Take back</button></div>`).join('') : '<p class="muted">No invites out.</p>';
+    }
+    host.innerHTML = `<div class="eyebrow">CLUB · ${esc(team.name)}</div><h2>Invite to the club</h2>
+      <p class="muted small">${size()}/${max} members, real and AI. AI friends join at once; a player gets an invite he accepts from his Pro-Am menu.${full ? ' The club is full.' : ''}</p>
+      <div class="chips pa-inv-tabs">${tabs.map(([k, n]) => `<button class="chip ${tab === k ? 'on' : ''}" data-invtab="${k}">${esc(n)}</button>`).join('')}</div>
+      <div class="pa-inv-body">${body}</div>`;
+    bind();
+  };
+  const refresh = async () => { try { st = await load(app); team = st.team || team; } catch { /* as it was */ } if (host.isConnected) keepScroll(host, paint); opts.onChange?.(); };
+  const send = async (to, b) => {
+    if (busyNow || b?.disabled) return; busyNow = true; busy(b, true);
+    try { const r = await paReq(app, 'POST', '/api/proam/invite', { team_id: team.id, to }); toast(r.result === 'joined' ? `${to.name || 'He'} is in the club.` : `Invite sent to ${to.username}.`); await refresh(); }
+    catch (e) { toast(e.message, 'error'); busy(b, false); } finally { busyNow = false; }
+  };
+  const bind = () => {
+    $$('[data-invtab]', host).forEach(b => b.onclick = () => { tab = b.dataset.invtab; paint(); });
+    $$('[data-invai]', host).forEach(b => b.onclick = () => send(aiInvitee(app, b.dataset.invai), b));
+    $$('[data-invuser]', host).forEach(b => b.onclick = () => send({ kind: 'player', username: b.dataset.invuser }, b));
+    const go = $('[data-invname-go]', host), nm = $('[data-invname]', host);
+    if (go) { const f = () => { const u = nm.value.trim(); if (u) send({ kind: 'player', username: u }, go); }; go.onclick = f; nm.onkeydown = e => { if (e.key === 'Enter') f(); }; }
+    $$('[data-uninv]', host).forEach(b => b.onclick = async () => { busy(b, true); try { await paReq(app, 'POST', '/api/proam/uninvite', { account_id: b.dataset.uninv }); await refresh(); } catch (e) { toast(e.message, 'error'); busy(b, false); } });
+  };
+  paint();
+  return card;
 }
 
 // ---------------- team settings (create and the founder's panel) ----------------
@@ -287,7 +417,7 @@ function bindPicks(root) {
 async function showTeam(app, id) {
   let t;
   try { t = (await paReq(app, 'GET', `/api/proam/teams?id=${encodeURIComponent(id)}`)).team; } catch (e) { toast(e.message, 'error'); return; }
-  const roster = t.ai ? (t.roster || []).map(i => `<div class="pa-row">${aiLine(app, i)}</div>`).join('') : (t.members || []).map(m => `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}</div>`).join('');
+  const roster = t.ai ? (t.roster || []).map(i => `<div class="pa-row">${aiLine(app, i)}</div>`).join('') : (t.members || []).map(m => (m.kind === 'ai' ? `<div class="pa-row"><b>${esc(m.name)}</b> <em class="tag pa-ai-tag">AI</em></div>` : `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}</div>`)).join('');
   modal(`<div class="pa-card" style="--c1:${esc(t.primary)};--c2:${esc(t.secondary)}"><div class="pa-head">${logoTag(t)}<div><div class="eyebrow">${t.ai ? 'AI PRO-AM TEAM' : 'PRO-AM TEAM'}</div><h2>${esc(t.name)}</h2></div>${divChip(t.division, 26)}</div>
     <p class="muted small">Games ${record(t.record)} · series ${record(t.series)} · home court: ${esc(parkName(t.court))}</p><h4>Roster</h4>${roster || '<p class="muted">Nobody yet.</p>'}</div>`, { wide: true });
 }
@@ -309,7 +439,7 @@ export function whiteboardHTML(st, team) {
   const sr = team.current;
   const games = sr ? Array.from({ length: sr.length }, (_, i) => {
     const g = sr.games[i];
-    return `<tr class="${g?.result === 'W' ? 'won' : g?.result === 'L' ? 'lost' : ''}"><td>Game ${i + 1}</td><td>${g ? (g.home ? 'Home' : 'Away') : (i % 2 ? 'Away' : 'Home')}</td><td>${g ? `${esc(g.opponent.name)} ${g.opponent.kind === 'ai' ? '<small class="muted">AI</small>' : ''}` : '<span class="muted">to be matched</span>'}</td><td>${g ? esc(venueName(g.venue)) : ''}</td><td>${g?.result ? `<b>${g.result}</b> ${g.score ? g.score.join('-') : ''}` : g ? 'next' : ''}</td></tr>`;
+    return `<tr class="${g?.result === 'W' ? 'won' : g?.result === 'L' ? 'lost' : ''}"><td>Game ${i + 1}</td><td>${g ? (g.home ? 'Home' : 'Away') : (i % 2 ? 'Away' : 'Home')}</td><td>${g ? `${esc(g.opponent.name)} ${g.opponent.kind === 'ai' ? '<small class="muted">AI</small>' : ''}` : '<span class="muted">to be matched</span>'}</td><td>${g ? esc(venueName(g.venue)) : ''}</td><td>${g?.result ? `<b>${g.result}</b> ${g.score ? g.score.join('-') : ''}${g.by === 'ai' ? ` <small class="muted" title="AI members played: ${esc((g.ai || []).join(', '))}">AI members</small>` : ''}` : g ? 'next' : ''}</td></tr>`;
   }).join('') : '';
   const [len, need] = sr ? [sr.length, sr.need] : seriesShape(team.division.index);
   return `<div class="pa-board"><div class="eyebrow">WHITEBOARD</div><h2>${esc(team.name)}</h2><div class="pa-season">${esc(seasonLine(st.season))}</div>
@@ -317,7 +447,8 @@ export function whiteboardHTML(st, team) {
       ${sr ? `<table class="pa-games"><tbody>${games}</tbody></table>` : '<p class="muted">Queue for a game to start the series.</p>'}
       <p class="small">Record this season: games ${record(team.record)}, series ${record(team.series)}</p></div>
     <div><h4>Ranks</h4><div class="pa-row"><b>Team</b>${divChip(team.division, 22)}<span class="grow"></span>${rpBar(teamProgress(team)?.raw ?? team.rp)}</div>${teamProgress(team) ? `<p class="muted small">${esc(teamProgress(team).text)}</p>` : ''}
-      ${(team.members || []).map(m => `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}<span class="grow"></span>${m.build ? rpBar(m.build.state.rp) : ''}</div>`).join('')}</div></div></div>`;
+      ${(team.members || []).map(m => (m.kind === 'ai' ? `<div class="pa-row"><b>${esc(m.name)}</b> <em class="tag pa-ai-tag">AI</em><span class="grow"></span><small class="muted">${m.online ? 'online' : 'offline'}</small></div>`
+    : `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}<span class="grow"></span>${m.build ? rpBar(m.build.state.rp) : ''}</div>`)).join('')}</div></div></div>`;
 }
 function whiteboard(app, st, team) {
   modal(whiteboardHTML(st, team), { wide: true, cls: 'pa-office-card' });
@@ -389,7 +520,7 @@ export async function queue(app, team, opts = {}) {
   // the ready check: every team member connected (the hub's own, opts.ready, when it's there); 20 s, then it goes with
   // those who are ready
   let members = opts.members || null;
-  const others = Math.max(0, (team.members?.length || 1) - 1);
+  const others = Math.max(0, (team.members || []).filter(m => m.kind !== 'ai').length - 1); // (qp12: the real ones: AI members don't ready up)
   if (app.net?.connected && others) {
     say('Ready check', `Your team: ready up. ${READY_SECS} s, then it goes with those who are.`);
     const Online = await import('./online.js');
@@ -411,8 +542,16 @@ export async function queue(app, team, opts = {}) {
   if (stopped || q.state !== 'matched') return;
   const g = q.game;
   say(`Game ${g.n}: ${esc(g.opponent.name)}`, `${g.home ? 'Home' : 'Away'} · ${esc(venueName(g.venue))} · ${g.opponent.kind === 'ai' ? 'an AI team' : 'a real team'}`);
+  // (qp12: who plays: the real players ready, then the AI members here, then the AI squad mates who came, then the draft;
+  // opts.aiMembers / opts.squad: the ones the HUB shows; else the server takes the AI members on by their schedule)
   let lineup = [];
-  try { lineup = (await paReq(app, 'POST', '/api/proam/lineup', { humans })).ai; } catch (e) { toast(e.message, 'error'); }
+  try {
+    const squad = opts.squad || await paSquadIds(app, members);
+    const lu = await paReq(app, 'POST', '/api/proam/lineup', { humans, squad, ...(opts.aiMembers ? { ai_members: opts.aiMembers } : {}) });
+    lineup = lu.ai; app.paLineup = lu;
+    const nm = id => aiEntry(app, id)?.name || id;
+    if (lu.members?.length || lu.squad?.length) say(`Game ${g.n}: ${esc(g.opponent.name)}`, `With ${[...(lu.members || []).map(i => `${esc(nm(i))} (club)`), ...(lu.squad || []).map(i => `${esc(nm(i))} (squad)`)].join(', ')}${lu.draft?.length ? ` and ${lu.draft.length} from the draft` : ''}.`);
+  } catch (e) { toast(e.message, 'error'); }
   await new Promise(r => setTimeout(r, 900));
   if (stopped) return;
   const Modes = await import('./modes.js');
