@@ -52,11 +52,11 @@ class VCRules(unittest.TestCase):
         # (19 wins: 12 matches, 3 Rivals, 3 bosses and the Final)
         self.assertEqual((v["matches"], v["rivals"], v["bosses"], v["final"]), (12 * 140, 900, 2700, 2000))
         self.assertEqual(v["raw"], 1680 + 900 + 2700 + 2000)
-        self.assertTrue(6000 <= min(v["raw"], G.RUN_CAP) <= 8000, "a completed run: 6-8k (§11)")
-        # the time cap: 180 a real minute, the run cap 8,000 from ~45 minutes
-        self.assertEqual(G.time_cap(10 * 60), 1800)
-        self.assertEqual(G.time_cap(45 * 60), 8000)
-        self.assertEqual(G.time_cap(10 * 3600), 8000)
+        self.assertFalse(hasattr(G, "RUN_CAP"), "qp7: no cap per run (§11)")
+        # the one limit: 300 VC a real minute (qp7: was 180), counted up to three hours
+        self.assertEqual(G.time_cap(10 * 60), 3000)
+        self.assertEqual(G.time_cap(45 * 60), 13500)
+        self.assertEqual(G.time_cap(10 * 3600), 3 * 60 * 300)
         self.assertEqual(G.time_cap(-5), 0)
 
     def test_implausible_runs_are_refused(self):
@@ -217,18 +217,18 @@ class GauntletApi(unittest.TestCase):
         a = self.player("fi")
         bal0 = self.call(a, "/api/me")["balance"]
         r = self.call(a, "/api/gauntlet/start", {"key": uuid.uuid4().hex, "engine": G.ENGINE_VERSION, "seed": 5, "player": {"id": "starter-5-0", "name": "S"}})
-        self.age(r["run_id"], 600)  # (10 real minutes: 1,800 at the most)
+        self.age(r["run_id"], 300)  # (5 real minutes: 1,500 at the most; qp7: 300 a minute)
         world = {"v": 1, "aiSeed": 3, "runs": 1, "ticks": 0, "chars": {"ai-4": {"name": "Big Dre", "rank": 1, "record": {"w": 1, "l": 0}}}, "feed": []}
         body = {"run_id": r["run_id"], "summary": counts(phaseReached=2, bosses=1, matchesWon=9, rivals=1, nodesCleared=14, durationTurns=40), "world": world, "feed": ["Big Dre sent you home."], "choices": []}
         out = self.call(a, "/api/gauntlet/finish", body)
         self.assertEqual(out["vc_parts"]["raw"], 7 * 140 + 300 + 900)
-        self.assertEqual(out["vc"], 1800, "capped by the time it took")
-        self.assertEqual(out["balance"], bal0 + 1800)
+        self.assertEqual(out["vc"], 1500, "limited by the time it took")
+        self.assertEqual(out["balance"], bal0 + 1500)
         self.assertEqual(out["world"]["chars"]["ai-4"]["name"], "Big Dre")
         self.assertEqual(out["feed"], ["Big Dre sent you home."])
         again = self.call(a, "/api/gauntlet/finish", body)
-        self.assertEqual((again["vc"], again["balance"], again["repeat"]), (1800, bal0 + 1800, True), "paid once")
-        self.assertEqual(self.call(a, "/api/me")["balance"], bal0 + 1800)
+        self.assertEqual((again["vc"], again["balance"], again["repeat"]), (1500, bal0 + 1500, True), "paid once")
+        self.assertEqual(self.call(a, "/api/me")["balance"], bal0 + 1500)
         prof = self.call(a, "/api/gauntlet/profile")
         self.assertEqual(prof["world"]["chars"]["ai-4"]["rank"], 1)
         self.assertEqual((prof["stats"]["finished"], prof["stats"]["completed"], prof["unlocks"]["completed"]), (1, 0, 0), "a failed run isn't completed")

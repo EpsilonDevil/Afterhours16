@@ -38,9 +38,9 @@ const opp = run => run.match.opps[0];
 const shots = ev => ev.filter(e => e.type === 'shot');
 
 test('the engine API: version, phase, ball, turn type and label, the committed set, the live clash, the tip-off', () => {
-  assert.equal(G.ENGINE_VERSION, 2);
+  assert.equal(G.ENGINE_VERSION, 3); // (3 since qp7's hand max)
   const run = G.newRun({ seed: 4, player: G.rollStarters(4)[0] });
-  assert.equal(run.engine, 2);
+  assert.equal(run.engine, 3);
   G.enterNode(run, G.availableNodes(run)[0]);
   const m = run.match;
   assert.ok(['offense', 'defense'].includes(m.phase)); assert.ok(['you', 'them'].includes(m.ball));
@@ -186,13 +186,13 @@ test('hidden sets: Screened, a poker face, the Franchise Tag; a Scouting Report 
 });
 
 test('the dead-hand rule: a card you can\'t play on this side of the ball stays for the next possession', () => {
-  const r = arena({ ball: 'them' }); hand(r, ['jumper', 'logo_three', 'closeout', 'closeout']); play(r, 'closeout');
+  const r = arena({ ball: 'them', deck: Array(10).fill('closeout') }); hand(r, ['jumper', 'logo_three', 'closeout', 'closeout']); play(r, 'closeout');
   endTurn(r);
   assert.ok(r.match.hand.includes('jumper') && r.match.hand.includes('logo_three'), 'the Shots wait for your ball');
   assert.ok(r.match.discard.includes('closeout'), 'the Defense card you didn\'t play is discarded as ever');
   // and the hand never grows past its cap
-  const c = arena({ ball: 'them', deck: Array(20).fill('jumper') }); hand(c, Array(9).fill('logo_three')); endTurn(c);
-  assert.ok(c.match.hand.length <= MAX_HAND);
+  const c = arena({ ball: 'them', deck: Array(20).fill('jumper') }); hand(c, Array(4).fill('logo_three')); endTurn(c);
+  assert.equal(c.match.hand.length, MAX_HAND, 'held cards count toward the hand max (qp7): one new card');
   // a possession that opens with nothing playable is counted (tools/deck_sim.mjs keeps it rare)
   const d = arena({ ball: 'them', deck: Array(10).fill('closeout') }); const n0 = d.match.log.dead; hand(d, []); endTurn(d);
   assert.equal(d.match.ball, 'you'); assert.ok(d.match.hand.every(x => x === 'closeout')); assert.equal(d.match.log.dead, n0 + 1);
@@ -201,11 +201,11 @@ test('the dead-hand rule: a card you can\'t play on this side of the ball stays 
 test('a new run replays to its live outcome on the possession engine; an old run\'s start is refused', () => {
   for (const [seed, pol] of [[3, 'greedy'], [11, 'smart']]) {
     const r = playRun(seed, pol);
-    assert.equal(r.start.engine, 2);
+    assert.equal(r.start.engine, 3);
     const rp = G.replay(r.start, r.log);
     assert.ok(rp.ok, rp.error); assert.equal(rp.hash, G.outcomeHash(r.run));
   }
   const r = playRun(5, 'greedy'), { engine, ...old } = r.start;
-  assert.equal(engine, 2);
+  assert.equal(engine, 3);
   const rp = G.replay(old, r.log); assert.equal(rp.ok, false); assert.equal(rp.at, -1); assert.match(rp.error, /old engine/);
 });

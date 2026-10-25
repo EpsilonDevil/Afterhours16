@@ -269,12 +269,12 @@ test('the summary: how far, the VC (a number), who will remember the run', () =>
   assert.doesNotMatch(h, /NaN/);
   assert.match(h, /Sending the result/);
   assert.match(h, /Who'll remember this run/);
-  // the server's VC and balance, never the engine's estimate; the parts, and the cap when it bit
+  // the server's VC and balance, never the engine's estimate; the parts (qp7: no cap per run, no cap line)
   const est = Number(over.summary.vc.total ?? over.summary.vc);
   const paid = V.summaryHTML(run, over, { vc: 1234, vc_parts: { matches: 980, rivals: 300, bosses: 0, final: 0, raw: 1280 }, cap: 1234, balance: 50120, feed: ['Zeke is a Contender now.'], unlocks: { completed: 0, next: { n: 1, tier: 'common', needs: { completed: 1, distinct: 0 }, have: { completed: 0 }, ready: false } } });
-  assert.match(paid, /\+1,234/); assert.match(paid, /Balance 50,120 VC/); assert.match(paid, /Capped by the run's time/); assert.match(paid, /0\/1 completed run/);
+  assert.match(paid, /\+1,234/); assert.match(paid, /Balance 50,120 VC/); assert.doesNotMatch(paid, /Capped/); assert.match(paid, /0\/1 completed run/); // (qp7 §3: no cap line)
   if (est !== 1234) assert.doesNotMatch(paid, new RegExp(`\\+${est.toLocaleString('en-US')}<`));
-  assert.match(V.summaryHTML(run, over, { vc: 8000, vc_parts: { raw: 9100, final: 2000 }, cap: 8000, balance: 1 }), /Capped per run/);
+  assert.doesNotMatch(V.summaryHTML(run, over, { vc: 9100, vc_parts: { raw: 9100, final: 2000 }, balance: 1 }), /Capped|per run/); // (qp7 §3: no VC cap per run)
   // not sent (Retry, paid once), refused, offline
   assert.match(V.summaryHTML(run, over, { error: 'timeout', retry: true }), /data-gx="retry-finish"/);
   assert.match(V.summaryHTML(run, over, { error: 'That run finished faster than it can be played.' }), /didn't pay this run: That run finished faster/);
@@ -380,6 +380,8 @@ test('qp1: a run played through the screen logs every engine call; the log repla
       switch (run.stage) {
         case 'match': {
           if (gx.overlayOn) { gx.tipoff(); return; }
+          // (qp7 §1: a card drawn past the hand max waits on an answer: discard a card for it, or refuse it, in turn)
+          if (run.match?.pendingDraw) { gx.resolveDraw(gx.meta.log.length % 2 ? { refuse: true } : { discard: 0 }); return; }
           const hv = D.handView(run), i = hv.findIndex(h => h.playable && D.cardInfo(h.ref).type === 'shot'), j = i >= 0 ? i : hv.findIndex(h => h.playable);
           if (j >= 0) gx.play(j); else gx.endTurn();
           return;

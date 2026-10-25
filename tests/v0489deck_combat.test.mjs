@@ -132,7 +132,7 @@ test('Combo X: the bonus applies when the last card played this possession has t
 });
 
 test('Flow: three different tags in one possession: +1 energy and draw 1, once a possession', () => {
-  const run = arena();
+  const run = arena(); run.match.handMax = 8; // (six cards in hand and their draws: room for them, qp7)
   hand(run, ['crossover', 'outlet_pass', 'jumper', 'jumper', 'outlet_pass', 'jumper'], 3);
   play(run, 'crossover'); play(run, 'outlet_pass');
   const e = run.match.energy, h = run.match.hand.length;
@@ -227,7 +227,7 @@ const RULE_TESTS = {
   hostile_crowd: () => { const r = arena({ rules: ['hostile_crowd'] }); assert.equal(r.match.you.status.cold, 1); },
   and_one_night: () => { const r = arena({ rules: ['and_one_night'] }); hand(r, ['jumper', 'jumper']); assert.equal(dealt(r, 'jumper'), 10); assert.equal(dealt(r, 'jumper'), 7); },
   ball_movement: () => { const r = arena({ rules: ['ball_movement'] }); hand(r, ['skip_pass', 'skip_pass']); assert.equal(costOf(r.match, 'skip_pass'), 0); play(r, 'skip_pass'); assert.equal(costOf(r.match, 'skip_pass'), 1); },
-  up_tempo: () => { const r = arena({ rules: ['up_tempo'] }); assert.equal(r.match.hand.length, 6); force(r, 'them'); hand(r, []); assert.equal(taken(r), 11); },
+  up_tempo: () => { const r = arena({ rules: ['up_tempo'] }); assert.equal(r.match.handMax, 6); assert.equal(r.match.hand.length, 6); force(r, 'them'); hand(r, []); assert.equal(taken(r), 11); },
   short_game: () => { const r = arena({ rules: ['short_game'], ball: 'them' }); hand(r, []); assert.equal(taken(r), 12); },
   no_blood: () => { const r = arena({ rules: ['no_blood'], deck: [...Array(6).fill('heavy_legs'), ...Array(6).fill('jumper')] }); assert.ok(r.match.hand.every(x => x === 'jumper')); assert.ok(r.match.burned.includes('heavy_legs')); },
   windy: () => { const r = arena({ rules: ['windy'] }); hand(r, ['jumper', 'layup']); assert.equal(dealt(r, 'jumper'), 5); assert.equal(dealt(r, 'layup'), 9); },
@@ -269,7 +269,7 @@ const AB_TESTS = {
   lucky_socks: () => { const r = arena(); const mx = r.maxHp; gainAbility(r, 'lucky_socks'); assert.equal(r.maxHp, mx + 10); },
   knee_pads: () => { const r = arena({ abilities: ['knee_pads'], ball: 'them' }); hand(r, ['closeout', 'closeout']); play(r, 'closeout'); assert.equal(r.match.you.stops, 9); play(r, 'closeout'); assert.equal(r.match.you.stops, 15); },
   pregame_meal: () => { const run = G.newRun({ seed: 9, player: P() }); gainAbility(run, 'pregame_meal'); run.hp = 20; const m = startMatch(run, { id: 'r', kind: 'rival', phase: 1, round: 5, foes: [{ charId: 'ai-2', name: 'R', style: 'big', rank: 0, traits: [] }], rules: [] }); assert.equal(m.you.hp, 28); },
-  playbook: () => { const r = arena({ abilities: ['playbook'] }); assert.equal(r.match.hand.length, 7); },
+  playbook: () => { const r = arena({ abilities: ['playbook'] }); assert.equal(r.match.handMax, 6); assert.equal(r.match.hand.length, 6); },
   tip_jar: () => { const a = arena({ abilities: ['tip_jar'] }), b = arena(); a.match.over = b.match.over = { won: true }; assert.equal(G.matchOver(a).reward.coins, G.matchOver(b).reward.coins + 8); },
   jump_rope: () => { const r = arena({ abilities: ['jump_rope'] }); hand(r, ['jumper', 'jumper', 'jumper']); play(r, 'jumper'); play(r, 'jumper'); assert.equal(r.match.you.stops, 0); play(r, 'jumper'); assert.equal(r.match.you.stops, 3); },
   sweatband: () => { const r = arena({ abilities: ['sweatband'], rules: ['hostile_crowd'] }); assert.ok(!r.match.you.status.cold); },
@@ -301,9 +301,9 @@ const AB_TESTS = {
     const r = arena({ abilities: ['hot_hand'] }); hand(r, ['jumper', 'jumper']); play(r, 'jumper'); play(r, 'jumper'); endTurn(r); assert.ok(!r.match.you.status.hot, '14');
     const r2 = arena({ abilities: ['hot_hand'] }); hand(r2, ['jumper', 'jumper', 'jumper']); for (let k = 0; k < 3; k++) play(r2, 'jumper'); endTurn(r2); assert.equal(r2.match.you.status.hot, 1, '21');
   },
-  ankle_weights: () => { const r = arena({ abilities: ['ankle_weights'] }); assert.equal(r.match.maxEnergy, 4); assert.equal(r.match.hand.length, 4); },
+  ankle_weights: () => { const r = arena({ abilities: ['ankle_weights'] }); assert.equal(r.match.maxEnergy, 4); assert.equal(r.match.hand.length, 4); assert.equal(r.match.handMax, 5, 'the max stays, the first hand is short'); },
   max_contract: () => { const a = arena({ abilities: ['max_contract'] }), b = arena(); assert.equal(a.match.maxEnergy, 4); a.match.over = b.match.over = { won: true }; assert.equal(G.matchOver(a).reward.coins, Math.round(G.matchOver(b).reward.coins / 2)); },
-  superteam: () => { const r = arena({ abilities: ['superteam'] }); assert.equal(r.match.hand.length, 6); assert.equal(G.coolerView(r).options.find(o => o.id === 'heal').enabled, false); },
+  superteam: () => { const r = arena({ abilities: ['superteam'] }); assert.equal(r.match.handMax, 6); assert.equal(r.match.hand.length, 6); assert.equal(G.coolerView(r).options.find(o => o.id === 'heal').enabled, false); },
   signature_shoe: () => { const r = arena({ abilities: ['signature_shoe'] }); assert.equal(r.match.maxEnergy, 4); assert.ok([...r.match.drawPile, ...r.match.hand].includes('ticky_tack')); },
   franchise_tag: () => {
     const r = arena({ abilities: ['franchise_tag'], ball: 'them' }); assert.equal(r.match.maxEnergy, 4);

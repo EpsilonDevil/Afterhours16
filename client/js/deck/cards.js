@@ -141,7 +141,7 @@ export const CARD_LIST = [
   C('extra_pass', 'Extra Pass', 'play', 'uncommon', 0, ['Pass'], 'pass', { draw: 1 }, { fx: { draw: 2 } }, { wild: true }),
   C('clear_out', 'Clear Out', 'play', 'uncommon', 1, ['Handle'], 'pass', { draw: 2, special: 'burn_fatigue' }, { cost: 0 }),
   C('film_session', 'Chalk Talk', 'play', 'uncommon', 1, [], 'celebrate', { special: 'stat_match', stat: 'defense', n: 2 }, { cost: 0 }, { burn: true }),
-  C('motion_offense', 'Motion Offense', 'play', 'rare', 1, ['Pass'], 'pass', { draw: 3, energy: 1 }, { fx: { draw: 4, energy: 1 } }),
+  C('motion_offense', 'Motion Offense', 'play', 'rare', 1, ['Pass'], 'pass', { handMax: 1, draw: 3, energy: 1 }, { fx: { handMax: 1, draw: 4, energy: 1 } }),
   C('timeout', 'Full Timeout', 'play', 'rare', 2, [], 'celebrate', { heal: 10, stops: 8 }, { fx: { heal: 14, stops: 10 } }, { burn: true }),
 
   // ---------- Mentalities (last all match) ----------
@@ -154,7 +154,7 @@ export const CARD_LIST = [
   C('late_calm', 'Late-Game Calm', 'mentality', 'uncommon', 1, [], 'celebrate', { power: { id: 'always_clutch', n: 1 } }, { cost: 0 }),
   C('playmaker', 'Playmaker', 'mentality', 'uncommon', 1, [], 'celebrate', { power: { id: 'tag_stops', tag: 'Pass', n: 2 } }, { fx: { power: { id: 'tag_stops', tag: 'Pass', n: 3 } } }),
   C('handle_mastery', 'Handle Mastery', 'mentality', 'rare', 1, [], 'celebrate', { power: { id: 'tag_draw', tag: 'Handle', n: 1 } }, { cost: 0 }),
-  C('next_play', 'Next Play', 'mentality', 'uncommon', 1, [], 'celebrate', { power: { id: 'turn_draw', n: 1 } }, { cost: 0 }),
+  C('next_play', 'Next Play', 'mentality', 'uncommon', 1, [], 'celebrate', { power: { id: 'hand_max', n: 1 } }, { fx: { power: { id: 'hand_max', n: 2 } } }),
   C('grit', 'Grit', 'mentality', 'rare', 2, [], 'celebrate', { power: { id: 'tag_stops', tag: 'Hustle', n: 3 } }, { cost: 1 }),
   C('deep_bench', 'Deep Bench', 'mentality', 'uncommon', 1, [], 'celebrate', { power: { id: 'depth_stops', n: 4 } }, { fx: { power: { id: 'depth_stops', n: 3 } } }),
   C('lean_rotation', 'Lean Rotation', 'mentality', 'rare', 1, [], 'celebrate', { power: { id: 'tight_energy', n: 1 } }, { cost: 0 }),
@@ -203,6 +203,7 @@ const POWER_TEXT = {
   tag_draw: p => `Whenever you play a ${p.tag} card, draw ${p.n} (up to 3 a turn).`,
   turn_stops: p => `At the start of each turn, gain ${p.n} Stops.`,
   turn_draw: p => `At the start of each turn, draw ${p.n} more.`,
+  hand_max: p => `Your hand holds ${p.n} more card${p.n > 1 ? 's' : ''} this match.`,
   turn_cold: p => `At the start of each turn, the opponent is Cold ${p.n}.`,
   flow_twice: () => 'Flow can trigger twice each turn.',
   always_clutch: () => 'Clutch is always on.',
@@ -218,6 +219,7 @@ function fxText(fx, def, top = true) {
   if (fx.heal) out.push(`Heal ${fx.heal}.`);
   if (fx.energy) out.push(`+${fx.energy} energy.`);
   if (fx.charge) out.push(`+${fx.charge} energy next turn.`);
+  if (fx.handMax) out.push(`Your hand holds ${fx.handMax} more card${fx.handMax > 1 ? 's' : ''} this match.`);
   if (fx.draw) out.push(`Draw ${fx.draw}.`);
   if (fx.hot) out.push(def?.type === 'mentality' && top ? `You are Hot ${fx.hot} for the match.` : `Hot ${fx.hot}.`);
   if (fx.foe) for (const [k, n] of Object.entries(fx.foe)) out.push(`${ST[k]} ${n}.`);

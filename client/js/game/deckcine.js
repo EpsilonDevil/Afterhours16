@@ -168,9 +168,13 @@ function possessionPlay(ev, opts) {
 // Plays one after another. speed: 1, and up to 3 when the player fast-forwards; a queue that backs up plays a little
 // faster on its own (more than 2 waiting: 1.5x, more than 5: 2.2x), so a burst of cards stays readable and doesn't lag
 // behind the table. skip(): the current play ends now (its outcome still lands); skipAll(): everything waiting lands.
+// (qp7 §2: a play whose length isn't a positive number would never end and keep the court busy: it gets a short one.
+// begin() notes the wall-clock time a play started (now(), ms) for the watchdog: stuck() names a play that has run past
+// its length and the margin, the speed it was played at taken into account)
+const nowMs = () => (globalThis.performance?.now ? performance.now() : Date.now());
 export class PlayQueue {
-  constructor(o = {}) { this.items = []; this.cur = null; this.t = 0; this.fast = false; this.onStart = o.onStart || null; this.onEnd = o.onEnd || null; this.done = 0; }
-  push(...plays) { for (const p of plays.flat()) if (p) this.items.push(p); return this; }
+  constructor(o = {}) { this.items = []; this.cur = null; this.t = 0; this.fast = false; this.onStart = o.onStart || null; this.onEnd = o.onEnd || null; this.done = 0; this.wall = 0; this.now = o.now || nowMs; }
+  push(...plays) { for (const p of plays.flat()) if (p) { if (!(Number.isFinite(p.dur) && p.dur > 0)) p.dur = 0.6; this.items.push(p); } return this; }
   get busy() { return !!this.cur || this.items.length > 0; }
   get pending() { return this.items.length + (this.cur ? 1 : 0); }
   speed() { const n = this.items.length; return (this.fast ? 3 : 1) * (n > 5 ? 2.2 : n > 2 ? 1.5 : 1); }
@@ -182,7 +186,9 @@ export class PlayQueue {
     if (this.t >= this.cur.dur) this.finish();
     return this.cur;
   }
-  begin() { this.cur = this.items.shift(); this.t = 0; this.onStart?.(this.cur); }
+  begin() { this.cur = this.items.shift(); this.t = 0; this.wall = this.now(); this.onStart?.(this.cur); }
+  // the watchdog's question: the play on now, if it has run past its length (at the slowest speed) + margin ms
+  stuck(margin = 4000, now = this.now()) { return this.cur && now - this.wall > this.cur.dur * 1000 + margin ? this.cur : null; }
   finish() { const c = this.cur; if (!c) return; this.cur = null; this.t = 0; this.done++; this.onEnd?.(c); }
   skip() { if (!this.cur && this.items.length) this.begin(); this.finish(); }
   skipAll() { while (this.busy) this.skip(); }
@@ -280,6 +286,7 @@ export class DeckCourt {
     }
     this.cam = { pos: [0, 8, -8], tgt: [0, 1, HZ - 4], fov: 40, want: null, cut: true, shot: 'broadcast', shake: 0 };
     this.queue = new PlayQueue({ onStart: p => this.startPlay(p), onEnd: p => this.endPlay(p) });
+    this.bornAt = nowMs();
     this.steps = []; this.play = null; this.score = [0, 0];
     this.resetAll();
     if (this.r) { this.pool?.flush?.(); this.r.prewarm?.(this.scene); }
@@ -480,6 +487,7 @@ export class DeckCourt {
   frame(dt) {
     this.opts.onFrame?.(dt);
     if (this.disposed) return;
+    this.lastFrameAt = nowMs();
     const play = this.queue.update(dt);
     const sp = this.queue.speed(), d = dt * (play ? sp : 1);
     if (play) {
@@ -497,6 +505,22 @@ export class DeckCourt {
       M.m4compose(this.ballMesh.matrix, [b.x + ox, b.y, b.z + oz], this.ballQ, [1, 1, 1]);
     }
     this.updateCamera(dt);
+  }
+  // qp7 §2, the watchdog (the Gauntlet screen asks every second, on a timer of its own, so it works when frames don't):
+  // why the court is stuck, or null. 'disposed': plays are waiting on a court that will never play again (QP3: a
+  // disposed court's frame() returns at once); 'no frames': the app's loop has stopped calling frame() (another
+  // controller, or frame() throwing every time) for more than the margin while the page is visible; 'overrun': the play
+  // on now has run past its length + margin. visible false (the window hidden: no frames by design) pushes the clocks on.
+  watchdog(visible = true, margin = 4000, now = nowMs()) {
+    const q = this.queue;
+    if (!q.busy) { this.wdAt = now; return null; }
+    if (this.disposed) return 'disposed';
+    if (!visible) { const gap = now - (this.wdAt ?? now); q.wall += gap; if (this.lastFrameAt) this.lastFrameAt += gap; this.wdAt = now; return null; }
+    this.wdAt = now;
+    if (this.lastFrameAt != null && now - this.lastFrameAt > margin) return 'no frames';
+    if (q.cur && q.stuck(margin, now)) return 'overrun';
+    if (!q.cur && this.lastFrameAt == null && now - (this.bornAt ?? now) > margin) return 'no frames';
+    return null;
   }
   // what the app's loop calls (app.setController): a menu screen with this court under it
   deactivate() { this.dispose(); }

@@ -13,7 +13,30 @@ const clone = x => structuredClone(x);
 // every call that changes the real run goes through the choice log (client/js/deck/replay.js), so a sim run can be
 // replayed: LOGS maps a run to its log
 const LOGS = new WeakMap();
-const act = (run, kind, ...a) => { const l = LOGS.get(run); return l ? G.act(run, l, kind, ...a) : G.applyChoice(run, [kind, ...a]); };
+const act = (run, kind, ...a) => { const l = LOGS.get(run); const r = l ? G.act(run, l, kind, ...a) : G.applyChoice(run, [kind, ...a]); answerDraws(run); return r; };
+// a card drawn past the hand max (qp7): take it over the hand's worst card if it's better, else refuse it. A card for
+// this side of the ball counts more (it can be played now); Fatigue is the worst there is
+const SIDE = { you: new Set(['shot', 'move', 'play', 'mentality']), them: new Set(['defense', 'play', 'mentality']) };
+function keepValue(m, r) { const d = cardDef(r); if (!d || d.type === 'fatigue') return -20; return cardValue(r, m.deck) + (SIDE[m.ball]?.has(d.type) ? 4 : 0) + (d.hold ? 1 : 0); }
+export function drawChoice(m) {
+  const p = m.pendingDraw;
+  let wi = -1, wv = Infinity;
+  m.hand.forEach((r, i) => { const v = keepValue(m, r); if (v < wv) { wv = v; wi = i; } });
+  return wi >= 0 && keepValue(m, p.ref) > wv ? ['discard', wi] : ['refuse'];
+}
+function answerDraws(run) {
+  for (let g = 0; g < 30 && run.match?.pendingDraw && !run.match.over; g++) {
+    const [a, i] = drawChoice(run.match);
+    if (!act0(run, 'draw', a, i).ok) break;
+  }
+}
+const act0 = (run, kind, ...a) => { while (a.length && a[a.length - 1] === undefined) a.pop(); const l = LOGS.get(run); return l ? G.act(run, l, kind, ...a) : G.applyChoice(run, [kind, ...a]); };
+// the policies' look-ahead answers its own draw questions the same way (on a copy: nothing is logged)
+function playSim(c, run, i, t) {
+  const r = { match: c, hp: run.hp, flags: {} };
+  G.playCard(r, i, t);
+  for (let g = 0; g < 30 && c.pendingDraw && !c.over; g++) { const [a, k] = drawChoice(c); G.resolveDraw(r, a === 'refuse' ? { refuse: true } : { discard: k }); }
+}
 
 // ---------- combat ----------
 // The policies play possessions (GAUNTLET.md §15) the way a player would: they read the opponents' committed set
@@ -80,7 +103,7 @@ function greedyTurn(run, st, hpw) {
     const m = run.match, h0 = { hp: m.you.hp };
     let best = null, bv = evalM(h0, m, hpw);
     for (const i of playable(m)) {
-      const c = sims(m, st); G.playCard({ match: c, hp: run.hp, flags: {} }, i, tgt(c));
+      const c = sims(m, st); playSim(c, run, i, tgt(c));
       const v = evalM(h0, c, hpw);
       if (v > bv + 0.01) { bv = v; best = i; }
     }
@@ -97,7 +120,7 @@ function smartTurn(run, st, hpw, W = 5, D = 7) {
     for (let d = 0; d < D && beam.length; d++) {
       const nxt = [];
       for (const s of beam) for (const i of playable(s.m)) {
-        const c = sims(s.m, st); G.playCard({ match: c, hp: run.hp, flags: {} }, i, tgt(c));
+        const c = sims(s.m, st); playSim(c, run, i, tgt(c));
         const v = evalM(h0, c, hpw), first = s.first ?? i;
         nxt.push({ m: c, first, v });
         if (v > best.v + 0.01) best = { v, first };
@@ -275,7 +298,7 @@ export function playRun(seed, policy = 'smart', { player = null, world = null, f
     }
   }
   const sum = G.runOver(run) || { completed: false, phaseReached: run.phase, summary: { estMinutes: 0, vc: { total: 0 } } };
-  return { seed, policy, start, log, fights, completed: sum.completed, phase: sum.phaseReached, minutes: sum.summary.estMinutes, vc: sum.summary.vc.total, vcRaw: sum.summary.vc.raw ?? 0, bosses, deck: run.deck.length, abilities: run.abilities.length, turns: sum.durationTurns, stats: run.player.start, run };
+  return { seed, policy, start, log, fights, completed: sum.completed, phase: sum.phaseReached, minutes: sum.summary.estMinutes, vc: sum.summary.vc.total, bosses, deck: run.deck.length, abilities: run.abilities.length, turns: sum.durationTurns, stats: run.player.start, run };
 }
 // a converted player: an ICON build's ratings (high-80s to 90s)
 export function convertedPlayer(seed) {
@@ -293,7 +316,8 @@ function report(rows, label) {
   console.log(`\n== ${label}: ${n} runs ==`);
   console.log(`  Final won: ${pct(won.length / n)}   reached P2 ${pct(reach(2))}  P3 ${pct(reach(3))}  Final ${pct(rows.filter(r => r.bosses.some(b => b.phase === 4)).length / n)}`);
   console.log(`  minutes (completed): avg ${avg(won, r => r.minutes).toFixed(0)}  min ${Math.min(...won.map(r => r.minutes), Infinity)}  max ${Math.max(...won.map(r => r.minutes), 0)}   (all runs avg ${avg(rows, r => r.minutes).toFixed(0)})`);
-  console.log(`  VC (completed): avg ${avg(won, r => r.vc).toFixed(0)} (before the cap ${avg(won, r => r.vcRaw).toFixed(0)})   failed avg ${avg(rows.filter(r => !r.completed), r => r.vc).toFixed(0)}`);
+  { const vpm = won.map(r => r.vc / Math.max(1, r.minutes)); // (no per-run cap since qp7; the server's 180 VC a real minute limit must never trim an honest run)
+    console.log(`  VC (completed): avg ${avg(won, r => r.vc).toFixed(0)}  max ${Math.max(0, ...won.map(r => r.vc))}   failed avg ${avg(rows.filter(r => !r.completed), r => r.vc).toFixed(0)}   VC a minute: highest ${Math.max(0, ...vpm).toFixed(0)} (fastest completed run ${Math.min(Infinity, ...won.map(r => r.minutes))} min)`); }
   console.log(`  deck at end ${avg(rows, r => r.deck).toFixed(1)} cards, ${avg(rows, r => r.abilities).toFixed(1)} abilities, ${avg(won, r => r.turns).toFixed(0)} possessions a completed run`);
   { let t = 0, d = 0, of = 0; for (const r of rows) for (const f of r.fights) { t += f.turns; d += f.dead || 0; of += f.offense || 0; } console.log(`  possessions: ${pct(of / Math.max(1, t))} yours; dead hands (nothing playable at the start of a turn) ${pct(d / Math.max(1, t))}`); }
   const fk = {};

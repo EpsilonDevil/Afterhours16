@@ -156,12 +156,14 @@ export function matchHTML(run, view = {}) {
     ? (view.lastClash ? `<div class="gx-clash r-played" data-clash><span class="gx-cl-you"><small>${view.lastClash.youOff ? 'YOU · O' : 'YOU · D'}</small><b>${esc(view.lastClash.you)}</b></span><span class="gx-cl-vs">vs</span><span class="gx-cl-them"><b>${esc(view.lastClash.them)}</b><small>${view.lastClash.youOff ? 'D · THEM' : 'O · THEM'}</small></span><em class="gx-cl-res">${esc(view.lastClash.text)}</em></div>` : '')
     : `${foeSetHTML(m.foeSet, { side: m.foeSet?.side || (m.ball === 'them' ? 'offense' : 'defense'), who: foeWho })}`;
   const keys = '1234567890';
-  return `<section class="gx-match ${view.busy ? 'busy' : ''}">
+  // (qp7 §1: the hand max, and a card drawn past it waiting on an answer)
+  const handMax = m.handMax ?? D.HAND_MAX ?? 5, pd = m.pendingDraw || null;
+  return `<section class="gx-match ${view.busy ? 'busy' : ''} ${pd ? 'pending-draw' : ''}">
     <div class="gx-courttop">
       <div class="gx-score"><span class="you"><b>${esc(run.player.name)}</b><em data-score="0">${view.score ? view.score[0] : m.score[0]}</em></span><span class="mid"><small>${esc(KIND_LABEL[m.kind] || 'Match')}${m.boss ? ' · ' + esc(D.bossInfo(m.boss)?.title || '') : ''}</small><b>POSS. ${m.turn}</b></span><span class="them"><em data-score="1">${view.score ? view.score[1] : m.score[1]}</em><b>${esc(m.opps.length > 1 ? m.opps.map(o => o.name.split(' ').pop()).join(' & ') : m.opps[0]?.name || '')}</b></span></div>
       ${view.busy ? '' : turnBannerHTML(m).replace('class="gx-turn', 'class="gx-turn gx-turn-top')}
       <div class="gx-caption" data-caption>${esc(view.caption || '')}</div>
-      <div class="gx-cine-ctl"><button class="gx-pill" data-gx="skip" title="Skip the play (Space)">Skip ▸</button><button class="gx-pill ${view.fast ? 'on' : ''}" data-gx="fast" title="Fast-forward (F)">▸▸</button></div>
+      <div class="gx-cine-ctl"><button class="gx-pill" data-gx="skip" title="Skip the play (Space)">Skip ▸</button><button class="gx-pill ${view.fast ? 'on' : ''}" data-gx="fast" title="Fast-forward (F)">▸▸</button><button class="gx-pill" data-gx="pause" data-cancel title="Menu (Esc)">Menu</button></div>
     </div>
     <div class="gx-table">
       <div class="gx-opps">${m.opps.map(opp).join('')}<div class="gx-possession" data-possession>${possession}</div></div>
@@ -172,10 +174,14 @@ export function matchHTML(run, view = {}) {
           ${statBars(statNow, { compact: true })}
           ${flowLeft != null ? `<div class="gx-flow ${chain.length || fv.wild ? 'on' : ''}" title="Three different tags in one turn: Flow (+1 energy, draw 1)">FLOW${fv.max > 1 ? ` ${fv.flows}/${fv.max}` : ''} ${chain.map(t => `<i class="tg-${esc(String(t).toLowerCase())}">${esc(t)}</i>`).join('')}${fv.wild ? `<i class="tg-wild">ANY${fv.wild > 1 ? ' ×' + fv.wild : ''}</i>` : ''}<small>${flowLeft ? `${flowLeft} more tag${flowLeft > 1 ? 's' : ''}` : 'ready'}</small></div>` : '<div class="gx-flow done">FLOW · used this turn</div>'}
         </div>
-        <div class="gx-hand" data-hand>${hand.map((h, i) => { const c = D.cardInfo(h.ref); const flow = flowLeft != null && flowLeft > 0 && (c.tags || []).some(t => !chain.includes(t)) && h.playable; return cardHTML(h.ref, h, { attrs: `data-card="${i}"`, key: keys[i] || '', flow }); }).join('') || '<p class="muted">No cards in hand.</p>'}</div>
+        <div class="gx-handwrap ${pd ? 'drawq' : ''}">
+          ${pd ? drawPromptHTML(m, pd) : ''}
+          <div class="gx-hand" data-hand>${hand.map((h, i) => { const c = D.cardInfo(h.ref); if (pd) return cardHTML(h.ref, { ...h, playable: true, offPhase: false, why: null }, { attrs: `data-card="${i}" data-discard="${i}"`, key: keys[i] || '', cls: 'discard' }); const flow = flowLeft != null && flowLeft > 0 && (c.tags || []).some(t => !chain.includes(t)) && h.playable; return cardHTML(h.ref, h, { attrs: `data-card="${i}"`, key: keys[i] || '', flow }); }).join('') || '<p class="muted">No cards in hand.</p>'}</div>
+          <div class="gx-handcount ${handMax > 5 ? 'raised' : ''}" data-handmax title="${handMax > 5 ? `Your hand holds ${handMax} cards this match` : 'Your hand holds 5 cards'}">Hand <b>${m.hand.length}/${handMax}</b>${handMax > 5 ? ' <em>▲</em>' : ''}</div>
+        </div>
         <div class="gx-side">
           ${view.busy ? '' : clashBarHTML(m)}
-          <button class="btn primary gx-end" data-gx="end" ${view.over || view.busy ? 'disabled' : ''}>${m.ball === 'them' ? 'Defend' : 'Play it out'} <kbd>E</kbd></button>
+          <button class="btn primary gx-end" data-gx="end" ${view.over || view.busy || pd ? 'disabled' : ''} ${pd ? 'title="Discard a card or refuse the new one first"' : ''}>${m.ball === 'them' ? 'Defend' : 'Play it out'} <kbd>E</kbd></button>
           <div class="gx-piles"><button class="gx-pile" data-pile="draw">Draw<b>${m.drawPile.length}</b></button><button class="gx-pile" data-pile="discard">Discard<b>${m.discard.length}</b></button><button class="gx-pile" data-pile="burned">Burn<b>${m.burned.length}</b></button></div>
           <div class="gx-rules">${m.rules.length ? m.rules.map(r => `<span class="gx-rule" title="${esc(r.text)}"><b>${esc(r.name)}</b><small>${esc(r.text)}</small></span>`).join('') : '<span class="muted small">No special rules</span>'}</div>
           ${m.powers?.length ? `<div class="gx-powers">${m.powers.map(p => `<i>${esc(D.cardName ? D.cardName(p.id) : p.id)}</i>`).join('')}</div>` : ''}
@@ -185,6 +191,29 @@ export function matchHTML(run, view = {}) {
     </div>
     ${view.over ? `<div class="gx-overbar ${view.over.won ? 'win' : 'loss'}"><b>${view.over.won ? 'Game. You win.' : 'You\'re out.'}</b><button class="btn primary" data-gx="continue">Continue</button></div>` : ''}
   </section>`;
+}
+// qp7 §1: the question over the hand when a draw goes past the hand max: the card that's waiting, what to do, Refuse
+export function drawPromptHTML(m, pd) {
+  const c = pd.cardInfo || D.cardInfo(pd.ref), max = pd.handMax ?? m.handMax ?? 5;
+  return `<div class="gx-drawq" data-drawq role="alertdialog" aria-label="Hand full">
+    <div class="gx-dq-card">${cardHTML(pd.ref, null, { tag: 'div', cls: 'mini' })}</div>
+    <div class="gx-dq-text"><b>Hand full (${m.hand.length}/${max}):</b> discard a card to take <em>${esc(c.name)}</em>, or refuse it.${pd.remaining > 0 ? ` <small>${pd.remaining} more to draw after this one.</small>` : ''}<small class="gx-dq-keys">Pick a card below (1-0) · <kbd>R</kbd> refuses</small></div>
+    <button class="btn gx-dq-refuse" data-gx="refuse-draw">Refuse <kbd>R</kbd></button></div>`;
+}
+// qp7 §2: the Gauntlet's menu (Esc, the Menu button, B): its two ways out, always
+export function pauseHTML(o = {}) {
+  return `<div class="gx-pause" data-gx-pause><div class="eyebrow">THE GAUNTLET</div><h2>Paused</h2>
+    <div class="gx-opts">
+      <button class="gx-opt" data-gxp="resume" data-close><b>Resume</b></button>
+      ${o.hasRun ? `<button class="gx-opt" data-gxp="bracket"><b>Back to the bracket</b><small>${o.inMatch ? 'Reloads your run from its last save. The match picks up from its last saved possession.' : 'Reloads your run from its last save.'}</small></button>` : ''}
+      <button class="gx-opt" data-gxp="leave"><b>Leave the Gauntlet</b><small>${o.hasRun ? 'Back to the menus. Your run is saved: Resume it from the Gauntlet tab.' : 'Back to the menus.'}</small></button>
+    </div></div>`;
+}
+// qp7 §2: what's left after repeated faults: nothing on it can fail; the two ways out
+export function safeHTML() {
+  return `<section class="gx-summary gx-safe"><div class="gx-panel"><div class="eyebrow">THE GAUNTLET</div><h1>Something went wrong.</h1>
+    <p>The screen couldn't be drawn. Your run is saved as it was after your last move.</p>
+    <div class="row gap end"><button class="btn ghost" data-gx="leave-gx">Leave the Gauntlet</button><button class="btn primary" data-gx="bracket">Back to the bracket</button></div></div></section>`;
 }
 export function pileHTML(title, refs) {
   const counts = new Map(); for (const r of refs) counts.set(r, (counts.get(r) || 0) + 1);
@@ -271,7 +300,7 @@ export function eventHTML(run, outcome = null) {
       : `<div class="gx-opts">${e.choices.map((c, i) => `<button class="gx-opt" data-choice="${i}" ${c.enabled === false ? 'disabled' : ''}><b>${esc(c.text)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`).join('')}</div>`}</div></section>`;
 }
 // the run's end: how far, what it paid, who changed (the nemesis world)
-// fin: null while it's being sent; the server's answer { vc, vc_parts, cap, balance, unlocks, feed, verified, ... } (a
+// fin: null while it's being sent; the server's answer { vc, vc_parts, balance, unlocks, feed, verified, ... } (a
 // small Verified tick when the server replayed the run; nothing when it couldn't); { error, retry }
 // when the server couldn't be reached (the run is kept: Retry); { error?, offline, feed } when it was refused or never
 // issued (nothing paid). The VC shown is the server's, never the engine's estimate.
@@ -286,11 +315,11 @@ export function summaryHTML(run, over, fin = null, opts = {}) {
   const vcCell = paid ? `<b>+${n(vc)}</b><small>VC EARNED</small>` : fin?.retry ? `<b>…</b><small>VC NOT SENT</small>` : fin ? `<b>+0</b><small>VC</small>` : `<b>…</b><small>VC</small>`;
   let pay = '';
   if (paid) {
-    const pt = fin.vc_parts || {}, raw = +pt.raw || 0;
+    const pt = fin.vc_parts || {};
     const fl = over?.summary?.final ? 1 : 0, normal = Math.max(0, (over?.matchesWon | 0) - (over?.rivals | 0) - (over?.bosses | 0) - fl);
     const rows = [[`Matches ×${normal}`, pt.matches], [`Rivals ×${over?.rivals | 0}`, pt.rivals], [`Bosses ×${over?.bosses | 0}`, pt.bosses], ['The Final', pt.final]].filter(r => r[1]);
-    const capped = raw > vc;
-    pay = `<div class="gx-pay" data-pay><div class="gx-payrows">${rows.map(r => `<span>${r[0]}<b>${n(r[1])}</b></span>`).join('')}${capped ? `<span class="cap">Capped${(fin.cap | 0) < 8000 && vc === (fin.cap | 0) ? ' by the run\'s time' : ' per run'}<b>−${n(raw - vc)}</b></span>` : ''}</div>
+    // (qp7 §3: no VC cap per run: the rows are what the run earned, the total what the server paid)
+    pay = `<div class="gx-pay" data-pay><div class="gx-payrows">${rows.map(r => `<span>${r[0]}<b>${n(r[1])}</b></span>`).join('')}</div>
       <div class="gx-paytot"><span>Paid${fin.verified === true ? ' <em class="gx-verified" title="The server replayed this run from its choices and paid what it earned" data-verified>✓ Verified</em>' : ''}</span><b>${n(vc)} VC</b>${fin.balance != null ? `<small>Balance ${n(fin.balance)} VC</small>` : ''}</div></div>
       ${fin.repeat ? '<p class="muted small">This run was already paid: the same result.</p>' : ''}
       ${fin.unlocks ? unlocksHTML(fin.unlocks) : ''}`;

@@ -23,6 +23,9 @@
 // type is one of card, shot, stops, status, heal, energy, draw, flow, combo, power, burn, fatigue, hurt, move,
 // wall, rule, ability, ally, betray, phase, down, turn, end, invalid; and since qp4 jump, possession, clash, rebound,
 // foul, ft (GAUNTLET.md §14, §15.9).
+// qp7, the hand max (§15.13): run.match.handMax, run.match.pendingDraw { ref, cardInfo, remaining, handMax, why } and
+// resolveDraw(run, { discard: handIndex } | { refuse: true }) (the replay's choice kind 'draw'); while a card waits,
+// canPlay / playCard / endTurn refuse (playCard / endTurn: an array with one 'invalid' event, .ok false, .why).
 // A match's opening events (the tip-off, turn 1, an ally lending a card, start-of-match abilities) are in run.match.intro.
 // v0.4.8.9 qp4, possessions (GAUNTLET.md §15): ENGINE_VERSION (2; every new run records it as run.engine, and a replay
 // start must carry engine: 2), canPlay(run, handIndex) -> { ok, why, cost } (phase-aware), and on run.match: phase
@@ -34,7 +37,7 @@
 export { ANIMS } from './anims.js';
 export { EFFECT_KINDS } from './events.js';
 export { newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopView, shopBuy, shopRemove, eventView, eventChoose, runOver, leaveNode, nodeOf } from './run.js';
-export { playCard, endTurn, handView, flowView, canPlay } from './combat.js';
+export { playCard, endTurn, handView, flowView, canPlay, resolveDraw, HAND_MAX } from './combat.js';
 export { ENGINE_VERSION } from './run.js';
 export { cardInfo, canUpgrade } from './cards.js';
 export { abilityInfo } from './abilities.js';

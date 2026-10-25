@@ -307,3 +307,28 @@ button.gx-card:hover:not(.off), button.gx-card:focus-visible { transform: transl
 .gx-notice { margin: 12px 0; padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(255,196,64,.55); background: rgba(40,30,8,.75); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .gx-notice b { color: #ffd77a; }
 .gx-notice p { margin: 0; flex: 1 1 320px; color: #e8dfcf; font-size: 13.5px; }
+
+/* ---------- qp7: the hand max, the overdraw question, the menu ---------- */
+.gx-handwrap { position: relative; min-width: 0; display: flex; flex-direction: column; }
+.gx-handcount { align-self: center; margin-top: 2px; padding: 2px 10px; border-radius: 999px; font-size: 12px; letter-spacing: .04em; color: var(--muted); background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.08); }
+.gx-handcount b { color: var(--text, #f3eee4); font-variant-numeric: tabular-nums; }
+.gx-handcount.raised { border-color: rgba(120, 220, 160, .45); }
+.gx-handcount.raised em { color: #78dca0; font-style: normal; }
+.gx-drawq { display: flex; align-items: center; gap: 12px; margin: 0 auto 4px; padding: 8px 12px; max-width: 640px; border-radius: 12px; background: rgba(18, 20, 26, .94); border: 1px solid var(--accent, #ff4d24); box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: gx-dq-in .18s ease-out; }
+.gx-dq-card .gx-card.mini { width: 84px; min-height: 112px; padding: 20px 6px 6px; transform: none; }
+.gx-dq-card .gx-card.mini .gx-ctext { display: none; }
+.gx-dq-text { flex: 1; font-size: 14px; line-height: 1.35; }
+.gx-dq-text em { color: var(--accent, #ff4d24); font-style: normal; font-weight: 700; }
+.gx-dq-text small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.gx-dq-refuse { flex: none; }
+.gx-handwrap.drawq .gx-hand { min-height: 150px; }
+.gx-card.discard { cursor: pointer; }
+.gx-card.discard:hover, .gx-card.discard:focus-visible { transform: translateY(-8px); box-shadow: 0 0 0 2px #ff9a7a, 0 12px 28px rgba(0,0,0,.5); outline: none; }
+.gx-card.discard::after { content: 'DISCARD'; position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); font-size: 10px; letter-spacing: .08em; padding: 1px 6px; border-radius: 6px; background: rgba(255, 120, 90, .2); color: #ff9a7a; opacity: 0; transition: opacity .12s; }
+.gx-card.discard:hover::after, .gx-card.discard:focus-visible::after { opacity: 1; }
+@keyframes gx-dq-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.gx-pause { min-width: 340px; }
+.gx-pause h2 { margin: 2px 0 12px; }
+.gx-pause .gx-opts { display: flex; flex-direction: column; gap: 8px; }
+.gx-safe .gx-panel { max-width: 560px; }
+@media (max-height: 760px) { .gx-handwrap.drawq .gx-hand { min-height: 140px; } .gx-dq-card .gx-card.mini { min-height: 96px; } }

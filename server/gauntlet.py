@@ -6,20 +6,21 @@
   It checks what it can without the engine: the summary is the run's (its seed, its player), its counts hang together
   (a phase's boss beaten to reach the next, the Final only after three, nothing past the bracket's size), and it took
   at least the real time its progress needs. Then it pays from the counts itself (never the summary's own VC figure),
-  capped per run and by the real time it took.
-* VC (§11): ~140 a won match, ~300 a Rival, ~900 a phase boss, ~2,000 the Final; a completed run comes to the cap,
-  RUN_CAP. A failed run keeps what it earned (there is no separate completion bonus: the counts of a completed run
-  already reach the cap, as the deck agent's balance harness shows: deck/rewards.js VC).
+  limited only by the real time it took (VC_PER_MIN).
+* VC (§11): ~140 a won match, ~300 a Rival, ~900 a phase boss, ~2,000 the Final, and since v0.4.8.9 qp7 no cap per run:
+  a run is paid exactly what it earned (a completed run ~8,000-9,600 in the deck agent's harness). A failed run keeps
+  what it earned (there is no separate completion bonus).
 
   Calibration against the park (progression.rewards, VC_K 1.35): a park game to 21 pays (160 + 180 + statline) * 1.35
   for a win, about 800 with a typical ~250 statline, and (160 + 40 + statline) * 1.35 for a loss, about 540: about 670 a
   game at an even record, with no streak. A game to 21 takes about 7-9 real minutes with the check-ball and the walk to
   the next one, so the park pays about 4,500-5,700 VC an hour flat, and much more on a streak (x1.3 to x4 on wins; x1.075
-  to x1.75 at event parks from v0.4.8.9). A completed Gauntlet run (45-75 minutes, GAUNTLET.md §1) pays the 8,000 cap:
-  6,400-10,700 an hour, about a park hour with a short streak, for beating a run that most attempts fail. A failed run
+  to x1.75 at event parks from v0.4.8.9). A completed Gauntlet run (45-75 minutes, GAUNTLET.md §1) pays ~8,600:
+  7,000-11,000 an hour, about a park hour with a short streak, for beating a run that most attempts fail. A failed run
   (~3,000 for the harness's good player, ~30 minutes) is ~6,000 an hour, the park's flat rate. And no run pays faster
-  than VC_PER_MIN real minutes allow (180 a minute: 10,800 an hour, a good park streak's hour): a completed run reaches
-  its cap only after ~45 real minutes, the short end of §1's 45-75.
+  than VC_PER_MIN real minutes allow, the anti-cheat that protects the uncapped run: 300 a minute (qp7: was 180, which
+  would have trimmed honest fast runs: the harness's fastest earn up to 190 a minute on the engine's own estimate of
+  their time, 15 s a card; 300 leaves room for a player half again as quick).
 * Achievements: completed runs and the distinct players they were completed with, for the sacrifice gates (§12).
 * The nemesis world (§8): the engine's (deck/nemesis.js worldAfterRun), sent back after each run, checked for size and
   shape (normWorld's fields, here), kept per account with its "word on the street" feed.
@@ -411,8 +412,7 @@ def _answer(out):
 # ---------------- VC (§11) ----------------
 VC = {"match": 140, "rival": 300, "boss": 900, "final": 2000}
 COMPLETION_BONUS = 0
-RUN_CAP = 8000
-VC_PER_MIN = 180
+VC_PER_MIN = 300  # (qp7: no cap per run any more; this is the one limit, set so no honest run is trimmed: see above)
 # the time a run's progress needs at the least: a won match is several turns of cards (30 s even for a fast player
 # with a strong deck), any other node a few seconds
 MIN_MATCH_SECS = 30
@@ -455,7 +455,7 @@ def _int(v, lo, hi, name):
 
 
 def run_vc(counts):
-    """The VC a run's counts pay before the caps: {"matches", "rivals", "bosses", "final", "completion", "raw"}."""
+    """The VC a run's counts pay (all of it, qp7; only the time limit, time_cap, can hold it back): {"matches", "rivals", "bosses", "final", "completion", "raw"}."""
     normal = max(0, counts["matchesWon"] - counts["rivals"] - counts["bosses"] - (1 if counts["final"] else 0))
     parts = {"matches": normal * VC["match"], "rivals": counts["rivals"] * VC["rival"], "bosses": counts["bosses"] * VC["boss"],
              "final": VC["final"] if counts["final"] else 0, "completion": COMPLETION_BONUS if counts["completed"] else 0}
@@ -464,7 +464,8 @@ def run_vc(counts):
 
 
 def time_cap(elapsed):
-    return min(RUN_CAP, int(max(0.0, min(elapsed, ELAPSED_CAP)) / 60 * VC_PER_MIN))
+    """The most a run that took this long can pay: VC_PER_MIN a real minute (counted up to ELAPSED_CAP)."""
+    return int(max(0.0, min(elapsed, ELAPSED_CAP)) / 60 * VC_PER_MIN)
 
 
 def check_summary(data, run, elapsed):
@@ -667,7 +668,7 @@ class Gauntlet:
                      "bestPhase": max([r.get("phaseReached", 0) for r in res] or [0]), "matchesWon": sum(r.get("matchesWon", 0) for r in res),
                      "vc": sum(r.get("vc", 0) for r in res)}
             return {"converted": converted(c, aid), "world": world, "unlocks": unlocks(c, aid), "stats": stats, "feed": feed,
-                    "parkCards": park_cards(c, aid), "rules": {"vc": VC, "cap": RUN_CAP, "vcPerMin": VC_PER_MIN, "gates": GATES, "tiers": TIERS}}
+                    "parkCards": park_cards(c, aid), "rules": {"vc": VC, "vcPerMin": VC_PER_MIN, "gates": GATES, "tiers": TIERS}}
 
     def start(self, aid, data, now=None):
         now = time.time() if now is None else now

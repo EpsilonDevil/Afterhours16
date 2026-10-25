@@ -133,9 +133,11 @@ Every match draws 1–2 rules from a pool of about 20, shown before you pick tha
 ## 11. Rewards
 - **VC (lead):** VC scales with the time and success of a run, fair against the park's VC per hour.
   - **A won match:** about 140 VC; a Rival about 300; a phase boss about 900; the Final about 2,000.
-  - **A completed run:** about 6,000–8,000 VC in all.
+  - **A completed run:** paid exactly what it earned (qp7: no cap per run), about 8,000–9,600 VC.
   - **A failed run:** keeps what it earned, with no completion bonus.
-  - The server checks against the run's real time and progress, and caps each run.
+  - The server checks the run against its real time and progress. Its one limit is **300 VC a real minute** (the server's `VC_PER_MIN`, counted up to 3 hours), the anti-cheat that protects the uncapped run.
+    - It was 180 until qp7. The balance harness's fastest honest runs earn up to 190 a minute on the engine's own estimate of their time (15 s a card, 30 s a non-match node), so 180 would have trimmed them.
+    - 300 leaves room for a player about half again as fast as that estimate. A completed run (~8,600) needs about 29 real minutes before it's paid in full, and the fastest the harness completes is 43.
 - **Achievements:** tracked server-side for the sacrifice gates: runs completed, and distinct players completed with.
 
 ## 12. Sacrifices and Park cards
@@ -245,6 +247,15 @@ run.match.intro                // the tip-off and the match's opening events: pl
 run.match.opps[i].set          // his committed cards this possession (the engine's; hidden ones too: the UI shows foeSet)
 run.match.opps[i].intent       // kept: his first card this possession ({ kind: 'unknown', value: null, text: '?' } when hidden)
 handView(run)[i].offPhase      // true: this card waits for the other side of the ball (the dead-hand rule, §15.7)
+// qp7, the hand max (§15.13). ENGINE_VERSION is 3.
+run.match.handMax              // number, 5 by default (HAND_MAX); raised for the match by the raisers in §15.13
+run.match.pendingDraw          // null | { ref, cardInfo, remaining, handMax, why }: a card drawn past the max, waiting.
+                               //   remaining: the draws still to come after it (they ask again if the hand is still full)
+resolveDraw(run, { discard: handIndex } | { refuse: true }) -> events   // .ok true; a bad answer: [invalid], .ok false, .why
+                               //   logged as the choice ['draw', 'discard', handIndex] / ['draw', 'refuse']
+canPlay(...)                   // { ok: false, why: 'Hand full: discard or refuse the card first' } while a card waits
+playCard(...) / endTurn(...)   // while a card waits: [{ type: 'invalid', text: why }] with .ok false and .why on the array
+HAND_MAX                       // 5
 handView(run)[i].points        // a Shot's points now (before the defense); Stops for a Defense card as before
 ```
 New event types: `jump` (the tip: actor = who won it, anim rebound), `possession` { to, turnType, text }, `clash`
@@ -353,10 +364,11 @@ Who has the ball next (the **last** shot of the possession decides):
   turn, Charge "next turn", Captain's Band and Playbook's first turn).
 
 ### 15.7 The dead-hand rule
-A card you can't play on this side of the ball stays in your hand for the next possession (up to the hand cap of 10);
-on-phase cards you didn't play are discarded as ever (Hold and Muscle Memory as ever). So a defense draw full of Shots
-isn't wasted: they're waiting when you get the ball. Measured with tools/deck_sim.mjs (`m.log.dead`: possessions that
-open with nothing playable): 0.3-0.6% of possessions across the four configurations.
+A card you can't play on this side of the ball stays in your hand for the next possession; on-phase cards you didn't
+play are discarded as ever (Hold and Muscle Memory as ever). So a defense draw full of Shots isn't wasted: they're
+waiting when you get the ball. Since qp7 the held cards count toward the hand max (§15.13), so the next possession
+draws fewer. Measured with tools/deck_sim.mjs (`m.log.dead`: possessions that open with nothing playable): 0.3-0.6%
+of possessions with qp4's 10-card hand, 0.7-1.5% with qp7's 5 (under the ~3% line: no mitigation needed).
 
 ### 15.8 Hidden sets: who and why
 Hiding changes only what you see (`foeSet.cards` face down, `total` / `preview` "?"), never the result (tested: the same
@@ -420,3 +432,63 @@ card. **The Phenom**: Hot each time he has the ball. **The Shadow**: his set is 
 offense, their Stops on his defense; hidden. The Press's "Trap and score" and the Playmaker's "Sets the table" now
 Screen you.
 Cards: Swat Party's points are an outlet for your next offense. Events: unchanged (they act on the run, not the match).
+
+### 15.13 The hand max (v0.4.8.9 qp7)
+David: "only 5 cards can be in your hand at max by default. Certain Abilities or cards will be able to increase this
+maximum mid-battle; but any card drawn past 5 requires discarding a card or refusing the draw."
+* **HAND_MAX = 5** (`run.match.handMax`). Every card in your hand counts: held off-phase cards, Hold cards, Muscle
+  Memory's card, a lent card (it goes in before the first draw), Fatigue.
+* **A possession's draw fills your hand up to the max, never past it**, so it never asks. (The Press keeps it one
+  short; Ankle Weights, your first hand of a match.)
+* **Any other draw past the max asks**, one card at a time: a card's "Draw N", Flow, Make-It-Take-It, Handle Mastery,
+  Assist Log, Reverse Layup. The card is taken off the draw pile (the discard reshuffled in as ever; No Blood burns a
+  Fatigue first) and waits in `pendingDraw`. **Discard** a card from your hand (any card, Fatigue too: it goes to the
+  discard pile) to take it, or **refuse** it: a refused card goes to the **discard pile** (not back on the draw pile:
+  it reads as "you passed on it", and the draw pile's order, which the replay depends on, is never touched twice).
+  A card's "when drawn" effect (a Ticky-Tack Foul's energy) happens only when it comes into your hand.
+* The rest of the same draw, and any draw that comes while a card waits (Flow after Spin Move's draw 2), queue behind
+  it (`remaining`); each asks again only if the hand is still full. While a card waits, nothing else can be played and
+  End Turn is refused. A match that ends with a card waiting puts it in the discard pile.
+* **Make-It-Take-It**: the scorer's card comes on top of the new possession's draw (endTurn's events end with the new
+  possession and, when your hand is full, `pendingDraw` is set).
+* **Raising the max, for the match** (it resets every match):
+  | Raiser | Was | Now |
+  | --- | --- | --- |
+  | Playbook (common ability) | draw 2 more on turn 1 | your hand holds 1 more card (6) |
+  | Superteam (boss ability) | draw 1 more each turn | your hand holds 1 more card (Coolers can't heal) |
+  | Up-Tempo (rule) | draw 6 a turn | your hand holds 6 |
+  | Next Play (uncommon Mentality) | draw 1 more each turn | your hand holds 1 more card this match (Next Play+: 2) |
+  | Motion Offense (rare Play) | draw 3, +1 energy | your hand holds 1 more card this match, then draw 3, +1 energy |
+  Ankle Weights: "your first hand of each match is 1 card short" (was "draw 1 fewer on turn 1").
+* **Replays**: the answers are choices (`['draw', 'discard', i]`, `['draw', 'refuse']`, replay.js CHOICE_KINDS), so a
+  run replays exactly; `ENGINE_VERSION` is 3, and the replay refuses a v2 (or older) start ("old engine").
+* **The policies** (tools/deck_sim.mjs `drawChoice`): take the card over the hand's worst one when it's worth more (a
+  card for this side of the ball counts extra; Fatigue is the worst), else refuse it.
+
+### 15.14 Balance after the hand max (qp7; tools/deck_sim.mjs, 200 runs a row)
+A 5-card hand (held cards included) is a smaller hand on both ends of the floor, so the opponents' damage came down:
+`POSS` damage ×0.65 (was 0.85), bosses Heart ×0.5 (0.55) and damage ×1.15 (1.35); `REPUTATION` Heart ×1.1 (1.15),
+damage ×1.15 (1.2). No VC cap per run any more (rewards.js `vcFor`: total = raw; §11 is the Server agent's).
+| | qp4 (10-card hand, VC capped) | qp7 (5-card hand, no cap) |
+| --- | --- | --- |
+| smart, starters: Final won / minutes | 20.0% / 76 | 19.5% / 72 |
+| smart, converted: Final won / minutes | 50.0% / 70 | 51.0% / 66 |
+| greedy, starters / converted: Final won | 1.5% / 12.5% | 1.5% / 14.0% |
+| VC a completed run, smart starters (avg / max) | 7,980 capped (8,649 earned) | 8,662 / 9,600 |
+| VC a completed run, smart converted (avg / max) | 7,967 capped (8,524 earned) | 8,618 / 9,600 |
+| dead hands | 0.3-0.6% | 0.7-1.5% |
+| highest VC per estimated minute, a completed run | | 165 (starters, 53 min) / 190 (converted, 43 min) |
+The estimated minutes count 15 s a card and 30 s a non-match node; a quick player is faster than that, so the
+server's 180 VC a real minute limit would trim honest fast runs (the Server agent's call).
+
+### 15.15 The engine fuzz (qp7 §2: the freeze hunt, the engine's side)
+tools/deck_fuzz.mjs plays seeded runs with random policies (random nodes, cards, targets, End Turn spam, draw answers
+and nonsense answers, rewards, Coolers, Shops, Mystery Stops) in three modes: honest play with its log replayed;
+stress (random abilities, cards, rules and bosses forced on every node, most runs with 3,000 Health so random play
+reaches the Finals, and API calls at the wrong moment, which must refuse and change nothing); and deck_sim's policies,
+replayed. It checks: no exception from any engine call or view; endTurn always returns events and either ends the
+match or starts the next possession; no match stalls (150 possessions with no Heart or Health moving); a waiting card
+can always be answered and blocks play and End Turn; no NaN / undefined / unknown anim in events, foeSet, preview,
+the hand views or pendingDraw; the hand never passes its max; honest logs replay to the live outcome hash; every call
+is fast (the slowest of 2.4 million: 20 ms). 13,400 runs (8,000 stress, 5,000 honest, 400 policy runs with 2,438 draw
+answers): **no finding in the engine**. tests/v0489deck_hand.test.mjs runs a short pass of it on every test run.

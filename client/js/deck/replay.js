@@ -13,11 +13,13 @@
 //   ['shopRemove', card]                 shopRemove(run, card)           card: deck index
 //   ['leave']                            leaveNode(run)                  (leaving a Shop; entering the next node also does)
 //   ['event', choice]                    eventChoose(run, choice)        choice: the event choice index
+//   ['draw', 'discard', handIndex]       resolveDraw(run, { discard })   (qp7) a card drawn past your hand max: discard
+//   ['draw', 'refuse']                   resolveDraw(run, { refuse })    a hand card to take it, or refuse it
 // matchOver(run) isn't a choice: it only settles a finished match and is applied the moment one ends (it's idempotent;
 // the UI may call it any time). The views (handView, shopView, ...) change nothing.
 //
 // The run's start is { engine, seed, player, world, unlocks }: engine is the rules version the run was started on
-// (ENGINE_VERSION, 2 since qp4; missing means 1 and the replay refuses it: 'old engine'), the rest exactly as passed to newRun: the seed (1 to 2^32-1), the player
+// (ENGINE_VERSION: 2 since qp4, 3 since qp7's hand max; any other, or missing (1), and the replay refuses it: 'old engine'), the rest exactly as passed to newRun: the seed (1 to 2^32-1), the player
 // (a starter from rollStarters(seed), or a converted player from rollConverted(seed, profile entry)), the stored
 // nemesis world (its aiSeed is the account's AI world seed) and the unlocks. newRun's `ai` and `now` are cosmetic
 // (names and looks) and aren't part of the start: compare runs with outcomeHash, which leaves the cosmetics out.
@@ -25,13 +27,13 @@
 // The UI logs through act(run, log, kind, ...args): it makes the call and logs it only if it succeeded.
 // Called by: index.js: ui/gauntlet.js logs through act(); server/verify/gauntlet_replay.mjs runs replay().
 import { ENGINE_VERSION, newRun, rollStarters, rollConverted, availableNodes, enterNode, matchOver, takeReward, cooler, coolerView, shopBuy, shopRemove, leaveNode, eventChoose, runOver } from './run.js';
-import { playCard, endTurn, canPlay } from './combat.js';
+import { playCard, endTurn, canPlay, resolveDraw } from './combat.js';
 import { normWorld } from './nemesis.js';
 import { stateHash, outcomeHash } from './rng.js';
 import { known } from './cards.js';
 import { ABILITIES } from './abilities.js';
 
-export const CHOICE_KINDS = ['node', 'play', 'end', 'reward', 'cooler', 'shopBuy', 'shopRemove', 'leave', 'event'];
+export const CHOICE_KINDS = ['node', 'play', 'end', 'reward', 'cooler', 'shopBuy', 'shopRemove', 'leave', 'event', 'draw'];
 export const MAX_CHOICES = 20000; // (a completed run is ~1,500-2,500 choices)
 const COOLER_ACTIONS = ['heal', 'upgrade', 'remove', 'icebath', 'skip'];
 const isIdx = (x, n = 1e6) => Number.isInteger(x) && x >= 0 && x < n;
@@ -51,6 +53,7 @@ export function choiceShapeError(c) {
     case 'shopBuy': return (a === 'card' || a === 'ability') && isIdx(b) ? null : 'bad Shop item';
     case 'shopRemove': return isIdx(a) && c.length === 2 ? null : 'bad card index';
     case 'event': return isIdx(a) && c.length === 2 ? null : 'bad event choice';
+    case 'draw': return (a === 'discard' && isIdx(b) && c.length === 3) || (a === 'refuse' && c.length === 2) ? null : 'bad draw answer';
   }
   return 'not a choice';
 }
@@ -85,6 +88,7 @@ export function applyChoice(run, c) {
     case 'play': {
       if (run.stage !== 'match' || !m || m.over) return fail('no match in progress');
       if (a >= m.hand.length) return fail(`card ${a} not in hand`);
+      if (m.pendingDraw) return fail('a drawn card is waiting: discard or refuse it first');
       const chk = canPlay(m, a);
       if (!chk.ok) return fail(`card ${a} can't be played: ${chk.why}`);
       const t = b ?? 0;
@@ -95,6 +99,7 @@ export function applyChoice(run, c) {
     }
     case 'end': {
       if (run.stage !== 'match' || !m || m.over) return fail('no match in progress');
+      if (m.pendingDraw) return fail('a drawn card is waiting: discard or refuse it first');
       result = endTurn(run);
       break;
     }
@@ -133,6 +138,14 @@ export function applyChoice(run, c) {
     case 'leave': {
       result = leaveNode(run);
       if (!result) return fail('nothing to leave');
+      break;
+    }
+    case 'draw': {
+      if (run.stage !== 'match' || !m || m.over) return fail('no match in progress');
+      if (!m.pendingDraw) return fail('no drawn card is waiting');
+      if (a === 'discard' && b >= m.hand.length) return fail(`card ${b} not in hand`);
+      result = resolveDraw(run, a === 'refuse' ? { refuse: true } : { discard: b });
+      if (result.ok === false) return fail(result.why);
       break;
     }
     case 'event': {

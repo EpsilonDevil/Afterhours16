@@ -19,7 +19,7 @@ export const RULES = [
   { id: 'hostile_crowd', name: 'Hostile Crowd', text: 'You start Cold 1.', bad: true },
   { id: 'and_one_night', name: 'And-One Night', text: 'Your first Shot each possession scores +3.', good: true },
   { id: 'ball_movement', name: 'Ball Movement', text: 'Your first Pass card each turn costs 0.', good: true },
-  { id: 'up_tempo', name: 'Up-Tempo', text: 'Draw 6 cards a turn; his shots +1.' },
+  { id: 'up_tempo', name: 'Up-Tempo', text: 'Your hand holds 6 cards; his shots +1.' },
   { id: 'short_game', name: 'Short Game', text: 'He has 25% less Heart, but his shots score +25%.' },
   { id: 'no_blood', name: 'No Blood, No Foul', text: 'Fatigue cards burn when drawn, and you draw another.', good: true },
   { id: 'windy', name: 'Windy Night', text: 'Perimeter shots −2, Drive shots +2.' },

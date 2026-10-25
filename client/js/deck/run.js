@@ -23,8 +23,9 @@ import { healRun, removeCardAt, upgradeAt, outcome } from './runlib.js';
 import { AIWorld } from '../sim/world.js';
 
 export const STATS = ['stamina', 'shooting', 'defense', 'health'];
-// the Gauntlet's rules version (§15): 1 = turns, 2 = possessions (v0.4.8.9 qp4). Every new run records it (run.engine)
-export const ENGINE_VERSION = 2;
+// the Gauntlet's rules version (§15): 1 = turns, 2 = possessions (v0.4.8.9 qp4), 3 = the hand max (qp7). Every new run
+// records it (run.engine)
+export const ENGINE_VERSION = 3;
 export const PHASES = 3; // plus the Final (phase 4)
 export const PHASE_HEAL = 0.5, COOLER_HEAL = 0.3, ICE_CHEST_HEAL = 0.4;
 export const AI_BORN = 1767225600000; // (a fixed birth for an AI world the engine builds itself: names never move)

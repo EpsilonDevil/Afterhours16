@@ -16,6 +16,8 @@ const API = ['newRun', 'rollStarters', 'rollConverted', 'availableNodes', 'enter
 
 // a fixed, simple player: plays every playable card left to right, takes the first card, heals at Coolers, picks the
 // first enabled event choice, buys nothing. Returns the run and a log of hashes after every step.
+// (qp7: a card drawn past the hand max waits for an answer; this player always refuses it)
+const refuseAll = run => { while (run.match?.pendingDraw && !run.match.over) G.resolveDraw(run, { refuse: true }); };
 function scripted(seed, steps = 400) {
   const run = G.newRun({ seed, player: G.rollStarters(seed)[0] });
   const hashes = [];
@@ -25,8 +27,8 @@ function scripted(seed, steps = 400) {
     const r = G.enterNode(run, av[av.length - 1]);
     const fight = () => {
       for (let t = 0; t < 40 && !run.match.over; t++) {
-        for (let g = 0; g < 12 && !run.match.over; g++) { const i = G.handView(run).findIndex(h => h.playable); if (i < 0) break; G.playCard(run, i); }
-        if (!run.match.over) G.endTurn(run);
+        for (let g = 0; g < 12 && !run.match.over; g++) { refuseAll(run); const i = G.handView(run).findIndex(h => h.playable); if (i < 0) break; G.playCard(run, i); }
+        refuseAll(run); if (!run.match.over) G.endTurn(run);
       }
       if (!run.match.over) { run.match.over = { won: false }; }
       const mo = G.matchOver(run);
@@ -178,7 +180,7 @@ test('a run survives a save and resume through JSON mid-match', () => {
   G.enterNode(run, G.availableNodes(run)[0]);
   G.playCard(run, 0); G.endTurn(run);
   const saved = JSON.parse(JSON.stringify(run));
-  const go = r => { for (let t = 0; t < 30 && !r.match.over; t++) { let i; while (!r.match.over && (i = G.handView(r).findIndex(h => h.playable)) >= 0) G.playCard(r, i); if (!r.match.over) G.endTurn(r); } return G.stateHash(r); };
+  const go = r => { for (let t = 0; t < 30 && !r.match.over; t++) { let i; refuseAll(r); while (!r.match.over && (i = G.handView(r).findIndex(h => h.playable)) >= 0) { G.playCard(r, i); refuseAll(r); } refuseAll(r); if (!r.match.over) G.endTurn(r); } return G.stateHash(r); };
   assert.equal(go(run), go(saved));
 });
 
@@ -186,8 +188,9 @@ test('a full run reaches a summary with the §14 fields and the §11 VC figures'
   const r = playRun(3, 'smart');
   const s = G.runOver(r.run);
   for (const k of ['completed', 'phaseReached', 'nodesCleared', 'matchesWon', 'rivals', 'bosses', 'durationTurns', 'summary']) assert.ok(k in s, k);
-  assert.ok(s.summary.vc.total >= 0 && s.summary.vc.total <= 8000);
+  assert.ok(s.summary.vc.total >= 0 && s.summary.vc.total === s.summary.vc.raw);
   assert.ok(Array.isArray(s.summary.chars) && s.summary.chars.length > 0);
   assert.equal(G.vcFor({ matchesWon: 20, rivals: 3, bosses: 3, final: true, completed: true }).raw, 13 * 140 + 3 * 300 + 3 * 900 + 2000);
-  assert.equal(G.vcFor({ matchesWon: 30, rivals: 5, bosses: 3, final: true, completed: true }).total, 8000, 'capped');
+  assert.equal(G.vcFor({ matchesWon: 30, rivals: 5, bosses: 3, final: true, completed: true }).total, 21 * 140 + 5 * 300 + 3 * 900 + 2000, 'no cap per run (qp7)');
+  assert.ok(!('cap' in G.vcFor({ matchesWon: 30 })));
 });

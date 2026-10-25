@@ -1,6 +1,5 @@
 // The Gauntlet's rewards: coins, card and ability rewards, Shop stock and prices (GAUNTLET.md §3, §5, §6), and the
-// VC figures of §11 for the run summary (the server makes the real VC call: it checks the run's time and progress
-// and caps it).
+// VC figures of §11 for the run summary (the server makes the real VC call: it checks the run's time and progress).
 //
 // Balance reasoning:
 //  * COINS: you start with 99 and a won match pays ~15 (Rival ~32, boss ~78), so a phase pays ~150-200: one Shop
@@ -10,9 +9,9 @@
 //    (12%) and Phase 3 (25%) so late rewards keep up with an upgraded deck.
 //  * REMOVAL: 75 coins, +25 each time (Punch Card: always 50). Thin decks (Tight) cost real money to build.
 //  * VC (§11): 140 a won match, 300 a Rival, 900 a phase boss, 2,000 the Final. A completed run wins ~15-17 matches and
-//    ~3 Rivals on its path: ~8,000-8,700 before the cap (the smart policy averages ~8,600), so the completion bonus
-//    is 0 and the summary caps a run at 8,000, the top of §11's 6,000-8,000. A failed run keeps what it earned
-//    (~3,000 for the smart policy's failed runs).
+//    ~3 Rivals on its path: ~8,000-8,700 (the smart policy averages ~8,600), so the completion bonus is 0. Since qp7
+//    there is no per-run cap: a run pays what it earned (the server still limits VC by the real time a run took). A
+//    failed run keeps what it earned (~3,000 for the smart policy's failed runs).
 // Called by: run.js (match rewards, Shops), index.js vcFor.
 import * as R from './rng.js';
 import { POOL, canUpgrade, upgraded } from './cards.js';
@@ -24,7 +23,7 @@ export const CARD_ODDS = { match: [0.62, 0.33, 0.05], rival: [0.45, 0.42, 0.13],
 export const UPGRADED_CHANCE = [0, 0.12, 0.25, 0.3];
 export const PRICES = { common: [45, 55], uncommon: [68, 82], rare: [135, 165], aCommon: [135, 150], aUncommon: [180, 200], aRare: [230, 260], aShop: [160, 175] };
 export const REMOVE_BASE = 75, REMOVE_STEP = 25, PUNCH_PRICE = 50, SNEAKER_DEAL = 0.8;
-export const VC = { match: 140, rival: 300, boss: 900, final: 2000, completion: 0, cap: 8000 };
+export const VC = { match: 140, rival: 300, boss: 900, final: 2000, completion: 0 };
 
 const rarityOf = (st, odds) => { const x = R.next(st); return x < odds[0] ? 'common' : x < odds[0] + odds[1] ? 'uncommon' : 'rare'; };
 export function rewardCards(st, kind, phase, n = 3) {
@@ -72,10 +71,11 @@ export function removePrice(run) {
   return Math.round(p * (run.abilities.includes('sneaker_deal') ? SNEAKER_DEAL : 1));
 }
 
-// the §11 figures for a run's summary (the server checks and caps them)
+// the §11 figures for a run's summary (no per-run cap since qp7; the server checks them against the run's time). raw is
+// kept (= total) for older readers
 export function vcFor({ matchesWon = 0, rivals = 0, bosses = 0, final = false, completed = false } = {}) {
   const normal = Math.max(0, matchesWon - rivals - bosses - (final ? 1 : 0));
   const parts = { matches: normal * VC.match, rivals: rivals * VC.rival, bosses: bosses * VC.boss, final: final ? VC.final : 0, completion: completed ? VC.completion : 0 };
   const raw = Object.values(parts).reduce((s, v) => s + v, 0);
-  return { ...parts, raw, total: Math.min(VC.cap, raw), cap: VC.cap };
+  return { ...parts, raw, total: raw };
 }

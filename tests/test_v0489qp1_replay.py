@@ -126,7 +126,7 @@ class ReplayChecks(unittest.TestCase):
         self.assertTrue(out["verified"])
         self.assertEqual((out["matchesWon"], out["completed"]), (over["matchesWon"], over["completed"]))
         want = G.run_vc({"matchesWon": over["matchesWon"], "rivals": over["rivals"], "bosses": over["bosses"], "final": over["summary"]["final"], "completed": over["completed"]})["raw"]
-        self.assertEqual(out["vc"], min(want, G.RUN_CAP))
+        self.assertEqual(out["vc"], want, "all of it: no cap per run (qp7)")
         self.assertEqual(self.call(self.p, "/api/me")["balance"], bal0 + out["vc"])
         row = self.row(st["run_id"])
         self.assertEqual(row["verified"], 1)

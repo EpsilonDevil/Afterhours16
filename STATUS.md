@@ -2,6 +2,17 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 7 (Oct 25): Gauntlet hand limit, freeze fix, no VC cap per run
+Freeze root cause (Hub agent): the controller's `wasBusy` outlived the court it described. Continue at the final buzzer while the last possession was still playing dropped the court without resetting it; the next match's first court frame read it, redrew the table, and wiped the pre-match overlay while `overlayOn` stayed true. `play()`/`endTurn()` return early while `overlayOn` is set, so every input was ignored on a normal-looking table. T/F on the pre-match screen could do the same. Repro: deterministic script FROZEN on the pre-QP7 build, PASS after; 4 of 6 random 15–20 min sessions froze before, 0 of 3 after (20+ matches).
+
+| Area | Files | Notes |
+|---|---|---|
+| Freeze + safety nets (Hub) | `ui/gauntlet.js` (`wasBusy` reset on court drop/build; the pre-match overlay is part of the drawn view and `overlayOn` is derived from it; Enter/Space/E/pad Y tip off; every engine call, click, key and court callback guarded with recovery to the last save; 3 faults in 5 s → fallback screen; pause menu Resume / Back to the bracket / Leave the Gauntlet (Esc, Menu button, pad B on the table); server calls time out (start 20 s, finish → Retry after 150 s)), `game/deckcine.js` (watchdog: lands plays past length + 4 s, rebuilds a court disposed under a match, default length for bad plays), `ui/gauntletview.js` + `css/gauntlet.css` (overdraw prompt, Hand n/max, no cap line) | test `qp7hub` (new, 9) |
+| Hand limit (Deck) | `deck/combat.js` (`HAND_MAX` 5, `run.match.handMax`, possession draw fills to max, other draws → `pendingDraw` queue, `resolveDraw` discard/refuse, refused → discard pile, play/end refused while pending), `deck/cards.js` (Next Play +1/+2, Motion Offense +1), `deck/abilities.js` (Playbook, Superteam +1; Ankle Weights one short), `deck/rules.js` (Up-Tempo: hand of 6), `deck/replay.js` ('draw' choice kind), `deck/run.js` + `index.js` (ENGINE_VERSION 3), `deck/rewards.js` (no cap), rebalance in GAUNTLET.md §15.14, `tools/deck_sim.mjs`, `tools/deck_fuzz.mjs` (new: 13,400 runs / 2.7M choices, no engine fault found) | smart starters 19.5% Final won, 72 min; converted 51%, 66 min; dead hands 0.7–1.5%; test `v0489deck_hand` (new) |
+| VC (Server) | `server/gauntlet.py` (no `RUN_CAP`; `time_cap` = `VC_PER_MIN` 300 × minutes, to 3 h; v1/v2 runs paid by counts), `docs/GAUNTLET.md` §11 | fastest honest run ~190 VC/min on the engine's estimate; test `test_v0489qp7_gauntlet_uncapped` (new, 4) |
+
+Node 798/800 (missing-mp3 soundtrack test in the cloud copy, 1 skip), Python 356 OK; golden sim/world/director unchanged, gauntlet:* rebaselined; browser e2e: overdraw answered both ways, pause menu, a full run ✓ Verified.
+
 ### v0.4.8.9 quick patch 6 (Oct 25): online Pro-Am teams (Server/UI agent)
 Root cause: every Pro-Am call went to the player's own local service even while online, so teams (and team ids, and account ids) were per machine. Search never found a friend's team, a join by id said "Team not found", the hub's ready check said "not on a Pro-Am team", the HUB place key differed per machine, and series tickets were checked against local series. The earlier hub e2e only passed because both players were accounts on one service (join.cmd).
 

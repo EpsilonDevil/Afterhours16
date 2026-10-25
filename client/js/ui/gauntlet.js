@@ -38,10 +38,15 @@ function loadLocalWorld(app) { try { return JSON.parse(store()?.getItem(worldKey
 function saveLocalWorld(app, w) { try { store()?.setItem(worldKey(app), JSON.stringify(w)); } catch { /* private mode */ } }
 
 // ---------------- the server (guarded: the routes may not be there yet) ----------------
-export async function apiProfile(app) { try { const r = await app.api.get('/api/gauntlet/profile'); return r && typeof r === 'object' ? r : null; } catch { return null; } }
+// (qp7 §2: no call waits forever: a request the server never answers is given up on after TIMEOUTS ms: the profile as
+// offline, the start as an error to try again, the finish as Retry (the server pays a run_id once))
+export const TIMEOUTS = { profile: 15000, start: 20000, finish: 150000 };
+const LATE = Symbol('late');
+function within(promise, ms) { let t; return Promise.race([promise, new Promise(r => { t = setTimeout(() => r(LATE), ms); })]).finally(() => clearTimeout(t)); }
+export async function apiProfile(app) { try { const r = await within(app.api.get('/api/gauntlet/profile'), TIMEOUTS.profile); return r && r !== LATE && typeof r === 'object' ? r : null; } catch { return null; } }
 // start: the run issued (null offline; {error} when the server refused it: the screen says why)
 export async function apiStart(app, seed, player) {
-  try { const r = await app.api.mutate('/api/gauntlet/start', { seed, engine: D.ENGINE_VERSION, player: { id: String(player.id), name: player.name, converted: !!player.converted } }); return r?.run_id ? r : null; }
+  try { const r = await within(app.api.mutate('/api/gauntlet/start', { seed, engine: D.ENGINE_VERSION, player: { id: String(player.id), name: player.name, converted: !!player.converted } }), TIMEOUTS.start); if (r === LATE) return { error: 'The server didn\'t answer in time. Try again.' }; return r?.run_id ? r : null; }
   catch (e) { return e?.status >= 400 && e.status < 500 ? { error: e.message || 'The run couldn\'t start.' } : null; }
 }
 // finish: the server's answer; {error, refused} when it turned the run down (4xx), {error, retry} when it couldn't be
@@ -52,7 +57,7 @@ export async function apiFinish(app, runId, summary, choices, world = null, feed
   const body = { run_id: runId, summary };
   if (Array.isArray(choices)) body.choices = choices;
   if (world) { body.world = world; body.feed = Array.isArray(feed) ? feed.slice(0, 12) : []; }
-  try { return await app.api.mutate('/api/gauntlet/finish', body); }
+  try { const r = await within(app.api.mutate('/api/gauntlet/finish', body), TIMEOUTS.finish); return r === LATE ? { error: 'the server didn\'t answer in time', retry: true } : r; }
   catch (e) {
     if (e?.status >= 400 && e.status < 500) return { error: e.message || 'The run was refused.', refused: true, ...(e.status === 409 ? { replay: e.data?.replay || {} } : {}) };
     return { error: e?.message || 'The server couldn\'t be reached.', retry: true };
@@ -115,8 +120,12 @@ export class Gauntlet {
   constructor(app, root, params = {}) {
     this.app = app; this.root = root; this.params = params;
     this.run = null; this.meta = null; this.court = null; this.view = {}; this.sel = {}; this.target = 0; this.log = [];
-    this.onKey = e => this.key(e);
+    // (qp7 §2: the pre-match screen is part of the view: overlayHTML for the match overlayKey names; every redraw of
+    // that match puts it back, so a redraw can't take it off the screen while the controller still waits on it)
+    this.overlayHTML = null; this.overlayKey = null; this.faults = [];
+    this.onKey = e => this.guard(() => this.key(e), 'key');
   }
+  get overlayOn() { return !!this.overlayHTML; }
   async open() {
     const app = this.app;
     this.profile = await apiProfile(app);
@@ -124,13 +133,15 @@ export class Gauntlet {
     this.world = this.profile ? (this.profile.world || freshWorld(app)) : (loadLocalWorld(app) || freshWorld(app));
     this.feed = this.profile?.feed || this.world?.feed || [];
     globalThis.addEventListener?.('keydown', this.onKey);
+    // (qp7 §2: the court watchdog, on a timer of its own: it works when the app's loop isn't driving the court)
+    if (typeof setInterval === 'function') { this.wd = setInterval(() => this.watch(), 1000); this.wd?.unref?.(); }
     const saved = loadSaved(app);
     // (a run that ended while the server couldn't be reached: its finish is sent again)
     if (saved?.run.over && saved.meta?.runId && !saved.meta.fin) { this.resume(saved); return; }
     if (saved && !saved.run.over && this.params.resume && !this.oldRules(saved)) { this.resume(saved); return; }
     this.setup(saved && !saved.run.over ? saved.run : null);
   }
-  close() { globalThis.removeEventListener?.('keydown', this.onKey); this.dropCourt(); }
+  close() { globalThis.removeEventListener?.('keydown', this.onKey); if (this.wd) { clearInterval(this.wd); this.wd = null; } this.dropCourt(); }
   live() { return this.root?.isConnected !== false && CUR === this; }
   html(h, full = false) {
     if (!this.root) return;
@@ -139,10 +150,16 @@ export class Gauntlet {
     if (ui) ui.classList.toggle('gx-full', !!full);
     this.root.classList?.add('gx-root');
     this.bind();
+    // (the pre-match screen stays up through any redraw of its match; any other screen drops it)
+    if (this.overlayHTML) { if (this.view.name === 'match' && this.overlayKey === this.matchKey()) this.attachOverlay(false); else this.overlayHTML = this.overlayKey = null; }
   }
   save() { if (this.run) saveRun(this.app, this.run, this.meta); }
   // every engine call that changes the run: made and logged by the engine (D.act: logged only if it worked)
-  act(kind, ...args) { return D.act(this.run, this.meta.log, kind, ...args); }
+  // (qp7 §2: guarded: an exception inside the engine puts the run back to its last save and the game goes on)
+  act(kind, ...args) {
+    try { return D.act(this.run, this.meta.log, kind, ...args); }
+    catch (e) { this.fault(e, `the engine (${kind})`); return { ok: false, fault: true, error: 'fault' }; }
+  }
 
   // ---------- setup ----------
   setup(saved = null) {
@@ -233,21 +250,8 @@ export class Gauntlet {
   match() {
     const run = this.run, m = run.match, app = this.app;
     this.over = null; this.log = []; this.target = Math.max(0, m.opps.findIndex(o => o.heart > 0));
-    if (!this.court || this.court.matchId !== m.id + ':' + run.matchCount) {
-      this.dropCourt();
-      const boss = m.boss ? D.bossInfo(m.boss) : null;
-      try {
-        this.court = new DeckCourt(app, {
-          venue: venueFor(run), seed: (run.seed ^ hashString(m.id)) >>> 0,
-          home: { name: boss ? boss.title : 'The Gauntlet', abbr: 'GNT', primary: boss ? '#7a1f1c' : '#ff4d24', secondary: '#f3eee4', logo: boss ? 'crown' : 'bolt' },
-          you: playerEntry(app, run.player), opps: m.opps.map(o => oppEntry(app, o)),
-          onStart: pl => this.caption(pl.text), onLand: (pl, score) => this.scoreLanded(score), onFrame: () => this.pad(),
-        });
-        this.court.matchId = m.id + ':' + run.matchCount;
-        this.court.score = m.score.slice();
-        app.setController?.(this.court, this.court.scene);
-      } catch (e) { console.error('[gauntlet] court', e); this.court = null; }
-    }
+    if (this.overlayKey !== this.matchKey()) this.overlayHTML = this.overlayKey = null;
+    if (!this.court || this.court.disposed || this.court.matchId !== m.id + ':' + run.matchCount) this.buildCourt();
     this.view = { name: 'match' };
     this.drawMatch();
     // before the tip: the boss, the rules, and whoever has history with you says so
@@ -256,6 +260,24 @@ export class Gauntlet {
       if (lines.length || m.boss || m.rules.length) { this.overlay(V.preMatchHTML(run, lines) + (m.boss ? '' : '')); return; }
       this.tipoff();
     }
+  }
+  // the cinematic court for the match on now (its callbacks guarded: a throw in one never stops the court's frames)
+  buildCourt() {
+    const run = this.run, m = run.match, app = this.app;
+    this.dropCourt();
+    const boss = m.boss ? D.bossInfo(m.boss) : null;
+    try {
+      this.court = new DeckCourt(app, {
+        venue: venueFor(run), seed: (run.seed ^ hashString(m.id)) >>> 0,
+        home: { name: boss ? boss.title : 'The Gauntlet', abbr: 'GNT', primary: boss ? '#7a1f1c' : '#ff4d24', secondary: '#f3eee4', logo: boss ? 'crown' : 'bolt' },
+        you: playerEntry(app, run.player), opps: m.opps.map(o => oppEntry(app, o)),
+        onStart: pl => this.guard(() => this.caption(pl.text), 'the court'), onLand: (pl, score) => this.guard(() => this.scoreLanded(score), 'the court'), onFrame: () => this.guard(() => this.pad(), 'the controller'),
+      });
+      this.court.matchId = m.id + ':' + run.matchCount;
+      this.court.score = m.score.slice();
+      this.wasBusy = false;
+      app.setController?.(this.court, this.court.scene);
+    } catch (e) { console.error('[gauntlet] court', e); this.court = null; }
   }
   nemesisLines() {
     const m = this.run.match, w = this.world;
@@ -275,21 +297,36 @@ export class Gauntlet {
     this.court?.enqueue(evs, { target: this.target });
   }
   play(i) {
-    const run = this.run, m = run.match;
+    const run = this.run, m = run?.match;
     if (!m || this.over || this.overlayOn) return;
+    // (qp7 §1: a card drawn past the hand max is waiting: a hand card picked now is the one discarded for it)
+    if (m.pendingDraw) { this.resolveDraw({ discard: i }); return; }
     const h = D.handView(run)[i];
     if (!h) return;
     if (!h.playable) { this.toast(h.why || 'You can\'t play that now.', 'error'); return; }
     const r = this.act('play', i, this.target);
+    if (r.fault) return;
     if (!r.ok) { this.toast(r.result?.[0]?.text || 'You can\'t play that now.', 'error'); return; }
     this.after(r.result);
   }
+  // qp7 §1, the overdraw: { discard: handIndex } takes the waiting card for that one; { refuse: true } lets it go
+  resolveDraw(choice = {}) {
+    const m = this.run?.match;
+    if (!m?.pendingDraw || this.over || this.overlayOn) return;
+    if (!choice.refuse && !(Number.isInteger(choice.discard) && choice.discard >= 0 && choice.discard < m.hand.length)) return;
+    if (typeof D.resolveDraw !== 'function') { this.toast('This version of the game can\'t answer that draw.', 'error'); return; }
+    const r = choice.refuse ? this.act('draw', 'refuse') : this.act('draw', 'discard', choice.discard);
+    if (r.fault) return;
+    if (!r.ok) { this.toast(String(r.result?.why || r.error || 'Discard a card or refuse it.').replace(/^draw: /, ''), 'error'); return; }
+    this.after(r.result);
+  }
   endTurn() {
-    const run = this.run, m = run.match;
+    const run = this.run, m = run?.match;
     if (!m || this.over || this.overlayOn) return;
     // (qp4: the last possession still playing on the court: End Turn finishes it first, so the next set is seen before
     // anything is committed to it)
     if (this.court?.busy) { this.court.skipAll(); this.drawMatch(); return; }
+    if (m.pendingDraw) { this.toast('Hand full: discard a card or refuse the new one first.', 'error'); return; }
     const r = this.act('end');
     if (r.ok) this.after(r.result);
   }
@@ -325,7 +362,7 @@ export class Gauntlet {
     if (this.wasBusy && !busy && this.run?.match) { this.court.score = this.run.match.score.slice(); this.caption(''); this.drawMatch(); this.scoreLanded(this.court.score); }
     this.wasBusy = busy;
     const inp = this.app.input; if (!inp?.gp?.connected || this.view.name !== 'match' || this.app.modalOpen?.()) return;
-    if (inp.gpEdge(PAD.Y)) { inp.gp.prev[PAD.Y] = true; this.endTurn(); }
+    if (inp.gpEdge(PAD.Y)) { inp.gp.prev[PAD.Y] = true; if (this.overlayOn) this.tipoff(); else this.endTurn(); }
     if (inp.gpEdge(PAD.X)) { inp.gp.prev[PAD.X] = true; this.court?.skip(); }
     if (inp.gpEdge(PAD.VIEW)) { inp.gp.prev[PAD.VIEW] = true; this.fast(); }
   }
@@ -333,8 +370,14 @@ export class Gauntlet {
   key(e) {
     if (!this.live()) { this.close(); return; }
     if (this.app.modalOpen?.() || e.repeat || /INPUT|TEXTAREA|SELECT/.test(e.target?.tagName || '')) return;
+    // (qp7 §2: Esc is the Gauntlet's menu, on every screen of it)
+    if (e.code === 'Escape') { e.preventDefault(); this.pauseMenu(); return; }
     if (this.view.name !== 'match') { if (e.code === 'KeyD' && this.run) this.deck(); return; }
     const k = e.code;
+    // (the pre-match screen is up: Enter, Space or E tips off; the table's keys wait for it)
+    if (this.overlayOn) { if (k === 'Enter' || k === 'Space' || k === 'KeyE') { e.preventDefault(); this.tipoff(); } return; }
+    // (a card waiting on the hand max: 1-0 discards that card for it, R refuses it)
+    if (this.run.match?.pendingDraw && k === 'KeyR') { e.preventDefault(); this.resolveDraw({ refuse: true }); return; }
     if (/^Digit[0-9]$/.test(k)) { const n = (+k.slice(5) + 9) % 10; e.preventDefault(); this.play(n); }
     else if (k === 'KeyE') { e.preventDefault(); this.endTurn(); }
     else if (k === 'Space') { e.preventDefault(); this.court?.skip(); }
@@ -343,6 +386,10 @@ export class Gauntlet {
     else if (k === 'KeyD') this.deck();
   }
   dropCourt() {
+    // (qp7 §2, the root cause: wasBusy is the last court's. Left true when a court was dropped mid-play (Continue at the
+    // final buzzer), the next court's first frame read it as "the plays just landed" and redrew the table over the
+    // pre-match screen, while overlayOn still held every card and End Turn back: the freeze)
+    this.wasBusy = false;
     if (!this.court) return;
     const c = this.court; this.court = null;
     if (this.app.controller === c && this.app.showroom) this.app.setController(this.app.showroom, this.app.showroom.scene);
@@ -426,21 +473,89 @@ export class Gauntlet {
   deck() { this.modal(V.deckHTML(this.run), true); }
   pile(which) { const m = this.run.match; const refs = which === 'draw' ? m.drawPile.slice().sort() : which === 'discard' ? m.discard : m.burned; this.modal(V.pileHTML(which === 'draw' ? 'Draw pile (in no order)' : which === 'discard' ? 'Discard pile' : 'Burned', refs), true); }
   overlay(h) {
-    this.overlayOn = !!h;
+    this.overlayHTML = h || null; this.overlayKey = h ? this.matchKey() : null;
+    this.attachOverlay(true);
+  }
+  attachOverlay(focus) {
     const old = this.root?.querySelector?.('.gx-overlay'); old?.remove();
-    if (!h || !this.root) return;
-    const d = this.root.ownerDocument.createElement('div'); d.className = 'gx-overlay'; d.innerHTML = h; this.root.appendChild(d);
+    if (!this.overlayHTML || !this.root) return;
+    const d = this.root.ownerDocument.createElement('div'); d.className = 'gx-overlay'; d.innerHTML = this.overlayHTML; this.root.appendChild(d);
     this.bind(d);
-    d.querySelector('button')?.focus?.();
+    if (focus) d.querySelector('button')?.focus?.();
+  }
+  // ---------- qp7 §2: the safety nets ----------
+  // every handler runs guarded: an exception is a fault (logged, said, and the run put back to its last save)
+  guard(fn, where = 'the Gauntlet') { try { return fn(); } catch (e) { this.fault(e, where); return undefined; } }
+  fault(e, where) {
+    console.error('[gauntlet] fault in', where, e);
+    const now = Date.now();
+    this.faults = (this.faults || []).filter(t => now - t < 5000); this.faults.push(now);
+    this.toast(`Something went wrong in ${where}. The run is back where it was last saved.`, 'error');
+    if (this.recovering) return;
+    this.recovering = true;
+    try { if (this.faults.length >= 3) this.safeScreen(); else this.backToBracket(); }
+    catch (e2) { console.error('[gauntlet] recovery', e2); try { this.safeScreen(); } catch { /* nothing more to do here */ } }
+    finally { this.recovering = false; }
+  }
+  // the screen's own state, dropped (the run itself is the engine's and the save's)
+  resetScreen() {
+    this.overlayHTML = this.overlayKey = null; this.over = null; this.lastClash = null; this.eventDone = null; this.captionText = '';
+    this.dropCourt();
+  }
+  // Back to the bracket: the run as it was last saved, drawn fresh where it stands (the bracket, the stop it's on, or a
+  // match in progress picking up from its last saved possession)
+  backToBracket() {
+    const s = loadSaved(this.app);
+    if (s?.run && (!this.run || (s.run.seed === this.run.seed && s.meta?.runId === this.meta?.runId))) {
+      this.run = s.run; this.meta = s.meta || this.meta;
+      if (this.meta && !Array.isArray(this.meta.log)) { this.meta.log = []; this.meta.partial = true; }
+    }
+    this.resetScreen();
+    if (!this.run) return this.setup(null);
+    this.go();
+  }
+  // Leave the Gauntlet: to the Home tab, the run kept as it was last saved (the Gauntlet tab offers Resume)
+  leaveGauntlet() {
+    this.resetScreen();
+    return import('./screens.js').then(S => S.go(this.app, 'home')).catch(e => console.error('[gauntlet] leave', e));
+  }
+  // the last resort after repeated faults: a screen with nothing on it that can fail, and the two ways out
+  safeScreen() { this.resetScreen(); this.view = { name: 'safe' }; this.html(V.safeHTML()); }
+  // the pause menu (Esc; the Menu button; B on a controller): Resume, Back to the bracket, Leave the Gauntlet
+  pauseMenu() {
+    if (this.app.modalOpen?.()) return;
+    const inMatch = this.view.name === 'match';
+    import('./common.js').then(C => {
+      if (!this.live()) return;
+      const el = C.modal(V.pauseHTML({ hasRun: !!this.run, inMatch }));
+      el?.querySelectorAll?.('[data-gxp]').forEach(b => { b.onclick = ev => { ev.preventDefault(); C.closeModal(); const a = b.dataset.gxp; this.guard(() => (a === 'bracket' ? this.backToBracket() : a === 'leave' ? this.leaveGauntlet() : null), 'the menu'); }; });
+      el?.querySelector?.('[data-gxp]')?.focus?.();
+    }).catch(() => {});
+  }
+  // the court watchdog (every second): a court stuck on a play, never getting frames, or disposed under the match gets
+  // its plays landed (skipAll: their outcomes are the engine's already) or a new court, and the table redrawn
+  watch() {
+    if (!this.live()) { this.close(); return; }
+    const c = this.court;
+    if (!c || this.view.name !== 'match' || !this.run?.match) return;
+    this.guard(() => {
+      const why = c.watchdog?.(typeof document === 'undefined' || !document.hidden);
+      if (!why) return;
+      console.warn('[gauntlet] court watchdog:', why, c.queue?.cur?.anim || '');
+      (this.wdLog || (this.wdLog = [])).push({ why, anim: c.queue?.cur?.anim || null, at: Date.now() });
+      if (why === 'disposed') { this.court = null; this.wasBusy = false; this.buildCourt(); }
+      else { c.skipAll(); c.score = this.run.match.score.slice(); this.wasBusy = false; this.caption(''); }
+      this.drawMatch();
+    }, 'the court watchdog');
   }
   modal(h, wide) { import('./common.js').then(C => C.modal(h, { wide })).catch(() => {}); }
   toast(t, k) { if (!t) return; import('./common.js').then(C => C.toast(t, k)).catch(() => {}); }
   bind(scope = this.root) {
     if (!scope?.querySelectorAll) return;
-    const on = (sel, f) => scope.querySelectorAll(sel).forEach(b => { b.onclick = ev => { ev.preventDefault?.(); f(b); }; });
+    const on = (sel, f) => scope.querySelectorAll(sel).forEach(b => { b.onclick = ev => { ev.preventDefault?.(); this.guard(() => f(b), 'that click'); }; });
     on('[data-pick-player]', b => this.start(+b.dataset.pickPlayer));
     on('[data-node]', b => { if (b.classList.contains('open')) this.enter(b.dataset.node); });
-    scope.querySelectorAll('[data-node]').forEach(b => { const pv = () => { const nd = D.mapView(this.run)?.rows.flat().find(x => x.id === b.dataset.node); const box = this.root.querySelector('[data-preview]'); if (nd && box) box.innerHTML = V.previewHTML(nd, this.run); }; b.onmouseenter = pv; b.onfocus = pv; });
+    scope.querySelectorAll('[data-node]').forEach(b => { const pv = () => this.guard(() => { const nd = D.mapView(this.run)?.rows.flat().find(x => x.id === b.dataset.node); const box = this.root.querySelector('[data-preview]'); if (nd && box) box.innerHTML = V.previewHTML(nd, this.run); }, 'the bracket'); b.onmouseenter = pv; b.onfocus = pv; });
     on('[data-card]', b => this.play(+b.dataset.card));
     on('[data-target]', b => { this.target = +b.dataset.target; this.drawMatch(); });
     on('[data-pile]', b => this.pile(b.dataset.pile));
@@ -462,6 +577,10 @@ export class Gauntlet {
       case 'abandon': clearSaved(this.app); this.setup(null); return;
       case 'deck': return this.deck();
       case 'end': return this.endTurn();
+      case 'refuse-draw': return this.resolveDraw({ refuse: true });
+      case 'pause': return this.pauseMenu();
+      case 'bracket': return this.backToBracket();
+      case 'leave-gx': return this.leaveGauntlet();
       case 'skip': return this.court?.skip();
       case 'fast': return this.fast();
       case 'continue': return this.continue();

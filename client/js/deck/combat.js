@@ -20,13 +20,19 @@
 // Called by: run.js (startMatch), replay.js, and the UI through index.js (playCard, endTurn, handView, flowView,
 // canPlay, matchView).
 import * as R from './rng.js';
-import { cardDef, TIGHT_AT, DEPTH_FROM } from './cards.js';
+import { cardDef, cardInfo, TIGHT_AT, DEPTH_FROM } from './cards.js';
 import { BOSSES, NEMESIS_BOSS, BOSS_DMG, BOSS_PHASE } from './bosses.js';
 import { foeStats, splitMoves, READ_TRAIT, RIVAL, PHASE_DMG, RIDER_P } from './foes.js';
 import { ruleView } from './rules.js';
 import { energyFor, ENERGY_ABILITIES } from './abilities.js';
 
-export const HAND = 5, MAX_HAND = 10;
+// THE HAND (qp7): at most HAND_MAX cards (run.match.handMax: raised for the match by Playbook, Superteam, Up-Tempo,
+// Next Play, Motion Offense). A possession's draw fills your hand up to it, never past; any other draw past it (a card's
+// "draw N", Flow, Make-It-Take-It, ...) stops and asks, one card at a time: discard a card from your hand to take it, or
+// refuse it (it goes to the discard pile). run.match.pendingDraw holds the question; resolveDraw answers it.
+export const HAND_MAX = 5;
+export const HAND = HAND_MAX, MAX_HAND = HAND_MAX; // (the old names)
+export const HAND_FULL = 'Hand full: discard or refuse the card first';
 export const COLD = 0.75, EXPOSED = 1.5, GASSED = 0.75;
 export const SPOTLIGHT_CARDS = 6;
 // The Shadow (a Final): he plays SHADOW.cards of your own cards a possession, their points and Stops at these shares
@@ -35,7 +41,7 @@ export const SHADOW = { cards: 5, pts: 1.0, stops: 0.6 };
 // §2's stat formulas are fixed, and at 6-10 they're ~4-5 energy, +3-5 on every card and ~80 Health against a 1-5
 // starter's ~3 / +1 / 48, so without this a converted run is a formality. Tuned with tools/deck_sim.mjs (smart policy:
 // converted ~50%, starters ~20%). Approved by the lead for v0.4.8.9.
-export const REPUTATION = { heart: 1.15, dmg: 1.2 }; // (1.25 / 1.25 before the possessions of qp4)
+export const REPUTATION = { heart: 1.1, dmg: 1.15 }; // (1.25 / 1.25 before the possessions of qp4; 1.15 / 1.2 in qp4)
 // FREE THROWS: a fouled shot that goes in is an and-one (FT_AND_ONE of its points again, at least 1); a fouled shot that
 // doesn't is two shots (FT_MISSED of its points, at least 1). Uncontested: straight off Heart or Health
 export const FT_AND_ONE = 1 / 4, FT_MISSED = 1 / 3;
@@ -46,7 +52,7 @@ export const BREAK_STOPS = 0.5;
 // as they are) is scaled by POSS.heart (a boss's by POSS.bossHeart), and since he now swings only on his own
 // possessions, his shots by POSS.dmg (POSS.bossDmg).
 // Tuned with tools/deck_sim.mjs to the targets (smart: starters ~20%, converted ~50%; ~70 min a completed run).
-export const POSS = { heart: 0.4, dmg: 0.85, bossHeart: 0.55, bossDmg: 1.35 };
+export const POSS = { heart: 0.4, dmg: 0.65, bossHeart: 0.5, bossDmg: 1.15 }; // (qp4: 0.4 / 0.85 / 0.55 / 1.35; qp7's 5-card hand made every side's hand smaller)
 const ANIM_MS = { jumper: 900, three: 1000, layup: 900, dunk: 1100, floater: 900, post: 1000, crossover: 600, spin: 650, stepback: 800, pass: 500, lob: 700,
   closeout: 600, contest: 650, block: 800, steal: 600, rebound: 600, celebrate: 700, gassed: 500, foul: 600 };
 // the tags an opponent's card carries, from what it looks like on the court (for assists, blocks, steals and boards)
@@ -75,7 +81,7 @@ function ev(m, e) {
 }
 function flush(m) { const q = m.evq; m.evq = []; m.evt = 0; return q; }
 // the match ends: its 'end' event goes last, after the clash that ended it
-function endEvent(m) { if (m.over && !m.endSent) { m.endSent = true; ev(m, m.over.won ? { type: 'end', anim: 'celebrate', text: 'Game. You win.' } : { type: 'end', actor: 0, anim: 'gassed', text: 'You\'re out.' }); } }
+function endEvent(m) { if (m.over) dropPending(m); if (m.over && !m.endSent) { m.endSent = true; ev(m, m.over.won ? { type: 'end', anim: 'celebrate', text: 'Game. You win.' } : { type: 'end', actor: 0, anim: 'gassed', text: 'You\'re out.' }); } }
 
 // ---------- deck size: Depth and Tight ----------
 export function deckSize(m) { return m.deckSize; }
@@ -99,7 +105,7 @@ const X = {
   ev, oi,
   addCard(m, ref, where = 'discard') {
     if (where === 'draw') m.drawPile.splice(R.int(m.rs, 0, m.drawPile.length), 0, ref);
-    else if (where === 'hand' && m.hand.length < MAX_HAND) m.hand.push(ref);
+    else if (where === 'hand' && m.hand.length < m.handMax) m.hand.push(ref);
     else m.discard.push(ref);
   },
   lastCard(m) { return m.lastRef ? cardDef(m.lastRef) : null; },
@@ -149,7 +155,7 @@ export function startMatch(run, node) {
     id: node.id, kind: node.kind, bracket: node.phase, round: node.round, boss: node.boss || null,
     // the possession (§15): who has the ball, the kind of turn, its banner, the opponents' committed set, the live clash
     phase: 'jump', ball: null, turnType: 'jump_ball', turnLabel: 'Jump ball', foeSet: null, preview: null, poss: 0, offN: 0,
-    turn: 0, energy: 0, maxEnergy: 0, hand: [], drawPile: [], discard: [], burned: [],
+    turn: 0, energy: 0, maxEnergy: 0, hand: [], handMax: HAND_MAX, pendingDraw: null, drawQ: null, drawPile: [], discard: [], burned: [],
     you: { hp: run.hp, maxHp: run.maxHp, stops: 0, keep: 0, outlet: 0, status: {} },
     opps: [], foes: node.foes, rules: (node.rules || []).map(ruleView), score: [0, 0],
     rs, looks: Object.fromEntries((node.foes || []).map(f => [f.charId, run.chars?.[f.charId]?.look || null])), deck: run.deck.slice(), deckSize: run.deck.length, ab: run.abilities.slice(), powers: [],
@@ -182,6 +188,7 @@ export function startMatch(run, node) {
     });
   }
   // the energy and the starting statuses
+  m.handMax = HAND_MAX + (rule(m, 'up_tempo') ? 1 : 0) + (ab(m, 'superteam') ? 1 : 0) + (ab(m, 'playbook') ? 1 : 0);
   m.maxEnergy = energyFor(stats.stamina) + m.ab.filter(a => ENERGY_ABILITIES.includes(a)).length + (rule(m, 'run_and_gun') ? 1 : 0);
   if (rule(m, 'home_crowd')) m.you.status.hot = 1;
   if (rule(m, 'hostile_crowd')) applyStatus(m, m.you, 'cold', 1);
@@ -202,8 +209,9 @@ export function startMatch(run, node) {
   // the jump ball: a seeded coin, 50/50
   const youWin = R.next(rs) < 0.5;
   ev(m, { type: 'jump', actor: youWin ? 'you' : 0, anim: 'rebound', text: youWin ? 'Tip-off: you win it.' : `Tip-off: ${m.opps[0].name} wins it.` });
+  // (the lent card goes in your hand before the first draw, so it counts toward your hand max)
+  if (m.lent) { m.hand.push(m.lent.card); ev(m, { type: 'ally', actor: 'you', anim: 'pass', text: `${m.lent.name} has your back: he lends you ${cardDef(m.lent.card).name} for this match.` }); }
   beginPossession(m, youWin ? 'you' : 'them', youWin ? 'offense' : 'defense', youWin ? 'You won the tip' : 'They won the tip');
-  if (m.lent) { X.addCard(m, m.lent.card, 'hand'); ev(m, { type: 'ally', actor: 'you', anim: 'pass', text: `${m.lent.name} has your back: he lends you ${cardDef(m.lent.card).name} for this match.` }); refreshSets(m); }
   m.intro = flush(m); // (the tip-off and the match's opening events, played before the first turn)
   return m;
 }
@@ -467,26 +475,81 @@ export function startTurn(m) {
   for (const p of pw(m, 'turn_stops')) gainStops(m, p.n, false, 'Defensive Mindset');
   for (const p of pw(m, 'depth_stops')) gainStops(m, Math.floor(m.deckSize / p.n), false, 'Deep Bench');
   for (const p of pw(m, 'turn_cold')) for (const o of alive(m)) applyStatus(m, o, 'cold', p.n);
-  let n = HAND + (rule(m, 'up_tempo') ? 1 : 0) + (ab(m, 'superteam') ? 1 : 0) + pw(m, 'turn_draw').reduce((s, p) => s + p.n, 0);
-  for (const o of alive(m)) { const d = o.boss && BOSSES[o.boss]; if (d?.drawMod) n += d.drawMod; }
-  if (m.turn === 1) n += (ab(m, 'playbook') ? 2 : 0) - (ab(m, 'ankle_weights') ? 1 : 0);
-  draw(m, n);
+  // the possession's draw: up to your hand max (the Press keeps it 1 short; Ankle Weights, your first hand)
+  let fill = m.handMax;
+  for (const o of alive(m)) { const d = o.boss && BOSSES[o.boss]; if (d?.drawMod) fill += d.drawMod; }
+  if (m.turn === 1 && ab(m, 'ankle_weights')) fill -= 1;
+  fillHand(m, fill);
   commitSets(m);
   refreshSets(m);
   // (how often a turn opens with nothing you can play: tools/deck_sim.mjs keeps it rare)
   if (!m.hand.some((r, i) => canPlay(m, i).ok)) m.log.dead++;
   ev(m, { type: 'turn', text: `${m.turnLabel}.` });
 }
-function draw(m, n) {
-  let guard = 0;
-  for (let k = 0; k < n && guard < 40; guard++) {
-    if (m.hand.length >= MAX_HAND) break;
-    if (!m.drawPile.length) { if (!m.discard.length) break; m.drawPile = R.shuffle(m.rs, m.discard); m.discard = []; }
+// the top card of the draw pile (the discard reshuffled in when it runs out; No Blood burns the Fatigue), or null
+function topCard(m) {
+  for (let guard = 0; guard < 200; guard++) {
+    if (!m.drawPile.length) { if (!m.discard.length) return null; m.drawPile = R.shuffle(m.rs, m.discard); m.discard = []; }
     const r = m.drawPile.pop(), d = cardDef(r);
     if (d?.type === 'fatigue' && rule(m, 'no_blood')) { m.burned.push(r); ev(m, { type: 'burn', text: `No Blood, No Foul: ${d.name} burns.` }); continue; }
-    m.hand.push(r); k++;
-    if (d?.fx?.drawn?.energy) { m.energy = Math.max(0, m.energy + d.fx.drawn.energy); ev(m, { type: 'energy', anim: 'foul', text: `${d.name}: ${d.fx.drawn.energy} energy.` }); }
+    return r;
   }
+  return null;
+}
+// a card goes into your hand (what happens when it's drawn: a Ticky-Tack Foul's energy)
+function takeCard(m, r) {
+  const d = cardDef(r);
+  m.hand.push(r);
+  if (d?.fx?.drawn?.energy) { m.energy = Math.max(0, m.energy + d.fx.drawn.energy); ev(m, { type: 'energy', anim: 'foul', text: `${d.name}: ${d.fx.drawn.energy} energy.` }); }
+}
+// the possession's draw: up to n cards in hand, never past it, never a question
+function fillHand(m, n) {
+  while (m.hand.length < n) { const r = topCard(m); if (r == null) break; takeCard(m, r); }
+}
+// any other draw: n cards; past your hand max, each one waits on resolveDraw (later draws queue behind it)
+function draw(m, n, why = 'Draw') {
+  if (!(n > 0)) return;
+  if (m.pendingDraw) { m.pendingDraw.remaining += n; return; }
+  for (let k = 0; k < n; k++) {
+    if (m.over) return;
+    const r = topCard(m);
+    if (r == null) return;
+    if (m.hand.length < m.handMax) { takeCard(m, r); continue; }
+    m.pendingDraw = { ref: r, cardInfo: cardInfo(r), remaining: n - k - 1, handMax: m.handMax, why: `${why}: your hand is full (${m.handMax}). Discard a card to take ${cardDef(r).name}, or refuse it.` };
+    m.drawQ = why;
+    ev(m, { type: 'draw', text: `${cardDef(r).name}: hand full. Discard a card or refuse it.` });
+    return;
+  }
+}
+// a match that ends with a card waiting: it goes to the discard pile
+function dropPending(m) { if (m.pendingDraw) { m.discard.push(m.pendingDraw.ref); m.pendingDraw = null; m.drawQ = null; } }
+// resolveDraw(run, { discard: handIndex } | { refuse: true }) -> events (an array; .ok false and .why when refused)
+export function resolveDraw(run, choice = {}) {
+  const m = run?.match;
+  const no = why => { const out = [{ t: 0, type: 'invalid', actor: 'you', anim: null, made: false, points: 0, stops: 0, text: why }]; out.ok = false; out.why = why; return out; };
+  if (!m || m.over) return no('No match in progress.');
+  const p = m.pendingDraw;
+  if (!p) return no('No card is waiting.');
+  const dc = cardDef(p.ref);
+  if (choice && choice.refuse === true) {
+    m.pendingDraw = null;
+    m.discard.push(p.ref);
+    ev(m, { type: 'draw', text: `You let ${dc.name} go.` });
+  } else if (choice && Number.isInteger(choice.discard) && choice.discard >= 0 && choice.discard < m.hand.length) {
+    m.pendingDraw = null;
+    const [out] = m.hand.splice(choice.discard, 1);
+    m.discard.push(out);
+    ev(m, { type: 'draw', text: `You discard ${cardDef(out).name} for ${dc.name}.` });
+    takeCard(m, p.ref);
+  } else return no('Discard a card from your hand, or refuse the card.');
+  const why = m.drawQ || 'Draw';
+  m.drawQ = null;
+  draw(m, p.remaining, why);
+  refreshSets(m);
+  run.hp = Math.max(0, m.you.hp);
+  const ev2 = flush(m).map(e => ({ ...e, anim: null }));
+  ev2.ok = true;
+  return ev2;
 }
 function gainStops(m, n, hustle, why) {
   if (n <= 0) return 0;
@@ -519,6 +582,7 @@ export function canPlay(x, i) {
   const r = m?.hand?.[i], d = cardDef(r);
   if (!m || !d || m.over) return { ok: false, why: m?.over ? 'The match is over.' : 'No such card.' };
   if (!m.t) return { ok: false, why: 'Not your turn.' };
+  if (m.pendingDraw) return { ok: false, why: HAND_FULL };
   const c = costOf(m, r);
   if (c == null) return { ok: false, why: `${d.name} can't be played.` };
   if (!phaseOk(m, d)) return { ok: false, why: m.ball === 'you' ? `${cap1(d.type)} cards can't be played on offense.` : `${d.type === 'shot' ? 'Shots' : cap1(d.type) + 's'} can't be played on defense.` };
@@ -594,8 +658,8 @@ export function stopsValue(m, d) {
 export function playCard(run, handIndex, ti = 0) {
   const m = run.match;
   if (!m || m.over) return [];
-  const chk = m.hand[handIndex] == null ? { ok: false, why: 'No such card.' } : canPlay(m, handIndex);
-  if (!chk.ok) return [{ t: 0, type: 'invalid', actor: 'you', anim: null, made: false, points: 0, stops: 0, text: chk.why }];
+  const chk = m.pendingDraw ? { ok: false, why: HAND_FULL } : m.hand[handIndex] == null ? { ok: false, why: 'No such card.' } : canPlay(m, handIndex);
+  if (!chk.ok) { const out = [{ t: 0, type: 'invalid', actor: 'you', anim: null, made: false, points: 0, stops: 0, text: chk.why }]; out.ok = false; out.why = chk.why; return out; }
   const ref = m.hand[handIndex], d = cardDef(ref);
   m.energy -= chk.cost;
   m.t.cheap = 0;
@@ -633,7 +697,9 @@ export function playCard(run, handIndex, ti = 0) {
     if (f.special === 'burn_fatigue') { const j = m.hand.findIndex(r => cardDef(r)?.type === 'fatigue'); if (j >= 0) { const [b] = m.hand.splice(j, 1); m.burned.push(b); ev(m, { type: 'burn', text: `${cardDef(b).name} burns.` }); } }
     if (f.special === 'stat_match') { m.mods[f.stat] += f.n; ev(m, { type: 'status', text: `+${f.n} ${f.stat} for this match.` }); }
     if (f.special === 'draw_if_exposed' && o && o.status.exposed) f.draw = (f.draw || 0) + 1;
-    if (f.draw) draw(m, f.draw);
+    if (f.handMax) { m.handMax += f.handMax; ev(m, { type: 'power', text: `${d.name}: your hand holds ${m.handMax} this match.` }); }
+    if (f.power?.id === 'hand_max') { m.handMax += f.power.n; ev(m, { type: 'power', text: `${d.name}: your hand holds ${m.handMax} this match.` }); }
+    if (f.draw) draw(m, f.draw, d.name);
     if (f.power) { m.powers.push({ ...f.power }); ev(m, { type: 'power', text: `${d.name} is on for the match.` }); }
   }
   // where the card goes
@@ -655,13 +721,13 @@ export function playCard(run, handIndex, ti = 0) {
   if (!m.over && m.t.chain.length + m.t.wild >= 3 && m.t.flows < maxFlows) {
     m.t.flows++; m.t.flowed = true; m.t.chain = []; m.t.wild = 0;
     const e = ab(m, 'second_gear') ? 2 : 1;
-    m.energy += e; ev(m, { type: 'flow', text: `Flow! +${e} energy, draw 1.` }); draw(m, 1);
+    m.energy += e; ev(m, { type: 'flow', text: `Flow! +${e} energy, draw 1.` }); draw(m, 1, 'Flow');
     if (ab(m, 'metronome')) gainStops(m, 4, false, 'Metronome');
   }
   if (!m.over) {
     for (const p of pw(m, 'tag_stops')) if (d.tags.includes(p.tag)) gainStops(m, p.n, false, 'Mentality');
-    for (const p of pw(m, 'tag_draw')) if (d.tags.includes(p.tag) && m.t.tagDraws < 3) { m.t.tagDraws++; draw(m, p.n); }
-    if (d.tags.includes('Pass')) { m.t.firstPass = true; m.t.passes++; if (m.t.passes === 2 && ab(m, 'assist_log')) { draw(m, 1); ev(m, { type: 'ability', text: 'Assist Log: draw 1.' }); } }
+    for (const p of pw(m, 'tag_draw')) if (d.tags.includes(p.tag) && m.t.tagDraws < 3) { m.t.tagDraws++; draw(m, p.n, 'Mentality'); }
+    if (d.tags.includes('Pass')) { m.t.firstPass = true; m.t.passes++; if (m.t.passes === 2 && ab(m, 'assist_log')) { draw(m, 1, 'Assist Log'); ev(m, { type: 'ability', text: 'Assist Log: draw 1.' }); } }
     if (ab(m, 'jump_rope') && m.t.played.length % 3 === 0) gainStops(m, 3, false, 'Jump Rope');
     for (const op of alive(m)) { const def = op.boss && BOSSES[op.boss]; if (def?.onPlay) def.onPlay(m, d, X); }
   }
@@ -702,6 +768,7 @@ function stopHow(defTop, defSteal, offHandlePass, a) {
 export function endTurn(run) {
   const m = run.match;
   if (!m || m.over || !m.t) return [];
+  if (m.pendingDraw) { const out = [{ t: 0, type: 'invalid', actor: 'you', anim: null, made: false, points: 0, stops: 0, text: HAND_FULL }]; out.ok = false; out.why = HAND_FULL; return out; }
   // the Fatigue in your hand bites
   for (const r of m.hand) {
     const d = cardDef(r);
@@ -811,8 +878,9 @@ export function endTurn(run) {
     ev(m, { type: 'rebound', actor: offBoard ? (youO ? 'you' : 0) : (youO ? 0 : 'you'), anim: 'rebound', offensive: offBoard, text: offBoard ? 'Offensive board.' : 'Rebound.' });
     next = offBoard ? offense : defSide; kind = offBoard ? 'second_chance' : 'offense';
   }
-  if (next === 'you' && rule(m, 'make_it_take_it') && youO && last?.made) { draw(m, 1); ev(m, { type: 'draw', text: 'Make-It-Take-It: draw 1.' }); }
   beginPossession(m, next, kind, why);
+  // (Make-It-Take-It's card comes on top of the new possession's draw: past a full hand it asks)
+  if (next === 'you' && rule(m, 'make_it_take_it') && youO && last?.made) { ev(m, { type: 'draw', text: 'Make-It-Take-It: draw 1.' }); draw(m, 1, 'Make-It-Take-It'); refreshSets(m); }
   run.hp = Math.max(0, m.you.hp);
   return flush(m);
 }

@@ -201,3 +201,26 @@ A Gauntlet run you started before this update can't continue under the new rules
 - **Your progress stays yours:** each of you keeps your own build, rank, RP, VC and items in your own save. A series game counts for each player's RP. When a series ends, each member moves up or down a division once and gets the series bonus.
 - **Still your choice:** you can still make separate teams, or play on your own team with AI teammates, online and offline.
 - **Teams made offline:** a team you made while playing offline stays offline. Online, create a team or join one there.
+
+---
+
+## Quick patch 7 (Oct 25): Gauntlet hand limit, the freeze fix, no VC cap per run
+
+### Fixed: the Gauntlet could freeze
+Sometimes card picks and End Turn stopped doing anything, and the only way out was signing out. The cause: pressing Continue at the final buzzer while the last play was still running left a stale flag behind. That flag wiped the next match's pre-match screen while the game still thought the screen was open, so every click on the table was ignored. Pressing T or F on the pre-match screen could do the same thing.
+- **That's fixed.** On the pre-match screen, Enter, Space, E or Y tips off.
+- **Safety nets:** if something goes wrong anyway, the game puts your run back to its last save and keeps going. A stuck play on the court finishes by itself.
+- **New Menu:** a **Menu** button (Esc, or B on a controller) opens Resume, **Back to the bracket** and **Leave the Gauntlet**. You never have to sign out to get unstuck.
+
+### Your hand holds 5 cards
+- **The limit:** your hand holds at most **5 cards**, held cards included. Each possession you draw up to 5.
+- **Drawing past 5:** a card that would take you past your limit (Outlet Pass, Flow, Make-It-Take-It) asks you to **discard a card to take it**, or **refuse it**.
+- **Raising the limit:** Playbook and Superteam give +1, Next Play gives +1 (+2 upgraded), Motion Offense gives +1, and the Up-Tempo rule plays with 6 cards. The hand shows your count, like "Hand 5/5".
+- **Rebalanced:** opponents hit a little softer to match. A good run with a starter still wins about one time in five.
+
+### No VC cap per run
+- **Paid in full:** a run pays everything it earns: 140 a match, 300 a Rival, 900 a boss, 2,000 for the Final. A completed run usually pays about 8,500–9,600 VC.
+- **Speed check:** the only limit left is a check against impossibly fast runs, at 300 VC per real minute. It never trims an honest run.
+
+### Runs from before this update
+A run started before this update can't continue under the new hand rule. You can end it from the Gauntlet screen, and it's paid what it earned.
