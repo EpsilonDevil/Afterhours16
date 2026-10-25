@@ -267,6 +267,7 @@ class Service:
         # v0.4.8.8 The Pro-Am Overhaul (server/proam.py, docs/PROAM-OVERHAUL.md): Season 1 begins the first time this
         # runs; the AI Pro-Am teams are made, and the season items added to the catalog
         self.proam = proam.ProAm(self, CATALOG)
+        self.hub.pa_handler = self.proam.online_call  # (qp6: the Pro-Am teams of members who play from their own copies)
         self.gauntlet = gauntlet.Gauntlet(self)  # (v0.4.8.9 The Gauntlet: runs, the nemesis world, sacrifices, park cards)
         self.proam.boot()
 
@@ -1355,7 +1356,7 @@ class Handler(BaseHTTPRequestHandler):
                     return {"team": merged}
                 return self.respond(200, db.once(aid, data.get("key"), "proam_team", team, save_team))
             # v0.4.8.8 Pro-Am: create, update, join, leave, answer, kick, handon, draft, queue, lineup (server/proam.py)
-            pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup)", path)
+            pa_route = re.fullmatch(r"/api/proam/(create|update|join|leave|answer|kick|handon|draft|queue|lineup|settle)", path)  # (qp6: settle)
             if pa_route:
                 return self.respond(200, s.proam.action(aid, pa_route.group(1), data))
             # ---------- the Gauntlet ----------
@@ -1798,7 +1799,7 @@ class Handler(BaseHTTPRequestHandler):
             builds.strict_keys(data, ("forfeit",))
             if not isinstance(data.get("forfeit", False), bool):
                 raise builds.Invalid("forfeit must be true or false.")
-            rank, char_out = None, None
+            rank, char_out, pa_report = None, None, None
             with db.transaction() as c:
                 row = c.execute("SELECT status, result, mode, character_id, venue, meta FROM matches WHERE id=? AND account_id=?", (match_id, aid)).fetchone()
                 if not row:
@@ -1811,7 +1812,8 @@ class Handler(BaseHTTPRequestHandler):
                 if row["mode"] == "proam" and data.get("forfeit"):
                     rank = s.proam_forfeit(c, row["character_id"])
                     pm = c.execute("SELECT meta FROM matches WHERE id=?", (match_id,)).fetchone()
-                    s.proam.forfeit(c, aid, row["character_id"], json.loads(pm[0] or "{}") if pm else {})  # (v0.4.8.8)
+                    fres = s.proam.forfeit(c, aid, row["character_id"], json.loads(pm[0] or "{}") if pm else {})  # (v0.4.8.8)
+                    pa_report = (fres or {}).get("report")  # (qp6: an online team's series game: the game reports it to the hub)
                     char_out = s.describe(s.character(aid, row["character_id"], c)) if rank else None
                 c.execute("UPDATE matches SET status='cancelled', result=?, updated_at=? WHERE id=?", (encode({"cancelled": True, "reason": "forfeit" if rank else "player_left", "reward": 0, **({"proam_rank": rank} if rank else {})}), time.time(), match_id))
                 if row["mode"] == "park" and row["venue"] in cup.EVENT_VENUES:
@@ -1826,7 +1828,7 @@ class Handler(BaseHTTPRequestHandler):
                     s.reset_win_streak(c, row["character_id"])
                     if char_out:
                         char_out = s.describe(s.character(aid, row["character_id"], c))
-            return self.respond(200, {"status": "cancelled", "reward": 0, **({"proam_rank": rank, "character": char_out} if rank else {})})
+            return self.respond(200, {"status": "cancelled", "reward": 0, **({"proam_rank": rank, "character": char_out} if rank else {}), **({"pa_report": pa_report} if pa_report else {})})
         builds.strict_keys(data, ("key", "summary", "mates", "crew_mates"))
         mates = data.get("mates") or []
         crew_mates = data.get("crew_mates") or 0  # (qp3: real crew members who ran with you in an online game)

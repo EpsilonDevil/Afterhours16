@@ -96,3 +96,34 @@
 00:49:52 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'claude-ai', 'version': '0.1.0'}}
 00:49:52 <- notifications/initialized {}
 00:49:52 <- tools/list {}
+04:00:58 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+04:00:58 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'roots': {'listChanged': True}, 'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'local-agent-mode-unreal', 'version': '1.0.0'}}
+04:00:58 <- notifications/initialized {}
+04:00:58 <- tools/list {}
+04:01:00 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+04:01:02 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'claude-ai', 'version': '0.1.0'}}
+04:01:02 <- notifications/initialized {}
+04:01:02 <- tools/list {}
+11:12:15 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+11:12:17 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'claude-ai', 'version': '0.1.0'}}
+11:12:17 <- notifications/initialized {}
+11:12:17 <- tools/list {}
+11:12:17 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+11:12:17 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'roots': {'listChanged': True}, 'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'local-agent-mode-unreal', 'version': '1.0.0'}}
+11:12:17 <- notifications/initialized {}
+11:12:17 <- tools/list {}
+19:55:36 <- tools/call {'name': 'unreal_exec_async', 'arguments': {'code': "import os, hashlib\nd = r'C:\\Afterhours16\\rimrift\\dist\\parts_props'\nparts = sorted(f for f in os.listdir(d) if '.part' in f)\nh = hashlib.sha256(); total = 0\nfor p in parts:\n    b = open(os.path.join(d, p), 'rb').read(); h.update(b); total 
+19:55:36 -> unreal_exec_async ok 12
+19:55:36 remote_execution from C:/Program Files/Epic Games\UE_5.8\Engine\Plugins\Experimental\PythonScriptPlugin\Content\Python\remote_execution.py
+19:55:40 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': 'b5a56f73'}}
+19:55:40 -> unreal_job ok 17
+19:58:45 <- tools/call {'name': 'unreal_job', 'arguments': {'job_id': 'b5a56f73'}}
+19:58:45 -> unreal_job ok 895
+20:41:15 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+20:41:15 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'roots': {'listChanged': True}, 'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'local-agent-mode-unreal', 'version': '1.0.0'}}
+20:41:15 <- notifications/initialized {}
+20:41:15 <- tools/list {}
+20:41:17 server start C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\Python3\Win64\python.exe
+20:41:19 <- initialize {'protocolVersion': '2025-11-25', 'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}, 'clientInfo': {'name': 'claude-ai', 'version': '0.1.0'}}
+20:41:19 <- notifications/initialized {}
+20:41:19 <- tools/list {}

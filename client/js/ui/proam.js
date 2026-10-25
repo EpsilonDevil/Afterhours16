@@ -50,10 +50,81 @@ const aiEntry = (app, id) => { try { return app.ai?.entry?.(id) || null; } catch
 const aiLine = (app, id) => { const e = aiEntry(app, id); return e ? `<b>${esc(e.name)}</b><small>${e.build?.overall ?? '?'} ${esc(e.build?.position || '')}</small>` : `<b>${esc(id)}</b>`; };
 
 export async function load(app) {
-  const st = await app.api.get('/api/proam');
+  let st = await app.api.get('/api/proam');
+  if (paRemote(app)) {
+    // (qp6 online: the team, its season and your requests are the online service's; your builds, their ranks and the
+    // rewards stay your own service's. Your card goes with it, for the team's roster)
+    const Online = await import('./online.js');
+    const hub = await Online.paCall(app, 'status', { card: paCard(app, st) });
+    st = { ...st, ...hub, local: { me: st.me, season: st.season } };
+    if (hub.settle?.length) st = await paSettle(app, st, hub.settle);
+  }
   app.proam = st;
   if (st.given?.length) toast(`Pro-Am rewards: ${st.given.map(i => app.catalog[i]?.name || i).join(', ')}`);
   return st;
+}
+
+// ---------------- v0.4.8.9 qp6: where the team lives ----------------
+// Offline, your Pro-Am team is your own service's. Online, playing from your own copy through a friend's hosted game
+// or the online server (net.hub), it's that service's: the one the people you play with share, so you find each
+// other's teams, join, meet in the HUB and queue and play as one team. Every team call goes there over the online
+// socket (Online.paCall; server/proam.py ProAm.online_call), as your account there; your builds, their rank and RP,
+// VC and items stay in your own save. paReq is the one door for both.
+export const paRemote = app => !!(app.net?.hub && !app.net.offline);
+const PA_GETS = { '/api/proam': 'status', '/api/proam/search': 'search', '/api/proam/teams': 'team' };
+export async function paReq(app, method, path, body = {}) {
+  if (!paRemote(app)) return method === 'GET' ? app.api.get(path) : app.api.post(path, body);
+  const Online = await import('./online.js');
+  const [p, qs] = path.split('?'), q = new URLSearchParams(qs || '');
+  if (method === 'GET') {
+    const op = PA_GETS[p];
+    if (op === 'status') return load(app);
+    if (op === 'search') return Online.paCall(app, 'search', { q: q.get('q') || '' });
+    if (op === 'team') return Online.paCall(app, 'team', { id: q.get('id') || '' });
+    throw new Error(`Unknown Pro-Am request ${p}`);
+  }
+  return Online.paCall(app, p.replace(/^\/api\/proam\//, ''), body);
+}
+// you, as the team knows you: your account on the service the team is on
+export const paMe = (app, st = app.proam) => st?.me ?? app.profile?.account?.id ?? null;
+// the build you play, for the team's roster on the online service: its Pro-Am rank from your own save
+function paCard(app, st) {
+  const c = app.char?.();
+  if (!c) return null;
+  const pa = (st.builds || []).find(b => b.id === c.id)?.pa || null;
+  return { character_id: c.id, name: c.name, position: c.position, overall: c.overall, div: pa?.index ?? 0, rp: pa?.rp ?? 0, record: pa?.record || [0, 0], series: pa?.series || [0, 0] };
+}
+// your online team's series that ended with you in them: your own service moves your build and pays the bonus, once
+async function paSettle(app, st, items) {
+  try {
+    const r = await app.api.post('/api/proam/settle', { items });
+    if (!r.settled?.length) return st;
+    for (const m of r.settled) toast(m.outcome === 'won' ? `Series won${m.bonus ? `: +${m.bonus.toLocaleString()} VC` : ''}${m.promoted ? ' · promoted' : ''}.` : `Series lost${m.demoted ? ' · down a division' : ': back to 0 RP'}.`, m.outcome === 'won' ? 'good' : 'error');
+    const again = await app.api.get('/api/proam');
+    try { await app.refresh?.(); } catch { /* the profile comes back with the next screen */ }
+    return { ...st, builds: again.builds, given: [...(st.given || []), ...(again.given || [])] };
+  } catch (e) { console.warn('[pro-am] settle', e?.message || e); return st; }
+}
+// a series game's ticket on your own service: online, it carries the online service's game (the series is there)
+// (force: a game set up for several players, some of whom may be online through the team's service: each one's own
+// game keeps what its service needs, modes.js playProAmOnline)
+export function paTicketGame(app, series, game, team, opp = null, force = false) {
+  const base = { series: series.id, n: game.n };
+  if (!force && !paRemote(app)) return base;
+  const o = opp || game.opponent || {};
+  return { ...base, online: { team: team?.id || series.team_id, div: series.div, opp_div: o.div ?? 0, opp: { kind: o.kind || 'ai', id: o.id, name: o.name, abbr: o.abbr, div: o.div ?? 0 }, venue: game.venue, home: !!game.home } };
+}
+// after a series game on your own service: online, its result goes to the team's service (the series, the team's
+// record and division); alone: you were the team's only real player in it (a forfeit counts then)
+export async function paReport(app, result, { alone = true } = {}) {
+  const rep = result?.pa?.report || result?.pa_report;
+  if (!rep || !paRemote(app)) return null;
+  try {
+    const Online = await import('./online.js');
+    const out = await Online.paCall(app, 'report', { ...rep, alone });
+    await load(app); // (your card with the RP this game left you, for the team's roster; a series that's over is settled now)
+    return out;
+  } catch (e) { toast(`The series result didn't reach the online game: ${e.message}`, 'error'); return null; }
 }
 
 // ---------------- the tab ----------------
@@ -85,14 +156,14 @@ export async function render(app, root, params = {}) {
     const create = $('[data-create]', root);
     if (create) create.onclick = async () => {
       if (create.disabled) return; busy(create, true);
-      try { await app.api.post('/api/proam/create', { team: readSettings(root) }); toast('Your Pro-Am team is official.'); view = 'team'; await reload(true); }
+      try { await paReq(app, 'POST', '/api/proam/create', { team: readSettings(root) }); toast('Your Pro-Am team is official.'); view = 'team'; await reload(true); }
       catch (e) { toast(e.message, 'error'); busy(create, false); }
     };
     const qi = $('[data-q]', root), sb = $('[data-search]', root);
     if (sb) { sb.onclick = () => search(qi.value); qi.onkeydown = e => { if (e.key === 'Enter') search(qi.value); }; }
     $$('[data-join]', root).forEach(b => b.onclick = async () => {
       if (b.disabled) return; busy(b, true);
-      try { const r = await app.api.post('/api/proam/join', { team_id: b.dataset.join }); toast(r.result === 'joined' ? 'You\'re on the team.' : 'Request sent: the founder will answer.'); if (r.result === 'joined') view = 'team'; await reload(true); }
+      try { const r = await paReq(app, 'POST', '/api/proam/join', { team_id: b.dataset.join }); toast(r.result === 'joined' ? 'You\'re on the team.' : 'Request sent: the founder will answer.'); if (r.result === 'joined') view = 'team'; await reload(true); }
       catch (e) { toast(e.message, 'error'); busy(b, false); }
     });
     $$('[data-viewteam]', root).forEach(b => b.onclick = () => showTeam(app, b.dataset.viewteam));
@@ -104,17 +175,17 @@ export async function render(app, root, params = {}) {
     const lv = $('[data-leave]', root);
     if (lv) lv.onclick = async () => {
       if (!(await confirmBox('Leave the team? Your own rank and RP stay yours.', 'Leave'))) return;
-      try { await app.api.post('/api/proam/leave', {}); toast('You left the team.'); view = 'start'; await reload(true); } catch (e) { toast(e.message, 'error'); }
+      try { await paReq(app, 'POST', '/api/proam/leave', {}); toast('You left the team.'); view = 'start'; await reload(true); } catch (e) { toast(e.message, 'error'); }
     };
     $$('[data-answer]', root).forEach(b => b.onclick = async () => {
       if (b.disabled) return; busy(b, true);
-      try { await app.api.post('/api/proam/answer', { account_id: b.dataset.answer, accept: b.dataset.yes === '1' }); await reload(); } catch (e) { toast(e.message, 'error'); busy(b, false); }
+      try { await paReq(app, 'POST', '/api/proam/answer', { account_id: b.dataset.answer, accept: b.dataset.yes === '1' }); await reload(); } catch (e) { toast(e.message, 'error'); busy(b, false); }
     });
     if (view === 'team') tickSeason(root, st);
   };
   const search = async text => {
     q = text || '';
-    try { results = (await app.api.get(`/api/proam/search?q=${encodeURIComponent(q)}`)).teams; } catch (e) { toast(e.message, 'error'); results = []; }
+    try { results = (await paReq(app, 'GET', `/api/proam/search?q=${encodeURIComponent(q)}`)).teams; } catch (e) { toast(e.message, 'error'); results = []; }
     draw(true);
   };
   draw(true);
@@ -145,7 +216,7 @@ function teamRow(t, st) {
 }
 
 function teamPage(app, st) {
-  const t = st.team, me = app.profile?.account?.id, founder = t.founder === me;
+  const t = st.team, me = paMe(app, st), founder = t.founder === me;
   const sr = t.current;
   const members = (t.members || []).map(m => `<tr><td><b>${esc(m.username)}</b>${m.founder ? ' <em class="tag">FOUNDER</em>' : ''}</td><td>${m.build ? esc(m.build.name) : '<span class="muted">no build</span>'}</td><td>${m.build ? divChip(m.build.state) : ''}</td><td>${m.build ? rpBar(m.build.state.rp) : ''}</td></tr>`).join('');
   const reqs = founder && t.requests?.length ? `<h4>Asking to join</h4>${t.requests.map(r => `<div class="pa-row"><b>${esc(r.username)}</b><span class="grow"></span><button class="btn small" data-answer="${esc(r.account_id)}" data-yes="1">Accept</button><button class="btn ghost small" data-answer="${esc(r.account_id)}" data-yes="0">Decline</button></div>`).join('')}` : '';
@@ -214,7 +285,7 @@ function bindPicks(root) {
 // another team's page (search): its division, record, roster (an AI team's players by name and build)
 async function showTeam(app, id) {
   let t;
-  try { t = (await app.api.get(`/api/proam/teams?id=${encodeURIComponent(id)}`)).team; } catch (e) { toast(e.message, 'error'); return; }
+  try { t = (await paReq(app, 'GET', `/api/proam/teams?id=${encodeURIComponent(id)}`)).team; } catch (e) { toast(e.message, 'error'); return; }
   const roster = t.ai ? (t.roster || []).map(i => `<div class="pa-row">${aiLine(app, i)}</div>`).join('') : (t.members || []).map(m => `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}</div>`).join('');
   modal(`<div class="pa-card" style="--c1:${esc(t.primary)};--c2:${esc(t.secondary)}"><div class="pa-head">${logoTag(t)}<div><div class="eyebrow">${t.ai ? 'AI PRO-AM TEAM' : 'PRO-AM TEAM'}</div><h2>${esc(t.name)}</h2></div>${divChip(t.division, 26)}</div>
     <p class="muted small">Games ${record(t.record)} · series ${record(t.series)} · home court: ${esc(parkName(t.court))}</p><h4>Roster</h4>${roster || '<p class="muted">Nobody yet.</p>'}</div>`, { wide: true });
@@ -253,12 +324,12 @@ function whiteboard(app, st, team) {
 
 async function draftPanel(app, st, team, captain, opts) {
   let d;
-  try { d = (await app.api.post('/api/proam/draft', { action: 'view' })).draft; } catch (e) { toast(e.message, 'error'); return; }
+  try { d = (await paReq(app, 'POST', '/api/proam/draft', { action: 'view' })).draft; } catch (e) { toast(e.message, 'error'); return; }
   const humans = Math.max(1, opts.humans || 1), open = Math.max(0, 5 - Math.min(5, humans));
   // (the captain's game shows five with a spread of positions out of the server's pool, and tells the server)
   const posOf = id => aiEntry(app, id)?.build?.position || null;
   const want = spreadPick(d.pool, posOf);
-  if (captain && want.join() !== d.list.join()) { try { d = (await app.api.post('/api/proam/draft', { action: 'list', ids: want })).draft; } catch { /* keeps the server's */ } }
+  if (captain && want.join() !== d.list.join()) { try { d = (await paReq(app, 'POST', '/api/proam/draft', { action: 'list', ids: want })).draft; } catch { /* keeps the server's */ } }
   const card = modal('<div class="pa-draft" data-draft></div>', { wide: true, cls: 'pa-office-card' });
   const host = $('[data-draft]', card);
   const paint = () => {
@@ -270,8 +341,8 @@ async function draftPanel(app, st, team, captain, opts) {
     const act = async (body, b) => {
       if (b?.disabled) return; busy(b, true);
       try {
-        d = (await app.api.post('/api/proam/draft', { humans, ...body })).draft;
-        if (body.action === 'refresh') { const w = spreadPick(d.pool, posOf); try { d = (await app.api.post('/api/proam/draft', { action: 'list', ids: w })).draft; } catch { /* as it is */ } }
+        d = (await paReq(app, 'POST', '/api/proam/draft', { humans, ...body })).draft;
+        if (body.action === 'refresh') { const w = spreadPick(d.pool, posOf); try { d = (await paReq(app, 'POST', '/api/proam/draft', { action: 'list', ids: w })).draft; } catch { /* as it is */ } }
         keepScroll(host, paint); opts.onChange?.();
       } catch (e) { toast(e.message, 'error'); busy(b, false); }
     };
@@ -284,7 +355,7 @@ async function draftPanel(app, st, team, captain, opts) {
 }
 
 function settingsPanel(app, st, team, opts) {
-  if (team.founder !== app.profile?.account?.id) { toast('The team\'s founder owns its settings.', 'error'); return; }
+  if (team.founder !== paMe(app, st)) { toast('The team\'s founder owns its settings.', 'error'); return; }
   const card = modal(`<div class="pa-settings"><div class="eyebrow">TEAM SETTINGS</div><h2>${esc(team.name)}</h2>${settingsForm(st, team)}${customForm(st, team)}
     <h4>Players</h4>${(team.members || []).filter(m => !m.founder).map(m => `<div class="pa-row"><b>${esc(m.username)}</b><span class="grow"></span><button class="btn ghost small" data-handon="${esc(m.account_id)}">Make founder</button><button class="btn ghost small" data-kick="${esc(m.account_id)}">Remove</button></div>`).join('') || '<p class="muted small">Nobody else yet.</p>'}
     <div class="row gap end"><button class="btn primary" data-save>Save</button></div></div>`, { wide: true, cls: 'pa-office-card' });
@@ -292,10 +363,10 @@ function settingsPanel(app, st, team, opts) {
   const save = $('[data-save]', card);
   save.onclick = async () => {
     if (save.disabled) return; busy(save, true);
-    try { await app.api.post('/api/proam/update', { team: { ...readSettings(card), ...readCustom(card) } }); toast('Team saved.'); closeModal(); opts.onChange?.(); }
+    try { await paReq(app, 'POST', '/api/proam/update', { team: { ...readSettings(card), ...readCustom(card) } }); toast('Team saved.'); closeModal(); opts.onChange?.(); }
     catch (e) { toast(e.message, 'error'); busy(save, false); }
   };
-  const act = (path, id, msg) => async () => { if (!(await confirmBox(msg))) return; try { await app.api.post(path, { account_id: id }); closeModal(); opts.onChange?.(); } catch (e) { toast(e.message, 'error'); } };
+  const act = (path, id, msg) => async () => { if (!(await confirmBox(msg))) return; try { await paReq(app, 'POST', path, { account_id: id }); closeModal(); opts.onChange?.(); } catch (e) { toast(e.message, 'error'); } };
   $$('[data-kick]', card).forEach(b => b.onclick = act('/api/proam/kick', b.dataset.kick, 'Remove him from the team?'));
   $$('[data-handon]', card).forEach(b => b.onclick = act('/api/proam/handon', b.dataset.handon, 'Hand the team on? He owns its settings from now on.'));
   return card;
@@ -312,7 +383,7 @@ export async function queue(app, team, opts = {}) {
   const card = modal('<div class="pa-queue" data-q></div>', { close: true, cls: 'pa-office-card' });
   const host = $('[data-q]', card);
   let stopped = false, humans = 1;
-  closeModal.onClose = () => { stopped = true; if (app.net?.connected) app.net.send({ t: 'pa-ready', op: 'cancel' }); app.api.post('/api/proam/queue', { action: 'leave' }).catch(() => {}); };
+  closeModal.onClose = () => { stopped = true; if (app.net?.connected) app.net.send({ t: 'pa-ready', op: 'cancel' }); paReq(app, 'POST', '/api/proam/queue', { action: 'leave' }).catch(() => {}); };
   const say = (h, small = '') => { if (host.isConnected) host.innerHTML = `<div class="eyebrow">PRO-AM · ${esc(team.name)}</div><h2>${h}</h2><p class="muted small">${small}</p>`; };
   // the ready check: every team member connected (the hub's own, opts.ready, when it's there); 20 s, then it goes with
   // those who are ready
@@ -327,20 +398,20 @@ export async function queue(app, team, opts = {}) {
   }
   // the matchmaker
   let q;
-  try { q = await app.api.post('/api/proam/queue', { action: 'join' }); } catch (e) { toast(e.message, 'error'); closeModal(); return; }
+  try { q = await paReq(app, 'POST', '/api/proam/queue', { action: 'join' }); } catch (e) { toast(e.message, 'error'); closeModal(); return; }
   const t0 = Date.now();
   while (q.state === 'waiting' && !stopped) {
     const left = q.left != null ? Math.ceil(q.left) : Math.max(0, Math.ceil(st.rules.queue_wait - (Date.now() - t0) / 1000));
     say('Finding a game…', `A real team within 2 divisions first${left > 0 ? `: the AI's nearest team in ${left} s if none turns up` : ''}.`);
     await new Promise(r => setTimeout(r, 2000));
     if (stopped) return;
-    try { q = await app.api.post('/api/proam/queue', { action: 'poll' }); } catch (e) { toast(e.message, 'error'); closeModal(); return; }
+    try { q = await paReq(app, 'POST', '/api/proam/queue', { action: 'poll' }); } catch (e) { toast(e.message, 'error'); closeModal(); return; }
   }
   if (stopped || q.state !== 'matched') return;
   const g = q.game;
   say(`Game ${g.n}: ${esc(g.opponent.name)}`, `${g.home ? 'Home' : 'Away'} · ${esc(venueName(g.venue))} · ${g.opponent.kind === 'ai' ? 'an AI team' : 'a real team'}`);
   let lineup = [];
-  try { lineup = (await app.api.post('/api/proam/lineup', { humans })).ai; } catch (e) { toast(e.message, 'error'); }
+  try { lineup = (await paReq(app, 'POST', '/api/proam/lineup', { humans })).ai; } catch (e) { toast(e.message, 'error'); }
   await new Promise(r => setTimeout(r, 900));
   if (stopped) return;
   const Modes = await import('./modes.js');
@@ -366,12 +437,12 @@ export async function realVsReal(app, ctx, ui = {}) {
   let started = false;
   const off = net.on('start', () => { started = true; });
   try {
-    let r = await app.api.post('/api/proam/queue', { action: 'side', match: g.match, side: { online: true, humans, lineup: ctx.lineup || [] } });
+    let r = await paReq(app, 'POST', '/api/proam/queue', { action: 'side', match: g.match, side: { online: true, humans, lineup: ctx.lineup || [] } });
     const t0 = Date.now();
     while (!r.other && !stopped() && !started && Date.now() - t0 < VS_WAIT * 1000) {
       say(`Game ${g.n}: ${esc(g.opponent.name)}`, `Waiting for ${esc(g.opponent.name)}'s Captain…`);
       await new Promise(res => setTimeout(res, 1500));
-      r = await app.api.post('/api/proam/queue', { action: 'side', match: g.match });
+      r = await paReq(app, 'POST', '/api/proam/queue', { action: 'side', match: g.match });
     }
     if (started) return 'started';
     if (stopped() || !r.other?.online) return 'local';

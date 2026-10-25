@@ -160,6 +160,44 @@ It's an online space like the Crew HQ (`game/crewhq.js`): the team members in it
 - **Difficulty:** overall difficulty and AI intelligence are 10% higher.
 - **Determinism:** all of this is set from the game's own config (`mode === 'proam'` plus a `realism` flag), so lockstep stays deterministic.
 
+## 10. Pro-Am teams online (v0.4.8.9 qp6)
+Players who play together online each play from their own copy of the game and keep their own save. A Pro-Am team they share is therefore kept by the service they meet on:
+- the host's PC when one of them hosts (`host.cmd`, `--online`);
+- the online server when they use one (`--server`, the one in `online.json`).
+
+**Where each thing lives:**
+
+| Kept by the team's service (the hub) | Kept by each player's own service |
+| --- | --- |
+| the team, its members and join requests | his builds |
+| the team's series, draft, division and record | his own Pro-Am rank and RP |
+| the matchmaker and the HUB place (`hq:pa:<team id>`) | VC, rank items and season rewards |
+| a **card** for each member's build: name, position, overall and rank, for the roster | |
+
+**How a player's game talks to it:**
+- **Offline** (no hub, or "Play offline"), the Pro-Am tab uses his own service, as before.
+- **Online**, every team call goes to the hub over the online socket, as his online account there:
+  - the message is `{"t": "pa", "req", "op", "args"}`, handled by `server/online.py` `pa_call` and then `server/proam.py` `ProAm.online_call`;
+  - the ops are status, search, team, create, join, answer, update, kick, handon, leave, draft, queue, lineup and report;
+  - the client side is `ui/proam.js` `paReq` and `ui/online.js` `paCall`.
+- The host himself uses his own service, which *is* the hub.
+
+**A series game:**
+- Each player's ticket on his own service carries the hub's game: `pa_game: {series, n, online: {team, div, opp_div, opp, venue, home}}`.
+- His RP is worked out there, as for any series game.
+- The ticket's result (`pa.report`, or `pa_report` for a forfeit) goes to the hub's `report`. The first report of a game counts.
+- A forfeit counts only when he was the team's only real player in that game.
+- When a series ends, the hub's status lists it under `settle` for each member who played in it. His own service then moves his build up or down once (`POST /api/proam/settle`) and pays the series bonus. The VC reference is `pa_series:<id>`, so it's paid once.
+
+**The rest works as on one service:**
+- the HUB: same place, the Captain is whoever has been there longest;
+- the ready check (`pa-ready`);
+- the draft and the lineup: only the open spots are filled;
+- the one shared online game for the team (`Modes.proamGame` with members);
+- real vs real (`side`).
+
+Each member's game sends his card with every status.
+
 ## Ownership (who edits what)
 - **Server/UI agent:**
   - New server files: `server/proam.py`, migration `016_v0488_proam.sql`.

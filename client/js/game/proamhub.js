@@ -189,7 +189,7 @@ export class ProamHub {
     const p = this.netHere()?.people.get(id);
     return p?.username || p?.name || 'your Captain';
   }
-  isFounder() { const me = this.app.profile?.account?.id; return !!me && this.team?.founder === me; }
+  isFounder() { const me = this.app.proam?.me ?? this.app.profile?.account?.id; return !!me && this.team?.founder === me; } // (qp6: online, your account on the team's service)
   // the team members in the hub for the ready check (the Captain first: ui/proam.js queue opts.members)
   membersHere() { return [{ id: this.myId(), name: this.app.net?.you?.username || this.char?.name || 'You' }, ...this.realHere().map(p => ({ id: p.id, name: p.username }))]; }
   onPeerPos(m) {

@@ -356,6 +356,7 @@ class Hub:
         # v0.4.8.7 qp7: the catalog (celebration items → their animation: emotes are checked and named here), each park's
         # host (the one real player who runs its people for everyone, picked here: host_of) and his latest report (pop)
         self.catalog = catalog or {}
+        self.pa_handler = None  # (qp6: Pro-Am teams for members on their own copies: Service.proam.online_call, pa_call)
         self.hosts = {}      # place -> account id
         self.pops = {}       # place -> (monotonic time, the host's last pop message)
         self.arrivals = 0
@@ -971,6 +972,31 @@ class Hub:
             out["secs"] = max(5, min(30, int(secs))) if isinstance(secs, (int, float)) and not isinstance(secs, bool) else 20
         self.send_to([a for a in mates if self.live(a)], out)
 
+    # v0.4.8.9 qp6: Pro-Am teams for the players who play from their own copies. {"t": "pa", "req", "op", "args"}: the
+    # team calls the Pro-Am tab, the office and the queue make (proam.ProAm.online_call: status, search, team, create,
+    # join, answer, ..., queue, lineup, report), answered {"t": "pa", "req", "ok": true, "data"} or {"t": "pa", "req",
+    # "ok": false, "error"}. At most PA_RATE calls in PA_WINDOW seconds from one connection.
+    PA_RATE, PA_WINDOW = 40, 10.0
+
+    def pa_call(self, conn, msg):
+        req = msg.get("req") if isinstance(msg.get("req"), (int, str)) and not isinstance(msg.get("req"), bool) else None
+        now = time.monotonic()
+        times = [x for x in conn.info.get("pa_times", []) if now - x < self.PA_WINDOW]
+        if len(times) >= self.PA_RATE:
+            conn.info["pa_times"] = times
+            return conn.send({"t": "pa", "req": req, "ok": False, "error": "Too many Pro-Am requests. Try again shortly."})
+        conn.info["pa_times"] = times + [now]
+        if not self.pa_handler:
+            return conn.send({"t": "pa", "req": req, "ok": False, "error": "This game doesn't keep Pro-Am teams online."})
+        try:
+            data = self.pa_handler(conn.aid, msg)
+        except Exception as e:  # noqa: BLE001  (Invalid with its reason; anything else, a short note: never the socket)
+            text = getattr(e, "message", None) or (str(e) if type(e).__name__ == "Invalid" else "The Pro-Am request failed.")
+            if type(e).__name__ != "Invalid":
+                print(f"Pro-Am online call {msg.get('op')!r}: {e!r}", flush=True)
+            return conn.send({"t": "pa", "req": req, "ok": False, "error": str(text)[:300]})
+        conn.send({"t": "pa", "req": req, "ok": True, "data": data})
+
     def pa_entries(self, conn, msg):
         """{"t": "pa-entries", "ids": [...], "req"}: the home team's Captain setting up a real-vs-real series game asks for
         the players' entries (his teammates' and the other team's, as each one last sent it here). Only Pro-Am team
@@ -1240,6 +1266,9 @@ class Hub:
                     if fr is None:
                         fr = encode({"t": "pos", "from": conn.aid, **{k: msg.get(k) for k in ("x", "z", "f", "m") if isinstance(msg.get(k), (int, float)) and not isinstance(msg.get(k), bool)}})
                     c.send_frame(fr)
+            return
+        if t == "pa":  # (qp6: a Pro-Am team call: the database, never under the hub's lock)
+            self.pa_call(conn, msg)
             return
         with self.lock:
             if t == "where":

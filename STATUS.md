@@ -2,6 +2,16 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 6 (Oct 25): online Pro-Am teams (Server/UI agent)
+Root cause: every Pro-Am call went to the player's own local service even while online, so teams (and team ids, and account ids) were per machine. Search never found a friend's team, a join by id said "Team not found", the hub's ready check said "not on a Pro-Am team", the HUB place key differed per machine, and series tickets were checked against local series. The earlier hub e2e only passed because both players were accounts on one service (join.cmd).
+
+| Area | Files | Notes |
+|---|---|---|
+| Server | `server/online.py` (socket `pa` op channel `pa_call`, 40 per 10 s), `server/proam.py` (`ProAm.online_call`: status/search/team/create/join/answer/update/kick/handon/leave/draft/queue/lineup/report; member cards `pa_cards`; `online_report` first report counts, solo forfeit only; `online_ticket_meta`; `settle_online` + `POST /api/proam/settle` applies an ended series once, bonus ref `pa_series:<id>`), `server/app.py`, migration `020_v0489qp6_proam_online.sql` (`pa_cards`; `test_server` pins 19 → 20) | the host's own service is the hub, so the host and join.cmd players play as before |
+| Client | `ui/proam.js` (`paRemote`, `paReq`, `paMe`, `paTicketGame`, `paReport`, load merges local builds with the hub's team, settles ended series), `ui/online.js` (`paCall`), `ui/modes.js` (tickets carry the hub's game, reports after), `game/proamhub.js` (`isFounder` from `app.proam.me`), `docs/PROAM-OVERHAUL.md` §10 | two-browser e2e in both host-for-friends and shared-server modes: search → join → reload still joined → shared HUB with Captain → ready check → one shared game → RP and series applied to both |
+
+Tests: `test_v0489qp6_proam_online` (new, 5); `v0488proamui` and `v0488hubwiring` source pins updated for the new ticket wiring. Python 352 OK, Node 781/783 (missing-mp3 soundtrack test in the cloud copy, 1 skip), golden unchanged.
+
 ### v0.4.8.9 quick patch 5 (Oct 25): controller auto-play
 | Area | Files | Notes |
 |---|---|---|

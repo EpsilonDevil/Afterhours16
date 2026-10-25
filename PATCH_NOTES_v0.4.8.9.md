@@ -189,3 +189,15 @@ A Gauntlet run you started before this update can't continue under the new rules
 - **Auto-play has a controller button:** **D-pad down** turns auto-play on and off, just like **H** on the keyboard, anywhere auto-play works. That's offline games and online Pro-Am.
 - **Remapping:** you can change the button on the controls screen, under Controller ("Auto-play on / off").
 - **Showing the right button:** the on-screen messages name the button for the device you're using ("Auto-play ON (D-pad down)"), and the controls list shows both.
+
+---
+
+## Quick patch 6 (Oct 25): Pro-Am teams with your friends online
+
+**Friends can now be on the same Pro-Am team online.** Before, each player's Pro-Am team stayed on their own PC, so a friend could never find it or join it, even while you were playing online together.
+- **Your team lives where you meet:** while you're connected, your Pro-Am team lives on the online server you're both on (or on the host's PC when a friend hosts). Friends find it in the team search and join it: straight in if it's open, or by request if it's invite-only. They stay on it through reloads, reconnects and server restarts.
+- **One HUB:** teammates walk into the same HUB and see each other. Whoever has been there longest is the Captain.
+- **Series games together:** when the Captain queues, everyone on the team in the HUB gets the ready check, and only the empty spots are filled with your drafted or AI players. You play one shared game, all on the same side.
+- **Your progress stays yours:** each of you keeps your own build, rank, RP, VC and items in your own save. A series game counts for each player's RP. When a series ends, each member moves up or down a division once and gets the series bonus.
+- **Still your choice:** you can still make separate teams, or play on your own team with AI teammates, online and offline.
+- **Teams made offline:** a team you made while playing offline stays offline. Online, create a team or join one there.

@@ -282,6 +282,26 @@ export const paReadyWaiters = new Set();
 // v0.4.8.8: the entries of the players in a real-vs-real series game (the home Captain's setup: Modes.proamVsSetup), from
 // the online service (each as he last sent it there): {id: {entry, username, rtt}}, {} when nothing came in time
 export const paEntryWaiters = new Map();
+// v0.4.8.9 qp6: a Pro-Am team call to the online service (server/online.py pa_call, proam.py ProAm.online_call): online,
+// the team is the one the people you play with share, kept there (ui/proam.js paReq). op: status | search | team | create |
+// join | ... | queue | lineup | report; the answer's data, or an error with the service's reason. It waits for the socket
+// a little (a page that just loaded, a reconnect) before it gives up.
+let paSeq = 0;
+export async function paCall(app, op, args = {}, ms = 15000) {
+  const net = app.net, t0 = Date.now();
+  while (!net?.connected) {
+    if (!net?.hub || net.offline || Date.now() - t0 > 10000) throw Object.assign(new Error('Not connected to the online game right now: your Pro-Am team is there.'), { status: 0 });
+    await new Promise(r => setTimeout(r, 250));
+  }
+  const req = `pa${++paSeq}`;
+  return new Promise((resolve, reject) => {
+    const done = (fn, v) => { clearTimeout(t); off(); offState(); fn(v); };
+    const off = net.on('pa', m => { if (m.req !== req) return; if (m.ok) done(resolve, m.data); else done(reject, Object.assign(new Error(m.error || 'The Pro-Am request failed.'), { status: 400 })); });
+    const offState = net.on('state', () => { if (!net.connected) done(reject, Object.assign(new Error('Lost the connection to the online game.'), { status: 0 })); });
+    const t = setTimeout(() => done(reject, Object.assign(new Error('The online game didn\'t answer in time.'), { status: 0 })), ms);
+    if (!net.send({ t: 'pa', req, op, args })) done(reject, Object.assign(new Error('Not connected to the online game right now.'), { status: 0 }));
+  });
+}
 export function paEntries(app, ids, ms = 5000) {
   const net = app.net, req = Math.random().toString(36).slice(2);
   if (!net?.connected || !ids.length) return Promise.resolve({});

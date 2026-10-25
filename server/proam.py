@@ -773,6 +773,64 @@ def nearest_ai(c, div, season, avoid=None, salt=""):
 
 
 # ---------------- the service's side (app.py routes and hooks) ----------------
+# ---------------- v0.4.8.9 qp6: Pro-Am teams online ----------------
+# A Pro-Am team is kept by the service its members meet on. Offline that's your own; online (your own copy playing
+# through a friend's hosted game or the online server) it's that one, the hub: every member's game asks it over the
+# online socket (online.py "pa", ProAm.online_call), with that service's account ids, so everyone online finds the same
+# teams, joins them, meets in their HUB (its place key is the team's id there) and queues and plays as one team. What
+# stays in each player's own save: his builds, their Pro-Am rank and RP, VC, items. So:
+#   * his game sends a card for the build he plays (online_status: clean_card, kept in pa_cards) for the roster;
+#   * a series game's ticket on his own service carries the hub's game (online_ticket_meta: the RP is worked out there
+#     as for any series game) and its result goes back to the hub (the ticket's "report": online_report: the series,
+#     the team's record and division);
+#   * a series that ended comes back to his game in the hub's status ("settle") and his own service moves his build
+#     up or down and pays the bonus, once (settle_online).
+CARD_KEYS = ("character_id", "name", "position", "overall", "div", "rp", "record", "series")
+
+
+def clean_card(card, season_n):
+    """A member's build as his game sends it: {character_id, name, position, overall, div, rp, record, series}."""
+    if not isinstance(card, dict):
+        return None
+    num = lambda v, lo, hi: max(lo, min(hi, int(v))) if isinstance(v, (int, float)) and not isinstance(v, bool) else lo
+    pair = lambda v: [num(v[0], 0, 10 ** 6), num(v[1], 0, 10 ** 6)] if isinstance(v, list) and len(v) == 2 else [0, 0]
+    pos = card.get("position") if card.get("position") in builds.POSITIONS else None
+    pa = {"season": season_n, "div": num(card.get("div"), 0, TOP), "rp": num(card.get("rp"), 0, RP_MAX)}
+    rec, ser = pair(card.get("record")), pair(card.get("series"))
+    pa.update({"high": pa["div"], "gw": rec[0], "gl": rec[1], "sw": ser[0], "sl": ser[1]})
+    return {"character_id": str(card.get("character_id") or "")[:64] or None, "name": " ".join(str(card.get("name") or "").split())[:40] or None,
+            "position": pos, "overall": num(card.get("overall"), 0, 99) or None, "state": public_state(pa)}
+
+
+def save_card(c, aid, card, now=None):
+    c.execute("INSERT INTO pa_cards(account_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
+              (aid, json.dumps(card), (time.time() if now is None else now)))
+
+
+def load_card(c, aid):
+    r = c.execute("SELECT data FROM pa_cards WHERE account_id=?", (aid,)).fetchone()
+    return json.loads(r[0]) if r else None
+
+
+def online_ticket_meta(pg):
+    """A series game of an online team, on the player's own service: {"series", "n", "online": {"team", "div",
+    "opp_div", "opp", "venue", "home"}} as the hub made it (the client brings it from the hub's queue)."""
+    on = pg["online"]
+    if not isinstance(on, dict):
+        raise Invalid("pa_game.online is the hub's game.")
+    num = lambda v, name: builds.integer(v, 0, TOP, name)
+    opp = on.get("opp") if isinstance(on.get("opp"), dict) else {}
+    opp = {"kind": "team" if opp.get("kind") == "team" else "ai", "id": str(opp.get("id") or "")[:64], "name": " ".join(str(opp.get("name") or "").split())[:40],
+           "abbr": str(opp.get("abbr") or "")[:4], "div": num(opp.get("div", on.get("opp_div")), "opp div")}
+    if not 1 <= pg["n"] <= 7 or len(pg["series"]) > 64:
+        raise Invalid("That series game isn't on.")
+    return {"series": pg["series"], "n": pg["n"], "team": str(on.get("team") or "")[:64], "opp_div": num(on.get("opp_div", opp["div"]), "opp_div"), "opp": opp,
+            "venue": str(on.get("venue") or "")[:40], "home": on.get("home") is True, "div": num(on.get("div"), "div"), "online": True}
+
+
+ONLINE_ACTIONS = ("create", "update", "join", "leave", "answer", "kick", "handon", "draft", "queue", "lineup")
+
+
 class ProAm:
     """The Pro-Am meta layer on a Service: its routes (status, search, teams, the draft, the queue) and the hooks the
     match flow calls (a ticket's series game, a result, a forfeit, a profile load)."""
@@ -867,6 +925,8 @@ class ProAm:
             st = public_state(pa if pa.get("season") == season_n else blank_state(season_n))
             if not best or st["index"] > best["state"]["index"]:
                 best = {"character_id": ch.get("id"), "name": ch.get("name"), "position": ch.get("position"), "overall": ch.get("overall"), "state": st}
+        if best is None:  # (qp6: a member playing from his own copy: the card his game sent, online_status)
+            best = load_card(c, aid)
         return {"account_id": aid, "username": u[0] if u else "?", "founder": aid == founder, "build": best}
 
     def team_view(self, c, t, viewer, season_n, seed=None):
@@ -896,7 +956,7 @@ class ProAm:
             chars = [json.loads(r[0]) for r in c.execute("SELECT data FROM characters WHERE account_id=?", (aid,))]
             given = self.on_profile(c, aid, chars, n)
             t = self.my_team(c, aid, n)
-            out = {"season": season_public(season, now), "team": self.team_view(c, t, aid, n, seed) if t else None, "given": given,
+            out = {"me": aid, "season": season_public(season, now), "team": self.team_view(c, t, aid, n, seed) if t else None, "given": given,
                    "builds": [{"id": ch.get("id"), "name": ch.get("name"), "pa": public_state(ch["progression"]["pa"]), "history": ch["progression"].get("pa_history"),
                                "seasons": ch["progression"].get("pa_seasons", [])} for ch in chars],
                    "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))],
@@ -932,6 +992,8 @@ class ProAm:
                 return {"result": join_team(c, aid, str(data.get("team_id") or ""))}
             if kind == "leave":
                 return leave_team(c, aid)
+            if kind == "settle":  # (qp6: an online team's series that ended, on this save's builds: settle_online)
+                return {"settled": self.settle_online(c, aid, data.get("items"), n)}
             t = self.my_team(c, aid, n)
             if not t:
                 raise Invalid("You're not on a Pro-Am team.")
@@ -1053,6 +1115,8 @@ class ProAm:
             return None
         if not isinstance(pg, dict) or not isinstance(pg.get("series"), str) or not isinstance(pg.get("n"), int):
             raise Invalid("pa_game is {series, n}.")
+        if pg.get("online") is not None:  # (qp6: an online team's game: its series is the hub's)
+            return online_ticket_meta(pg)
         r = c.execute("SELECT team_id, data FROM pa_series WHERE id=?", (pg["series"],)).fetchone()
         if not r or team_of(c, aid) != r[0]:
             raise Invalid("That series isn't your team's.")
@@ -1079,7 +1143,10 @@ class ProAm:
         res = apply_game(pa, ch["total"], won)
         got += self.give(c, aid, rank_items_for(pa["high"]))
         out = {**res, "parts": {k: v for k, v in ch.items() if k != "total"}, "state": public_state(pa), "items": got}
-        if pg:
+        if pg.get("online"):  # (qp6: the hub keeps the series: the game reports it there, online_report)
+            out["report"] = {"series": pg["series"], "n": pg["n"], "won": bool(won), "score": summary.get("score"), "delta": res["delta"],
+                             "character_id": char.get("id"), "forfeit": bool(summary["forfeit"])}
+        elif pg:
             out["series"] = self.series_result(c, aid, char, pg, won, summary, res["delta"])
             out["state"] = public_state(pa)
         return out
@@ -1145,6 +1212,8 @@ class ProAm:
         moved = {}
         for acct, cid in sr.get("players", {}).items():
             if acct == reporter and reporter_char.get("id") == cid:
+                if reporter_char.get("remote"):  # (qp6: his build is in his own save: his game settles it, settle_online)
+                    continue
                 ch = reporter_char
             else:
                 row = c.execute("SELECT data FROM characters WHERE id=? AND account_id=?", (cid, acct)).fetchone()
@@ -1170,10 +1239,105 @@ class ProAm:
         n = current_season(c)["n"]
         pa, _ = self.settle_char(c, aid, ch, n)
         res = apply_game(pa, -FORFEIT_RP, False)
-        if pg:
+        if pg.get("online"):  # (qp6: for the hub's series, from the game: online_report)
+            res["report"] = {"series": pg["series"], "n": pg["n"], "won": False, "score": [0, 0], "delta": -FORFEIT_RP, "character_id": char_id, "forfeit": True}
+        elif pg:
             res["series"] = self.series_result(c, aid, ch, pg, False, {"score": [0, 0]}, -FORFEIT_RP)
         c.execute("UPDATE characters SET data=? WHERE id=?", (json.dumps(ch), char_id))
         return res
+
+    # -- v0.4.8.9 qp6: the team's service for members playing from their own copies (online.py "pa") --
+    def online_call(self, aid, msg):
+        """{"op", "args"} from a member's game over the online socket, as his account here. -> the answer (Invalid when
+        it's refused, with the reason the HTTP routes give)."""
+        op, args = msg.get("op"), msg.get("args") if msg.get("args") is not None else {}
+        if not isinstance(args, dict):
+            raise Invalid("args is an object.")
+        if op == "status":
+            return self.online_status(aid, args.get("card"))
+        if op == "search":
+            return self.search(args.get("q"))
+        if op == "team":
+            return self.team(aid, str(args.get("id") or ""))
+        if op == "report":
+            return self.online_report(aid, args)
+        if op in ONLINE_ACTIONS:
+            return self.action(aid, op, args)
+        raise Invalid("Unknown Pro-Am action.")
+
+    def online_status(self, aid, card=None, now=None):
+        """His team as this service keeps it, the season, his requests, the rules, and the series of his team that ended
+        with him in them (settle: his own service moves his build). His card (the build he plays) is kept first."""
+        season = self.boot(now)
+        seed = self.world_seed()
+        n = season["n"]
+        with self.s.db.transaction() as c:
+            cc = clean_card(card, n)
+            if cc:
+                save_card(c, aid, cc)
+            t = self.my_team(c, aid, n)
+            settle = []
+            if t:
+                for r in c.execute("SELECT data FROM pa_series WHERE team_id=? AND status IN ('won','lost') ORDER BY updated_at DESC LIMIT 10", (t["id"],)):
+                    sr = json.loads(r[0])
+                    if aid in (sr.get("players") or {}):
+                        settle.append({"series": sr["id"], "outcome": sr["status"], "div": sr["div"], "season": sr["season"], "character_id": sr["players"][aid]})
+            return {"me": aid, "online": True, "season": season_public(season, now), "team": self.team_view(c, t, aid, n, seed) if t else None,
+                    "requested": [r[0] for r in c.execute("SELECT team_id FROM pa_requests WHERE account_id=?", (aid,))], "settle": settle,
+                    "rules": {"max_members": MAX_MEMBERS, "logos": LOGOS, "parks": PARKS, "refreshes": DRAFT_REFRESHES, "queue_wait": QUEUE_WAIT,
+                              "series_bonus": SERIES_BONUS, "boost": BOOST, "custom": {"floors": CUSTOM_FLOORS, "walls": CUSTOM_WALLS}, "tiers": [{"id": a, "name": b, "divs": n_} for a, b, n_ in TIERS]}}
+
+    def online_report(self, aid, data, now=None):
+        """A series game played by a member from his own copy: {series, n, won, score, delta, character_id, forfeit,
+        alone}, from his own service's ticket ("report"). The first report of a game counts, as on one service. A
+        forfeit counts when he was the team's only player in it (the others' result counts otherwise)."""
+        sid, gn = data.get("series"), data.get("n")
+        if not isinstance(sid, str) or not isinstance(gn, int) or isinstance(gn, bool) or not isinstance(data.get("won"), bool):
+            raise Invalid("A report is {series, n, won, score, delta}.")
+        with self.s.db.transaction() as c:
+            r = c.execute("SELECT team_id, data FROM pa_series WHERE id=?", (sid,)).fetchone()
+            if not r or team_of(c, aid) != r[0]:
+                raise Invalid("That series isn't your team's.")
+            sr = json.loads(r[1])
+            if not 1 <= gn <= len(sr["games"]):
+                raise Invalid("That series game isn't on.")
+            if data.get("forfeit") and data.get("alone") is not True:
+                return {"series": series_public(sr), "counted": False}
+            sc = data.get("score")
+            score = [int(sc[0]), int(sc[1])] if isinstance(sc, list) and len(sc) == 2 and all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 999 for v in sc) else [0, 0]
+            delta = max(-FORFEIT_RP, min(RP_MAX, int(data["delta"]))) if isinstance(data.get("delta"), int) and not isinstance(data.get("delta"), bool) else 0
+            was = sr["games"][gn - 1]["result"]
+            char = {"id": str(data.get("character_id") or "")[:64] or None, "remote": True}
+            out = self.series_result(c, aid, char, {"series": sid, "n": gn}, data["won"], {"score": score}, delta, now)
+            return {"series": out, "counted": was is None}
+
+    def settle_online(self, c, aid, items, season_n):
+        """On a player's own service: his online team's series that ended (the hub's status "settle"), each once, on
+        the build that played in it: a win moves it up from the series' division and pays the bonus, a loss puts it at
+        0 RP (down a division from 0). -> [{series, outcome, ...the move}]"""
+        out = []
+        for it in (items if isinstance(items, list) else [])[:10]:
+            if not isinstance(it, dict) or it.get("outcome") not in ("won", "lost") or not isinstance(it.get("series"), str) or not isinstance(it.get("character_id"), str):
+                continue
+            sid, div = it["series"][:64], builds.integer(it.get("div", 0), 0, TOP, "div")
+            row = c.execute("SELECT data FROM characters WHERE id=? AND account_id=?", (it["character_id"], aid)).fetchone()
+            if not row:
+                continue
+            ch = json.loads(row[0])
+            done = ch.setdefault("progression", {}).setdefault("pa_online", [])
+            if sid in done:
+                continue
+            pa, _ = player_state(ch, season_n)
+            move = series_won_player(pa, div) if it["outcome"] == "won" else series_lost_player(pa)
+            items_got = self.give(c, aid, rank_items_for(pa["high"]))
+            bonus = series_bonus(div) if it["outcome"] == "won" else 0
+            if bonus:
+                self.s.db.change_wallet(c, aid, bonus, "proam_series", f"pa_series:{sid}")
+            done.append(sid)
+            del done[:-50]
+            c.execute("UPDATE characters SET data=? WHERE id=?", (json.dumps(ch), ch["id"]))
+            out.append({"series": sid, "outcome": it["outcome"], "bonus": bonus, "items": items_got, **move})
+        return out
 
 
 def series_public(sr):

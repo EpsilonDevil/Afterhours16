@@ -216,7 +216,7 @@ test('the shared contracts are where the hub and the World agent look for them',
   const m = src('client/js/ui/modes.js');
   assert.match(m, /export async function proamGame\(app, ctx = \{\}\)/);
   assert.match(m, /const \{ team, opponent, series, game, lineup = \[\], members = null \} = ctx;/);
-  assert.match(m, /pa_game: \{ series: series\.id, n: game\.n \}/);
+  assert.match(m, /pa_game: P\.paTicketGame\(app, series, game, team\)/); // (qp6: online, the ticket carries the team's service's game)
   assert.match(m, /\.\.\.\(myPa \? \{ pa_game: myPa \} : \{\}\)/, 'an online team game: every member\'s ticket (v0.4.8.8 real vs real: his own team\'s)');
   assert.match(src('client/js/ui/proam.js'), /export async function openOffice\(app, team, panel = 'whiteboard', opts = \{\}\)/);
   assert.match(src('client/js/ui/proam.js'), /export async function queue\(app, team, opts = \{\}\)/);

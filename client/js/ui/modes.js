@@ -800,7 +800,7 @@ export function paFive(app, ids, n, level = 0.62, key = 'pa') {
   return out;
 }
 async function paOpponentTeam(app, opponent) {
-  try { return (await app.api.get(`/api/proam/teams?id=${encodeURIComponent(opponent.id)}`)).team; } catch { return null; }
+  try { const P = await import('./proam.js'); return (await P.paReq(app, 'GET', `/api/proam/teams?id=${encodeURIComponent(opponent.id)}`)).team; } catch { return null; }
 }
 
 export async function proamGame(app, ctx = {}) {
@@ -809,9 +809,10 @@ export async function proamGame(app, ctx = {}) {
   if (others.length && app.net?.connected) return startProamTeamOnline(app, ctx);
   const c = app.char();
   const opp = await paOpponentTeam(app, opponent);
+  const P = await import('./proam.js');
   let ticket;
   try {
-    ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: paVenue(ctx.venue), format: 5, quarter_len: settings.quarterLen, difficulty: settings.difficulty, opp_rating: paOppRating(opponent), pa_game: { series: series.id, n: game.n } });
+    ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: paVenue(ctx.venue), format: 5, quarter_len: settings.quarterLen, difficulty: settings.difficulty, opp_rating: paOppRating(opponent), pa_game: P.paTicketGame(app, series, game, team) });
   } catch (e) { toast(e.message, 'error'); return; }
   leaveWorld(app);
   $('#ui').innerHTML = ''; $('#ui').className = 'layer';
@@ -838,12 +839,13 @@ export async function proamGame(app, ctx = {}) {
       await playOutro(app, { summary, session: sess, result: saving });
       const result = await saving;
       if (result) { app.replaceChar(result.character); app.setBalance(result.balance); }
+      if (result) await P.paReport(app, result, { alone: true }); // (qp6 online: the series is the online service's)
       const next = async () => { const ProamUI = await import('./proam.js'); Screens.go(app, 'proam'); ProamUI.queue(app, team); };
       showResults(app, summary, result, won, { players: [...roster.slice(1), ...oppRoster], menuLabel: 'Pro-Am', menu: () => Screens.go(app, 'proam'), again: next, againLabel: 'Next game', autoNext: false });
     },
   });
   const world = {
-    session, scene, ticket,
+    session, scene, ticket, paAlone: true,
     frame: dt => { if (app.input.wasPressed('pause') && !session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); session.frame(dt); },
     onFocusLost: () => { if (!session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); },
     dispose: () => session.dispose(),
@@ -875,7 +877,7 @@ export async function proamOnlineSetup(app, ctx) {
     kind: 'proam', where: null, court: null, format: 5, seed, rosters, slots, names, meter,
     teams: [{ name: mine.name, abbr: mine.abbr, color: mine.primary }, { name: theirs.name, abbr: theirs.abbr, color: theirs.primary }],
     delay: Online.inputDelay([...people.values()].map(p => p.rtt)), difficulty: settings.difficulty ?? 0.6, branding: ctx.home ? mine : theirs, quarterLen: settings.quarterLen || 180,
-    by: app.char()?.name || '', levels: [0.62, 0.62], venue: paVenue(ctx.venue), pa: { series: series.id, n: game.n }, opp_rating: paOppRating(opponent),
+    by: app.char()?.name || '', levels: [0.62, 0.62], venue: paVenue(ctx.venue), pa: (await import('./proam.js')).paTicketGame(app, series, game, team, null, true), opp_rating: paOppRating(opponent),
   };
 }
 // v0.4.8.8 a real team against a real team: one online game, set up by the home team's Captain. vs: the other team's side
@@ -894,6 +896,7 @@ export async function proamVsSetup(app, ctx, vs, people) {
   const awayP = (vs.humans || []).map(h => person(h.id)).filter(p => p?.entry).slice(0, 5);
   if (!awayP.length) return null; // (nobody from the other team to play: each plays it on his own screen)
   const level = d => Math.min(0.95, 0.5 + divInfo(d).index * 0.02);
+  const P = await import('./proam.js');
   const r0 = [...homeP.map(human), ...paFive(app, lineup, 5 - homeP.length, level(series.div), `pa${seed}m`).map(e => Online.setupEntry(app, e, false))];
   const r1 = [...awayP.map(human), ...paFive(app, vs.lineup || [], 5 - awayP.length, level(opponent.div), `pa${seed}o`).map(e => Online.setupEntry(app, e, false))];
   const rosters = [r0, r1];
@@ -904,7 +907,8 @@ export async function proamVsSetup(app, ctx, vs, people) {
     teams: [{ name: mine.name, abbr: mine.abbr, color: mine.primary }, { name: theirs.name, abbr: theirs.abbr, color: theirs.primary }],
     delay: Online.inputDelay([...seats.values()].map(p => p.rtt)), difficulty: settings.difficulty ?? 0.6, branding: mine, quarterLen: settings.quarterLen || 180,
     by: app.char()?.name || '', levels: [level(series.div), level(opponent.div)], venue: paVenue(ctx.venue),
-    pa: [{ series: series.id, n: game.n }, { series: vs.series, n: vs.n }], opp_ratings: [paOppRating(opponent), paOppRating({ div: series.div })], vsReal: true,
+    pa: [P.paTicketGame(app, series, game, team, null, true), P.paTicketGame(app, { id: vs.series, team_id: vs.team?.id, div: vs.team?.div ?? opponent.div }, { n: vs.n, venue: ctx.venue, home: !ctx.home }, vs.team, { kind: 'team', id: team?.id, name: team?.name, abbr: team?.abbr, div: series.div }, true)],
+    opp_ratings: [paOppRating(opponent), paOppRating({ div: series.div })], vsReal: true,
   };
 }
 export async function startProamVs(app, ctx, vs, people) {
@@ -1004,7 +1008,12 @@ export async function playProAmOnline(app, setup, local) {
   const oppRating = teamRating(setup.rosters[1 - myTeam], setup.levels?.[1 - myTeam] ?? 0.62);
   // (v0.4.8.8: a Pro-Am team's series game: its park, and the series game on every member's ticket)
   // (v0.4.8.8 real vs real: each team's own series game and rating of the other: pa and opp_ratings by team)
-  const myPa = Array.isArray(setup.pa) ? setup.pa[myTeam] : setup.pa, myOpp = Array.isArray(setup.opp_ratings) ? setup.opp_ratings[myTeam] : setup.opp_rating;
+  const P = await import('./proam.js');
+  // (qp6: the online service's game when the series is there for you; your own service's own series game when it's yours)
+  const paGame = Array.isArray(setup.pa) ? setup.pa[myTeam] : setup.pa, myOpp = Array.isArray(setup.opp_ratings) ? setup.opp_ratings[myTeam] : setup.opp_rating;
+  const myPa = paGame && !P.paRemote(app) ? { series: paGame.series, n: paGame.n } : paGame;
+  const firstOf = t => (t ? setup.rosters[0]?.length || 5 : 0), lastOf = t => (t ? Infinity : setup.rosters[0]?.length || 5);
+  const paAlone = Object.values(setup.slots || {}).filter(s => s >= firstOf(myTeam) && s < lastOf(myTeam)).length <= 1;
   try { ticket = await app.api.mutate('/api/matches', { character_id: c.id, mode: 'proam', venue: setup.venue ? paVenue(setup.venue) : 'arena', format: 5, quarter_len: setup.quarterLen, difficulty: setup.difficulty, opp_rating: myOpp ?? oppRating, ...(myPa ? { pa_game: myPa } : {}) }); }
   catch (e) { ticket = null; toast(`This one won't count for you (${e.message}). Playing it anyway.`, 'error'); }
   if (ticket) Rewards.consumeBoostsLocal(app, ticket);
@@ -1031,6 +1040,7 @@ export async function playProAmOnline(app, setup, local) {
       await playOutro(app, { summary, session: sess, result: saving });
       const result = await saving;
       if (result) { app.replaceChar(result.character); app.setBalance(result.balance); if (result.proam_team) app.profile.proam_team = result.proam_team; Online.reportCrewXP(app, result, { mode: 'proam', venue: 'arena', mates: crewMates }); }
+      if (result && myPa) await P.paReport(app, result, { alone: paAlone }); // (qp6 online: the series is the online service's)
       // (the squad leader runs it back with whoever's still free; the others are pulled in when he does)
       const lead = net.connected && net.squad && net.isLeader() && Online.freeSquad(app).length > 0;
       showResults(app, summary, result, summary.winner === summary.me.team, {
@@ -1046,7 +1056,7 @@ export async function playProAmOnline(app, setup, local) {
     frame: dt => { if (app.input.wasPressed('pause') && !session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); session.frame(dt); },
     onFocusLost: () => { if (!session.paused && !session.ended && !app.modalOpen()) pauseMatch(app, world); },
     dispose: () => session.dispose(),
-    online: true, mySession: session,
+    online: true, mySession: session, paAlone,
   };
   app.world = world;
   app.mode = 'match';
@@ -1074,6 +1084,7 @@ export function pauseMatch(app, world) {
         const res = await app.api.post(`/api/matches/${world.ticket.id}/cancel`, pa ? { forfeit: true } : {});
         if (res?.character) app.replaceChar(res.character); else endWinStreak(app); // (qp3: leaving a game ends the win streak)
         if (res?.proam_rank) toast(`Forfeit: ${res.proam_rank.delta ? `−${-res.proam_rank.delta} RP` : 'no RP left to lose'} · ${res.proam_rank.rank_after.name}${res.proam_rank.demoted ? ' (demoted)' : ''}.`, 'error');
+        if (res?.pa_report) (await import('./proam.js')).paReport(app, res, { alone: world.paAlone !== false }); // (qp6: an online team's series game)
       } catch { /* ignore */ }
     }
     Screens.go(app, world.backTo || (world.ticket?.mode === 'proam' ? 'proam' : 'home'));

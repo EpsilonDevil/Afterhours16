@@ -63,8 +63,11 @@ test('real vs real: one online game, the home Captain starts it, each team\'s ow
   assert.match(p, /if \(g\.opponent\.kind === 'team' && g\.match && app\.net\?\.connected\) \{\s*const how = await realVsReal/);
   assert.match(p, /if \(g\.home\) \{[\s\S]*?Online\.paEntries\(app, ids\)[\s\S]*?Modes\.startProamVs\(app, ctx, r\.other, people\)/);
   // the setup carries both teams' series games and ratings; each screen's ticket takes its own team's
-  assert.match(m, /pa: \[\{ series: series\.id, n: game\.n \}, \{ series: vs\.series, n: vs\.n \}\], opp_ratings: \[/);
-  assert.match(m, /const myPa = Array\.isArray\(setup\.pa\) \? setup\.pa\[myTeam\] : setup\.pa/);
+  // (qp6: each one the team's service's game, for players online through it; a screen whose own service keeps the series takes {series, n})
+  assert.match(m, /pa: \[P\.paTicketGame\(app, series, game, team, null, true\), P\.paTicketGame\(app, \{ id: vs\.series,/);
+  assert.match(m, /opp_ratings: \[paOppRating\(opponent\), paOppRating\(\{ div: series\.div \}\)\]/);
+  assert.match(m, /const paGame = Array\.isArray\(setup\.pa\) \? setup\.pa\[myTeam\] : setup\.pa/);
+  assert.match(m, /const myPa = paGame && !P\.paRemote\(app\) \? \{ series: paGame\.series, n: paGame\.n \} : paGame;/);
   assert.match(m, /\.\.\.\(myPa \? \{ pa_game: myPa \} : \{\}\)/);
   assert.match(src('server/online.py'), /elif t == "pa-entries":/);
 });
