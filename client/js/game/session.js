@@ -508,6 +508,7 @@ export class MatchSession {
     if (!this.background) {
       if (inp.wasPressed('camera')) this.hud.showCam(CAM_LABEL[this.rig.cycle()]);
       if (inp.wasPressed('assist')) {
+        const ak = inp.actionText?.('assist') || 'H'; // (qp5: H, or the pad button: D-pad down by default)
         // (v0.4.8.7 qp5: online Pro-Am: your seat's own auto-play, from your next input on every screen; elsewhere online
         // there's none)
         if (this.online && !this.autoAllowed()) this.hud.pushFeed(this.spectate ? 'Auto-play is for the players in the game' : 'Auto-play is only in online Pro-Am');
@@ -515,8 +516,8 @@ export class MatchSession {
           this.autoOnline = !this.autoOnline;
           for (const k in this.pend) delete this.pend[k]; // (nothing you'd pressed goes after it)
           settings.autoPlay = this.autoOnline; saveSettings();
-          this.hud.pushFeed(this.autoOnline ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)');
-        } else { toggleAutoPlay(g); this.hud.pushFeed(g.assist ? 'Auto-play ON (H) · stays on for your next games' : 'Auto-play OFF (H)'); }
+          this.hud.pushFeed(this.autoOnline ? `Auto-play ON (${ak}) · stays on for your next games` : `Auto-play OFF (${ak})`);
+        } else { toggleAutoPlay(g); this.hud.pushFeed(g.assist ? `Auto-play ON (${ak}) · stays on for your next games` : `Auto-play OFF (${ak})`); }
       }
       if (inp.wasPressed('help')) this.toggleHelp();
     }
@@ -1172,7 +1173,7 @@ export class MatchSession {
         case 'screenCall': if (P === g.human) hud.pushFeed(`${g.players[e.big].name}: setting a screen`); break;
         case 'dropped': if (P) hud.pushFeed(`${this.online?.names?.[e.player] || P.name} left · the AI has his player`, 'neutral'); break;
         // v0.4.8.7 qp5: a seat's auto-play, on every screen (his tag says AUTO while it's on)
-        case 'autoplay': if (P) hud.pushFeed(this.isMe(P) ? (e.on ? 'You\'re on auto-play: the AI has your player (H to take over)' : 'You\'re back in control') : `${this.online?.names?.[e.player] || P.name} ${e.on ? 'is on auto-play' : 'is back from auto-play'}`, 'neutral'); break;
+        case 'autoplay': if (P) hud.pushFeed(this.isMe(P) ? (e.on ? `You're on auto-play: the AI has your player (${this.input?.actionText?.('assist') || 'H'} to take over)` : 'You\'re back in control') : `${this.online?.names?.[e.player] || P.name} ${e.on ? 'is on auto-play' : 'is back from auto-play'}`, 'neutral'); break;
       }
     }
     this.celebrationEffects(events);

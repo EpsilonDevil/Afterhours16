@@ -314,6 +314,7 @@ export function controlsTable(app) {
     ['Game', null, null],
     ['Celebrate · camera · controls', K('celebrate', 'camera', 'help'), `${P('celebrate')} · ${P('camera')} · ${G('RS')} click`],
     ['Pause · fullscreen lock-in', 'Esc · F11', `${G('MENU')} · —`],
+    ['Auto-play on / off (the AI plays your player until you turn it off; not in online park games)', K('assist'), P('assist')],
     ['Social phone (park and menus)', K('social'), `${G('LB')} + ${G('RB')}`],
     ['Court overview (park: scores, streaks, bounties)', `Hold ${K('camera')}`, `Hold ${P('camera')}`],
     ['Menus', 'Mouse', `${G('LS')}/D-pad move · ${G('A')} select · ${G('B')} back · ${G('LB')}/${G('RB')} tabs`],

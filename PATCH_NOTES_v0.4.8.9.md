@@ -181,3 +181,11 @@ Heart and Health work as before. Your baskets take away your opponent's Heart, h
 
 ### Runs from before this update
 A Gauntlet run you started before this update can't continue under the new rules. When you open the Gauntlet, you can end it and get paid what it earned. To start a run, your game has to be up to date; an old version is told to update.
+
+---
+
+## Quick patch 5 (Oct 25): Auto-play on a controller
+
+- **Auto-play has a controller button:** **D-pad down** turns auto-play on and off, just like **H** on the keyboard, anywhere auto-play works. That's offline games and online Pro-Am.
+- **Remapping:** you can change the button on the controls screen, under Controller ("Auto-play on / off").
+- **Showing the right button:** the on-screen messages name the button for the device you're using ("Auto-play ON (D-pad down)"), and the controls list shows both.

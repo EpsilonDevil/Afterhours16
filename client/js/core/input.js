@@ -26,6 +26,7 @@ export const KEYMAP = {
 export const PADMAP = {
   shoot: 'X', pass: 'A', bounce: 'B', lob: 'Y', alleyMod: 'RB', mod: 'LB', sprint: 'RT', defense: 'LT',
   steal: 'X', block: 'Y', celebrate: 'UP', camera: 'VIEW', post: 'LT',
+  assist: 'DOWN', // (v0.4.8.9 qp5: auto-play on / off, like H on the keyboard)
 };
 // what can be rebound, in the order the remap screen lists them
 export const REMAP_KEYS = [
@@ -38,7 +39,7 @@ export const REMAP_KEYS = [
 export const REMAP_PAD = [
   ['shoot', 'Shoot / pump fake (sprinting at the rim: layup)'], ['pass', 'Pass'], ['bounce', 'Bounce pass'], ['lob', 'Lob pass'], ['alleyMod', 'Alley-oop modifier (+ lob)'],
   ['mod', 'Icon pass modifier / call screen'], ['sprint', 'Sprint'], ['post', 'Post up (hold)'], ['defense', 'Defensive stance'], ['steal', 'Steal'], ['block', 'Block / rebound'],
-  ['celebrate', 'Celebrate'], ['camera', 'Camera'],
+  ['celebrate', 'Celebrate'], ['camera', 'Camera'], ['assist', 'Auto-play on / off'],
 ];
 export const PAD_BINDABLE = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'LS', 'UP', 'DOWN', 'LEFT', 'RIGHT'];
 const KEY_NAMES = { Space: 'Space', ShiftLeft: 'Shift', ShiftRight: 'R-Shift', ControlLeft: 'Ctrl', ControlRight: 'R-Ctrl', AltLeft: 'Alt', AltRight: 'R-Alt', Mouse0: 'Left click', Mouse1: 'Middle click', Mouse2: 'Right click', Mouse3: 'Mouse 4', Mouse4: 'Mouse 5', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Tab: 'Tab', Enter: 'Enter', Backspace: 'Backspace', CapsLock: 'Caps', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\' };
@@ -221,6 +222,13 @@ export class Input {
   pb(action) { return PAD[this.padmap[action]]; }
   keyLabel(action) { return (this.keymap[action] || []).map(keyName).join(' / '); }
   padLabel(action) { return this.padmap[action] || ''; }
+  // (qp5) plain text for an action on the device in use, for feed lines: "H" on the keyboard, "D-pad down" on a pad
+  actionText(action) {
+    const b = this.usingPad && this.padmap[action];
+    if (!b) return this.keyLabel(action);
+    const dpad = { UP: 'D-pad up', DOWN: 'D-pad down', LEFT: 'D-pad left', RIGHT: 'D-pad right' }[b];
+    return dpad || (GLYPH[this.gp.family] || GLYPH.xbox)[b] || b;
+  }
 
   // ---------------- generic queries ----------------
   isDown(action) { if (this.capturing) return false; return (this.keymap[action] || [action]).some(k => this.down.has(k)) || this.gpDown(action); }
@@ -352,7 +360,7 @@ export class Input {
       case 'celebrate': return E('celebrate');
       case 'help': return this.gpEdge(PAD.RS) && this.ctx !== 'menu';
       case 'social': return !!g.socialEdge;
-      case 'assist': return false;
+      case 'assist': return E('assist');
       default: return false;
     }
   }

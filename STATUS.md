@@ -2,6 +2,11 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 5 (Oct 25): controller auto-play
+| Area | Files | Notes |
+|---|---|---|
+| Input | `core/input.js` (`PADMAP.assist` 'DOWN', `REMAP_PAD` entry, `gpPressed('assist')`, `actionText(action)`), `game/session.js` (feed names the device's button), `ui/screens.js` (controls table row) | test `qp5padauto` (new); the qp5 auto-play suite and every test that reads input/session pass |
+
 ### v0.4.8.9 quick patch 4 (Oct 23): The Gauntlet plays in possessions (Gauntlet rules change; the game's sim, world and director are untouched)
 Proof: golden `sim:*`/`world:*`/`director:*` identical, `gauntlet:*` rebaselined (live outcome hash = replay hash); deck_sim smart starters 20.0% → 20.0% Final won (76 min per completed run, was 70), converted 42% → 50%, VC ~8,000, dead hands 0.3–0.6% of possessions; Node 778/780 (missing-mp3 soundtrack test in the cloud copy, 1 skip), Python 347 OK; browser: tab → match (tip-off, offense, defense, assist, block, steal → fast break, The Professor's hidden set), a completed and a failed run both ✓ Verified.
 
