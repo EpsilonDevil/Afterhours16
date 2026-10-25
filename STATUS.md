@@ -2,6 +2,25 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 11 (Oct 25): AI teams climb by the same series rules
+`server/proam.py`: new `team_series_won(t, series_div, top)` / `team_series_lost(t)`, used by a player team's `finish_series` and by `ai_simulate`'s AI-vs-AI series rounds (every 6 h). `ai_result` (an AI team's game against a player team) now only moves RP (+15/−15, banked past 100) and the record, never the division: before qp11 an AI team promoted at 100 RP and a single lost game at 0 demoted it. `docs/PROAM-OVERHAUL.md` §4. Tests: `test_v0489qp9_team_rp` (+2: the shared rules; an AI game never moves its division).
+
+### v0.4.8.9 quick patch 10 (Oct 25): a lost series with banked team RP
+`server/proam.py` `finish_series`: lost with `rp > RP_MAX` → `rp = RP_MAX` (no demotion); lost at 0 → demote; otherwise → 0. `docs/PROAM-OVERHAUL.md` §2. Tests: `test_v0489qp9_team_rp` (+2: 180 → 100 → 0 across two lost series; 60 → 0 and 0 → demoted).
+
+### v0.4.8.9 quick patch 9 (Oct 25): team RP carries past 100
+Checked first: a player team's RP never promoted it (only `finish_series` on a won series does); per-game RP was clamped to 0–100, so anything past 100 was lost. AI teams' simulated ladder (`ai_result`: 100 RP promotes with the rest carried) is unchanged.
+
+| Area | Files | Notes |
+|---|---|---|
+| Server | `server/proam.py` (`TEAM_RP_BANK` = 10 × RP_MAX sanity ceiling; `series_result` no longer caps team RP at 100; `finish_series` on a promotion: `rp = max(0, rp - RP_MAX)`, David's rule; loss unchanged), `docs/PROAM-OVERHAUL.md` §2 | test `test_v0489qp9_team_rp` (new, 4) |
+| UI | `world/proamhubs.js` (`teamProgress`: `raw`, `banked`, "+N RP carries into the next division"; board shows the full RP), `ui/proam.js`, `game/proamhub.js` | `qp8teamrank` extended |
+
+### v0.4.8.9 quick patch 8 (Oct 25): the Pro-Am team's own rank on screen
+| Area | Files | Notes |
+|---|---|---|
+| UI | `world/proamhubs.js` (`teamProgress(team)`: label, RP, series wins to the next HUB tier = divisions left + 1, the building; Platinum the top for now; `whiteboardData` `teamRP`/`nextBuilding`; the drawn board's "TEAM: …" line), `ui/proam.js` (TEAM RANK panel with the next-building line; roster column "Their own rank"; office whiteboard "Team" row + line), `game/proamhub.js` (badge: Team division · RP · next building) | test `qp8teamrank` (new); browser check of the team page and the HUB badge |
+
 ### v0.4.8.9 quick patch 7 (Oct 25): Gauntlet hand limit, freeze fix, no VC cap per run
 Freeze root cause (Hub agent): the controller's `wasBusy` outlived the court it described. Continue at the final buzzer while the last possession was still playing dropped the court without resetting it; the next match's first court frame read it, redrew the table, and wiped the pre-match overlay while `overlayOn` stayed true. `play()`/`endTurn()` return early while `overlayOn` is set, so every input was ignored on a normal-looking table. T/F on the pre-match screen could do the same. Repro: deterministic script FROZEN on the pre-QP7 build, PASS after; 4 of 6 random 15–20 min sessions froze before, 0 of 3 after (20+ matches).
 

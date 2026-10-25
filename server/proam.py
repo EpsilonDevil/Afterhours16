@@ -120,6 +120,10 @@ def season_public(s, now=None):
 
 # ---------------- a player's own rank (a build's progression.pa) ----------------
 RP_MAX = 100
+# (qp9) a player team's RP keeps counting past RP_MAX while it plays out its series (it never promotes the team: only a
+# series win does). On the promotion the division's 100 is spent and only the excess over it starts the next division
+# (130 -> 30, 60 -> 0: David's rule). TEAM_RP_BANK is just a sanity ceiling, never reached in play.
+TEAM_RP_BANK = 10 * RP_MAX
 RP_K = 0.7          # the v0.4.8.5 game RP at 0.7: a typical win +12..+25
 FORFEIT_RP = 20     # forfeit, or a game left running when the next starts: as before
 DIV_RATING = 75     # the rating scale the Elo part runs on: a division is 75 of it (43 divisions ~ 0..3200)
@@ -630,6 +634,26 @@ def ensure_ai_teams(c, seed, season, now=None):
     return made
 
 
+def team_series_won(t, series_div, top=TOP):
+    """(qp11) A won series, the same rule for every team, player or AI: up one division from the series' division (never
+    down); on a promotion the division's 100 RP is spent and only the excess carries (qp9)."""
+    before = t["div"]
+    t["div"] = min(top, max(t["div"], promote(series_div)))
+    if t["div"] > before:
+        t["rp"] = max(0, t["rp"] - RP_MAX)
+
+
+def team_series_lost(t):
+    """(qp10/qp11) A lost series, the same for every team: banked past 100 -> 100 (the division's max); at 0 -> demoted;
+    otherwise -> 0."""
+    if t["rp"] > RP_MAX:
+        t["rp"] = RP_MAX
+    else:
+        if t["rp"] == 0:
+            t["div"] = demote(t["div"])
+        t["rp"] = 0
+
+
 AI_SIM_EVERY = 6 * 3600  # (between AI teams: a round of series every 6 hours)
 
 
@@ -649,10 +673,8 @@ def ai_simulate(c, season, now=None):
             p = 1 / (1 + 10 ** ((b["div"] - a["div"]) / 6))
             awin = (cup.fnv(f"{slot}|{a['id']}|{b['id']}|w") % 1000) / 1000 < p
             w, l = (a, b) if awin else (b, a)
-            w["div"] = min(PLAYABLE_TOP, promote(w["div"]))
-            if l["rp"] == 0:
-                l["div"] = demote(l["div"])
-            l["rp"] = 0
+            team_series_won(w, w["div"], PLAYABLE_TOP)  # (qp11: AI teams climb by the same series rules as player teams)
+            team_series_lost(l)
             w["data"]["series"][0] += 1
             l["data"]["series"][1] += 1
             save_team(c, w, now); save_team(c, l, now)
@@ -1167,7 +1189,7 @@ class ProAm:
             t = load_team(c, sr["team_id"])
             if t:
                 t["data"].setdefault("record", [0, 0])[0 if won else 1] += 1
-                t["rp"] = max(0, min(RP_MAX, t["rp"] + int(delta)))
+                t["rp"] = max(0, min(TEAM_RP_BANK, t["rp"] + int(delta)))  # (qp9: no cap at 100: the excess is banked)
                 save_team(c, t, now)
                 if g["opponent"]["kind"] == "ai":
                     self.ai_result(c, g["opponent"]["id"], not won, now)
@@ -1182,14 +1204,10 @@ class ProAm:
         if not a:
             return
         a["data"].setdefault("record", [0, 0])[0 if won else 1] += 1
-        if won:
-            a["rp"] += 15
-            if a["rp"] >= RP_MAX:
-                a["div"], a["rp"] = min(PLAYABLE_TOP, promote(a["div"])), a["rp"] - RP_MAX
-        else:
-            if a["rp"] == 0:
-                a["div"] = demote(a["div"])
-            a["rp"] = max(0, a["rp"] - 15)
+        # (qp11) a single game moves an AI team's RP like a player team's, and never its division: AI teams climb only by
+        # winning series (ai_simulate), with the same rules (team_series_won / team_series_lost). Before qp11 an AI team
+        # promoted at 100 RP and was demoted by one lost game at 0
+        a["rp"] = max(0, min(TEAM_RP_BANK, a["rp"] + (15 if won else -15)))
         save_team(c, a, now)
 
     def finish_series(self, c, sr, t, outcome, reporter, reporter_char, now):
@@ -1202,11 +1220,9 @@ class ProAm:
         sr["bonus"] = bonus
         if t:
             if outcome == "won":
-                t["div"] = max(t["div"], promote(sr["div"]))
+                team_series_won(t, sr["div"])  # (qp9: promoted: the division's 100 is spent, the excess carries)
             else:
-                if t["rp"] == 0:
-                    t["div"] = demote(t["div"])
-                t["rp"] = 0
+                team_series_lost(t)  # (qp10: banked past 100 -> 100; at 0 -> demoted; else -> 0)
             t["data"].setdefault("series", [0, 0])[0 if outcome == "won" else 1] += 1
             save_team(c, t, now)
         moved = {}

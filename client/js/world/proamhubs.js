@@ -42,6 +42,22 @@ const mixHex = (a, b, t) => { const x = M.hexToRgb(a), y = M.hexToRgb(b); return
 // ---------------- the tiers, the team's look ----------------
 export const HUB_TIERS = ['bronze', 'silver', 'gold', 'platinum'];
 export const HUB_NAMES = { bronze: 'Eastside Middle School Gym', silver: 'Northgate High School Gym', gold: 'The Clubhouse', platinum: 'The Clubhouse · Platinum' };
+// (qp8) the team's own rank, apart from each player's: its division and RP, and how far its next HUB building is. A series
+// win moves the team up one division, so the next tier is (divisions left in this tier + 1) series wins away; Platinum's
+// building is the last one for now. -> {label, rp, tier, wins, nextTier, building, text} (null without a team)
+const HUB_TIER_IDS = ['bronze', 'silver', 'gold', 'platinum'];
+export function teamProgress(team) {
+  if (!team) return null;
+  const d = team.division && Number.isFinite(+team.division.tier) ? team.division : divInfo(+team.div || 0);
+  // (qp9: a team's RP keeps counting past 100 while it finishes its series; the excess carries into the next division)
+  const raw = Math.max(0, Math.floor(+team.rp || 0)), rp = Math.min(100, raw), banked = raw - rp, tier = +d.tier || 0;
+  const bank = banked > 0 ? ` · +${banked} RP carries into the next division` : '';
+  const label = d.label || divInfo(0).label;
+  if (tier >= HUB_TIER_IDS.length - 1) return { label, rp, raw, banked, tier, wins: 0, nextTier: null, building: null, text: `${HUB_NAMES.platinum}: the top building for now${bank}` };
+  const wins = Math.max(1, (+d.divs || 1) - (+d.div || 1) + 1), nextTier = ['Bronze', 'Silver', 'Gold', 'Platinum'][tier + 1];
+  const building = HUB_NAMES[HUB_TIER_IDS[tier + 1]];
+  return { label, rp, raw, banked, tier, wins, nextTier, building, text: `${wins} series win${wins > 1 ? 's' : ''} to ${nextTier}: ${building}${bank}` };
+}
 // the team's tier as the hub goes (Diamond and up are Platinum's building for now): team.division.tier (the server's
 // team view: 0 Bronze … 6 Grandmaster), else team.tier (a name or a number), else team.div (the flat division index)
 export function hubTier(team) {
@@ -322,6 +338,7 @@ function scoreboardCanvas(o) {
 // season ({n, end} or a ready line). Pure: the hub's tests read it.
 export function whiteboardData(team, season = null, now = Date.now() / 1000) {
   const t = team || {}, sr = t.current || null, look = hubLook(t);
+  const prog = teamProgress(t); // (qp8: the team's own rank on the board, and its next building)
   const games = sr ? (sr.games || []).map((g, i) => ({ n: g.n ?? i + 1, opponent: g.opponent?.name || 'TBD', ai: g.opponent?.kind === 'ai', home: !!g.home, result: g.result || null, score: Array.isArray(g.score) ? g.score : null, venue: g.venue || null })) : [];
   const pending = games.find(g => !g.result) || null;
   const next = sr ? (pending ? { ...pending } : { n: games.length + 1, opponent: null, home: games.length % 2 === 0 }) : null;
@@ -333,7 +350,7 @@ export function whiteboardData(team, season = null, now = Date.now() / 1000) {
   }
   return {
     name: look.name, abbr: look.abbr, primary: look.primary,
-    division: t.division?.label || 'Bronze 1', record: Array.isArray(t.record) ? t.record : [0, 0], seriesRecord: Array.isArray(t.series) ? t.series : [0, 0],
+    division: t.division?.label || 'Bronze 1', teamRP: prog.raw, nextBuilding: prog.text, record: Array.isArray(t.record) ? t.record : [0, 0], seriesRecord: Array.isArray(t.series) ? t.series : [0, 0],
     series: sr ? { label: sr.division?.label || t.division?.label || '', wins: sr.wins || 0, losses: sr.losses || 0, need: sr.need || 2, length: sr.length || 3, status: sr.status || 'open' } : null,
     games, next, season: seasonText,
     members: (t.members || []).map(m => ({ name: m.username || m.name || '?', rank: m.build?.state?.label || '', rp: m.build?.state?.rp ?? null })).slice(0, 10),
@@ -349,7 +366,7 @@ export function drawWhiteboard(cvs, d) {
   const marker = (txt, x, y, px, col, w = 700) => { g.fillStyle = col; g.font = `${w} ${px}px "Comic Sans MS", "Segoe Print", "Bradley Hand", cursive`; g.fillText(txt, x, y); };
   if (!d) { marker('No team', 40, H / 2, 60, ink); return; }
   marker(`${d.name}`.toUpperCase(), 36, 52, 52, d.primary && luma(d.primary) < 0.75 ? d.primary : blue, 900);
-  marker(`${d.division}`, W - 330, 52, 40, red);
+  marker(`TEAM: ${d.division}${d.teamRP != null ? ` · ${d.teamRP} RP` : ''}`, W - 470, 52, 34, red);
   g.strokeStyle = ink; g.lineWidth = 3; g.beginPath(); g.moveTo(30, 90); g.lineTo(W - 30, 92); g.stroke();
   const s = d.series;
   if (s) {
@@ -377,6 +394,7 @@ export function drawWhiteboard(cvs, d) {
   marker(`Games ${d.record[0]}-${d.record[1]}`, x2, 290, 30, ink);
   marker(`Series ${d.seriesRecord[0]}-${d.seriesRecord[1]}`, x2, 330, 30, ink);
   if (d.season) marker(d.season, x2, 396, 24, '#555b63');
+  if (d.nextBuilding) marker(d.nextBuilding.slice(0, 44), x2, 440, 22, blue);
   // a little play diagram in the corner
   g.strokeStyle = blue; g.lineWidth = 3; g.beginPath(); g.arc(W - 120, H - 80, 46, Math.PI, 0); g.stroke();
   for (const [x, y] of [[W - 170, H - 60], [W - 120, H - 140], [W - 70, H - 60]]) { g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke(); }

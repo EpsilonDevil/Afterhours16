@@ -23,7 +23,7 @@
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
 import { releaseScene } from '../world/release.js';
-import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, customizable, HUB_NAMES } from '../world/proamhubs.js';
+import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, customizable, HUB_NAMES, teamProgress } from '../world/proamhubs.js';
 import { proamInfo } from '../world/proamparks.js';
 import { courtPlayRect } from '../world/themes.js';
 import { Player } from '../sim/player.js';
@@ -681,7 +681,8 @@ export class HubUI {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const lk = hub.look, where = hub.area === 'park' ? `${proamInfo(hub.parkId)?.name || 'Home court'} · home court` : HUB_NAMES[hub.tier];
     const n = hub.realHere().length, cap = hub.isCaptain() ? 'You\'re the Captain' : `Captain: ${hub.captainName()}`;
-    return `<div class="park-badge pa-hub-badge" style="--c:${esc(lk.primary)}"><b>${esc(lk.name)} <span class="crew-tag sm">${esc(lk.abbr)}</span></b><small>${esc(where)} · ${n ? `${n + 1} of the team here` : 'just you here'} · ${esc(cap)}</small></div><div class="park-keys muted small" id="park-keys"></div>`;
+    const tp = teamProgress(hub.team); // (qp8: the team's own rank, apart from each player's)
+    return `<div class="park-badge pa-hub-badge" style="--c:${esc(lk.primary)}"><b>${esc(lk.name)} <span class="crew-tag sm">${esc(lk.abbr)}</span></b><small>${esc(where)} · ${n ? `${n + 1} of the team here` : 'just you here'} · ${esc(cap)}</small>${tp ? `<small class="pa-hub-rank">Team ${esc(tp.label)} · ${tp.raw} RP · ${esc(tp.text)}</small>` : ''}</div><div class="park-keys muted small" id="park-keys"></div>`;
   }
   intro(hub) {
     this.lastTop = null; this.update(hub);

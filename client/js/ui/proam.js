@@ -11,6 +11,7 @@
 import { $, $$, esc, toast, modal, closeModal, keepScroll, busy, confirmBox } from './common.js';
 import { rankEmblemSVG } from './badgeart.js';
 import { divInfo, RP_MAX, seriesShape } from '../sim/ranks.js';
+import { teamProgress } from '../world/proamhubs.js'; // (qp8: the team's own rank and its next building)
 
 // the twelve home courts (world/proamparks.js PROAM_PARKS; the server's proam.PARKS)
 export const PARKS = [['overpass', 'Under the Overpass'], ['longbeach', 'Long Beach'], ['aau', 'AAU Gym'], ['rooftop', 'Rooftop'], ['projects', 'Projects'],
@@ -222,9 +223,9 @@ function teamPage(app, st) {
   const reqs = founder && t.requests?.length ? `<h4>Asking to join</h4>${t.requests.map(r => `<div class="pa-row"><b>${esc(r.username)}</b><span class="grow"></span><button class="btn small" data-answer="${esc(r.account_id)}" data-yes="1">Accept</button><button class="btn ghost small" data-answer="${esc(r.account_id)}" data-yes="0">Decline</button></div>`).join('')}` : '';
   return `<section class="panel wide-panel pa-tab pa-team" style="--c1:${esc(t.primary)};--c2:${esc(t.secondary)}">
     <div class="pa-head">${logoTag(t)}<div><div class="eyebrow">PRO-AM TEAM · ${t.open ? 'OPEN' : 'INVITE-ONLY'}</div><h1>${esc(t.name)}</h1><div class="pa-season">${esc(seasonLine(st.season))}</div></div>
-      <div class="pa-rank">${divChip(t.division, 30)}${rpBar(t.rp)}<small>Games ${record(t.record)} · series ${record(t.series)}</small></div>
+      <div class="pa-rank"><div class="eyebrow">TEAM RANK</div>${divChip(t.division, 30)}${rpBar(teamProgress(t)?.raw ?? t.rp)}<small>Games ${record(t.record)} · series ${record(t.series)}</small>${teamProgress(t) ? `<small class="pa-next">${esc(teamProgress(t).text)}</small>` : ''}</div>
       <button class="btn primary pa-hub-btn" data-hub>Go to the HUB</button></div>
-    <div class="pa-cols"><div><h4>Roster · ${(t.members || []).length}/${st.rules.max_members}</h4><table class="pa-members"><tbody>${members}</tbody></table>${reqs}
+    <div class="pa-cols"><div><h4>Roster · ${(t.members || []).length}/${st.rules.max_members}</h4><table class="pa-members"><thead><tr><th></th><th></th><th colspan="2" class="muted small">Their own rank</th></tr></thead><tbody>${members}</tbody></table>${reqs}
       <p class="muted small">Home court: ${esc(parkName(t.court))}.</p></div>
       <div><h4>The office</h4>
         <div class="pa-office">
@@ -315,7 +316,7 @@ export function whiteboardHTML(st, team) {
     <div class="pa-board-cols"><div><h4>${sr ? `${esc(sr.division.label)} series · ${sr.wins}-${sr.losses}` : 'Next series'} <small class="muted">${len} games, first to ${need}</small></h4>
       ${sr ? `<table class="pa-games"><tbody>${games}</tbody></table>` : '<p class="muted">Queue for a game to start the series.</p>'}
       <p class="small">Record this season: games ${record(team.record)}, series ${record(team.series)}</p></div>
-    <div><h4>Ranks</h4><div class="pa-row">${divChip(team.division, 22)}<span class="grow"></span>${rpBar(team.rp)}</div>
+    <div><h4>Ranks</h4><div class="pa-row"><b>Team</b>${divChip(team.division, 22)}<span class="grow"></span>${rpBar(teamProgress(team)?.raw ?? team.rp)}</div>${teamProgress(team) ? `<p class="muted small">${esc(teamProgress(team).text)}</p>` : ''}
       ${(team.members || []).map(m => `<div class="pa-row"><b>${esc(m.username)}</b>${m.build ? divChip(m.build.state) : ''}<span class="grow"></span>${m.build ? rpBar(m.build.state.rp) : ''}</div>`).join('')}</div></div></div>`;
 }
 function whiteboard(app, st, team) {

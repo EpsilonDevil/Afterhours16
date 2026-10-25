@@ -38,6 +38,7 @@ These are the old 7 tiers: Bronze, Silver, Gold, Platinum, Diamond, Master, Gran
   - Game RP uses today's formula (result, Elo vs opponent, performance; `progression.proam_rp`), rescaled so a typical win is about +12 to +25.
   - Reaching 100 RP between games promotes that player one division at once ("promotion can also happen in between games"), and his RP carries over the 100.
   - The team's division is the division of its series. When a team's series is won, everyone moves up from the team's division. A player who is already above it stays where he is.
+  - **The team's own RP (qp9):** the team has RP too, moved by each of its series games. It never promotes the team by itself; only a series win does. It keeps counting past 100 while the series plays out (nothing earned is lost), and on the promotion the division's 100 is spent and only the excess over it starts the next division (130 → 30; a team promoted below 100 starts at 0). A series loss (qp10): a team with RP banked past 100 drops to 100, the division's max (a second loss from there resets it to 0 as ever); a team already at 0 is demoted one division; any other team goes to 0.
 - **A series loss:** every player in the team goes to 0 RP in his current division, and the team does too.
   - A player who was **already at 0 RP** when the series was lost is demoted one division. A tier's first division drops to the previous tier's last division; Bronze 1 is the floor.
   - Individual RP otherwise only falls from game losses and poor performance, never below 0, and a game alone never demotes.
@@ -80,7 +81,7 @@ These are the old 7 tiers: Bronze, Silver, Gold, Platinum, Diamond, Master, Gran
   - At least 24 AI teams per server, spread across every division.
   - Their rosters are real AI players from the server's shared AI world (`sim/world.js`), keeping their names, builds and looks.
   - They use league-team identities and jerseys.
-  - Their divisions and records move with their results against real teams. Between AI teams the server simulates them now and then, so the standings feel alive (lead).
+  - Their records and RP move with their games against real teams. Their divisions move only by winning or losing series, by exactly the same rules as player teams (qp11: `team_series_won` / `team_series_lost`; before, an AI team promoted at 100 RP and one lost game at 0 demoted it). Between AI teams the server plays out series every 6 hours, so the standings feel alive (lead).
 
 ## 5. The GM draft (clipboard)
 - **Where it is:** a clipboard in the hub office, which only the Captain can use (anyone can look).

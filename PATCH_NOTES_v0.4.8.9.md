@@ -224,3 +224,41 @@ Sometimes card picks and End Turn stopped doing anything, and the only way out w
 
 ### Runs from before this update
 A run started before this update can't continue under the new hand rule. You can end it from the Gauntlet screen, and it's paid what it earned.
+
+---
+
+## Quick patch 8 (Oct 25): your Pro-Am team's own rank, where you can see it
+
+Your Pro-Am team has its own rank: a division and RP, separate from each player's own rank. It decides which HUB building the team plays out of. It now shows clearly everywhere:
+- **Team page:** a **TEAM RANK** panel shows the team's division, its RP, its games and series record, and how far the next building is, like "3 series wins to Silver: Northgate High School Gym". The roster's rank column is labelled **Their own rank**, so the two are never mixed up.
+- **The office whiteboard:** both the menu's whiteboard and the one on the wall in the HUB show the team's division and RP, and the line to the next building.
+- **In the HUB:** the badge at the top shows "Team Bronze 1 · 0 RP · 3 series wins to Silver…".
+
+A series win moves the team up one division. Losing a series puts the team back to 0 RP, and drops it a division if it was already at 0. Platinum's clubhouse is the top building for now.
+
+---
+
+## Quick patch 9 (Oct 25): team RP past 100 carries into the next division
+
+- **No more wasted RP:** a team's RP used to stop at 100, so anything it earned past that while finishing its series was lost. Now it keeps counting.
+- **On promotion:** when the team wins its series and moves up, the division's 100 is used up and **everything over 100 starts the next division**. For example, 130 RP becomes 30. A team promoted below 100 starts the next division at 0.
+- **RP never promotes a team by itself:** only a series win does, as before. A lost series still puts the team back to 0 RP.
+- **On screen:** the team page, whiteboards and HUB badge show the full RP and how much carries, for example "+30 RP carries into the next division".
+- **Your own rank:** each player's own RP works as it always has. 100 moves you up a division and the rest carries.
+
+---
+
+## Quick patch 10 (Oct 25): losing a series with banked RP
+
+- **Drop to the max, not to zero:** a team with RP banked past 100 that loses a series now drops to **100**, the most a division holds, instead of 0.
+- **Losing again:** if it loses another series from there, it goes back to 0 as usual.
+- **At 0:** a team already at 0 RP that loses a series still drops a division, and any other team still goes to 0.
+
+---
+
+## Quick patch 11 (Oct 25): AI teams climb by the same rules as you
+
+- **Series only:** AI Pro-Am teams had an easier way up. Reaching 100 RP promoted them on the spot, and one lost game at 0 RP could drop them. Now they move up and down only by winning or losing series, exactly like player teams.
+- **Single games:** a single game only changes an AI team's RP and record.
+- **The same RP rules:** RP past 100 is kept and carries into the next division on promotion. A lost series with RP over 100 drops the team to 100, a loss at 0 drops it a division, and any other loss resets it to 0.
+- **AI series:** AI teams still play series against each other every few hours, so the standings keep moving.
