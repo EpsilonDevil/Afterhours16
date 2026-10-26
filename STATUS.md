@@ -2,6 +2,16 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 15 (Oct 26): the PC dragging with the game open
+Investigation (soak agent, real game in Chromium with CDP): menu idle 5 min, park idle 9 min, 5 menu ↔ park ↔ Pro-Am ↔ Gauntlet cycles: JS heap 6–14 MB flat after GC, DOM nodes and listeners constant, live GL textures/buffers/VAOs constant per scene: no leak. Per frame in the park: game logic ~4.5 ms vs `Renderer.render` CPU ~44 ms, dominated by uniform uploads (~570 `uniformMatrix4fv`, 316 kB of bone palettes). Causes: the loop drew at full refresh in front and behind other windows (RIMRIFT.exe runs the browser with background throttling off); `autoQuality` never ran (settings.js saved before main.js checked for a first run), so everyone was on High; ~300 MB of cached textures held in the menus after a park visit.
+
+| Area | Files | Notes |
+|---|---|---|
+| Pacing | `core/pacing.js` (new: `Pacer`, `targetFps`, `FPS_CAPS`), `main.js` (paced loop, `app.inBackground`, background/menu cache trims), `core/settings.js` (`fpsCap` 60, `bgMode` 'save', `FIRST_RUN`, AMD built-in graphics → Balanced), `ui/screens.js` (Frame rate limit, In the background; `qualityChosen`), `game/park.js` (unseen courts real time in the background) | measured: front 60 (cap 30 → 30), background 8 menu/park (now 10, so game time keeps real time), 30 in a live game (kept playing), Full speed 60 |
+| Renderer | `gfx/renderer.js` (`renderStamp`; `drawList` skips a program's `uModel`/`uBones` upload when it already has that array this frame) | park 402 → 180 `uniformMatrix4fv`/frame, 208 → 90 kB; frozen-frame pixel compare identical |
+| Graphics pick | `main.js` (first run: `autoQuality`; once for saves on High with no `qualityChosen`: lower only, toast) | fresh profile → low (swiftshader); seeded High → low + toast; chosen/ultra untouched |
+| Tests | `qp15perf` (new, 5), `v0486rename` (first-run pin: rule fixed) | Node 827/829 (missing-mp3 + 1 skip), Python 372 OK, golden identical |
+
 ### v0.4.8.9 quick patch 14 (Oct 25): Pro-Am jerseys and logos as named
 | Area | Files | Notes |
 |---|---|---|

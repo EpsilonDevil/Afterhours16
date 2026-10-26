@@ -683,7 +683,8 @@ export class ParkHub {
     if (!g) return 1;
     // (qp3 perf: while you play, the games you can't see barely move: your own game gets the PC, and online everyone
     // waits on the slowest screen)
-    if (!this.courtWatched(c)) return this.mode === 'match' ? 0.35 : 2.6;
+    // (qp15: and with the window in the background nobody's watching the park at all: real time, not fast-forward)
+    if (!this.courtWatched(c)) return this.mode === 'match' ? 0.35 : this.app?.inBackground ? 1 : 2.6;
     if (g.phase === 'check' || g.phase === 'inbound' || g.phase === 'pregame') return 3;
     if (g.phase === 'dead' || g.over) return 2;
     return 1;

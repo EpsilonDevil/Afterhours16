@@ -6,7 +6,9 @@ import { PadNav, modalOpen } from './ui/padnav.js';
 import { audio } from './core/audio.js';
 import { music } from './core/music.js';
 import { API } from './core/api.js';
-import { settings, saveSettings, autoQuality, volumeGain, SETTINGS_KEY } from './core/settings.js';
+import { settings, saveSettings, autoQuality, volumeGain, FIRST_RUN } from './core/settings.js';
+import { Pacer, targetFps } from './core/pacing.js';
+import { trimCaches } from './world/release.js';
 import { HUD } from './game/hud.js';
 import { CameraRig } from './game/camera.js';
 import { Showroom } from './game/showroom.js';
@@ -46,7 +48,18 @@ async function boot() {
     bootMsg(e.message || 'WebGL2 is required.');
     throw e;
   }
-  if (!localStorage.getItem(SETTINGS_KEY)) { settings.quality = autoQuality(app.renderer); app.renderer.setQuality(settings.quality); saveSettings(); }
+  // the graphics for this PC: picked on the first run (qp15: it never was, see core/settings.js FIRST_RUN). A save that
+  // has sat on High since then without anyone choosing it gets the pick once too, only ever lower, and is told
+  if (FIRST_RUN) { settings.quality = autoQuality(app.renderer); app.renderer.setQuality(settings.quality); settings.v0489q15auto = true; saveSettings(); }
+  else if (!settings.v0489q15auto) {
+    settings.v0489q15auto = true;
+    const pick = autoQuality(app.renderer);
+    if (!settings.qualityChosen && settings.quality === 'high' && pick !== 'high') {
+      settings.quality = pick; app.renderer.setQuality(pick);
+      setTimeout(() => toast(`Graphics set to ${pick === 'low' ? 'Performance' : 'Balanced'} for this PC's graphics chip (Settings → Graphics to change it).`), 6000);
+    }
+    saveSettings();
+  }
   app.camera = new Camera();
   app.cameraRig = new CameraRig(app.camera);
   app.cameraRig.mode = settings.camera;
@@ -169,7 +182,27 @@ app.modalOpen = modalOpen;
 app.onFocusLost = () => { if (app.controller && app.controller.onFocusLost) app.controller.onFocusLost(); };
 
 let last = performance.now(), fpsAcc = 0, fpsN = 0;
+// v0.4.8.9 qp15: the frame rate (core/pacing.js): capped in front, a trickle in the background, and after 20 s in the
+// background the textures no scene is using are let go (world/release.js: rebuilt, the same pixels, if they're needed)
+const pacer = new Pacer();
+let bgSince = 0, bgTrimmed = false, menuSince = 0, menuTrimmed = false;
+// (in the menus for a minute and a half: the venue and athlete textures kept for a quick trip back are cut to a small
+// budget; a park visit used to leave about 300 MB of them held in the menus, system memory on built-in graphics)
+const MENU_KEEP = 64 * 1048576;
+const liveGame = () => app.mode === 'match' || app.world?.mode === 'match' || app.controller?.mode === 'match';
+function background() { try { return document.hidden || !document.hasFocus(); } catch { return false; } }
 function loop(now) {
+  const bg = background();
+  if (bg) {
+    if (!bgSince) bgSince = now;
+    else if (!bgTrimmed && now - bgSince > 20000 && settings.bgMode !== 'full') { bgTrimmed = true; try { trimCaches(app.renderer.ctx, 0); } catch (e) { console.warn(e); } }
+  } else { bgSince = 0; bgTrimmed = false; }
+  app.inBackground = bg && settings.bgMode !== 'full';
+  if (app.mode === 'menu') {
+    if (!menuSince) menuSince = now;
+    else if (!menuTrimmed && now - menuSince > 90000) { menuTrimmed = true; try { trimCaches(app.renderer.ctx, MENU_KEEP); } catch (e) { console.warn(e); } }
+  } else { menuSince = 0; menuTrimmed = false; }
+  if (!pacer.due(now, targetFps({ background: bg, live: liveGame(), bgMode: settings.bgMode, cap: settings.fpsCap }))) { requestAnimationFrame(loop); return; }
   const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
   last = now;
   const inp = app.input;

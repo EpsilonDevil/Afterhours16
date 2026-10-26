@@ -68,8 +68,10 @@ test("the soundtrack's recent tracks, the ICON Squad windows and the shader log:
   assert.ok(r.includes('localStorage.getItem(PROGRAM_LOG) ?? localStorage.getItem(OLD_PROGRAM_LOG)') && r.includes('localStorage.setItem(PROGRAM_LOG,'));
   // (a page-to-page hint, nothing kept: just the new name)
   assert.equal((src('client/js/ui/online.js').match(/'rimrift\.openOnline'/g) || []).length, 5);
-  // the first-start check for the graphics preset looks at the key the settings are saved under
-  assert.ok(src('client/js/main.js').includes('if (!localStorage.getItem(SETTINGS_KEY)) { settings.quality = autoQuality(app.renderer);'));
+  // the first-start check for the graphics preset looks at the key the settings are saved under (v0.4.8.9 qp15: and the
+  // old one, before anything is saved: asked in main.js after settings.js had saved, it never saw a first start)
+  assert.ok(src('client/js/core/settings.js').includes('export const FIRST_RUN = (() => { try { return localStorage.getItem(KEY) == null && localStorage.getItem(OLD_SETTINGS_KEY) == null; }'));
+  assert.ok(src('client/js/main.js').includes('if (FIRST_RUN) { settings.quality = autoQuality(app.renderer);'));
 });
 
 test('the scripts: RIMRIFT in every window title and message; their folders move over the first time', () => {

@@ -324,3 +324,23 @@ The Jerseys choice on your team page used to be saved and never shown: every Pro
 - **Clearer clubhouse option:** the clubhouse's logo option now says what it changes: the clubhouse court, logo wall, banners and rug.
 - **Honey gloss:** the Honey gloss floor now has more shine than the others.
 
+---
+
+## Quick patch 15 (Oct 26): the game no longer slows your PC down
+
+### What was wrong
+We found no memory leak: memory, page size and graphics memory all stay flat over long sessions and repeated trips between the menus and the park. The slowdown came from the game working flat out the whole time it was open:
+- **It never slowed down in the background.** To keep online games in step, the game window opens with the browser's own background slow-down turned off. So when you clicked away to do something else, the game kept drawing the park (about a million triangles a frame) at your monitor's full refresh rate behind your other windows.
+- **It never picked graphics for your PC.** A bug meant the game never chose a graphics preset for your PC, so everyone started on High (the full-resolution reflections, the big shadow map and extra-sharp rendering), even on laptops with built-in graphics.
+- **No frame rate limit:** on a 144 or 240 Hz monitor the game drew 2–4 times more frames than it needed.
+
+### The fixes
+- **Slows right down in the background:** when the game window isn't the one you're using, the game drops to 10 frames a second in the menus and the park. A game in progress keeps playing at 30, so online games stay in step. To keep full speed, use Settings → **In the background** → Full speed.
+- **Frame rate limit:** Settings → **Frame rate limit** (30, 60, 120, 144 or your display's own rate) is 60 by default.
+- **Graphics picked for your PC:** new installs get a graphics preset chosen for your graphics chip. If you were left on High without ever choosing it and your PC has built-in graphics, the game switches you to Balanced once and tells you. Anything you've picked yourself stays as it is.
+- **Lighter drawing:** each player's skeleton is now sent to the graphics card once a frame instead of once for every piece of their body in every drawing step, about 55% less of that data per frame in the park.
+- **Memory given back:**
+  - After 20 seconds with the game in the background, it frees the textures nothing on screen is using.
+  - After a minute and a half in the menus, it trims the textures kept for a quick trip back to the park. A park visit used to leave about 300 MB of them in use; now it's about 110 MB, or about 20 MB once the game is in the background.
+- **Idle courts slow down in the background:** the courts you aren't watching in the park play at normal speed when the game is in the background, instead of fast-forwarding.
+

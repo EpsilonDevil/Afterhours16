@@ -23,8 +23,15 @@ const DEFAULTS = {
   adaptiveGfx: true,
   // v0.4.8.8: your Pro-Am season record over your head in the park (ui/online.js myEntry: entry.proam.showRecord)
   paRecord: false,
+  // v0.4.8.9 qp15: the frame rate limit in front (0 = the display's rate) and what the game does in the background
+  // ('save': slows right down; 'full': keeps going at full speed): core/pacing.js
+  fpsCap: 60, bgMode: 'save',
 };
 export const settings = { ...DEFAULTS };
+// v0.4.8.9 qp15: a first run is one with nothing saved yet. (main.js used to ask localStorage after this module had
+// already saved the one-time switches below, so it never saw a first run: the graphics never got picked for the PC and
+// everyone started on High)
+export const FIRST_RUN = (() => { try { return localStorage.getItem(KEY) == null && localStorage.getItem(OLD_SETTINGS_KEY) == null; } catch { return false; } })();
 try {
   let saved = localStorage.getItem(KEY);
   if (saved == null && (saved = localStorage.getItem(OLD_SETTINGS_KEY)) != null) try { localStorage.setItem(KEY, saved); } catch { /* full: read again next time */ }
@@ -47,7 +54,8 @@ export function autoQuality(renderer) {
     const gl = renderer.gl, ext = gl.getExtension('WEBGL_debug_renderer_info');
     const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
     if (/swiftshader|llvmpipe|software|basic render/i.test(name)) return 'low';
-    if (/intel|uhd|iris|mali|adreno|apple m1/i.test(name)) return 'medium';
+    // (qp15: and the graphics built into AMD processors, which name themselves plain "Radeon Graphics" or Vega N)
+    if (/intel|uhd|iris|mali|adreno|apple m1|radeon\(tm\) graphics|radeon graphics|vega \d|radeon r[2-7] /i.test(name)) return 'medium';
     return 'high';
   } catch { return 'medium'; }
 }

@@ -397,8 +397,13 @@ export class Renderer {
         }
         lastMat = m;
       }
-      c.set(p, 'uModel', mesh.bones ? IDENTITY : mesh.matrix);
-      if (mesh.bones) c.set(p, 'uBones', mesh.bones);
+      // (v0.4.8.9 qp15 perf: a program keeps its uniforms, so the model matrix and the bone palette go up only when this
+      // program last had different ones this frame. A person is a dozen meshes on one skeleton: his 24-bone palette
+      // used to go up once a mesh, every pass, 300 kB a frame in a park; now once a skeleton per program and frame.
+      // Nothing writes a palette or a matrix while a frame is drawn: the scene's updates all run before render)
+      const st = this.renderStamp, model = mesh.bones ? IDENTITY : mesh.matrix, um = p.uniforms.uModel;
+      if (um && (um.lastRef !== model || um.lastStamp !== st)) { c.set(p, 'uModel', model); um.lastRef = model; um.lastStamp = st; }
+      if (mesh.bones) { const ub = p.uniforms.uBones; if (ub && (ub.lastRef !== mesh.bones || ub.lastStamp !== st)) { c.set(p, 'uBones', mesh.bones); ub.lastRef = mesh.bones; ub.lastStamp = st; } }
       c.draw(mesh.geo);
     }
     gl.depthMask(true);
@@ -503,6 +508,7 @@ export class Renderer {
   render(scene, cam, dt = 1 / 60) {
     const gl = this.gl, c = this.ctx;
     if (c.lost) return;
+    this.renderStamp = (this.renderStamp || 0) + 1; // (qp15: drawList's uniform reuse is good for this frame only)
     this.resize();
     this.time += dt;
     c.stats.draws = 0; c.stats.tris = 0;

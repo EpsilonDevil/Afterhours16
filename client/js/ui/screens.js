@@ -6,6 +6,7 @@ import { settings, saveSettings, volumeGain } from '../core/settings.js';
 import { audio } from '../core/audio.js';
 import { music } from '../core/music.js';
 import { QUALITY } from '../gfx/renderer.js';
+import { FPS_CAPS } from '../core/pacing.js';
 import { AFFILIATIONS, EVENTS } from '../world/themes.js';
 import { ARCHETYPES } from '../sim/builds.js';
 import * as Builder from './builder.js';
@@ -220,6 +221,8 @@ export function openSettings(app) {
     <div class="row between"><h2>Settings</h2><div class="row gap">${app.mode === 'menu' ? '<button class="btn ghost small" data-title title="See the title screen again">Title screen</button>' : ''}<button class="btn ghost small" data-bug title="F8 anywhere">Report a bug</button></div></div>
     <div class="settings-grid">
       <label>Graphics<select data-k="quality">${Object.entries(QUALITY).map(([k, v]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>
+      <label title="The most frames a second the game draws while you're playing (fewer: a cooler, quieter PC)">Frame rate limit<select data-k="fpsCap">${FPS_CAPS.map(([v, l]) => `<option value="${v}" ${(+settings.fpsCap || 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label title="When you click out of the game window: Save power slows the game right down so the rest of your PC runs smoothly (a game in progress keeps playing)">In the background<select data-k="bgMode"><option value="save" ${settings.bgMode !== 'full' ? 'selected' : ''}>Save power</option><option value="full" ${settings.bgMode === 'full' ? 'selected' : ''}>Full speed</option></select></label>
       <label>Default camera<select data-k="camera"><option value="2k" ${settings.camera === '2k' ? 'selected' : ''}>2K Cam</option><option value="broadcast" ${settings.camera === 'broadcast' ? 'selected' : ''}>Broadcast</option><option value="player" ${settings.camera === 'player' ? 'selected' : ''}>Player Lock</option></select></label>
       <label>AI difficulty<select data-k="difficulty">${[[0.35, 'Rookie'], [0.6, 'Pro'], [0.8, 'All-Star'], [0.95, 'Hall of Fame']].map(([v, l]) => `<option value="${v}" ${Math.abs(settings.difficulty - v) < 0.01 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Music<select data-k="music"><option value="1" ${settings.music ? 'selected' : ''}>On</option><option value="0" ${!settings.music ? 'selected' : ''}>Off</option></select></label>
@@ -253,7 +256,8 @@ export function openSettings(app) {
   card.querySelectorAll('[data-k]').forEach(el => el.onchange = el.oninput = () => {
     const k = el.dataset.k;
     let v = el.value;
-    if (['sfx', 'crowd', 'musicVol', 'difficulty', 'deadzone'].includes(k)) v = +v;
+    if (['sfx', 'crowd', 'musicVol', 'difficulty', 'deadzone', 'fpsCap'].includes(k)) v = +v;
+    if (k === 'quality') settings.qualityChosen = true; // (qp15: the PC's own pick never overrides a choice)
     if (['music', 'tags', 'showFps', 'vibration', 'proStickShoot', 'invertY', 'lockIn', 'pauseOnBlur', 'gradeHud', 'shotMeter', 'shotFeedback', 'shotFeedbackAll', 'defArrows', 'adaptiveGfx', 'paRecord'].includes(k)) v = v === '1';
     settings[k] = v; saveSettings();
     if (k === 'quality') app.renderer.setQuality(v);
