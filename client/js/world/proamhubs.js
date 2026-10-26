@@ -76,7 +76,7 @@ export const customizable = tier => tierRank(tier) >= 2; // (Gold and up: §8 Go
 // agent's settings panel keeps it, the hub renders it)
 export const HUB_FLOORS = {
   natural: { label: 'Natural maple', tone: [0.84, 0.62, 0.4], slab: '#7f5d3b' },
-  honey: { label: 'Honey gloss', tone: [0.92, 0.6, 0.3], slab: '#8a5527' },
+  honey: { label: 'Honey gloss', tone: [0.92, 0.6, 0.3], slab: '#8a5527', gloss: 0.1, reflect: 0.75, rough: 0.16 }, // (qp14: it shines like its name says)
   ebony: { label: 'Ebony stain', tone: [0.34, 0.25, 0.19], slab: '#251c16' },
   whitewash: { label: 'Whitewashed', tone: [0.93, 0.87, 0.77], slab: '#a99d8a' },
   slate: { label: 'Slate gray', tone: [0.52, 0.52, 0.55], slab: '#46474b' },
@@ -89,9 +89,9 @@ export const HUB_WALLS = {
   team: { label: 'Team colors' },
 };
 export const HUB_LOGOS = ['bolt', 'crown', 'flame', 'star', 'shield', 'hex', 'circle', 'diamond', 'wolf', 'eagle', 'skull', 'wave']; // (server/proam.py LOGOS)
-const DRAWN = new Set(['circle', 'shield', 'diamond', 'hex', 'star', 'crown', 'bolt']);
-// the shape T.drawLogo paints for a team logo (the ones it has no drawing for are a roundel with the abbreviation)
-export const logoShape = l => (DRAWN.has(l) ? l : 'circle');
+// the shape T.drawLogo paints for a team logo (v0.4.8.9 qp14: it draws every one of them now: the flame, wolf, eagle,
+// skull and wave used to fall back to a plain roundel; anything unknown still does)
+export const logoShape = l => (HUB_LOGOS.includes(l) ? l : 'circle');
 
 // the team's look in the hub: name, abbreviation, colors and logo, and (Gold and up) the floor and walls it chose
 export function hubLook(team = {}) {
@@ -1083,7 +1083,7 @@ function floorMaterials(B, tier, look) {
 function slabMaterial(B, look, mat = null) {
   const f = HUB_FLOORS[look.floor] || HUB_FLOORS.natural, wood = woodTextures(B.ctx, f.tone);
   const m = mat || new Material({ normalScale: 0.35, roughness: 0.3, uvScale: [0.5, 0.5], specular: 1.0 });
-  m.map = wood.color; m.normalMap = wood.normal; m.floorStyle = look.floor;
+  m.map = wood.color; m.normalMap = wood.normal; m.floorStyle = look.floor; m.roughness = f.rough ?? 0.3;
   return m;
 }
 function ceilMaterials(tier) {
@@ -1097,7 +1097,7 @@ export function hubCourtSpec(tier, look) {
   if (tier === 'bronze') return { surface: 'wood', paint: mixHex(SCHOOL_B.color, '#8a6a4a', 0.25), lines: '#efe6cf', apron: null, keyText: '', logo: { shape: 'circle', color: SCHOOL_B.color, accent: SCHOOL_B.accent, text: SCHOOL_B.abbr, size: 1.25 }, baselineText: SCHOOL_B.name, sideText: SCHOOL_B.mascot, reflective: true, reflectStrength: 0.22, gloss: 0.48, woodTone: [0.86, 0.65, 0.39] };
   if (tier === 'silver') return { surface: 'wood', paint: SCHOOL_S.color, lines: '#f8f4ea', apron: null, keyText: SCHOOL_S.abbr, paintCircle: true, logo: { shape: 'diamond', color: SCHOOL_S.color, accent: SCHOOL_S.accent, text: SCHOOL_S.abbr, size: 1.5 }, baselineText: SCHOOL_S.name, sideText: SCHOOL_S.mascot, reflective: true, reflectStrength: 0.5, gloss: 0.24, woodTone: [0.88, 0.63, 0.37] };
   const f = HUB_FLOORS[look.floor] || HUB_FLOORS.natural;
-  return { surface: 'wood', paint: look.primary, lines: luma(f.slab) < 0.25 ? '#f4f1ea' : '#f8f6f0', apron: mixHex(look.primary, '#000000', 0.35), keyText: look.abbr, paintCircle: true, logo: { shape: logoShape(look.logo), color: look.primary, accent: look.secondary, text: look.abbr, size: 1.7 }, baselineText: look.name.toUpperCase(), sideText: `${look.abbr} · PRO-AM`, reflective: true, reflectStrength: 0.55, gloss: 0.22, woodTone: f.tone };
+  return { surface: 'wood', paint: look.primary, lines: luma(f.slab) < 0.25 ? '#f4f1ea' : '#f8f6f0', apron: mixHex(look.primary, '#000000', 0.35), keyText: look.abbr, paintCircle: true, logo: { shape: logoShape(look.logo), color: look.primary, accent: look.secondary, text: look.abbr, size: 1.7 }, baselineText: look.name.toUpperCase(), sideText: `${look.abbr} · PRO-AM`, reflective: true, reflectStrength: f.reflect ?? 0.55, gloss: f.gloss ?? 0.22, woodTone: f.tone };
 }
 
 // ---------------- the venue ----------------

@@ -12,6 +12,7 @@ import { $, $$, esc, toast, modal, closeModal, keepScroll, busy, confirmBox } fr
 import { rankEmblemSVG } from './badgeart.js';
 import { divInfo, RP_MAX, seriesShape } from '../sim/ranks.js';
 import { teamProgress } from '../world/proamhubs.js'; // (qp8: the team's own rank and its next building)
+import { JERSEYS, logoURL, drawKit } from '../world/proamkit.js'; // (qp14: the logo and the kit as the game draws them)
 
 // the twelve home courts (world/proamparks.js PROAM_PARKS; the server's proam.PARKS)
 export const PARKS = [['overpass', 'Under the Overpass'], ['longbeach', 'Long Beach'], ['aau', 'AAU Gym'], ['rooftop', 'Rooftop'], ['projects', 'Projects'],
@@ -19,7 +20,7 @@ export const PARKS = [['overpass', 'Under the Overpass'], ['longbeach', 'Long Be
   ['desert', 'Desert Dusk'], ['market', 'Night Market']];
 export const parkName = id => (PARKS.find(p => p[0] === id) || [null, 'A different park every home game'])[1];
 export const venueName = v => parkName(String(v || '').replace(/^proam_/, ''));
-export const JERSEYS = [['classic', 'Classic'], ['stripe', 'Stripe'], ['split', 'Split'], ['gradient', 'Fade']];
+export { JERSEYS }; // (qp14: world/proamkit.js keeps the list with the kits it names)
 export const READY_SECS = 20;
 
 // ---------------- small pieces ----------------
@@ -36,7 +37,11 @@ export function seasonLine(s, now = Date.now() / 1000) {
   const end = new Date(s.end * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' });
   return `Season ${s.n} · ends ${end} (${countdown(s.end - now)})`;
 }
-const logoTag = t => `<span class="pa-logo" style="--c1:${esc(t.primary || '#2457c5')};--c2:${esc(t.secondary || '#f2c14e')}">${esc(t.abbr || '')}</span>`;
+// (qp14: the team's real logo, drawn the way its court and banners draw it; the colored tile with its letters where no
+// canvas can draw it)
+const logoTag = t => { const u = logoURL(t, 96); return u ? `<span class="pa-logo pic"><img src="${u}" alt="${esc(t.abbr || '')}"></span>` : `<span class="pa-logo" style="--c1:${esc(t.primary || '#2457c5')};--c2:${esc(t.secondary || '#f2c14e')}">${esc(t.abbr || '')}</span>`; };
+const logoName = l => (l === 'circle' ? 'Roundel' : l === 'hex' ? 'Hexagon' : l[0].toUpperCase() + l.slice(1));
+const logoChip = (l, v, on, attr = 'data-val') => { const u = logoURL({ ...v, logo: l }, 48); return `<button class="chip pa-logo-chip ${on ? 'on' : ''}" ${attr}="${l}">${u ? `<img src="${u}" alt="">` : ''}${esc(logoName(l))}</button>`; };
 const record = r => `${r?.[0] ?? 0}-${r?.[1] ?? 0}`;
 
 // the AI players on offer, five with a spread of positions: one of each position in the pool's order first, then the
@@ -156,6 +161,7 @@ export async function render(app, root, params = {}) {
   const bind = () => {
     $$('[data-go]', root).forEach(b => b.onclick = () => { view = b.dataset.go; draw(true); if (view === 'join' && !results) search(''); });
     const create = $('[data-create]', root);
+    if (create) bindPicks(root); // (qp14: the create form's logo and jersey picks never took: only the settings panel bound them)
     if (create) create.onclick = async () => {
       if (create.disabled) return; busy(create, true);
       try { await paReq(app, 'POST', '/api/proam/create', { team: readSettings(root) }); toast('Your Pro-Am team is official.'); view = 'team'; await reload(true); }
@@ -369,6 +375,7 @@ export async function openInviteDialog(app, team = null, opts = {}) {
 }
 
 // ---------------- team settings (create and the founder's panel) ----------------
+const JERSEY_TIPS = { classic: 'Side panels and trim in your second color', stripe: 'A bold band of your second color round the waist; bands round the shorts', split: 'One side in each color, front and back', gradient: 'Your color fading into the second toward the hem' };
 function settingsForm(st, t) {
   const logos = st.rules.logos, v = t || { name: '', abbr: '', primary: '#2457c5', secondary: '#f2c14e', logo: 'bolt', jersey: 'classic', court: null, open: true };
   return `<div class="pa-form">
@@ -376,8 +383,9 @@ function settingsForm(st, t) {
     <label>Abbreviation<input class="text abbr" data-f="abbr" maxlength="4" value="${esc(v.abbr || '')}" placeholder="NS"></label>
     <label>Main color<input type="color" data-f="primary" value="${esc(v.primary || '#2457c5')}"></label>
     <label>Second color<input type="color" data-f="secondary" value="${esc(v.secondary || '#f2c14e')}"></label>
-    <span class="muted small">Logo</span><div class="chips" data-pick="logo">${logos.map(l => `<button class="chip ${v.logo === l ? 'on' : ''}" data-val="${l}">${esc(l[0].toUpperCase() + l.slice(1))}</button>`).join('')}</div>
-    <span class="muted small">Jerseys</span><div class="chips" data-pick="jersey">${JERSEYS.map(([k, n]) => `<button class="chip ${(v.jersey || 'classic') === k ? 'on' : ''}" data-val="${k}">${n}</button>`).join('')}</div>
+    <div class="pa-preview" data-preview><img data-prev-logo alt=""><canvas data-prev-kit width="150" height="195"></canvas><small class="muted">How your team looks in the game</small></div>
+    <span class="muted small">Logo</span><div class="chips" data-pick="logo">${logos.map(l => logoChip(l, v, v.logo === l)).join('')}</div>
+    <span class="muted small">Jerseys</span><div class="chips" data-pick="jersey">${JERSEYS.map(([k, n]) => `<button class="chip ${(v.jersey || 'classic') === k ? 'on' : ''}" data-val="${k}" title="${esc(JERSEY_TIPS[k] || '')}">${n}</button>`).join('')}</div>
     <label>Home court<select data-f="court"><option value="">A different park every home game</option>${PARKS.map(([k, n]) => `<option value="${k}" ${v.court === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
     <label class="row gap"><input type="checkbox" data-f="open" ${v.open !== false ? 'checked' : ''}> Open to anyone (off: players ask, you accept)</label>
   </div>`;
@@ -399,7 +407,7 @@ function customForm(st, t) {
   return `<h4>Clubhouse</h4><div class="pa-form pa-custom">
     <span class="muted small">Floor</span>${chips('floor', CUSTOM_FLOORS, cu.floor || 'natural')}
     <span class="muted small">Walls</span>${chips('walls', CUSTOM_WALLS, cu.walls || 'brick')}
-    <span class="muted small">Logo wall</span>${chips('logo', st.rules.logos.map(l => [l, l[0].toUpperCase() + l.slice(1)]), cu.logo || t.logo || 'bolt')}
+    <span class="muted small">Clubhouse logo (its court, logo wall, banners and rug)</span><div class="chips" data-pick="c-logo">${st.rules.logos.map(l => logoChip(l, { primary: cols[0], secondary: cols[1], abbr: t.abbr }, (cu.logo || t.logo || 'bolt') === l)).join('')}</div>
     <label>Clubhouse main color<input type="color" data-f="c-primary" value="${esc(cols[0])}"></label>
     <label>Clubhouse second color<input type="color" data-f="c-secondary" value="${esc(cols[1])}"></label>
   </div>`;
@@ -410,7 +418,23 @@ export function readCustom(root) {
   return { custom: { floor: pick('floor') || 'natural', walls: pick('walls') || 'brick', logo: pick('logo') || 'bolt', colors: [$('[data-f="c-primary"]', root).value, $('[data-f="c-secondary"]', root).value] } };
 }
 function bindPicks(root) {
-  $$('[data-pick]', root).forEach(g => $$('.chip', g).forEach(b => b.onclick = () => { $$('.chip', g).forEach(x => x.classList.toggle('on', x === b)); }));
+  $$('[data-pick]', root).forEach(g => $$('.chip', g).forEach(b => b.onclick = () => { $$('.chip', g).forEach(x => x.classList.toggle('on', x === b)); preview(root); }));
+  // (qp14: the preview and the logo chips follow the name, colors and picks as you change them)
+  for (const k of ['abbr', 'primary', 'secondary']) { const i = $(`[data-f="${k}"]`, root); if (i) i.addEventListener('input', () => preview(root, true)); }
+  preview(root, true);
+}
+// the team as the game will draw it: its logo and its kit (world/proamkit.js), from what the form says now
+function preview(root, recolor = false) {
+  const box = $('[data-preview]', root);
+  if (!box) return;
+  let v;
+  try { v = readSettings(root); } catch { return; }
+  v.abbr = String(v.abbr || '').toUpperCase();
+  const img = $('[data-prev-logo]', box), u = logoURL(v, 128);
+  if (img && u) img.src = u;
+  const cv = $('[data-prev-kit]', box), g = cv?.getContext?.('2d');
+  if (g) drawKit(g, cv.width, cv.height, v, 23);
+  if (recolor) $$('[data-pick="logo"] .chip', root).forEach(b => { const im = $('img', b), x = logoURL({ ...v, logo: b.dataset.val }, 48); if (im && x) im.src = x; });
 }
 
 // another team's page (search): its division, record, roster (an AI team's players by name and build)

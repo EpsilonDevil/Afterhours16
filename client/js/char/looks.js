@@ -321,6 +321,12 @@ export function morroTile(lx, ly, glaze, ink) {
   return border || petal || (cr > 0.17 && cr < 0.25) || cr < 0.08 ? ink : glaze;
 }
 
+// v0.4.8.9 qp14: the Pro-Am kits' shared geometry. The texture's u runs round the body from the right side: the front's
+// middle at .25, the left side at .5, the back's middle at .75 (athlete.js torsoPoint: x follows sin(phi)); a leg's own u
+// is the left leg's from .5 (athlete.js buildBottom). The Split's second color is the wearer's left side.
+export const paSecSide = u => u >= 0.25 && u < 0.75;
+// the Stripe's waist band, as a share of the jersey's length from the collar (under the number, over the hem)
+export const PA_BAND = [0.6, 0.7];
 export function paintTop(spec) {
   const W = spec.res || 512, S = W / 512, c = canvas(W, W), g = c.getContext('2d');
   const base = hexToRgb(spec.color || '#2a6fdb'), trim = hexToRgb(spec.trim || '#ffffff'), sec = hexToRgb(spec.secondary || spec.trim || '#ffffff');
@@ -329,6 +335,9 @@ export function paintTop(spec) {
   const img = g.createImageData(W, W), d = img.data;
   const TH = Math.round(384 * S), hem = spec.hem, top = spec.neckTop;
   const keep = spec.keep || (() => true);
+  // (qp14: a Pro-Am kit; the Split's trims are the other side's color, so they show on both halves)
+  const pa = typeof spec.pattern === 'string' && spec.pattern.startsWith('pa_');
+  const splitTrim = u => (spec.pattern === 'pa_split' && paSecSide(u) ? base : trim);
   // v0.4.8.7 The Favelas: the Morro Kit (pattern 'morro'): sun-faded stripes and a band of painted tiles round the hem; a
   // football shirt's open mesh
   const morro = spec.pattern === 'morro', mst = morro ? (spec.stripes || ['#efc64a', '#2f6fb3']).map(hexToRgb) : null;
@@ -351,9 +360,18 @@ export function paintTop(spec) {
       if (spec.pattern === 'stripes' && Math.floor(y / (22 * S)) % 2 === 0) col = mix(base, sec, 0.35);
       if (spec.pattern === 'gradient') col = mix(base, sec, Math.pow(y / TH, 1.6) * 0.8);
       if (spec.pattern === 'sash') { const k = (u - 0.18) * 1.6 - (y / TH) * 0.9; if (Math.abs(k) < 0.06 && u < 0.4) col = sec; }
+      // v0.4.8.9 qp14: the Pro-Am team jerseys (world/proamkit.js): Stripe, a bold band round the waist between two
+      // pinlines, under the number; Split, one side of the body in each color, front and back; Fade, the first color
+      // melting into the second toward the hem
+      if (pa) {
+        const f = y / TH;
+        if (spec.pattern === 'pa_stripe' && ((f > PA_BAND[0] && f < PA_BAND[1]) || Math.abs(f - PA_BAND[0] + 0.035) < 0.009 || Math.abs(f - PA_BAND[1] - 0.035) < 0.009)) col = sec;
+        else if (spec.pattern === 'pa_split' && paSecSide(u)) col = sec;
+        else if (spec.pattern === 'pa_fade') col = mix(base, sec, smoothT(0.32, 0.96, f)); // (a quick blend: less of the muddy middle two colors make)
+      }
       if (morro) { col = morroStripe(u, base, mst, y / TH, noise(x * 0.02 / S, y * 0.03 / S)); if (y > TH - 52 * S && y < TH - 8 * S) col = morroTile((u * 24) % 1, ((y - (TH - 52 * S)) / (22 * S)) % 1, cream, tileInk) || col; }
-      if (edge) col = trim;
-      if (fam === 'jersey' && y > TH - 10 * S) col = trim;
+      if (edge) col = splitTrim(u);
+      if (fam === 'jersey' && y > TH - 10 * S) col = splitTrim(u);
       if (fam === 'hoodie') {
         // kangaroo pocket on the front
         const pu = Math.abs(u - 0.25), pv = y / TH;
@@ -384,8 +402,9 @@ export function paintTop(spec) {
     g.fillStyle = rgbStr(fill); g.fillText(txt, 0, 0);
     g.restore();
   };
-  const numFill = fam === 'jersey' ? trim : (spec.printColor ? hexToRgb(spec.printColor) : trim);
-  const numStroke = fam === 'jersey' ? sec : null;
+  // (qp14: a kit can give its letters their own ink and edge, e.g. the Split's, which has to read on both colors)
+  const numFill = spec.numInk ? hexToRgb(spec.numInk) : fam === 'jersey' ? trim : (spec.printColor ? hexToRgb(spec.printColor) : trim);
+  const numStroke = spec.numEdge ? hexToRgb(spec.numEdge) : fam === 'jersey' ? sec : null;
   if (morro) {
     // (a football shirt: the name across the chest and a small number over the heart; the big number on the back)
     const num = String(spec.number ?? 0);
@@ -898,12 +917,23 @@ export function paintShorts(spec) {
   // v0.4.8.7 The Favelas: the Morro Kit shorts (pattern 'morro'): the jersey's sun-faded stripes, a cream waistband, the
   // painted tiles round both hems
   const morro = spec.pattern === 'morro', mst = morro ? (spec.stripes || ['#efc64a', '#2f6fb3']).map(hexToRgb) : null, tileInk = hexToRgb(spec.tile || '#2453a6');
+  // v0.4.8.9 qp14: the Pro-Am kits' shorts: Stripe, a band round each leg above the hem; Split, the left side and the left
+  // leg in the second color (the waistband and hems in the other side's color); Fade, the legs melting into the second color
+  const pat = spec.pattern, sec = hexToRgb(spec.secondary || spec.stripe || spec.trim || '#ffffff');
+  const swap = sideSec => (pat === 'pa_split' && sideSec ? base : trim);
   for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
     const u = x / W, v = y / W;
     let col = morro ? morroStripe(u * 0.5, base, mst, v < 0.5 ? 0.6 : 1, noise(x * 0.02 / S, y * 0.03 / S)) : base;
     if (v < 0.5) {
-      if (v < 0.045) col = jog ? shade(base, 0.8) : trim;
+      if (pat === 'pa_split' && paSecSide(u)) col = sec;
+      if (v < 0.045) col = jog ? shade(base, 0.8) : swap(paSecSide(u));
       if (spec.stripe && (u < 0.03 || u > 0.97 || Math.abs(u - 0.5) < 0.03)) col = stripe;
+    } else if (pat === 'pa_stripe' || pat === 'pa_split' || pat === 'pa_fade') {
+      const left = u >= 0.5;
+      if (pat === 'pa_split' && left) col = sec;
+      if (pat === 'pa_fade') col = mix(base, sec, smoothT(0.55, 1.0, v));
+      if (pat === 'pa_stripe' && ((v > 0.86 && v < 0.915) || (v > 0.83 && v < 0.842))) col = sec;
+      if (v > 0.955) col = swap(left);
     } else {
       const lu = u < 0.5 ? u * 2 : (u - 0.5) * 2; // local leg u
       const lateral = u < 0.5 ? Math.abs(lu - 0.5) : Math.min(lu, 1 - lu);

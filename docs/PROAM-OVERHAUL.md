@@ -247,6 +247,23 @@ Each member's game sends his card with every status.
 - **A series they finish** moves the team by `team_series_won` / `team_series_lost`. It pays no bonus and no personal RP, and it isn't settled for anyone: nobody real played its end.
 - **The real members** see it on the whiteboard and in a "while you were away" toast.
 
+## 12. Jerseys and logos as named (v0.4.8.9 qp14)
+- **Jerseys** (`world/proamkit.js` `paKit(brand, number)`, painted by `char/looks.js`): the team page's pick is worn in
+  every Pro-Am game (offline, series, online) and in the HUB's home-court runs (the team's own colors, not the clubhouse's).
+  Server keys unchanged (`classic`, `stripe`, `split`, `gradient`). Classic = pattern `panel` (exactly the old uniform);
+  Stripe = `pa_stripe` (a band round the waist between two pinlines, `PA_BAND` [0.6, 0.7] of the jersey length, under the
+  number; leg bands on the shorts); Split = `pa_split` (the wearer's left side in the second color, texture u .25–.75 and
+  the left leg; trims in the other side's color; letters in `bothInk` edged in the other ink); Fade = `pa_fade` (smoothstep
+  .32–.96 down the jersey; the shorts' legs from v .55). AI teams wear Classic.
+- **Logos** (`gfx/textures.js` `drawLogo`): every one of `LOGOS` has a drawing. Picture logos (`EMBLEM_SHAPES`: bolt,
+  flame, wolf, eagle, skull, wave) are drawn from their own paths; all but the flame sit in a roundel with the abbreviation
+  on a ribbon (the flame's letters on its inner tongue). Geometric ones fit their letters inside the shape. `logoShape`
+  passes every logo through (unknown → circle).
+- **Menus** (`ui/proam.js`): team rows and heads show the drawn logo (`logoURL`); the logo pickers show each logo; the
+  create and settings forms have a live preview of the logo and the kit (`drawKit`, the same patterns flat). The create
+  form's picks now take (only the settings panel used to bind them). The clubhouse's logo pick is labelled for what it
+  changes (court, logo wall, banners, rug). Honey gloss is glossier than the other floors.
+
 ## Ownership (who edits what)
 - **Server/UI agent:**
   - New server files: `server/proam.py`, migration `016_v0488_proam.sql`.

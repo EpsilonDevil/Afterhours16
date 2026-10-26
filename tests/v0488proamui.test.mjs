@@ -136,7 +136,9 @@ test('the first visit: create a team or join one; creating it lands on the team 
   root.querySelector('[data-go="create"]').click();
   root.querySelector('[data-f="name"]').value = 'Night Shift'; root.querySelector('[data-f="abbr"]').value = 'ns';
   root.querySelector('[data-pick="logo"] [data-val="crown"]').click();
-  assert.deepEqual(P.readSettings(root), { name: 'Night Shift', abbr: 'ns', primary: '#2457c5', secondary: '#f2c14e', logo: 'bolt', jersey: 'classic', court: null, open: true }, '(the picks only change on the panel that binds them)');
+  root.querySelector('[data-pick="jersey"] [data-val="split"]').click();
+  // (qp14: the create form's picks take now: they never did, only the settings panel bound them)
+  assert.deepEqual(P.readSettings(root), { name: 'Night Shift', abbr: 'ns', primary: '#2457c5', secondary: '#f2c14e', logo: 'crown', jersey: 'split', court: null, open: true });
   await root.querySelector('[data-create]').click(); await flush();
   const created = svc.calls.find(c => c[1] === '/api/proam/create');
   assert.equal(created[2].team.name, 'Night Shift');

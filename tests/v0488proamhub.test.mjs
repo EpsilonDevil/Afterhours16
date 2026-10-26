@@ -259,7 +259,7 @@ test('a Gold clubhouse\'s floor, walls, logo and colors change its materials; Br
   // the choices are the ones the settings panel offers
   for (const k of Object.keys(W.HUB_FLOORS)) assert.ok(W.HUB_FLOORS[k].label && W.HUB_FLOORS[k].tone.length === 3);
   for (const k of Object.keys(W.HUB_WALLS)) assert.ok(W.HUB_WALLS[k].label);
-  assert.ok(W.HUB_LOGOS.includes('wolf') && W.logoShape('wolf') === 'circle' && W.logoShape('bolt') === 'bolt');
+  assert.ok(W.HUB_LOGOS.includes('wolf') && W.logoShape('wolf') === 'wolf' && W.logoShape('bolt') === 'bolt' && W.logoShape('nope') === 'circle'); // (qp14: every logo is drawn now)
   // junk falls back; Bronze and Silver ignore a custom look
   const junk = W.hubLook({ ...TEAM, custom: { floor: 'lava', walls: 'gold leaf', logo: 'x', colors: ['red', 7] } });
   assert.deepEqual([junk.floor, junk.walls, junk.logo, junk.primary], ['natural', 'brick', 'shield', '#2457c5']);

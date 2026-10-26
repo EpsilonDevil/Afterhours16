@@ -863,6 +863,17 @@ select { background-color: rgba(255,255,255,.06); }
 .pa-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin: 10px 0 14px; }
 .pa-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .pa-form .chips { grid-column: 1 / -1; }
+/* v0.4.8.9 qp14: the team's real logo in the rows and heads, logo pickers that show each logo, and the preview (logo and
+   kit as the game draws them) */
+.pa-logo.pic { background: none; border: 0; border-radius: 0; }
+.pa-logo.pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pa-head .pa-logo.pic { width: 56px; height: 56px; }
+.pa-logo-chip { display: inline-flex; align-items: center; gap: 6px; padding-left: 5px; }
+.pa-logo-chip img { width: 24px; height: 24px; display: block; }
+.pa-preview { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .08); }
+.pa-preview img { width: 112px; height: 112px; }
+.pa-preview canvas { width: 120px; height: 156px; }
+.pa-preview small { align-self: flex-end; }
 .pa-builds { display: grid; gap: 6px; } .pa-build { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pa-games { width: 100%; border-collapse: collapse; } .pa-games td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .pa-games tr.won td:last-child b { color: var(--good); } .pa-games tr.lost td:last-child b { color: var(--bad); }

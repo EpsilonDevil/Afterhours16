@@ -487,6 +487,7 @@ export function drawLogo(g, logo, x, y, size) {
   if (shape === 'jack') { if (logo.rotate) g.rotate(logo.rotate); drawJackLogo(g, logo, size); g.restore(); return; } // (v0.4.8.5 quick patch 2)
   if (shape === 'pipa') { if (logo.rotate) g.rotate(logo.rotate); drawPipaLogo(g, logo, size); g.restore(); return; } // (v0.4.8.7 The Favelas)
   if (shape === 'rimrift') { if (logo.rotate) g.rotate(logo.rotate); drawRimriftLogo(g, logo, size); g.restore(); return; } // (v0.4.8.6)
+  if (EMBLEMS[shape]) { if (logo.rotate) g.rotate(logo.rotate); drawEmblem(g, logo, size, shape); g.restore(); return; } // (v0.4.8.9 qp14)
   g.fillStyle = logo.color; g.strokeStyle = logo.accent || '#fff'; g.lineWidth = size * 0.06;
   g.beginPath();
   if (shape === 'circle') g.arc(0, 0, size, 0, Math.PI * 2);
@@ -500,11 +501,112 @@ export function drawLogo(g, logo, x, y, size) {
   g.globalAlpha = logo.alpha ?? 0.9; g.fill(); g.globalAlpha = 1; g.stroke();
   if (logo.text) {
     g.fillStyle = logo.accent || '#fff';
-    const fs = size * (logo.text.length > 4 ? 0.42 : 0.62);
+    // (v0.4.8.9 qp14: the letters fit inside the shape: no wider than its middle, and the crown's sit in its band)
+    let fs = size * (logo.text.length > 4 ? 0.42 : 0.62);
     g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(logo.text, 0, size * 0.04);
+    const room = size * (TEXT_ROOM[shape] ?? 1.5), wide = g.measureText?.(logo.text)?.width;
+    if (wide > room) { fs *= room / wide; g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; }
+    g.fillText(logo.text, 0, size * (shape === 'crown' ? 0.26 : shape === 'star' ? 0.1 : 0.04));
   }
   g.restore();
+}
+// how wide the abbreviation can be inside each shape (times its size)
+const TEXT_ROOM = { circle: 1.5, shield: 1.45, hex: 1.5, diamond: 1.05, star: 0.78, crown: 1.7 };
+
+// v0.4.8.9 qp14: the Pro-Am logos that are pictures, not shapes (server/proam.py LOGOS). Each is drawn in the team's two
+// colors from its own paths, in a unit box (y down, -1..1), and the abbreviation sits where it reads: the flame's on its
+// inner tongue, the others on a ribbon across the foot of a roundel (the bolt, the wolf's head, the eagle's, the skull,
+// the wave)
+const EMBLEMS = {
+  // a lightning bolt across the roundel (it used to be the bolt alone with the letters over it, where they hid it)
+  bolt: (g, P) => {
+    P([['M', 0.22, -0.84], ['L', -0.46, -0.04], ['L', -0.04, -0.04], ['L', -0.22, 0.58], ['L', 0.48, -0.22], ['L', 0.06, -0.22]], 'figure'); // (above the ribbon)
+  },
+  // a fire: the outer flame with two licks, and the inner tongue in the second color
+  flame: (g, P) => {
+    P([['M', 0, -1], ['C', 0.32, -0.62, 0.12, -0.42, 0.42, -0.2], ['C', 0.5, -0.36, 0.56, -0.48, 0.6, -0.64],
+      ['C', 0.98, -0.18, 0.92, 0.52, 0.5, 0.8], ['C', 0.22, 0.98, -0.22, 0.98, -0.5, 0.8], ['C', -0.92, 0.52, -0.94, -0.02, -0.56, -0.38],
+      ['C', -0.56, -0.12, -0.46, 0.0, -0.3, 0.04], ['C', -0.46, -0.42, -0.22, -0.72, 0, -1]], 'body');
+    P([['M', 0.02, -0.3], ['C', 0.22, -0.02, 0.48, 0.24, 0.36, 0.56], ['C', 0.28, 0.8, -0.28, 0.8, -0.36, 0.56], ['C', -0.44, 0.28, -0.14, 0.08, 0.02, -0.3]], 'detail');
+  },
+  // a wolf's head, face on: pricked ears, the ruff at the cheeks, a long muzzle; slanted eyes and the nose in the first color
+  wolf: (g, P) => {
+    P([['M', -0.5, -0.86], ['L', -0.24, -0.46], ['L', 0.24, -0.46], ['L', 0.5, -0.86], ['L', 0.62, -0.26], ['L', 0.76, 0.04], ['L', 0.5, 0.1], ['L', 0.62, 0.3],
+      ['L', 0.3, 0.34], ['L', 0.13, 0.6], ['L', 0, 0.66], ['L', -0.13, 0.6], ['L', -0.3, 0.34], ['L', -0.62, 0.3], ['L', -0.5, 0.1], ['L', -0.76, 0.04], ['L', -0.62, -0.26]], 'figure');
+    for (const s of [-1, 1]) {
+      P([['M', s * 0.44, -0.7], ['L', s * 0.3, -0.48], ['L', s * 0.5, -0.38]], 'cut'); // (inside the ears)
+      P([['M', s * 0.44, -0.2], ['L', s * 0.14, -0.08], ['L', s * 0.38, -0.02]], 'cut'); // (the eyes)
+      P([['M', s * 0.08, -0.04], ['L', s * 0.11, 0.36], ['L', s * 0.05, 0.36], ['L', s * 0.03, -0.04]], 'cut'); // (the muzzle's ridge)
+    }
+    P([['M', -0.12, 0.38], ['L', 0.12, 0.38], ['L', 0, 0.52]], 'cut'); // (the nose)
+  },
+  // an eagle's head in profile, facing right: the swept crown, the hooked beak, the jagged neck feathers; eye, brow and
+  // the line of the beak in the first color
+  eagle: (g, P) => {
+    P([['M', -0.64, 0.56], ['L', -0.58, -0.18], ['C', -0.48, -0.5, -0.12, -0.66, 0.16, -0.62], ['C', 0.4, -0.58, 0.58, -0.46, 0.72, -0.3],
+      ['C', 0.86, -0.14, 0.9, 0.06, 0.82, 0.2], ['L', 0.72, 0.08], ['L', 0.52, 0.06], ['L', 0.36, 0.16], ['L', 0.22, 0.32], ['L', 0.12, 0.44], ['L', 0.2, 0.6],
+      ['L', -0.04, 0.54], ['L', 0.0, 0.7], ['L', -0.28, 0.6], ['L', -0.26, 0.76], ['L', -0.64, 0.56]], 'figure');
+    P([['M', 0.04, -0.42], ['L', 0.46, -0.4], ['L', 0.12, -0.3]], 'cut'); // (the brow)
+    P([['A', 0.26, -0.27, 0.075]], 'cut'); // (the eye)
+    P([['M', 0.84, 0.06], ['L', 0.5, 0.0], ['L', 0.38, 0.06], ['L', 0.5, -0.04], ['L', 0.82, -0.02]], 'cut'); // (the beak's line)
+  },
+  // a skull, face on: the cranium, cheekbones and jaw; eye sockets, nose and the gaps between the teeth in the first color
+  skull: (g, P) => {
+    P([['A', 0, -0.2, 0.62]], 'figure');
+    P([['M', -0.44, 0.1], ['L', 0.44, 0.1], ['L', 0.38, 0.4], ['L', 0.3, 0.6], ['L', -0.3, 0.6], ['L', -0.38, 0.4]], 'figure');
+    for (const s of [-1, 1]) P([['A', s * 0.24, -0.12, 0.16]], 'cut');
+    P([['M', 0, 0.06], ['L', 0.1, 0.26], ['L', -0.1, 0.26]], 'cut');
+    for (const x of [-0.21, -0.07, 0.07, 0.21]) P([['M', x - 0.018, 0.38], ['L', x + 0.018, 0.38], ['L', x + 0.018, 0.6], ['L', x - 0.018, 0.6]], 'cut');
+  },
+  // a breaking wave: the swell rising from the left, curling over at the top with the hollow under the lip
+  wave: (g, P) => {
+    P([['M', -1, 0.34], ['C', -0.6, 0.3, -0.36, 0.08, -0.22, -0.3], ['C', -0.06, -0.72, 0.5, -0.78, 0.64, -0.36], ['C', 0.72, -0.1, 0.5, 0.04, 0.34, -0.08],
+      ['C', 0.5, -0.26, 0.34, -0.46, 0.14, -0.36], ['C', -0.06, -0.26, -0.06, 0.14, 0.26, 0.3], ['C', 0.52, 0.42, 0.78, 0.36, 1, 0.3], ['L', 1, 1], ['L', -1, 1]], 'figure');
+    P([['M', -1, 0.56], ['C', -0.5, 0.46, -0.2, 0.62, 0.2, 0.52], ['C', 0.5, 0.44, 0.8, 0.54, 1, 0.5], ['L', 1, 0.6], ['C', 0.8, 0.64, 0.5, 0.54, 0.2, 0.62], ['C', -0.2, 0.72, -0.5, 0.56, -1, 0.66]], 'cut');
+  },
+};
+export const EMBLEM_SHAPES = Object.keys(EMBLEMS);
+function drawEmblem(g, logo, size, shape) {
+  const c1 = logo.color || '#2457c5', c2 = logo.accent || '#ffffff', a = logo.alpha ?? 0.9, k = size;
+  const roundel = shape !== 'flame';
+  const path = cmds => {
+    g.beginPath();
+    for (const [op, ...v] of cmds) {
+      if (op === 'M') g.moveTo(v[0] * k, v[1] * k);
+      else if (op === 'L') g.lineTo(v[0] * k, v[1] * k);
+      else if (op === 'C') g.bezierCurveTo(v[0] * k, v[1] * k, v[2] * k, v[3] * k, v[4] * k, v[5] * k);
+      else if (op === 'A') { g.moveTo((v[0] + v[2]) * k, v[1] * k); g.arc(v[0] * k, v[1] * k, v[2] * k, 0, Math.PI * 2); }
+    }
+    g.closePath();
+  };
+  // the roundel: the first color ringed in the second, the picture inside it in the second
+  if (roundel) {
+    g.beginPath(); g.arc(0, 0, k, 0, Math.PI * 2);
+    g.fillStyle = c1; g.globalAlpha = a; g.fill(); g.globalAlpha = 1;
+    g.lineWidth = k * 0.06; g.strokeStyle = c2; g.stroke();
+    g.save(); g.beginPath(); g.arc(0, 0, k * 0.9, 0, Math.PI * 2); g.clip();
+  }
+  const P = (cmds, role) => {
+    path(cmds);
+    if (role === 'body') { g.fillStyle = c1; g.globalAlpha = a; g.fill(); g.globalAlpha = 1; g.lineWidth = k * 0.06; g.strokeStyle = c2; g.lineJoin = 'round'; g.stroke(); }
+    else if (role === 'detail' || role === 'figure') { g.fillStyle = c2; g.fill(); }
+    else if (role === 'cut') { g.fillStyle = c1; g.fill(); }
+  };
+  EMBLEMS[shape](g, P);
+  if (roundel) g.restore();
+  if (!logo.text) return;
+  const txt = String(logo.text);
+  g.font = `900 ${k * (roundel ? (txt.length > 3 ? 0.27 : 0.33) : (txt.length > 3 ? 0.3 : 0.38))}px "Arial Black", Impact, sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (roundel) {
+    // the ribbon across the foot: notched ends, the first color edged in the second, the letters in the second
+    const y0 = 0.6 * k, y1 = 0.96 * k, x = 0.94 * k, n = 0.12 * k;
+    g.beginPath(); g.moveTo(-x - n, y0); g.lineTo(x + n, y0); g.lineTo(x, (y0 + y1) / 2); g.lineTo(x + n, y1); g.lineTo(-x - n, y1); g.lineTo(-x, (y0 + y1) / 2); g.closePath();
+    g.fillStyle = c1; g.fill(); g.lineWidth = k * 0.04; g.strokeStyle = c2; g.stroke();
+    g.fillStyle = c2; g.fillText(txt, 0, (y0 + y1) / 2 + k * 0.01);
+  } else {
+    g.fillStyle = c1; g.fillText(txt, 0, 0.5 * k);
+  }
 }
 
 // v0.4.8.6 RIMRIFT: the brand's centre-court logo: a Carbon medallion ringed in Ember with the mark (the fractured rim, the

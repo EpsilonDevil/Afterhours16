@@ -300,3 +300,27 @@ A full five without the draft is possible, and the AI teammates play with their 
 - **Quiet on purpose:** it plays at about **10%** of the level you hear in the park, so the arena's crowd and the game stay up front. Your music volume slider still sets that level, and turning music off still turns it off.
 - **Everywhere else is unchanged:** back in the park, the menus or the Crew HQ, the music returns to its normal level. Event parks keep their own soundtracks, and the Pro Run still has no music.
 
+---
+
+## Quick patch 14 (Oct 25): Pro-Am jerseys and logos look like their names
+
+### Your jersey pick is what your team wears
+The Jerseys choice on your team page used to be saved and never shown: every Pro-Am team played in the same jersey. Now each one is its own kit, in every Pro-Am game (offline, online and series games) and in your HUB's home-court runs:
+- **Classic:** your color with side panels and trim in your second color, and a stripe down the sides of the shorts.
+- **Stripe:** a bold band of your second color round the waist between two thin pinlines, under the number, with matching bands round each leg of the shorts.
+- **Split:** one side of the jersey and shorts in each color, front and back. The numbers are in an outlined ink that reads on both halves.
+- **Fade:** your color at the shoulders melting into your second color at the hem, and the shorts' legs fade the same way.
+
+### Every logo is drawn as named
+- **The picture logos:** Flame, Wolf, Eagle, Skull and Wave used to show up as a plain circle in the HUB and a plain box on Pro-Am park courts. Each is now its own drawing: a fire, a wolf's head, an eagle's head, a skull, and a breaking wave.
+- **Bolt:** the lightning bolt now sits in a roundel with your letters on a ribbon underneath, so the letters no longer cover the bolt.
+- **Letters that fit:** on the shape logos (Star, Diamond, Crown and the rest), your abbreviation now fits inside the shape.
+
+### See it before you pick it
+- **Real logos in the menus:** team rows, team pages and invites show each team's real logo instead of a colored tile with letters.
+- **Logo pickers:** every logo choice shows a picture of that logo in your colors.
+- **Live preview:** the create and settings forms show your logo and kit as the game draws them, and update as you change the name, colors or picks.
+- **Create form fix:** the logo and jersey picks on the Create a Pro-Am team form now actually take. Before, only the settings panel saved them.
+- **Clearer clubhouse option:** the clubhouse's logo option now says what it changes: the clubhouse court, logo wall, banners and rug.
+- **Honey gloss:** the Honey gloss floor now has more shine than the others.
+

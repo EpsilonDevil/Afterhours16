@@ -23,6 +23,7 @@
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
 import { releaseScene } from '../world/release.js';
+import { paKit } from '../world/proamkit.js';
 import { buildProamHub, hubTier, hubLook, homePark, whiteboardData, rosterData, customizable, HUB_NAMES, teamProgress, CLUB_MAX } from '../world/proamhubs.js';
 import { proamInfo } from '../world/proamparks.js';
 import { courtPlayRect } from '../world/themes.js';
@@ -96,6 +97,8 @@ function separate(a, b) {
 }
 const contrast = hex => { const c = M.hexToRgb(hex); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.55 ? '#1d2024' : '#f4f2ec'; };
 const uniform = (color, trim, abbr) => ({ top: { family: 'jersey', color, trim, secondary: trim, pattern: 'panel', lettering: abbr, tucked: true }, bottom: { family: 'shorts', color, trim, stripe: trim } });
+// (v0.4.8.9 qp14: the team in its own kit, the one its team page picked, in its own colors: world/proamkit.js)
+const teamKit = (team, number) => { const b = hubLook({ ...(team || {}), custom: null }); return paKit({ ...b, jersey: team?.jersey }, number); };
 export const HOME_FORMAT = 3; // (3s on the home court)
 
 // ---------------- qp12: the AI people in the HUB (docs/PROAM-OVERHAUL.md §11, scratchpad contract QP12 §2) ----------------
@@ -758,12 +761,12 @@ export class ProamHub {
     if (this.disposed) return false;
     this.ticket = ticket;
     const seed = ticket?.seed ?? this.rng.int(1, 1e9), used = new Set();
-    const lk = this.look, other = contrast(lk.primary);
+    const lk = this.look, other = contrast(hubLook({ ...(this.team || {}), custom: null }).primary); // (qp14: against the team's kit)
     const mates = this.aiThree(HOME_FORMAT - 1, used, `pahome${seed}m`), opp = [];
     while (opp.length < HOME_FORMAT) { const id = this.world.pick({ level: 0.62, exclude: used, key: `pahome${seed}o${opp.length}` }); used.add(id); opp.push(this.world.gameEntry(id)); }
     const char = app.char(), me = { ...this.meEntry, human: true, build: ticket ? boostedBuild(char, ticket.meta?.boosts) : { ...char }, badges: badgeTiers(char) };
     const mine = [me, ...mates.map(e => ({ ...e, human: false }))], them = opp.map(e => ({ ...e, human: false }));
-    mine.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...uniform(lk.primary, lk.secondary, lk.abbr), number: e.build.appearance?.number ?? (i * 7 + 3) % 50, name: e.name }); });
+    mine.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...teamKit(this.team, e.build.appearance?.number ?? (i * 7 + 3) % 50), name: e.name }); });
     them.forEach((e, i) => { e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...uniform(other, lk.primary, 'RUN'), number: e.build.appearance?.number ?? (i * 9 + 11) % 50, name: e.name }); });
     this.run = { mine, them, seed };
     this.hideMe(true);
@@ -821,11 +824,11 @@ export class ProamHub {
     people.forEach((p, i) => { const t = split ? i % 2 : (sides[0].length < HOME_FORMAT ? 0 : 1); sides[t].push({ entry: p.entry, person: p }); });
     const seed = newSeed(), used = new Set();
     for (const t of [0, 1]) while (sides[t].length < HOME_FORMAT) { const id = this.world.pick({ level: 0.62, exclude: used, key: `pahol${seed}-${t}-${sides[t].length}` }); used.add(id); sides[t].push({ entry: this.world.gameEntry(id) }); }
-    const lk = this.look, other = contrast(lk.primary);
+    const lk = this.look, other = contrast(hubLook({ ...(this.team || {}), custom: null }).primary); // (qp14: against the team's kit)
     const map = new Map();
     const rosters = sides.map((side, t) => side.map((x, i) => {
       const e = setupEntry(app, x.entry, !!x.person, x.person?.username);
-      e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...(t ? uniform(other, lk.primary, split ? lk.abbr : 'RUN') : uniform(lk.primary, lk.secondary, lk.abbr)), number: e.build.appearance?.number ?? (i * (t ? 9 : 7) + (t ? 11 : 3)) % 50, name: e.name });
+      e.look = resolveLook({ ...e.build, name: e.name }, this.catalog, { ...(t ? uniform(other, lk.primary, split ? lk.abbr : 'RUN') : teamKit(this.team)), number: e.build.appearance?.number ?? (i * (t ? 9 : 7) + (t ? 11 : 3)) % 50, name: e.name });
       if (x.person) map.set(e, x.person);
       return e;
     }));

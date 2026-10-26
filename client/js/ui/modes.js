@@ -3,6 +3,7 @@ import { $, $$, esc, money, toast, modal, closeModal, title, TIER, confirmBox, a
 import { AFFILIATIONS, THEMES, EVENTS, travelLock } from '../world/themes.js';
 import { Scene } from '../gfx/renderer.js';
 import { buildVenue } from '../world/venues.js';
+import { paKit, kitKey, logoURL } from '../world/proamkit.js';
 import { MatchSession } from '../game/session.js';
 import { ParkHub, badgeTiers } from '../game/park.js';
 import { makeTeam, resolveLook } from '../sim/bots.js';
@@ -611,7 +612,7 @@ export function proam(app, root) {
           <div class="row gap"><input class="text" maxlength="22" value="${esc(t.name)}" data-f="name" placeholder="Team name"><input class="text abbr" maxlength="4" value="${esc(t.abbr)}" data-f="abbr" placeholder="ABBR"></div>
           <span class="muted small">Primary</span><div class="swatches">${COLORS.map(v => `<button class="sw ${t.primary === v ? 'on' : ''}" style="--v:${v}" data-c="primary" data-val="${v}"></button>`).join('')}</div>
           <span class="muted small">Secondary</span><div class="swatches">${COLORS.map(v => `<button class="sw ${t.secondary === v ? 'on' : ''}" style="--v:${v}" data-c="secondary" data-val="${v}"></button>`).join('')}</div>
-          <span class="muted small">Logo</span><div class="chips">${app.config.logos.map(l => `<button class="chip ${t.logo === l ? 'on' : ''}" data-logo="${l}">${title(l)}</button>`).join('')}</div>
+          <span class="muted small">Logo</span><div class="chips">${app.config.logos.map(l => { const u = logoURL({ ...t, logo: l }, 48); return `<button class="chip pa-logo-chip ${t.logo === l ? 'on' : ''}" data-logo="${l}">${u ? `<img src="${u}" alt="">` : ''}${title(l)}</button>`; }).join('')}</div>
           <span class="muted small">Home floor</span><div class="chips">${app.config.woods.map(w => `<button class="chip ${t.wood === w ? 'on' : ''}" data-wood="${w}">${title(w)}</button>`).join('')}</div>
           <div class="row gap"><button class="btn" data-save>Save team</button><span class="muted small">Record ${t.wins || 0}-${t.losses || 0}</span></div>
         </div>
@@ -787,8 +788,9 @@ export async function playProAm(app) {
 // for game.n of series.id); lineup: the AI players who fill your open spots (the draft); members: the team members in
 // the hub ([{id}], online): with others there it's one online game for all of you (proamOnlineSetup), else it's you
 // and the draft.
-const PA_UNIFORM = (b, n) => ({ top: { family: 'jersey', color: b.primary, trim: b.secondary, secondary: b.secondary, pattern: 'panel', lettering: b.abbr, tucked: true }, bottom: { family: 'shorts', color: b.primary, trim: b.secondary, stripe: b.secondary }, number: n });
-export const paBrand = t => ({ name: t?.name || 'Pro-Am', abbr: t?.abbr || 'PRO', primary: t?.primary || '#2457c5', secondary: t?.secondary || '#f2c14e', logo: t?.logo || 'bolt' });
+// (v0.4.8.9 qp14: each team in the kit it picked on its team page, world/proamkit.js: Classic, Stripe, Split or Fade)
+const PA_UNIFORM = (b, n) => paKit(b, n);
+export const paBrand = t => ({ name: t?.name || 'Pro-Am', abbr: t?.abbr || 'PRO', primary: t?.primary || '#2457c5', secondary: t?.secondary || '#f2c14e', logo: t?.logo || 'bolt', jersey: kitKey(t?.jersey) });
 export const paVenue = v => (v && THEMES[v] ? v : 'arena');
 export const paOppRating = opp => Math.round(divInfo(opp?.div ?? 0).index * 75 + 37); // (proam.py rating, the division's middle)
 // five AI players from ids (an AI team's roster, the draft), filled up to n with regulars at the positions still open

@@ -2,6 +2,13 @@
 
 ## v0.4.8.9: The Gauntlet
 
+### v0.4.8.9 quick patch 14 (Oct 25): Pro-Am jerseys and logos as named
+| Area | Files | Notes |
+|---|---|---|
+| Kits | `world/proamkit.js` (new: `JERSEYS`, `paKit`, `bothInk`, `logoURL`, `drawKit`), `char/looks.js` (`pa_stripe` / `pa_split` / `pa_fade` on the jersey and shorts, `numInk`/`numEdge`, `paSecSide`, `PA_BAND`), `ui/modes.js` (`PA_UNIFORM` = `paKit`, `paBrand` carries `jersey`), `game/proamhub.js` (home-court runs: `teamKit` in the team's own colors; opponents contrast with it) | 3D renders of all four kits front/back (Showroom harness): band under the number, Split on the wearer's left with the left leg, Fade reads; note `resolveLook` drops `top.tucked` (all team uniforms render untucked, as before) |
+| Logos | `gfx/textures.js` (`EMBLEMS`/`EMBLEM_SHAPES` bolt, flame, wolf, eagle, skull, wave; `TEXT_ROOM` letter fit), `world/proamhubs.js` (`logoShape` passes every logo; Honey gloss `gloss`/`reflect`/`rough`) | center-court wolf on a Pro-Am park rendered |
+| Menus | `ui/proam.js` (drawn logo in rows/heads, logo chips with pictures, live preview, create form binds its picks, "Clubhouse logo" label), `ui/modes.js` (classic editor's logo chips), `css/menus.css` | tests `qp14proamkit` (new, 7); `v0488proamui` (create picks take: rule changed), `v0488proamhub` (`logoShape('wolf')`); Node 822/824 (missing-mp3 + 1 skip), Python 372 OK, golden identical |
+
 ### v0.4.8.9 quick patch 13 (Oct 25): the soundtrack in Pro-Am, at about 10%
 | Area | Files | Notes |
 |---|---|---|
